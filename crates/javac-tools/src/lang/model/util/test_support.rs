@@ -6,18 +6,18 @@
 // and is not part of the ported API.
 #![allow(dead_code)]
 
+use crate::jdk::{Annotation, Class};
+use crate::lang::model::AnnotatedConstruct;
 use crate::lang::model::element::{
     AnnotationMirror, AnnotationValue, ConstantValue, Directive, Element, ElementKind,
     ElementVisitor, ExecutableElement, Modifier, ModuleElement, Name, PackageElement,
-    Parameterizable, QualifiedNameable, RecordComponentElement, TypeElement,
-    TypeParameterElement, Value, ValueRef, VariableElement,
+    Parameterizable, QualifiedNameable, RecordComponentElement, TypeElement, TypeParameterElement,
+    Value, ValueRef, VariableElement,
 };
-use crate::lang::model::AnnotatedConstruct;
 use crate::lang::model::type_::{
     ArrayType, DeclaredType, ErrorType, ExecutableType, IntersectionType, NoType, NullType,
     PrimitiveType, ReferenceType, TypeKind, TypeMirror, TypeVariable, UnionType, WildcardType,
 };
-use crate::jdk::{Annotation, Class};
 use javac_strings::JavaString;
 use std::fmt;
 use std::rc::Rc;
@@ -53,11 +53,19 @@ pub struct Fixture {
 
 impl Fixture {
     pub fn new(kind: ElementKind, name: &str) -> Fixture {
-        Fixture { kind, name: JavaString::from(name), enclosed: Vec::new() }
+        Fixture {
+            kind,
+            name: JavaString::from(name),
+            enclosed: Vec::new(),
+        }
     }
 
     pub fn with_enclosed(kind: ElementKind, name: &str, enclosed: Vec<Rc<dyn Element>>) -> Fixture {
-        Fixture { kind, name: JavaString::from(name), enclosed }
+        Fixture {
+            kind,
+            name: JavaString::from(name),
+            enclosed,
+        }
     }
 }
 
@@ -90,7 +98,9 @@ impl Element for Fixture {
         Vec::new()
     }
     fn get_simple_name(&self) -> Rc<dyn Name> {
-        Rc::new(FixtureName { text: self.name.clone() })
+        Rc::new(FixtureName {
+            text: self.name.clone(),
+        })
     }
     fn get_enclosing_element(&self) -> Option<Rc<dyn Element>> {
         None
@@ -149,7 +159,9 @@ impl Parameterizable for Fixture {
 
 impl QualifiedNameable for Fixture {
     fn get_qualified_name(&self) -> Rc<dyn Name> {
-        Rc::new(FixtureName { text: self.name.clone() })
+        Rc::new(FixtureName {
+            text: self.name.clone(),
+        })
     }
 }
 
@@ -266,7 +278,9 @@ impl TypeMirror for TypeFixture {
         panic!("UnsupportedOperationException: accept: fixture is not visited through accept")
     }
     fn as_primitive_type(&self) -> Option<&dyn PrimitiveType> {
-        self.kind.is_primitive().then_some(self as &dyn PrimitiveType)
+        self.kind
+            .is_primitive()
+            .then_some(self as &dyn PrimitiveType)
     }
     fn as_null_type(&self) -> Option<&dyn NullType> {
         (self.kind == TypeKind::NULL).then_some(self as &dyn NullType)

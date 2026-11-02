@@ -9,7 +9,6 @@ pub(crate) fn type_display(ctx: &CompilerContext, ty: TypeId) -> String {
     crate::code::printer::visit_type(ctx, ty)
 }
 
-
 /// helper: diagnostic display text of a type for the Infer/Attr
 /// adapter argument placeholders (adapter, the type printer is pending).
 pub(crate) fn type_display_of(ctx: &CompilerContext, t: TypeId) -> String {
@@ -37,4 +36,3 @@ pub(crate) fn annotation_type_display(ctx: &CompilerContext, t: TypeId) -> Strin
     }
     format!("@{name}")
 }
-

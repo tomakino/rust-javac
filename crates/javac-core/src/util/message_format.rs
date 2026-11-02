@@ -147,7 +147,11 @@ mod tests {
             &["@Ann", "value"],
             "annotation @@Ann is missing a default value for the element 'value'",
         ),
-        ("cannot assign to ''this''", &["A", "B", "C"], "cannot assign to 'this'"),
+        (
+            "cannot assign to ''this''",
+            &["A", "B", "C"],
+            "cannot assign to 'this'",
+        ),
         ("x{0}y''z", &["A", "B", "C"], "xAy'z"),
         ("'{0}'{1}", &["A", "B", "C"], "{0}B"),
         ("a''b", &["A", "B", "C"], "a'b"),

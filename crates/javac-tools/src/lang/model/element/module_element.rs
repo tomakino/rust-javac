@@ -287,7 +287,7 @@ pub trait UsesDirective: Directive {
 
 #[cfg(test)]
 mod tests {
-    use super::{DirectiveKind, DirectiveVisitor, Directive, RequiresDirective};
+    use super::{Directive, DirectiveKind, DirectiveVisitor, RequiresDirective};
     use crate::lang::model::element::module_element::ModuleElement;
     use javac_strings::JavaString;
 
@@ -335,11 +335,7 @@ mod tests {
         fn visit_requires(&mut self, _d: &dyn RequiresDirective, _p: ()) -> DirectiveKind {
             DirectiveKind::REQUIRES
         }
-        fn visit_exports(
-            &mut self,
-            _d: &dyn super::ExportsDirective,
-            _p: (),
-        ) -> DirectiveKind {
+        fn visit_exports(&mut self, _d: &dyn super::ExportsDirective, _p: ()) -> DirectiveKind {
             DirectiveKind::EXPORTS
         }
         fn visit_opens(&mut self, _d: &dyn super::OpensDirective, _p: ()) -> DirectiveKind {

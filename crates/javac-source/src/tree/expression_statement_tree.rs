@@ -1,3 +1,5 @@
+use super::expression_tree::ExpressionTree;
+use super::statement_tree::StatementTree;
 /// A tree node for an expression statement.
 ///
 /// For example:
@@ -11,12 +13,9 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
-use super::statement_tree::StatementTree;
 
 pub trait ExpressionStatementTree: StatementTree {
     /// Returns the expression constituting this statement.
     /// @return the expression
     fn get_expression(&self) -> Rc<dyn ExpressionTree>;
-
 }

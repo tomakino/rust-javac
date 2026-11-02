@@ -6,7 +6,7 @@ use std::hash::{BuildHasherDefault, Hasher};
 use std::path::Path;
 
 use crate::decompress;
-use crate::entry::{decode_entry_name, Entry, FLAG_ENCRYPTED};
+use crate::entry::{Entry, FLAG_ENCRYPTED, decode_entry_name};
 use crate::error::Error;
 use crate::{EOCD_MAX_COMMENT_SIZE, EOCD_SIGNATURE, EOCD_SIZE, read_u16, read_u32};
 
@@ -26,8 +26,8 @@ impl Hasher for FxHasher {
 
     fn write(&mut self, bytes: &[u8]) {
         for &byte in bytes {
-            self.hash = (self.hash.rotate_left(5) ^ u64::from(byte))
-                .wrapping_mul(0x517c_c1b7_2722_0a95);
+            self.hash =
+                (self.hash.rotate_left(5) ^ u64::from(byte)).wrapping_mul(0x517c_c1b7_2722_0a95);
         }
     }
 }
@@ -83,7 +83,8 @@ impl ZipArchive {
         {
             let mut iter = raw.entries();
             while let Some(header) = iter.next_entry().map_err(corrupted)? {
-                let name = decode_entry_name(header.file_path().as_ref(), header_flags(header.flags()))?;
+                let name =
+                    decode_entry_name(header.file_path().as_ref(), header_flags(header.flags()))?;
                 let index = entries.len();
                 entries.push(Entry {
                     name: name.clone(),
@@ -124,17 +125,19 @@ impl ZipArchive {
 
     /// Reads and decompresses the entry at the given central directory index.
     pub fn read_entry(&self, index: usize) -> Result<Vec<u8>, Error> {
-        let entry = self.entries.get(index).ok_or_else(|| {
-            Error::Corrupted(format!("entry index {} is out of range", index))
-        })?;
+        let entry = self
+            .entries
+            .get(index)
+            .ok_or_else(|| Error::Corrupted(format!("entry index {} is out of range", index)))?;
         if entry.flags & FLAG_ENCRYPTED != 0 {
             return Err(Error::Corrupted(
                 "encrypted zip entries are not supported".to_string(),
             ));
         }
-        let wayfinder = *self.wayfinders.get(index).ok_or_else(|| {
-            Error::Corrupted(format!("entry index {} has no locator", index))
-        })?;
+        let wayfinder = *self
+            .wayfinders
+            .get(index)
+            .ok_or_else(|| Error::Corrupted(format!("entry index {} has no locator", index)))?;
         let raw_entry = self.raw.get_entry(wayfinder).map_err(corrupted)?;
         let data = raw_entry.data();
         match entry.compression_method {

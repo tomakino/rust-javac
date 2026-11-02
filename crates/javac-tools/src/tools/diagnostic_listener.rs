@@ -83,7 +83,9 @@ mod tests {
 
     #[test]
     fn listener_receives_diagnostics() {
-        let listener = CountingListener { count: RefCell::new(0) };
+        let listener = CountingListener {
+            count: RefCell::new(0),
+        };
         listener.report(Rc::new(Diag));
         listener.report(Rc::new(Diag));
         assert_eq!(*listener.count.borrow(), 2);

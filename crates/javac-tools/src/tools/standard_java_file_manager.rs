@@ -266,11 +266,8 @@ pub trait StandardJavaFileManager: JavaFileManager {
     /// location and files does not contain exactly one element
     /// @throws IOException if location is an output location and
     /// does not represent an existing directory
-    fn set_location(
-        &self,
-        location: &dyn Location,
-        files: Option<&[PathBuf]>,
-    ) -> Result<(), Error>;
+    fn set_location(&self, location: &dyn Location, files: Option<&[PathBuf]>)
+    -> Result<(), Error>;
 
     /// Associates the given search path with the given location.
     /// Any previous value will be discarded.
@@ -607,7 +604,8 @@ mod tests {
             class_name: &JavaString,
             kind: Kind,
         ) -> Result<Option<JavaFileObjectRef>, Error> {
-            self.base.get_java_file_for_input(location, class_name, kind)
+            self.base
+                .get_java_file_for_input(location, class_name, kind)
         }
         fn get_java_file_for_output(
             &self,
@@ -616,7 +614,8 @@ mod tests {
             kind: Kind,
             sibling: Option<&FileObjectRef>,
         ) -> Result<JavaFileObjectRef, Error> {
-            self.base.get_java_file_for_output(location, class_name, kind, sibling)
+            self.base
+                .get_java_file_for_output(location, class_name, kind, sibling)
         }
         fn get_file_for_input(
             &self,
@@ -624,7 +623,8 @@ mod tests {
             package_name: &JavaString,
             relative_name: &JavaString,
         ) -> Result<Option<FileObjectRef>, Error> {
-            self.base.get_file_for_input(location, package_name, relative_name)
+            self.base
+                .get_file_for_input(location, package_name, relative_name)
         }
         fn get_file_for_output(
             &self,
@@ -633,7 +633,8 @@ mod tests {
             relative_name: &JavaString,
             sibling: Option<&FileObjectRef>,
         ) -> Result<FileObjectRef, Error> {
-            self.base.get_file_for_output(location, package_name, relative_name, sibling)
+            self.base
+                .get_file_for_output(location, package_name, relative_name, sibling)
         }
         fn flush(&self) -> Result<(), Error> {
             self.base.flush()
@@ -644,10 +645,7 @@ mod tests {
     }
 
     impl StandardJavaFileManager for TestStandardManager {
-        fn get_java_file_objects_from_files(
-            &self,
-            _files: &[PathBuf],
-        ) -> Vec<JavaFileObjectRef> {
+        fn get_java_file_objects_from_files(&self, _files: &[PathBuf]) -> Vec<JavaFileObjectRef> {
             self.files.clone()
         }
         fn get_java_file_objects(&self, files: &[PathBuf]) -> Vec<JavaFileObjectRef> {
@@ -711,17 +709,23 @@ mod tests {
     fn default_methods_delegate() {
         let manager = TestStandardManager::new();
         let location = InnerLocation;
-        assert!(manager
-            .get_java_file_objects_from_paths(&[PathBuf::from("a")])
-            .is_empty());
-        assert!(manager
-            .get_java_file_objects_paths(&[PathBuf::from("a")])
-            .is_empty());
+        assert!(
+            manager
+                .get_java_file_objects_from_paths(&[PathBuf::from("a")])
+                .is_empty()
+        );
+        assert!(
+            manager
+                .get_java_file_objects_paths(&[PathBuf::from("a")])
+                .is_empty()
+        );
         #[allow(deprecated)]
         {
-            assert!(manager
-                .get_java_file_objects_from_paths_iterable(&[PathBuf::from("a")])
-                .is_empty());
+            assert!(
+                manager
+                    .get_java_file_objects_from_paths_iterable(&[PathBuf::from("a")])
+                    .is_empty()
+            );
         }
         assert!(manager.get_location_as_paths(&location).is_none());
         assert!(manager.set_location_from_paths(&location, None).is_ok());
@@ -773,9 +777,11 @@ mod tests {
     #[test]
     fn standard_manager_is_object_safe() {
         let manager: Rc<dyn StandardJavaFileManager> = Rc::new(TestStandardManager::new());
-        assert!(manager
-            .get_java_file_objects_from_paths(&[PathBuf::from("x")])
-            .is_empty());
+        assert!(
+            manager
+                .get_java_file_objects_from_paths(&[PathBuf::from("x")])
+                .is_empty()
+        );
         let names = [js("A.java")];
         assert!(manager.get_java_file_objects_strings(&names).is_empty());
     }

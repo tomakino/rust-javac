@@ -37,7 +37,8 @@ use crate::code::source::{Feature, Source};
 use crate::resources::compiler_properties::{errors, warnings};
 use crate::util::abstract_log::AbstractLog;
 use crate::util::jc_diagnostic::{
-    DiagnosticFlag, Error as JCDiagnosticError, SimpleDiagnosticPosition, Warning as JCDiagnosticWarning,
+    DiagnosticFlag, Error as JCDiagnosticError, SimpleDiagnosticPosition,
+    Warning as JCDiagnosticWarning,
 };
 use crate::util::layout_characters::EOI;
 use crate::util::list::List;
@@ -172,7 +173,12 @@ impl JavaTokenizer {
 
     /// Java: protected void lexError(DiagnosticFlag flags, int pos,
     /// JCDiagnostic.Error key).
-    pub(crate) fn lex_error_flag(&mut self, flags: DiagnosticFlag, pos: i32, key: JCDiagnosticError) {
+    pub(crate) fn lex_error_flag(
+        &mut self,
+        flags: DiagnosticFlag,
+        pos: i32,
+        key: JCDiagnosticError,
+    ) {
         self.log.error_flag_at(flags, pos, key);
         if flags != DiagnosticFlag::SOURCE_LEVEL {
             self.tk = TokenKind::ERROR;
@@ -294,11 +300,17 @@ impl JavaTokenizer {
                 }
                 '\n' | '\r' => {
                     let position = self.position();
-                    self.lex_error(position, JCDiagnosticError::from(errors::illegal_esc_char()));
+                    self.lex_error(
+                        position,
+                        JCDiagnosticError::from(errors::illegal_esc_char()),
+                    );
                 }
                 _ => {
                     let position = self.position();
-                    self.lex_error(position, JCDiagnosticError::from(errors::illegal_esc_char()));
+                    self.lex_error(
+                        position,
+                        JCDiagnosticError::from(errors::illegal_esc_char()),
+                    );
                 }
             }
         } else {
@@ -382,7 +394,11 @@ impl JavaTokenizer {
 
     /// Java: private void scanDigits(int pos, int digitRadix).
     fn scan_digits(&mut self, pos: i32, digit_radix: i32) {
-        let leading_underscore_pos = if self.is('_') { self.position() } else { NOT_FOUND };
+        let leading_underscore_pos = if self.is('_') {
+            self.position()
+        } else {
+            NOT_FOUND
+        };
         let mut trailing_underscore_pos;
         loop {
             if !self.is('_') {
@@ -486,7 +502,10 @@ impl JavaTokenizer {
     fn skip_illegal_underscores(&mut self) {
         if self.is('_') {
             let position = self.position();
-            self.lex_error(position, JCDiagnosticError::from(errors::illegal_underscore()));
+            self.lex_error(
+                position,
+                JCDiagnosticError::from(errors::illegal_underscore()),
+            );
             self.skip('_');
         }
     }
@@ -514,9 +533,10 @@ impl JavaTokenizer {
         } else {
             if !seen_valid_digit {
                 match radix {
-                    2 => {
-                        self.lex_error(pos, JCDiagnosticError::from(errors::invalid_binary_number()))
-                    }
+                    2 => self.lex_error(
+                        pos,
+                        JCDiagnosticError::from(errors::invalid_binary_number()),
+                    ),
                     16 => {
                         self.lex_error(pos, JCDiagnosticError::from(errors::invalid_hex_number()))
                     }
@@ -606,7 +626,20 @@ impl JavaTokenizer {
     fn is_special(unit: u16) -> bool {
         matches!(
             unit,
-            0x21 | 0x25 | 0x26 | 0x2A | 0x3F | 0x2B | 0x2D | 0x3A | 0x3C | 0x3D | 0x3E | 0x5E | 0x7C | 0x7E | 0x40
+            0x21 | 0x25
+                | 0x26
+                | 0x2A
+                | 0x3F
+                | 0x2B
+                | 0x2D
+                | 0x3A
+                | 0x3C
+                | 0x3D
+                | 0x3E
+                | 0x5E
+                | 0x7C
+                | 0x7E
+                | 0x40
         )
     }
 
@@ -702,7 +735,10 @@ impl JavaTokenizer {
                         self.next();
                         let save_pos = self.position();
                         if self.accept('.') {
-                            self.lex_error(save_pos, JCDiagnosticError::from(errors::illegal_dot()));
+                            self.lex_error(
+                                save_pos,
+                                JCDiagnosticError::from(errors::illegal_dot()),
+                            );
                         } else if self.digit(pos, 10) >= 0 {
                             self.put_char('.');
                             self.scan_fraction_and_suffix(pos); // (Spec. 3.10)
@@ -824,7 +860,10 @@ impl JavaTokenizer {
                         if self.accept('\'') {
                             self.tk = TokenKind::CHARLITERAL;
                         } else {
-                            self.lex_error(pos, JCDiagnosticError::from(errors::unclosed_char_lit()));
+                            self.lex_error(
+                                pos,
+                                JCDiagnosticError::from(errors::unclosed_char_lit()),
+                            );
                         }
                     }
                     break 'outer;
@@ -877,10 +916,7 @@ impl JavaTokenizer {
                                     JavaString::from(format!("\\u{:04x}", ch).as_str())
                                 }
                             };
-                            self.lex_error(
-                                pos,
-                                JCDiagnosticError::from(errors::illegal_char(arg)),
-                            );
+                            self.lex_error(pos, JCDiagnosticError::from(errors::illegal_char(arg)));
                             self.next();
                         }
                     }
@@ -989,7 +1025,12 @@ impl JavaTokenizer {
                 pos,
             ))
         } else {
-            Rc::new(BasicComment::new(style, self.log.clone(), Rc::from(buffer), pos))
+            Rc::new(BasicComment::new(
+                style,
+                self.log.clone(),
+                Rc::from(buffer),
+                pos,
+            ))
         }
     }
 
@@ -1115,7 +1156,8 @@ impl BasicComment {
                 // Skip optional WhiteSpace after Stars
                 reader.skip_whitespace();
                 // At beginning of line in the JavaDoc sense.
-                deprecated_prefix = self.deprecated_flag.get() || reader.accept_string("@deprecated");
+                deprecated_prefix =
+                    self.deprecated_flag.get() || reader.accept_string("@deprecated");
             }
             {
                 let mut reader = self.reader.borrow_mut();
@@ -1203,7 +1245,10 @@ mod unicode_classification_tests {
             // The fast path returns true only for the identifier-part ASCII
             // characters; the scanIdent switch handles the rest as ignorable.
             if super::is_ascii_identifier_part(unit) {
-                assert!(expected, "ASCII part path accepted a non-part unit {unit:#x}");
+                assert!(
+                    expected,
+                    "ASCII part path accepted a non-part unit {unit:#x}"
+                );
             }
         }
     }

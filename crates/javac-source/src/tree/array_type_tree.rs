@@ -1,3 +1,4 @@
+use super::tree::Tree;
 /// A tree node for an array type.
 ///
 /// For example:
@@ -11,11 +12,9 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::tree::Tree;
 
 pub trait ArrayTypeTree: Tree {
     /// Returns the element type of this array type.
     /// @return the element type
     fn get_type(&self) -> Rc<dyn Tree>;
-
 }

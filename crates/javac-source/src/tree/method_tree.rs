@@ -1,3 +1,9 @@
+use super::block_tree::BlockTree;
+use super::expression_tree::ExpressionTree;
+use super::modifiers_tree::ModifiersTree;
+use super::tree::Tree;
+use super::type_parameter_tree::TypeParameterTree;
+use super::variable_tree::VariableTree;
 /// A tree node for a method or annotation type element declaration.
 ///
 /// For example:
@@ -20,12 +26,6 @@
 /// @since 1.6
 use javac_tools::lang::model::element::Name;
 use std::rc::Rc;
-use super::block_tree::BlockTree;
-use super::expression_tree::ExpressionTree;
-use super::modifiers_tree::ModifiersTree;
-use super::tree::Tree;
-use super::type_parameter_tree::TypeParameterTree;
-use super::variable_tree::VariableTree;
 
 pub trait MethodTree: Tree {
     /// Returns the modifiers, including any annotations for the method being declared.
@@ -69,5 +69,4 @@ pub trait MethodTree: Tree {
     /// Returns {@code null} otherwise.
     /// @return the default value
     fn get_default_value(&self) -> Rc<dyn Tree>;
-
 }

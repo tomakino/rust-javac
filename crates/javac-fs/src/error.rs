@@ -10,7 +10,7 @@
 
 //! Errors of the path/file layer.
 //!
-//! the declared java.io.IOException is mapped to [std::io::Error];
+//! the declared java.io.IOException is mapped to [io::Error];
 //! java.nio.file.InvalidPathException and IllegalArgumentException (thrown by
 //! Path.relativize for mismatched roots) keep their Java roles/classes here so
 //! the P2 file layer can map them onto javac diagnostics.
@@ -36,7 +36,9 @@ impl fmt::Display for Error {
         match self {
             Error::Io(err) => write!(f, "I/O error: {}", err),
             Error::InvalidPath { path } => write!(f, "InvalidPathException: {}", path),
-            Error::IllegalArgument { message } => write!(f, "IllegalArgumentException: {}", message),
+            Error::IllegalArgument { message } => {
+                write!(f, "IllegalArgumentException: {}", message)
+            }
             Error::UnsupportedUri { uri } => write!(f, "unsupported URI: {}", uri),
         }
     }

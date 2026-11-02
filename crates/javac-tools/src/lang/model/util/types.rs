@@ -201,7 +201,11 @@ pub trait Types {
     /// @return the type of the element as viewed from the containing type
     /// @throws IllegalArgumentException if the element is not a valid one
     ///          for the given type
-    fn as_member_of(&self, containing: &dyn DeclaredType, element: &dyn Element) -> Rc<dyn TypeMirror>;
+    fn as_member_of(
+        &self,
+        containing: &dyn DeclaredType,
+        element: &dyn Element,
+    ) -> Rc<dyn TypeMirror>;
 }
 
 #[cfg(test)]

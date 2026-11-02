@@ -68,7 +68,10 @@ mod tests {
             formatted: RefCell::new(Vec::new()),
         };
         messages.add("com.sun.tools.javac.resources.compiler");
-        assert_eq!(messages.added, vec!["com.sun.tools.javac.resources.compiler"]);
+        assert_eq!(
+            messages.added,
+            vec!["com.sun.tools.javac.resources.compiler"]
+        );
         let rendered = messages.get_localized_string(
             Some(&Locale::new("en")),
             "compiler.err.example",
@@ -85,9 +88,6 @@ mod tests {
             formatted: RefCell::new(Vec::new()),
         };
         let messages: &dyn Messages = &messages;
-        assert_eq!(
-            messages.get_localized_string(None, "k", &[]),
-            "k:"
-        );
+        assert_eq!(messages.get_localized_string(None, "k", &[]), "k:");
     }
 }

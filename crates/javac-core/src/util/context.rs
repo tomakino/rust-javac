@@ -133,13 +133,15 @@ impl Context {
     /// Set the factory for the key in this context.
     ///
     /// Java: public <T> void put(Key<T> key, Factory<T> fac)
-    pub fn put_factory<T: 'static>(&mut self, factory: impl FnOnce(&mut Context) -> Rc<T> + 'static) {
+    pub fn put_factory<T: 'static>(
+        &mut self,
+        factory: impl FnOnce(&mut Context) -> Rc<T> + 'static,
+    ) {
         self.check_state();
         let key = TypeId::of::<T>();
         let factory: Factory<T> = Box::new(factory);
-        let make: ContextFactoryFn = Box::new(move |context| {
-            Box::new(factory(context)) as Box<dyn Any>
-        });
+        let make: ContextFactoryFn =
+            Box::new(move |context| Box::new(factory(context)) as Box<dyn Any>);
         let ht = self.ht.as_mut().expect("context ht");
         let old = ht.insert(
             key,
@@ -217,9 +219,7 @@ impl Context {
             };
             // Java: Assert.check(ht.get(key) == o)
             let registered = match self.ht.as_ref().and_then(|ht| ht.get(&key)) {
-                Some(ContextValue::Value { value, .. }) => {
-                    value.downcast_ref::<Rc<T>>().cloned()
-                }
+                Some(ContextValue::Value { value, .. }) => value.downcast_ref::<Rc<T>>().cloned(),
                 _ => None,
             };
             match registered {
@@ -232,7 +232,9 @@ impl Context {
                 ContextValue::Value { value, .. } => value.downcast_ref::<Rc<T>>().cloned(),
                 // Invariant: only factories are materialized above; a factory here
                 // would mean a concurrent mutation that cannot happen with &mut self.
-                ContextValue::Factory { .. } => crate::util::assert::error_msg("factory slot not taken"),
+                ContextValue::Factory { .. } => {
+                    crate::util::assert::error_msg("factory slot not taken")
+                }
             }
         }
     }
@@ -277,7 +279,7 @@ mod tests {
     #[test]
     fn key_marker_is_zero_sized_and_constructible() {
         let key: Key<u32> = Key::new();
-        assert_eq!(std::mem::size_of_val(&key), 0);
+        assert_eq!(size_of_val(&key), 0);
         let _copy = key;
     }
 

@@ -551,7 +551,9 @@ mod tests {
             _preamble: &[Rc<dyn DocTree>],
             _postamble: &[Rc<dyn DocTree>],
         ) -> Rc<dyn DocCommentTree> {
-            panic!("UnsupportedOperationException: new_doc_comment_tree_with_preamble: mock DocTreeFactory")
+            panic!(
+                "UnsupportedOperationException: new_doc_comment_tree_with_preamble: mock DocTreeFactory"
+            )
         }
 
         fn new_doc_root_tree(&self) -> Rc<dyn DocRootTree> {
@@ -720,7 +722,9 @@ mod tests {
             _name: Rc<dyn Name>,
             _content: &[Rc<dyn DocTree>],
         ) -> Rc<dyn UnknownInlineTagTree> {
-            panic!("UnsupportedOperationException: new_unknown_inline_tag_tree: mock DocTreeFactory")
+            panic!(
+                "UnsupportedOperationException: new_unknown_inline_tag_tree: mock DocTreeFactory"
+            )
         }
 
         fn new_uses_tree(

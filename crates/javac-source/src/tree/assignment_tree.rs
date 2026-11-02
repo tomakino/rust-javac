@@ -1,3 +1,4 @@
+use super::expression_tree::ExpressionTree;
 /// A tree node for an assignment expression.
 ///
 /// For example:
@@ -11,7 +12,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
 
 pub trait AssignmentTree: ExpressionTree {
     /// Returns the variable being assigned to.
@@ -21,5 +21,4 @@ pub trait AssignmentTree: ExpressionTree {
     /// Returns the expression being assigned to the variable.
     /// @return the expression
     fn get_expression(&self) -> Rc<dyn ExpressionTree>;
-
 }

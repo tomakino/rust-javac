@@ -3,7 +3,6 @@
 //! Lowers string concatenation to JVM-level operations: the legacy
 //! StringBuilder chains or the invokedynamic StringConcatFactory calls.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -17,13 +16,13 @@ use crate::jvm::byte_codes::*;
 use crate::jvm::items::Item;
 use crate::jvm::pool_constant::LoadableConstantRef;
 use crate::jvm::target::Target;
+use crate::tree::jc_tree::{Tag, TreeKind};
+use crate::tree::tree_info;
+use crate::tree::tree_maker::TreeMaker;
 use crate::util::constants::ConstantValue;
 use crate::util::java_string::JavaString;
 use crate::util::list::List;
 use crate::util::names::Names;
-use crate::tree::jc_tree::{Tag, TreeKind};
-use crate::tree::tree_info;
-use crate::tree::tree_maker::TreeMaker;
 
 /// Maximum number of slots for a StringConcat call.
 const MAX_INDY_CONCAT_ARG_SLOTS: i32 = 200;
@@ -137,9 +136,12 @@ impl StringConcat {
     }
 
     /// Lower a string addition expression.
-    pub fn make_concat_binary(&mut self,
+    pub fn make_concat_binary(
+        &mut self,
         ctx: &mut CompilerContext,
-        generator: &mut crate::jvm::codegen::Gen, tree: TreeId) -> Item {
+        generator: &mut crate::jvm::codegen::Gen,
+        tree: TreeId,
+    ) -> Item {
         match self.kind {
             ConcatKind::Inline => self.make_concat_binary_inline(ctx, generator, tree),
             ConcatKind::IndyPlain => self.make_concat_binary_indy(ctx, generator, tree, false),
@@ -153,57 +155,35 @@ impl StringConcat {
     }
 
     /// Collect all concatenated expressions of two trees.
-    fn collect_all_two(
-        &self,
-        ctx: &CompilerContext,
-        lhs: TreeId,
-        rhs: TreeId,
-    ) -> List<TreeId> {
+    fn collect_all_two(&self, ctx: &CompilerContext, lhs: TreeId, rhs: TreeId) -> List<TreeId> {
         let mut result = self.collect(ctx, lhs, List::nil());
         result = self.collect(ctx, rhs, result);
         result
     }
 
     /// Collect the concatenated sub-expressions of a tree into res.
-    fn collect(
-        &self,
-        ctx: &CompilerContext,
-        tree: TreeId,
-        res: List<TreeId>,
-    ) -> List<TreeId> {
+    fn collect(&self, ctx: &CompilerContext, tree: TreeId, res: List<TreeId>) -> List<TreeId> {
         let tree = tree_info::skip_parens(ctx, tree);
         let node = ctx.tree(tree);
         if node.get_tag() == Tag::PLUS
             && node.ty.is_none_or(|ty| ctx.typ(ty).const_value().is_none())
-            && let TreeKind::Binary {
-                lhs,
-                rhs,
-                operator,
-            } = &node.kind
+            && let TreeKind::Binary { lhs, rhs, operator } = &node.kind
         {
-                let mut is_string_add = false;
-                if let Some(operator) = operator
-                    && ctx.sym(*operator).kind == crate::code::kinds::Kind::MTH
-                    && let crate::code::symbol::SymbolKind::OperatorSymbol { opcode, .. } =
-                        &ctx.sym(*operator).kind_data
-                {
-                    is_string_add = *opcode == STRING_ADD;
-                }
-                if is_string_add {
-                    let mut result = res;
-                    result = self.collect(
-                        ctx,
-                        lhs.expect("binary lhs"),
-                        result,
-                    );
-                    result = self.collect(
-                        ctx,
-                        rhs.expect("binary rhs"),
-                        result,
-                    );
-                    return result;
-                }
+            let mut is_string_add = false;
+            if let Some(operator) = operator
+                && ctx.sym(*operator).kind == crate::code::kinds::Kind::MTH
+                && let crate::code::symbol::SymbolKind::OperatorSymbol { opcode, .. } =
+                    &ctx.sym(*operator).kind_data
+            {
+                is_string_add = *opcode == STRING_ADD;
             }
+            if is_string_add {
+                let mut result = res;
+                result = self.collect(ctx, lhs.expect("binary lhs"), result);
+                result = self.collect(ctx, rhs.expect("binary rhs"), result);
+                return result;
+            }
+        }
         res.append(tree)
     }
 }
@@ -235,28 +215,31 @@ impl StringConcat {
         let args = self.collect_all(ctx, rhs);
         let current = args;
         for t in &current {
-        let ty = ctx.tree(t).ty.expect("argument type");
-        let item = generator.gen_expr(ctx, t, ty);
-        generator.get_items().load(ctx, &item);
-        self.append_string(ctx, generator, t);
+            let ty = ctx.tree(t).ty.expect("argument type");
+            let item = generator.gen_expr(ctx, t, ty);
+            generator.get_items().load(ctx, &item);
+            self.append_string(ctx, generator, t);
         }
         self.builder_to_string(ctx, generator, pos);
         l
     }
 
     /// Lower a string addition with StringBuilder chains.
-    fn make_concat_binary_inline(&mut self,
+    fn make_concat_binary_inline(
+        &mut self,
         ctx: &mut CompilerContext,
-        generator: &mut crate::jvm::codegen::Gen, tree: TreeId) -> Item {
+        generator: &mut crate::jvm::codegen::Gen,
+        tree: TreeId,
+    ) -> Item {
         let pos = ctx.tree(tree).pos;
         self.new_string_builder(ctx, generator, tree);
         let args = self.collect_all(ctx, tree);
         let current = args;
         for t in &current {
-        let ty = ctx.tree(t).ty.expect("argument type");
-        let item = generator.gen_expr(ctx, t, ty);
-        generator.get_items().load(ctx, &item);
-        self.append_string(ctx, generator, t);
+            let ty = ctx.tree(t).ty.expect("argument type");
+            let item = generator.gen_expr(ctx, t, ty);
+            generator.get_items().load(ctx, &item);
+            self.append_string(ctx, generator, t);
         }
         self.builder_to_string(ctx, generator, pos);
         let syms = Rc::clone(&self.syms);
@@ -265,9 +248,12 @@ impl StringConcat {
     }
 
     /// Emit the creation of a new StringBuilder.
-    fn new_string_builder(&mut self,
+    fn new_string_builder(
+        &mut self,
         ctx: &mut CompilerContext,
-        generator: &mut crate::jvm::codegen::Gen, tree: TreeId) -> i32 {
+        generator: &mut crate::jvm::codegen::Gen,
+        tree: TreeId,
+    ) -> i32 {
         let pos = ctx.tree(tree).pos;
         let sb_type = self.syms.string_builder_type;
         let od = generator.make_ref(ctx, pos, sb_type);
@@ -289,12 +275,18 @@ impl StringConcat {
     }
 
     /// Append the string value of a tree to the top StringBuilder.
-    fn append_string(&mut self,
+    fn append_string(
+        &mut self,
         ctx: &mut CompilerContext,
-        generator: &mut crate::jvm::codegen::Gen, tree: TreeId) {
+        generator: &mut crate::jvm::codegen::Gen,
+        tree: TreeId,
+    ) {
         let tree_ty = ctx.tree(tree).ty.expect("tree type");
         let t = self.types.base_type(ctx, tree_ty);
-        let string_tsym = ctx.typ(self.syms.string_type).tsym.expect("string type symbol");
+        let string_tsym = ctx
+            .typ(self.syms.string_type)
+            .tsym
+            .expect("string type symbol");
         let is_primitive = ctx.typ(t).get_tag().is_primitive();
         let t_tsym = ctx.typ(t).tsym;
         let mut t = t;
@@ -330,9 +322,12 @@ impl StringConcat {
     }
 
     /// Convert the top StringBuilder to a String.
-    fn builder_to_string(&mut self,
+    fn builder_to_string(
+        &mut self,
         ctx: &mut CompilerContext,
-        generator: &mut crate::jvm::codegen::Gen, pos: i32) {
+        generator: &mut crate::jvm::codegen::Gen,
+        pos: i32,
+    ) {
         let sb_type = self.syms.string_builder_type;
         let name = self.names.toString.clone();
         generator.call_method(ctx, pos, sb_type, name, List::nil(), false);
@@ -406,22 +401,22 @@ impl StringConcat {
         let mut current: Vec<TreeId> = Vec::new();
         let rest = args;
         for t in &rest {
-        let tag = ctx
-            .tree(t)
-            .ty
-            .map(|ty| ctx.typ(ty).get_tag())
-            .expect("argument type");
-        let need_slots = if tag == TypeTag::LONG || tag == TypeTag::DOUBLE {
-            2
-        } else {
-            1
-        };
-        if slots + need_slots >= MAX_INDY_CONCAT_ARG_SLOTS {
-            splits.push(std::mem::take(&mut current));
-            slots = 0;
-        }
-        current.push(t);
-        slots += need_slots;
+            let tag = ctx
+                .tree(t)
+                .ty
+                .map(|ty| ctx.typ(ty).get_tag())
+                .expect("argument type");
+            let need_slots = if tag == TypeTag::LONG || tag == TypeTag::DOUBLE {
+                2
+            } else {
+                1
+            };
+            if slots + need_slots >= MAX_INDY_CONCAT_ARG_SLOTS {
+                splits.push(std::mem::take(&mut current));
+                slots = 0;
+            }
+            current.push(t);
+            slots += need_slots;
         }
         if !current.is_empty() {
             splits.push(current);
@@ -448,8 +443,7 @@ impl StringConcat {
             let syms = &*self.syms;
             ctx.typ(syms.string_type).tsym.expect("string type symbol")
         };
-        !ctx.typ(unboxed_or_type).is_primitive()
-            && ctx.typ(arg_type).tsym != Some(string_tsym)
+        !ctx.typ(unboxed_or_type).is_primitive() && ctx.typ(arg_type).tsym != Some(string_tsym)
     }
 
     /// Emit the plain invokedynamic concat.
@@ -478,7 +472,9 @@ impl StringConcat {
                 let arg_ty = ctx.tree(arg).ty.expect("argument type");
                 let mut arg_type = arg_ty;
                 if arg_type == self.syms.bot_type {
-                    let boxed = self.types.boxed_class_ro(ctx, &*self.syms, self.syms.void_type);
+                    let boxed = self
+                        .types
+                        .boxed_class_ro(ctx, &*self.syms, self.syms.void_type);
                     arg_type = ctx.sym(boxed).ty.expect("boxed class type");
                 }
                 if !first || generate_first_arg {
@@ -490,9 +486,7 @@ impl StringConcat {
                     let object_type = self.syms.object_type;
                     let string_type = self.syms.string_type;
                     let argtypes = List::of(object_type);
-                    generator.call_method(
-                        ctx, pos, string_type, value_of, argtypes, true,
-                    );
+                    generator.call_method(ctx, pos, string_type, value_of, argtypes, true);
                     arg_type = self.syms.string_type;
                 }
                 dynamic_args.push(arg_type);
@@ -607,9 +601,7 @@ impl StringConcat {
                         let object_type = self.syms.object_type;
                         let string_type = self.syms.string_type;
                         let argtypes = List::of(object_type);
-                        generator.call_method(
-                            ctx, pos, string_type, value_of, argtypes, true,
-                        );
+                        generator.call_method(ctx, pos, string_type, value_of, argtypes, true);
                         arg_type = self.syms.string_type;
                     }
                     dynamic_args.push(arg_type);
@@ -695,10 +687,9 @@ impl StringConcat {
 /// Return the lhs/rhs trees of a compound assignment.
 fn assign_op_parts(ctx: &CompilerContext, tree: TreeId) -> (TreeId, TreeId) {
     match &ctx.tree(tree).kind {
-        TreeKind::AssignOp { lhs, rhs, .. } => (
-            lhs.expect("assignop lhs"),
-            rhs.expect("assignop rhs"),
-        ),
+        TreeKind::AssignOp { lhs, rhs, .. } => {
+            (lhs.expect("assignop lhs"), rhs.expect("assignop rhs"))
+        }
         _ => panic!("AssertionError: compound assignment expected"),
     }
 }
@@ -706,9 +697,7 @@ fn assign_op_parts(ctx: &CompilerContext, tree: TreeId) -> (TreeId, TreeId) {
 /// Return the lhs/rhs trees of a binary expression.
 fn binary_parts(ctx: &CompilerContext, tree: TreeId) -> (TreeId, TreeId) {
     match &ctx.tree(tree).kind {
-        TreeKind::Binary { lhs, rhs, .. } => {
-            (lhs.expect("binary lhs"), rhs.expect("binary rhs"))
-        }
+        TreeKind::Binary { lhs, rhs, .. } => (lhs.expect("binary lhs"), rhs.expect("binary rhs")),
         _ => panic!("AssertionError: binary expression expected"),
     }
 }
@@ -725,7 +714,7 @@ fn make_method_type(
         args = args.append(*arg);
     }
     ctx.alloc_type(crate::code::type_::Type::new(
-        crate::code::type_tag::TypeTag::METHOD,
+        TypeTag::METHOD,
         Some(method_class),
         crate::code::type_::TypeKindData::MethodType {
             argtypes: args,

@@ -114,13 +114,13 @@ mod tests {
     use super::JavacTask;
     use crate::tree::compilation_unit_tree::CompilationUnitTree;
     use crate::util::task_listener::TaskListener;
+    use javac_strings::JavaString;
     use javac_tools::error::Error;
+    use javac_tools::jdk::Processor;
     use javac_tools::lang::model::element::Element;
     use javac_tools::lang::model::type_::TypeMirror;
     use javac_tools::tools::java_compiler::CompilationTask;
     use javac_tools::tools::java_file_object::JavaFileObject;
-    use javac_tools::jdk::Processor;
-    use javac_strings::JavaString;
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -163,7 +163,10 @@ mod tests {
                 self.listeners.remove(pos);
             }
         }
-        fn get_type_mirror(&mut self, _path: &[Rc<dyn crate::tree::tree::Tree>]) -> Option<Rc<dyn TypeMirror>> {
+        fn get_type_mirror(
+            &mut self,
+            _path: &[Rc<dyn crate::tree::tree::Tree>],
+        ) -> Option<Rc<dyn TypeMirror>> {
             None
         }
     }
@@ -174,7 +177,9 @@ mod tests {
 
     #[test]
     fn javac_task_is_object_safe() {
-        let mut task = FakeTask { listeners: Vec::new() };
+        let mut task = FakeTask {
+            listeners: Vec::new(),
+        };
         {
             let dyn_task: &mut dyn JavacTask = &mut task;
             assert!(dyn_task.parse().unwrap().is_empty());

@@ -683,7 +683,10 @@ mod tests {
     #[test]
     fn to_java_string_matches_java_tostring() {
         let flags = (PUBLIC | STATIC | FINAL) as i64;
-        assert_eq!(to_java_string(flags).to_string_lossy(), "public static final");
+        assert_eq!(
+            to_java_string(flags).to_string_lossy(),
+            "public static final"
+        );
         assert_eq!(to_java_string(NON_SEALED).to_string_lossy(), "non-sealed");
         assert_eq!(to_java_string(0).to_string_lossy(), "");
     }
@@ -701,8 +704,14 @@ mod tests {
     #[test]
     fn mask_constants_are_consistent() {
         assert_eq!(AccessFlags, PUBLIC | PROTECTED | PRIVATE);
-        assert_eq!(MethodFlags, AccessFlags | ABSTRACT | STATIC | NATIVE | SYNCHRONIZED | FINAL | STRICTFP);
-        assert_eq!(ModifierFlags, ((StandardFlags & !INTERFACE) as i64) | DEFAULT | SEALED | NON_SEALED);
+        assert_eq!(
+            MethodFlags,
+            AccessFlags | ABSTRACT | STATIC | NATIVE | SYNCHRONIZED | FINAL | STRICTFP
+        );
+        assert_eq!(
+            ModifierFlags,
+            ((StandardFlags & !INTERFACE) as i64) | DEFAULT | SEALED | NON_SEALED
+        );
     }
 }
 

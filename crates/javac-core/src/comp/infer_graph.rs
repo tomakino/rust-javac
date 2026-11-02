@@ -7,11 +7,13 @@ use crate::code::symtab::Symtab;
 use crate::code::type_::{InferenceBound, TypeKindData};
 use crate::code::type_tag::TypeTag;
 use crate::code::types::Types;
-use crate::resources::compiler_properties::fragments;
-use crate::resources::diagnostic_contract::TypeArg;
-use crate::comp::infer::{contains_any_list, new_captured_type_ctx, Infer, InferenceContext, InferenceException};
+use crate::comp::infer::{
+    Infer, InferenceContext, InferenceException, contains_any_list, new_captured_type_ctx,
+};
 use crate::compiler_context::CompilerContext;
 use crate::ids::TypeId;
+use crate::resources::compiler_properties::fragments;
+use crate::resources::diagnostic_contract::TypeArg;
 use crate::util::list::List;
 use crate::util::warner::Warner;
 
@@ -82,25 +84,18 @@ impl InferenceStep {
                 if !types.undet_var_is_throws(ctx, uv) {
                     return Ok(false);
                 }
-                let bounds =
-                    types.undet_var_get_bounds(ctx, uv, &[InferenceBound::UPPER]);
+                let bounds = types.undet_var_get_bounds(ctx, uv, &[InferenceBound::UPPER]);
                 for b in &bounds {
-                if !inference_context.free(ctx, syms, types, b)
-                    && !types.is_subtype(
-                        ctx,
-                        syms,
-                        syms.runtime_exception_type,
-                        b,
-                    )
-                {
-                    return Ok(false);
-                }
+                    if !inference_context.free(ctx, syms, types, b)
+                        && !types.is_subtype(ctx, syms, syms.runtime_exception_type, b)
+                    {
+                        return Ok(false);
+                    }
                 }
                 Ok(true)
             }
             InferenceStep::UPPER_LEGACY => {
-                let bounds =
-                    types.undet_var_get_bounds(ctx, uv, &[self.ib()]);
+                let bounds = types.undet_var_get_bounds(ctx, uv, &[self.ib()]);
                 Ok(!inference_context.free_list(ctx, syms, types, bounds)
                     && !types.undet_var_is_captured(ctx, uv))
             }
@@ -228,9 +223,9 @@ impl InferenceStep {
         let mut result: List<TypeId> = List::nil();
         let current = bounds;
         for t in &current {
-        if bound_filter(ctx, syms, types, inference_context, t) {
-            result = result.append(t);
-        }
+            if bound_filter(ctx, syms, types, inference_context, t) {
+                result = result.append(t);
+            }
         }
         Ok(result)
     }
@@ -385,11 +380,21 @@ impl GraphStrategy for BestLeafSolver {
         let mut best: Option<(Vec<usize>, i32)> = None;
         for (index, node) in graph.nodes.iter().enumerate() {
             let Some(node) = node else { continue };
-            if !contains_any_list(ctx, syms, types, node.data.clone(), self.vars_to_solve.clone()) {
+            if !contains_any_list(
+                ctx,
+                syms,
+                types,
+                node.data.clone(),
+                self.vars_to_solve.clone(),
+            ) {
                 continue;
             }
             let path = self.compute_tree_to_leafs(ctx, syms, types, graph, index);
-            if best.as_ref().map(|(_, cost)| path.1 < *cost).unwrap_or(true) {
+            if best
+                .as_ref()
+                .map(|(_, cost)| path.1 < *cost)
+                .unwrap_or(true)
+            {
                 best = Some(path);
             }
         }
@@ -423,13 +428,13 @@ pub enum DependencyKind {
 }
 
 impl DependencyKind {
-/// /// Java: Infer.DependencyKind.dotStyle (Infer.java:1350-1370).
-///
-/// # Panics
-///   - none.
-///
-/// Upstream: Infer.java:1350-1370.
-///
+    /// /// Java: Infer.DependencyKind.dotStyle (Infer.java:1350-1370).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Infer.java:1350-1370.
+    ///
     pub fn dot_style(self) -> &'static str {
         match self {
             DependencyKind::BOUND => "dotted",
@@ -444,13 +449,13 @@ pub struct GraphSolver<'a> {
 }
 
 impl<'a> GraphSolver<'a> {
-/// /// Java: GraphSolver(InferenceContext) (Infer.java:1370-1390).
-///
-/// # Panics
-///   - none.
-///
-/// Upstream: Infer.java:1370-1390.
-///
+    /// /// Java: GraphSolver(InferenceContext) (Infer.java:1370-1390).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Infer.java:1370-1390.
+    ///
     pub fn new(inference_context: &'a Rc<InferenceContext>) -> GraphSolver<'a> {
         GraphSolver { inference_context }
     }
@@ -473,21 +478,16 @@ impl<'a> GraphSolver<'a> {
             if iterations > 1_000_000 {
                 return Err(infer.error(None));
             }
-            let node_to_solve = match strategy.pick_node(
-                ctx,
-                syms,
-                types,
-                &graph,
-                self.inference_context,
-            ) {
-                Ok(node) => node,
-                Err(e) => {
-                    if std::env::var_os("DSH_DEBUG_GS").is_some() {
-                        eprintln!("[GS] pick_node failed: {e:?}");
+            let node_to_solve =
+                match strategy.pick_node(ctx, syms, types, &graph, self.inference_context) {
+                    Ok(node) => node,
+                    Err(e) => {
+                        if std::env::var_os("DSH_DEBUG_GS").is_some() {
+                            eprintln!("[GS] pick_node failed: {e:?}");
+                        }
+                        return Err(infer.error(None));
                     }
-                    return Err(infer.error(None));
-                }
-            };
+                };
             let vars_to_solve = graph.nodes[node_to_solve]
                 .as_ref()
                 .expect("live node")
@@ -525,13 +525,9 @@ impl<'a> GraphSolver<'a> {
                         }
                     };
                     if !solved.is_empty() {
-                        if let Err(ex) = infer.do_incorporation(
-                            ctx,
-                            syms,
-                            types,
-                            self.inference_context,
-                            warn,
-                        ) {
+                        if let Err(ex) =
+                            infer.do_incorporation(ctx, syms, types, self.inference_context, warn)
+                        {
                             inference_failure = Some(ex);
                             break 'outer;
                         }
@@ -620,11 +616,7 @@ impl InferenceGraph {
                 let j_type = *graph.nodes[j].as_ref().expect("live node").data.head();
                 if i != j {
                     let uv_i = inference_context.as_undet_var(ctx, syms, types, i_type);
-                    let bounds = types.undet_var_get_bounds(
-                        ctx,
-                        uv_i,
-                        &InferenceBound::values(),
-                    );
+                    let bounds = types.undet_var_get_bounds(ctx, uv_i, &InferenceBound::values());
                     if contains_any_list(ctx, syms, types, bounds, List::of(j_type)) {
                         graph.nodes[i].as_mut().expect("live node").deps.push(j);
                     }
@@ -755,10 +747,7 @@ impl InferenceGraph {
         for n in tail {
             let n_data = self.nodes[*n].as_ref().expect("live node").clone();
             let root_data = self.nodes[root].as_mut().expect("live node");
-            assert!(
-                n_data.data.length() == 1,
-                "AssertionError: Attempt to merge a compound node!"
-            );
+            assert_eq!(n_data.data.length(), 1, "AssertionError: Attempt to merge a compound node!");
             let mut data = root_data.data.clone();
             let mut current = n_data.data;
             while current.non_empty() {
@@ -875,4 +864,3 @@ impl InferenceGraph {
 // ReachabilityVisitor + deferred listeners (InferenceContext.java:406-484,
 // 248-284)
 // =====================================================================
-

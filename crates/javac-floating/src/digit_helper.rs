@@ -35,5 +35,9 @@ pub(crate) fn digit(c: u16, radix: i32) -> i32 {
 /// Upstream: Character.java:public static char forDigit(int digit, int radix).
 pub(crate) fn for_digit(digit: i32, radix: i32) -> char {
     let c = javac_unicode::for_digit(digit, radix);
-    if c == 0 { '\u{0}' } else { char::from_u32(c as u32).unwrap_or('\u{0}') }
+    if c == 0 {
+        '\u{0}'
+    } else {
+        char::from_u32(c as u32).unwrap_or('\u{0}')
+    }
 }

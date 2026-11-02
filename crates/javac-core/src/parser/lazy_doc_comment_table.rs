@@ -133,10 +133,9 @@ mod tests {
     use super::*;
     use crate::parser::tokens::CommentStyle;
     use crate::util::java_string::JavaString;
-    use crate::util::jc_diagnostic::Factory;
     use crate::util::javac_messages::{DEFAULT_BUNDLE_NAME, JavacMessages};
+    use crate::util::jc_diagnostic::Factory;
     use crate::util::list::List;
-    use std::cell::RefCell;
 
     struct TestComment {
         text: JavaString,
@@ -183,12 +182,7 @@ mod tests {
         let names = Rc::clone(&fac.names);
         let messages = Rc::new(JavacMessages::new(DEFAULT_BUNDLE_NAME));
         let maker = DocTreeMaker::new(Rc::new(Factory::new(messages, "compiler")));
-        let table = LazyDocCommentTable::new(
-            fac,
-            names,
-            Rc::new(maker),
-            None,
-        );
+        let table = LazyDocCommentTable::new(fac, names, Rc::new(maker), None);
         (table, TreeId::new(1))
     }
 
@@ -204,7 +198,11 @@ mod tests {
         assert!(!table.has_comment(tree));
         assert!(table.get_comment(tree).is_none());
         assert!(table.get_comment_text(tree).is_none());
-        assert!(table.get_comment_tree(&mut crate::compiler_context::CompilerContext::new(), tree).is_none());
+        assert!(
+            table
+                .get_comment_tree(&mut crate::compiler_context::CompilerContext::new(), tree)
+                .is_none()
+        );
     }
 
     #[test]

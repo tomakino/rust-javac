@@ -77,8 +77,9 @@ impl CoderResult {
     ///   - the malformed/unmappable length (0 for underflow/overflow).
     pub fn length(self) -> usize {
         match self {
-            CoderResult::MalformedForLength(length)
-            | CoderResult::UnmappableForLength(length) => length,
+            CoderResult::MalformedForLength(length) | CoderResult::UnmappableForLength(length) => {
+                length
+            }
             _ => 0,
         }
     }
@@ -146,7 +147,10 @@ impl ByteBuffer {
 
     /// Java: public final Buffer position(int newPosition).
     pub fn set_position(&mut self, position: usize) -> &mut ByteBuffer {
-        assert!(position <= self.limit, "IllegalArgumentException: position > limit");
+        assert!(
+            position <= self.limit,
+            "IllegalArgumentException: position > limit"
+        );
         self.position = position;
         self
     }
@@ -158,7 +162,10 @@ impl ByteBuffer {
 
     /// Java: public final Buffer limit(int newLimit).
     pub fn set_limit(&mut self, limit: usize) -> &mut ByteBuffer {
-        assert!(limit <= self.capacity(), "IllegalArgumentException: limit > capacity");
+        assert!(
+            limit <= self.capacity(),
+            "IllegalArgumentException: limit > capacity"
+        );
         self.limit = limit;
         if self.position > self.limit {
             self.position = self.limit;
@@ -226,7 +233,10 @@ impl ByteBuffer {
     /// bookkeeping; the Java loop advances the input buffer by the consumed
     /// sequence length).
     pub fn advance(&mut self, count: usize) {
-        assert!(self.position + count <= self.limit, "BufferUnderflowException");
+        assert!(
+            self.position + count <= self.limit,
+            "BufferUnderflowException"
+        );
         self.position += count;
     }
 
@@ -287,7 +297,10 @@ impl CharBuffer {
 
     /// Java: public final Buffer position(int newPosition).
     pub fn set_position(&mut self, position: usize) -> &mut CharBuffer {
-        assert!(position <= self.limit, "IllegalArgumentException: position > limit");
+        assert!(
+            position <= self.limit,
+            "IllegalArgumentException: position > limit"
+        );
         self.position = position;
         self
     }
@@ -299,7 +312,10 @@ impl CharBuffer {
 
     /// Java: public final Buffer limit(int newLimit).
     pub fn set_limit(&mut self, limit: usize) -> &mut CharBuffer {
-        assert!(limit <= self.capacity(), "IllegalArgumentException: limit > capacity");
+        assert!(
+            limit <= self.capacity(),
+            "IllegalArgumentException: limit > capacity"
+        );
         self.limit = limit;
         if self.position > self.limit {
             self.position = self.limit;
@@ -362,7 +378,10 @@ impl CharBuffer {
 
     /// Advance the position by the consumed unit count.
     pub fn advance(&mut self, count: usize) {
-        assert!(self.position + count <= self.limit, "BufferUnderflowException");
+        assert!(
+            self.position + count <= self.limit,
+            "BufferUnderflowException"
+        );
         self.position += count;
     }
 

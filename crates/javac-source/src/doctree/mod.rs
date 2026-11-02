@@ -2,7 +2,6 @@
 // module doctree::doc_tree mirrors that (clippy::module_inception is expected).
 #![allow(clippy::module_inception)]
 
-
 //! Provides interfaces to represent documentation comments as abstract syntax
 //! trees (AST).
 //!

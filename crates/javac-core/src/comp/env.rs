@@ -165,9 +165,10 @@ impl<A> Env<A> {
         let mut env: Option<Rc<Env<A>>> = Some(Rc::clone(this));
         while let Some(current) = env {
             if let Some(tree) = current.tree
-                && ctx.tree(tree).has_tag(tag) {
-                    return Some(current);
-                }
+                && ctx.tree(tree).has_tag(tag)
+            {
+                return Some(current);
+            }
             env = current.next.clone();
         }
         None

@@ -1,3 +1,4 @@
+use super::tree::Tree;
 /// A tree node for a wildcard type argument.
 /// Use {@link #getKind getKind} to determine the kind of bound.
 ///
@@ -16,11 +17,9 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::tree::Tree;
 
 pub trait WildcardTree: Tree {
     /// Returns the bound of the wildcard.
     /// @return the bound
     fn get_bound(&self) -> Rc<dyn Tree>;
-
 }

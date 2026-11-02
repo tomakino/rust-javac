@@ -1,3 +1,6 @@
+use super::block_tree::BlockTree;
+use super::tree::Tree;
+use super::variable_tree::VariableTree;
 /// A tree node for a {@code catch} block in a {@code try} statement.
 ///
 /// For example:
@@ -12,9 +15,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::block_tree::BlockTree;
-use super::tree::Tree;
-use super::variable_tree::VariableTree;
 
 pub trait CatchTree: Tree {
     /// Returns the catch variable.
@@ -27,5 +27,4 @@ pub trait CatchTree: Tree {
     /// Returns the catch block.
     /// @return the catch block
     fn get_block(&self) -> Rc<dyn BlockTree>;
-
 }

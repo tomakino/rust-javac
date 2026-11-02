@@ -58,9 +58,9 @@
 //! - the anonymous noSymbol.accept override (Symtab.java:445-450) remains not
 //!   ported (Symbol/Element visitor dispatch; see the gap registration).
 
+use crate::code::symbol::CompleterFactory;
 use std::cell::OnceCell;
 use std::collections::HashMap;
-use crate::code::symbol::CompleterFactory;
 use std::rc::Rc;
 
 use crate::code::directive::{Directive, RequiresFlag};
@@ -70,8 +70,8 @@ use crate::code::scope::Scope;
 use crate::code::source::{Feature, Source};
 use crate::code::symbol::{Symbol, SymbolKind};
 use crate::code::type_::{Type, TypeKindData};
-use crate::code::types::Types;
 use crate::code::type_tag::TypeTag;
+use crate::code::types::Types;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{DirectiveId, ScopeId, SymbolId, TypeId};
 use crate::jvm::target::Target;
@@ -223,7 +223,7 @@ pub(crate) fn new_class_symbol(
             record_components: List::nil(),
             permitted: List::nil(),
             is_permitted_explicit: false,
-                annotation_type_metadata: Default::default(),
+            annotation_type_metadata: Default::default(),
         },
     ));
     ctx.typ_mut(class_type).tsym = Some(symbol);
@@ -256,7 +256,7 @@ fn new_class_symbol_with_type(
             record_components: List::nil(),
             permitted: List::nil(),
             is_permitted_explicit: false,
-                annotation_type_metadata: Default::default(),
+            annotation_type_metadata: Default::default(),
         },
     ))
 }
@@ -337,10 +337,10 @@ fn new_root_package_symbol(
 /// constructor, so the type is allocated right after the symbol (registered
 /// adapter, same observable state).
 fn set_package_type(ctx: &mut CompilerContext, package: SymbolId) {
-    let pkg_type = ctx.alloc_type(crate::code::type_::Type::new(
-        crate::code::type_tag::TypeTag::PACKAGE,
+    let pkg_type = ctx.alloc_type(Type::new(
+        TypeTag::PACKAGE,
         Some(package),
-        crate::code::type_::TypeKindData::PackageType,
+        TypeKindData::PackageType,
     ));
     ctx.sym_mut(package).ty = Some(pkg_type);
 }
@@ -520,12 +520,11 @@ fn do_enter_package(
             _ => node.name.clone(),
         }
     };
-    if let Some((_, modules)) = maps
-        .packages
-        .iter_mut()
-        .find(|(name, _)| name == &fullname)
-    {
-        if let Some(entry) = modules.iter_mut().find(|(candidate, _)| *candidate == module) {
+    if let Some((_, modules)) = maps.packages.iter_mut().find(|(name, _)| name == &fullname) {
+        if let Some(entry) = modules
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == module)
+        {
             entry.1 = package;
         } else {
             modules.push((module, package));
@@ -578,7 +577,10 @@ fn do_enter_class(maps: &mut SymtabMaps, module: SymbolId, class: SymbolId, flat
         index
     };
     let (_, modules) = &mut maps.classes[index];
-    if let Some(entry) = modules.iter_mut().find(|(candidate, _)| *candidate == module) {
+    if let Some(entry) = modules
+        .iter_mut()
+        .find(|(candidate, _)| *candidate == module)
+    {
         entry.1 = class;
     } else {
         modules.push((module, class));
@@ -660,10 +662,7 @@ fn enter_class_full(
             let node = ctx.sym_mut(class);
             node.owner = owner;
             node.name = name;
-            if let SymbolKind::ClassSymbol {
-                fullname: slot, ..
-            } = &mut node.kind_data
-            {
+            if let SymbolKind::ClassSymbol { fullname: slot, .. } = &mut node.kind_data {
                 *slot = fullname;
             }
         }
@@ -948,7 +947,9 @@ fn module_reads_module(ctx: &CompilerContext, module: SymbolId, other: SymbolId)
         _ => return false,
     };
     for directive in requires.iter() {
-        if let Directive::Requires { module: Some(read), .. } = ctx.directive(directive)
+        if let Directive::Requires {
+            module: Some(read), ..
+        } = ctx.directive(directive)
             && *read == other
         {
             return true;
@@ -991,9 +992,7 @@ fn enter_module(
     // Java: ModuleSymbol.create installs the module-info members scope
     // (Symbol.java:993-999: info.members_field = WriteableScope.create(info)).
     let members = ctx.scope_create(Some(module_info));
-    if let SymbolKind::ClassSymbol { members_field, .. } =
-        &mut ctx.sym_mut(module_info).kind_data
-    {
+    if let SymbolKind::ClassSymbol { members_field, .. } = &mut ctx.sym_mut(module_info).kind_data {
         *members_field = Some(members);
     }
     if let SymbolKind::ModuleSymbol {
@@ -1164,11 +1163,11 @@ pub struct Symtab {
     /// the (TypeId, VarSymbol) pairs; registered section 9).
     /// Cache of per-type class fields; lazily filled after construction, so the
     /// cell holds cache state rather than service state.
-    class_fields: std::rc::Rc<std::cell::RefCell<HashMap<i32, Vec<(TypeId, SymbolId)>>>>,
+    class_fields: Rc<std::cell::RefCell<HashMap<i32, Vec<(TypeId, SymbolId)>>>>,
     names: Rc<Names>,
     /// Cache of the class/package/module tables; mutated by the &self enter/
     /// lookup methods after freeze, so the cell is explicitly cache state.
-    maps: std::rc::Rc<std::cell::RefCell<SymtabMaps>>,
+    maps: Rc<std::cell::RefCell<SymtabMaps>>,
 }
 
 impl Symtab {
@@ -1192,18 +1191,23 @@ impl Symtab {
         let mut maps = SymtabMaps::new();
 
         // Create the unknown type.
-        let unknown_type = ctx.alloc_type(Type::new(TypeTag::UNKNOWN, None, TypeKindData::UnknownType));
+        let unknown_type =
+            ctx.alloc_type(Type::new(TypeTag::UNKNOWN, None, TypeKindData::UnknownType));
         // Java: Type.stuckType / Type.recoveryType (Type.java:108-120): both are
         // JCNoType instances; their toString differs upstream (debug only).
         let stuck_type = ctx.alloc_type(Type::new(
             TypeTag::NONE,
             None,
-            TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Stuck },
+            TypeKindData::JCNoType {
+                kind: crate::code::type_::JCNoTypeKind::Stuck,
+            },
         ));
         let recovery_type = ctx.alloc_type(Type::new(
             TypeTag::NONE,
             None,
-            TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Recovery },
+            TypeKindData::JCNoType {
+                kind: crate::code::type_::JCNoTypeKind::Recovery,
+            },
         ));
 
         // Java: MissingInfoHandler.instance(context) (Symtab.java:395); the
@@ -1219,15 +1223,23 @@ impl Symtab {
         );
 
         // create the basic builtin symbols
-        let java_base = enter_module(ctx, &names, &mut maps, names.std.java_base.clone(), root_package);
-        let java_base_requires = new_requires_directive(ctx, java_base, vec![RequiresFlag::MANDATED]);
+        let java_base = enter_module(
+            ctx,
+            &names,
+            &mut maps,
+            names.std.java_base.clone(),
+            root_package,
+        );
+        let java_base_requires =
+            new_requires_directive(ctx, java_base, vec![RequiresFlag::MANDATED]);
         let unnamed_module =
             new_module_symbol(ctx, names.std.empty.clone(), List::of(java_base_requires));
         // Java: the anonymous toString override (Symtab.java:415-418).
         ctx.sym_mut(unnamed_module).display_override =
             Some(crate::code::symbol::SymbolDisplayOverride::UnnamedModule);
         add_root_package_for(ctx, &names, &mut maps, unnamed_module, root_package);
-        let err_module = new_module_symbol(ctx, names.std.empty.clone(), List::of(java_base_requires));
+        let err_module =
+            new_module_symbol(ctx, names.std.empty.clone(), List::of(java_base_requires));
         add_root_package_for(ctx, &names, &mut maps, err_module, root_package);
         // Java: noModule = new ModuleSymbol(...) { isNoModule() -> true }
         // (Symtab.java:438-442); the ported Symbol.no_module field carries the
@@ -1277,7 +1289,8 @@ impl Symtab {
             None,
             Some(root_package),
         );
-        ctx.sym_mut(unknown_symbol).flags_field = (flags::PUBLIC | flags::STATIC) as i64 | flags::ACYCLIC as i64;
+        ctx.sym_mut(unknown_symbol).flags_field =
+            (flags::PUBLIC | flags::STATIC) as i64 | flags::ACYCLIC as i64;
         let unknown_error_scope = new_error_scope(ctx, unknown_symbol);
         set_members(ctx, unknown_symbol, unknown_error_scope);
         ctx.sym_mut(unknown_symbol).ty = Some(unknown_type);
@@ -1287,37 +1300,115 @@ impl Symtab {
             vec![None; TypeTag::get_type_tag_count() as usize];
         let mut boxed_name: Vec<Option<Name>> = vec![None; TypeTag::get_type_tag_count() as usize];
 
-        let byte_type = ctx.alloc_type(Type::new(TypeTag::BYTE, None, TypeKindData::JCPrimitiveType));
-        let char_type = ctx.alloc_type(Type::new(TypeTag::CHAR, None, TypeKindData::JCPrimitiveType));
-        let short_type = ctx.alloc_type(Type::new(TypeTag::SHORT, None, TypeKindData::JCPrimitiveType));
+        let byte_type = ctx.alloc_type(Type::new(
+            TypeTag::BYTE,
+            None,
+            TypeKindData::JCPrimitiveType,
+        ));
+        let char_type = ctx.alloc_type(Type::new(
+            TypeTag::CHAR,
+            None,
+            TypeKindData::JCPrimitiveType,
+        ));
+        let short_type = ctx.alloc_type(Type::new(
+            TypeTag::SHORT,
+            None,
+            TypeKindData::JCPrimitiveType,
+        ));
         let int_type = ctx.alloc_type(Type::new(TypeTag::INT, None, TypeKindData::JCPrimitiveType));
-        let long_type = ctx.alloc_type(Type::new(TypeTag::LONG, None, TypeKindData::JCPrimitiveType));
-        let float_type = ctx.alloc_type(Type::new(TypeTag::FLOAT, None, TypeKindData::JCPrimitiveType));
-        let double_type = ctx.alloc_type(Type::new(TypeTag::DOUBLE, None, TypeKindData::JCPrimitiveType));
-        let boolean_type = ctx.alloc_type(Type::new(TypeTag::BOOLEAN, None, TypeKindData::JCPrimitiveType));
+        let long_type = ctx.alloc_type(Type::new(
+            TypeTag::LONG,
+            None,
+            TypeKindData::JCPrimitiveType,
+        ));
+        let float_type = ctx.alloc_type(Type::new(
+            TypeTag::FLOAT,
+            None,
+            TypeKindData::JCPrimitiveType,
+        ));
+        let double_type = ctx.alloc_type(Type::new(
+            TypeTag::DOUBLE,
+            None,
+            TypeKindData::JCPrimitiveType,
+        ));
+        let boolean_type = ctx.alloc_type(Type::new(
+            TypeTag::BOOLEAN,
+            None,
+            TypeKindData::JCPrimitiveType,
+        ));
         let bot_type = ctx.alloc_type(Type::new(TypeTag::BOT, None, TypeKindData::BottomType));
         let void_type = ctx.alloc_type(Type::new(TypeTag::VOID, None, TypeKindData::JCVoidType));
 
         let byte_class = new_class_symbol_with_type(
-            ctx, flags::PUBLIC as i64, name_of(&names, "byte"), Some(byte_type), Some(root_package));
+            ctx,
+            flags::PUBLIC as i64,
+            name_of(&names, "byte"),
+            Some(byte_type),
+            Some(root_package),
+        );
         let short_class = new_class_symbol_with_type(
-            ctx, flags::PUBLIC as i64, name_of(&names, "short"), Some(short_type), Some(root_package));
+            ctx,
+            flags::PUBLIC as i64,
+            name_of(&names, "short"),
+            Some(short_type),
+            Some(root_package),
+        );
         let char_class = new_class_symbol_with_type(
-            ctx, flags::PUBLIC as i64, name_of(&names, "char"), Some(char_type), Some(root_package));
+            ctx,
+            flags::PUBLIC as i64,
+            name_of(&names, "char"),
+            Some(char_type),
+            Some(root_package),
+        );
         let int_class = new_class_symbol_with_type(
-            ctx, flags::PUBLIC as i64, name_of(&names, "int"), Some(int_type), Some(root_package));
+            ctx,
+            flags::PUBLIC as i64,
+            name_of(&names, "int"),
+            Some(int_type),
+            Some(root_package),
+        );
         let long_class = new_class_symbol_with_type(
-            ctx, flags::PUBLIC as i64, name_of(&names, "long"), Some(long_type), Some(root_package));
+            ctx,
+            flags::PUBLIC as i64,
+            name_of(&names, "long"),
+            Some(long_type),
+            Some(root_package),
+        );
         let float_class = new_class_symbol_with_type(
-            ctx, flags::PUBLIC as i64, name_of(&names, "float"), Some(float_type), Some(root_package));
+            ctx,
+            flags::PUBLIC as i64,
+            name_of(&names, "float"),
+            Some(float_type),
+            Some(root_package),
+        );
         let double_class = new_class_symbol_with_type(
-            ctx, flags::PUBLIC as i64, name_of(&names, "double"), Some(double_type), Some(root_package));
+            ctx,
+            flags::PUBLIC as i64,
+            name_of(&names, "double"),
+            Some(double_type),
+            Some(root_package),
+        );
         let boolean_class = new_class_symbol_with_type(
-            ctx, flags::PUBLIC as i64, name_of(&names, "boolean"), Some(boolean_type), Some(root_package));
+            ctx,
+            flags::PUBLIC as i64,
+            name_of(&names, "boolean"),
+            Some(boolean_type),
+            Some(root_package),
+        );
         let void_class = new_class_symbol_with_type(
-            ctx, flags::PUBLIC as i64, name_of(&names, "void"), Some(void_type), Some(root_package));
+            ctx,
+            flags::PUBLIC as i64,
+            name_of(&names, "void"),
+            Some(void_type),
+            Some(root_package),
+        );
         let bot_class = new_class_symbol_with_type(
-            ctx, flags::PUBLIC as i64, name_of(&names, "<nulltype>"), Some(bot_type), Some(root_package));
+            ctx,
+            flags::PUBLIC as i64,
+            name_of(&names, "<nulltype>"),
+            Some(bot_type),
+            Some(root_package),
+        );
 
         for (ty, class) in [
             (byte_type, byte_class),
@@ -1347,7 +1438,6 @@ impl Symtab {
         boxed_name[TypeTag::DOUBLE as usize] = Some(name_of(&names, "java.lang.Double"));
         boxed_name[TypeTag::BOOLEAN as usize] = Some(name_of(&names, "java.lang.Boolean"));
         boxed_name[TypeTag::VOID as usize] = Some(name_of(&names, "java.lang.Void"));
-
 
         // the builtin class of all arrays
         let array_class = new_class_symbol(
@@ -1397,14 +1487,27 @@ impl Symtab {
 
         // Enter symbols for basic types.
         for class in [
-            byte_class, short_class, char_class, int_class, long_class, float_class,
-            double_class, boolean_class, err_symbol,
+            byte_class,
+            short_class,
+            char_class,
+            int_class,
+            long_class,
+            float_class,
+            double_class,
+            boolean_class,
+            err_symbol,
         ] {
             ctx.scope_enter(predef_scope, class);
         }
 
         let java_base = if Feature::MODULES.allowed_in_source(source) {
-            let java_base = enter_module(ctx, &names, &mut maps, names.std.java_base.clone(), root_package);
+            let java_base = enter_module(
+                ctx,
+                &names,
+                &mut maps,
+                names.std.java_base.clone(),
+                root_package,
+            );
             // Java: avoid completing java.base during the Symtab initialization
             // (java_base.completer = NULL_COMPLETER): set_initial_completer skips java_base.
             java_base
@@ -1416,44 +1519,148 @@ impl Symtab {
 
         // Enter predefined classes. All are assumed to be in the java.base module.
         let object_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Object");
-        let object_methods_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.runtime.ObjectMethods");
-        let objects_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.util.Objects");
+        let object_methods_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.runtime.ObjectMethods",
+        );
+        let objects_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.util.Objects");
         let class_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Class");
         let string_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.String");
-        let string_buffer_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.StringBuffer");
-        let string_builder_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.StringBuilder");
-        let cloneable_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Cloneable");
-        let throwable_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Throwable");
-        let serializable_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.io.Serializable");
-        let serialized_lambda_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.invoke.SerializedLambda");
-        let var_handle_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.invoke.VarHandle");
-        let method_handle_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.invoke.MethodHandle");
-        let method_handle_lookup_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.invoke.MethodHandles$Lookup");
-        let method_type_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.invoke.MethodType");
+        let string_buffer_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.StringBuffer");
+        let string_builder_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.StringBuilder");
+        let cloneable_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Cloneable");
+        let throwable_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Throwable");
+        let serializable_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.io.Serializable");
+        let serialized_lambda_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.invoke.SerializedLambda",
+        );
+        let var_handle_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.invoke.VarHandle",
+        );
+        let method_handle_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.invoke.MethodHandle",
+        );
+        let method_handle_lookup_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.invoke.MethodHandles$Lookup",
+        );
+        let method_type_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.invoke.MethodType",
+        );
         let error_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Error");
-        let illegal_argument_exception_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.IllegalArgumentException");
-        let interrupted_exception_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.InterruptedException");
-        let exception_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Exception");
-        let runtime_exception_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.RuntimeException");
-        let class_not_found_exception_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.ClassNotFoundException");
-        let no_class_def_found_error_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.NoClassDefFoundError");
-        let no_such_field_error_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.NoSuchFieldError");
-        let assertion_error_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.AssertionError");
-        let incompatible_class_change_error_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.IncompatibleClassChangeError");
-        let clone_not_supported_exception_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.CloneNotSupportedException");
-        let annotation_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.annotation.Annotation");
-    // Java: the predefined java.lang.annotation.Annotation interface is loaded
-    // lazily by the ClassFinder; before that completion its stub has no flags.
-    // The port seeds the subtype-relevant flags (PUBLIC|INTERFACE|ANNOTATION)
-    // so the implicit annotation interface supertype participates in the
-    // assignability checks of annotation values; the remaining flags and the
-    // members are installed by the normal ClassFinder completion (registered
-    // adapter).
-    if let Some(annotation_tsym) = ctx.typ(annotation_type).tsym {
-        ctx.sym_mut(annotation_tsym).flags_field |=
-            (flags::PUBLIC | flags::INTERFACE | flags::ANNOTATION) as i64;
-    }
-        let class_loader_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.ClassLoader");
+        let illegal_argument_exception_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.IllegalArgumentException",
+        );
+        let interrupted_exception_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.InterruptedException",
+        );
+        let exception_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Exception");
+        let runtime_exception_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.RuntimeException",
+        );
+        let class_not_found_exception_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.ClassNotFoundException",
+        );
+        let no_class_def_found_error_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.NoClassDefFoundError",
+        );
+        let no_such_field_error_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.NoSuchFieldError",
+        );
+        let assertion_error_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.AssertionError",
+        );
+        let incompatible_class_change_error_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.IncompatibleClassChangeError",
+        );
+        let clone_not_supported_exception_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.CloneNotSupportedException",
+        );
+        let annotation_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.annotation.Annotation",
+        );
+        // Java: the predefined java.lang.annotation.Annotation interface is loaded
+        // lazily by the ClassFinder; before that completion its stub has no flags.
+        // The port seeds the subtype-relevant flags (PUBLIC|INTERFACE|ANNOTATION)
+        // so the implicit annotation interface supertype participates in the
+        // assignability checks of annotation values; the remaining flags and the
+        // members are installed by the normal ClassFinder completion (registered
+        // adapter).
+        if let Some(annotation_tsym) = ctx.typ(annotation_type).tsym {
+            ctx.sym_mut(annotation_tsym).flags_field |=
+                (flags::PUBLIC | flags::INTERFACE | flags::ANNOTATION) as i64;
+        }
+        let class_loader_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.ClassLoader");
         let enum_package = enter_package(
             ctx,
             &names,
@@ -1480,25 +1687,84 @@ impl Symtab {
             Some(enum_sym),
         );
         let list_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.util.List");
-        let collections_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.util.Collections");
-        let comparable_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Comparable");
-        let comparator_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.util.Comparator");
+        let collections_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.util.Collections");
+        let comparable_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Comparable");
+        let comparator_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.util.Comparator");
         let arrays_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.util.Arrays");
-        let iterable_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Iterable");
-        let iterator_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.util.Iterator");
-        let annotation_target_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.annotation.Target");
-        let override_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Override");
-        let retention_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.annotation.Retention");
-        let deprecated_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Deprecated");
-        let suppress_warnings_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.SuppressWarnings");
-        let supplier_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.util.function.Supplier");
-        let inherited_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.annotation.Inherited");
-        let repeatable_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.annotation.Repeatable");
-        let documented_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.annotation.Documented");
-        let element_type_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.annotation.ElementType");
+        let iterable_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Iterable");
+        let iterator_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.util.Iterator");
+        let annotation_target_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.annotation.Target",
+        );
+        let override_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Override");
+        let retention_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.annotation.Retention",
+        );
+        let deprecated_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Deprecated");
+        let suppress_warnings_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.SuppressWarnings",
+        );
+        let supplier_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.util.function.Supplier",
+        );
+        let inherited_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.annotation.Inherited",
+        );
+        let repeatable_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.annotation.Repeatable",
+        );
+        let documented_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.annotation.Documented",
+        );
+        let element_type_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.annotation.ElementType",
+        );
         let system_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.System");
-        let auto_closeable_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.AutoCloseable");
-        let auto_closeable_tsym = ctx.typ(auto_closeable_type).tsym.expect("AutoCloseable symbol");
+        let auto_closeable_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.AutoCloseable");
+        let auto_closeable_tsym = ctx
+            .typ(auto_closeable_type)
+            .tsym
+            .expect("AutoCloseable symbol");
         let close_type = new_method_type(
             ctx,
             List::nil(),
@@ -1513,12 +1779,43 @@ impl Symtab {
             Some(close_type),
             Some(auto_closeable_tsym),
         );
-        let trust_me_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.SafeVarargs");
-        let native_header_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.annotation.Native");
-        let lambda_metafactory = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.invoke.LambdaMetafactory");
-        let string_concat_factory = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.invoke.StringConcatFactory");
-        let functional_interface_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.FunctionalInterface");
-        let preview_feature_type = enter_class_named(ctx, &names, &mut maps, java_base, "jdk.internal.javac.PreviewFeature");
+        let trust_me_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.SafeVarargs");
+        let native_header_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.annotation.Native",
+        );
+        let lambda_metafactory = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.invoke.LambdaMetafactory",
+        );
+        let string_concat_factory = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.invoke.StringConcatFactory",
+        );
+        let functional_interface_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.FunctionalInterface",
+        );
+        let preview_feature_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "jdk.internal.javac.PreviewFeature",
+        );
         // Java: Symtab constructor:
         // previewFeatureInternalType = enterSyntheticAnnotation("jdk.internal.PreviewFeature+Annotation");
         // valueBasedInternalType = enterSyntheticAnnotation("jdk.internal.ValueBased+Annotation");
@@ -1574,10 +1871,23 @@ impl Symtab {
             );
             ctx.scope_enter(scope, value_method);
         }
-        let type_descriptor_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.invoke.TypeDescriptor");
+        let type_descriptor_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.invoke.TypeDescriptor",
+        );
         let record_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Record");
-        let switch_bootstraps_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.runtime.SwitchBootstraps");
-        let value_based_type = enter_class_named(ctx, &names, &mut maps, java_base, "jdk.internal.ValueBased");
+        let switch_bootstraps_type = enter_class_named(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            "java.lang.runtime.SwitchBootstraps",
+        );
+        let value_based_type =
+            enter_class_named(ctx, &names, &mut maps, java_base, "jdk.internal.ValueBased");
         // NOT PORTED: valueBasedInternalType = enterSyntheticAnnotation(...)
 
         // NOT PORTED: synthesizeEmptyInterfaceIfMissing(...) and
@@ -1605,8 +1915,13 @@ impl Symtab {
                 Some(array_class),
             );
             ctx.scope_enter(array_scope, length_var);
-            let clone_type =
-                new_method_type(ctx, List::nil(), Some(object_type), List::nil(), method_class);
+            let clone_type = new_method_type(
+                ctx,
+                List::nil(),
+                Some(object_type),
+                List::nil(),
+                method_class,
+            );
             let array_clone_method = new_method_symbol(
                 ctx,
                 flags::PUBLIC as i64,
@@ -1619,31 +1934,31 @@ impl Symtab {
             // The boxed classes are pre-entered at startup so the read-only
             // relation can return a symbol; upstream lazily enters the boxed
             // class from the boxed name (Port adapter).
-    let mut boxed_class_ids: Vec<Option<SymbolId>> =
-        vec![None; TypeTag::get_type_tag_count() as usize];
-    for (tag, boxed) in boxed_name.iter().enumerate() {
-        if let Some(name) = boxed {
-            let package = enter_package(
-                ctx,
-                &names,
-                &mut maps,
-                java_base,
-                convert::package_part(name),
-                None,
-            );
-            let class = enter_class_full(
-                ctx,
-                &names,
-                &mut maps,
-                java_base,
-                convert::short_name(name),
-                Some(package),
-            );
-            boxed_class_ids[tag] = Some(class);
-        }
-    }
+            let mut boxed_class_ids: Vec<Option<SymbolId>> =
+                vec![None; TypeTag::get_type_tag_count() as usize];
+            for (tag, boxed) in boxed_name.iter().enumerate() {
+                if let Some(name) = boxed {
+                    let package = enter_package(
+                        ctx,
+                        &names,
+                        &mut maps,
+                        java_base,
+                        convert::package_part(name),
+                        None,
+                    );
+                    let class = enter_class_full(
+                        ctx,
+                        &names,
+                        &mut maps,
+                        java_base,
+                        convert::short_name(name),
+                        Some(package),
+                    );
+                    boxed_class_ids[tag] = Some(class);
+                }
+            }
 
-    Symtab {
+            Symtab {
                 byte_type,
                 char_type,
                 short_type,
@@ -1738,10 +2053,10 @@ impl Symtab {
                 auto_closeable_close,
                 type_of_tag,
                 boxed_name,
-        boxed_class_ids,
-                class_fields: std::rc::Rc::new(std::cell::RefCell::new(HashMap::new())),
+                boxed_class_ids,
+                class_fields: Rc::new(std::cell::RefCell::new(HashMap::new())),
                 names: Rc::clone(&names),
-                maps: std::rc::Rc::new(std::cell::RefCell::new(maps)),
+                maps: Rc::new(std::cell::RefCell::new(maps)),
                 initial_completer: None,
                 module_completer: OnceCell::new(),
             }
@@ -1757,11 +2072,7 @@ impl Symtab {
     /// Java: public void removeClass(ModuleSymbol msym, Name flatName)
     pub fn remove_class(&self, msym: SymbolId, flatname: &Name) {
         let mut maps = self.maps.borrow_mut();
-        if let Some((_, modules)) = maps
-            .classes
-            .iter_mut()
-            .find(|(name, _)| *name == *flatname)
-        {
+        if let Some((_, modules)) = maps.classes.iter_mut().find(|(name, _)| *name == *flatname) {
             modules.retain(|(candidate, _)| *candidate != msym);
         }
     }
@@ -1919,11 +2230,7 @@ impl Symtab {
         }
         let mut result = List::nil();
         let maps = self.maps.borrow();
-        if let Some((_, modules)) = maps
-            .packages
-            .iter()
-            .find(|(name, _)| name == package_name)
-        {
+        if let Some((_, modules)) = maps.packages.iter().find(|(name, _)| name == package_name) {
             for (module, _) in modules.iter().rev() {
                 result = result.prepend(*module);
             }
@@ -1954,13 +2261,8 @@ impl Symtab {
         name: Name,
         class_flags: i64,
     ) -> SymbolId {
-        let class = new_class_symbol_with_type(
-            ctx,
-            class_flags,
-            name,
-            Some(ty),
-            Some(symtab.root_package),
-        );
+        let class =
+            new_class_symbol_with_type(ctx, class_flags, name, Some(ty), Some(symtab.root_package));
         Symtab::init_type_class(symtab, ctx, ty, class);
         class
     }
@@ -1984,7 +2286,12 @@ impl Symtab {
     }
 
     /// Java: public ClassSymbol defineClass(Name name, Symbol owner)
-    pub fn define_class(&self, ctx: &mut CompilerContext, name: Name, owner: Option<SymbolId>) -> SymbolId {
+    pub fn define_class(
+        &self,
+        ctx: &mut CompilerContext,
+        name: Name,
+        owner: Option<SymbolId>,
+    ) -> SymbolId {
         define_class(ctx, &self.names, name, owner)
     }
 
@@ -2023,9 +2330,7 @@ impl Symtab {
             let mut maps = self.maps.borrow_mut();
             enter_class_full(ctx, &self.names, &mut maps, msym, name, owner)
         };
-        if !existed
-            && let Some(factory) = &self.initial_completer
-        {
+        if !existed && let Some(factory) = &self.initial_completer {
             ctx.sym_mut(class).completer = Some(factory());
         }
         class
@@ -2040,7 +2345,7 @@ impl Symtab {
     ) -> SymbolId {
         let ps = self.lookup_package(ctx, msym, &convert::package_part(&flatname));
         // Java: Assert.checkNonNull(ps);
-        if ctx.sym(ps).kind != crate::code::kinds::Kind::PCK {
+        if ctx.sym(ps).kind != Kind::PCK {
             panic!(
                 "AssertionError: missing package for class: {}",
                 flatname.to_java_string()
@@ -2074,7 +2379,12 @@ impl Symtab {
 
     /// Java: public PackageSymbol lookupPackage(ModuleSymbol msym, Name
     /// flatname)
-    pub fn lookup_package(&self, ctx: &mut CompilerContext, msym: SymbolId, flatname: &Name) -> SymbolId {
+    pub fn lookup_package(
+        &self,
+        ctx: &mut CompilerContext,
+        msym: SymbolId,
+        flatname: &Name,
+    ) -> SymbolId {
         // Java: msym.complete() (Symtab.java lookupPackage): the module
         // completion merges the --add-reads directives into requires, which the
         // package lookup below relies on (unnamed-module packages).
@@ -2134,7 +2444,12 @@ impl Symtab {
     }
 
     /// Java: public boolean packageExists(ModuleSymbol msym, Name fullname)
-    pub fn package_exists(&self, ctx: &mut CompilerContext, msym: SymbolId, fullname: &Name) -> bool {
+    pub fn package_exists(
+        &self,
+        ctx: &mut CompilerContext,
+        msym: SymbolId,
+        fullname: &Name,
+    ) -> bool {
         let package = self.lookup_package_only_existing(ctx, msym, fullname);
         package_exists(ctx, package)
     }
@@ -2165,9 +2480,10 @@ impl Symtab {
             enter_module(ctx, &self.names, &mut maps, name, self.root_package)
         };
         if let Some(factory) = self.module_completer.get()
-            && ctx.sym(module).completer.is_none() {
-                ctx.sym_mut(module).completer = Some(factory());
-            }
+            && ctx.sym(module).completer.is_none()
+        {
+            ctx.sym_mut(module).completer = Some(factory());
+        }
         module
     }
 
@@ -2275,12 +2591,7 @@ impl Symtab {
     }
 
     /// Java: public VarSymbol getClassField(Type type, Types types)
-    pub fn get_class_field(
-        &self,
-        ctx: &mut CompilerContext,
-        types: &Types,
-        t: TypeId,
-    ) -> SymbolId {
+    pub fn get_class_field(&self, ctx: &mut CompilerContext, types: &Types, t: TypeId) -> SymbolId {
         let hash = types.hash_code(ctx, self, t);
         let bucket: Vec<(TypeId, SymbolId)> = {
             let class_fields = self.class_fields.borrow();
@@ -2325,7 +2636,11 @@ impl Symtab {
             Some(field_type),
             ctx.typ(t).tsym,
         );
-        self.class_fields.borrow_mut().entry(hash).or_default().push((t, var));
+        self.class_fields
+            .borrow_mut()
+            .entry(hash)
+            .or_default()
+            .push((t, var));
         var
     }
 }
@@ -2393,11 +2708,23 @@ mod tests {
             assert_eq!(ctx.typ(ty).get_tag(), tag);
             assert_eq!(symtab.type_of_tag[tag_ordinal(tag)], Some(ty));
             let tsym = ctx.typ(ty).tsym.expect("primitive tsym");
-            assert_eq!(KindName::CLASS, crate::code::kinds::kind_name(ctx.sym(tsym), &ctx));
+            assert_eq!(
+                KindName::CLASS,
+                crate::code::kinds::kind_name(ctx.sym(tsym), &ctx)
+            );
         }
-        assert_eq!(symtab.type_of_tag[tag_ordinal(TypeTag::BOT)], Some(symtab.bot_type));
-        assert_eq!(symtab.type_of_tag[tag_ordinal(TypeTag::ERROR)], Some(symtab.err_type));
-        assert_eq!(symtab.type_of_tag[tag_ordinal(TypeTag::UNKNOWN)], Some(symtab.unknown_type));
+        assert_eq!(
+            symtab.type_of_tag[tag_ordinal(TypeTag::BOT)],
+            Some(symtab.bot_type)
+        );
+        assert_eq!(
+            symtab.type_of_tag[tag_ordinal(TypeTag::ERROR)],
+            Some(symtab.err_type)
+        );
+        assert_eq!(
+            symtab.type_of_tag[tag_ordinal(TypeTag::UNKNOWN)],
+            Some(symtab.unknown_type)
+        );
         assert_eq!(
             symtab.type_of_tag.len(),
             TypeTag::get_type_tag_count() as usize
@@ -2418,10 +2745,15 @@ mod tests {
             (TypeTag::BOOLEAN, "java.lang.Boolean"),
             (TypeTag::VOID, "java.lang.Void"),
         ] {
-            let name = symtab.boxed_name[tag_ordinal(tag)].clone().expect("boxed name");
+            let name = symtab.boxed_name[tag_ordinal(tag)]
+                .clone()
+                .expect("boxed name");
             assert_eq!(name.to_java_string().to_string_lossy(), expected);
         }
-        assert_eq!(symtab.boxed_name.len(), TypeTag::get_type_tag_count() as usize);
+        assert_eq!(
+            symtab.boxed_name.len(),
+            TypeTag::get_type_tag_count() as usize
+        );
     }
 
     #[test]
@@ -2444,7 +2776,13 @@ mod tests {
             assert_eq!(fullname.to_java_string().to_string_lossy(), expected);
         }
         let object_class = ctx.typ(symtab.object_type).tsym.expect("object tsym");
-        assert_eq!(symtab.get_class(symtab.java_base, &name_of(symtab.names(), "java.lang.Object")), Some(object_class));
+        assert_eq!(
+            symtab.get_class(
+                symtab.java_base,
+                &name_of(symtab.names(), "java.lang.Object")
+            ),
+            Some(object_class)
+        );
     }
 
     #[test]
@@ -2455,15 +2793,23 @@ mod tests {
         assert_eq!(symtab.get_module(&java_base_name), Some(symtab.java_base));
         // the java.base module has an unnamed package and the root package.
         let unnamed_package = match &ctx.sym(symtab.java_base).kind_data {
-            SymbolKind::ModuleSymbol { unnamed_package, .. } => unnamed_package.expect("unnamed package"),
+            SymbolKind::ModuleSymbol {
+                unnamed_package, ..
+            } => unnamed_package.expect("unnamed package"),
             _ => panic!("module expected"),
         };
         assert_eq!(ctx.symbol_kind(unnamed_package), Kind::PCK);
         // enterPackage / lookupPackage / packageExists.
         let package_name = name_of(symtab.names(), "com.example.test");
         let package = symtab.enter_package(&mut ctx, symtab.java_base, package_name.clone());
-        assert_eq!(package, symtab.lookup_package(&mut ctx, symtab.java_base, &package_name));
-        assert_eq!(symtab.get_package(symtab.java_base, &package_name), Some(package));
+        assert_eq!(
+            package,
+            symtab.lookup_package(&mut ctx, symtab.java_base, &package_name)
+        );
+        assert_eq!(
+            symtab.get_package(symtab.java_base, &package_name),
+            Some(package)
+        );
         // enterClass(msym, flatname) uses the package of the flat name.
         let flat = name_of(symtab.names(), "com.example.test.Foo");
         let class = symtab.enter_class_flat(&mut ctx, symtab.java_base, flat.clone());
@@ -2477,10 +2823,19 @@ mod tests {
         symtab.remove_class(symtab.java_base, &flat);
         assert_eq!(symtab.get_class(symtab.java_base, &flat), None);
         // initType with a new primitive-like class symbol keeps tag order.
-        let new_type = ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base }));
+        let new_type = ctx.alloc_type(Type::new(
+            TypeTag::NONE,
+            None,
+            TypeKindData::JCNoType {
+                kind: crate::code::type_::JCNoTypeKind::Base,
+            },
+        ));
         let test_name = name_of(symtab.names(), "testtype");
         let _class = Symtab::init_type_named(&mut symtab, &mut ctx, new_type, test_name, 0);
-        assert_eq!(symtab.type_of_tag[tag_ordinal(TypeTag::NONE)], Some(new_type));
+        assert_eq!(
+            symtab.type_of_tag[tag_ordinal(TypeTag::NONE)],
+            Some(new_type)
+        );
     }
 
     #[test]
@@ -2543,7 +2898,15 @@ mod tests {
         let classes = symtab.get_classes_for_name(&flat_name);
         assert!(classes.contains(&first_class));
         assert!(classes.contains(&second_class));
-        assert!(symtab.get_classes_for_name(&names.from_utf(b"pkg.Missing")).is_empty());
-        assert!(symtab.get_packages_for_name(&names.from_utf(b"missing")).is_empty());
+        assert!(
+            symtab
+                .get_classes_for_name(&names.from_utf(b"pkg.Missing"))
+                .is_empty()
+        );
+        assert!(
+            symtab
+                .get_packages_for_name(&names.from_utf(b"missing"))
+                .is_empty()
+        );
     }
 }

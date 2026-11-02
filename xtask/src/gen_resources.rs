@@ -1139,7 +1139,7 @@ mod tests {
 
     #[test]
     fn generated_output_is_deterministic() {
-        let text = std::fs::read_to_string(project_path(COMPILER_PROPERTIES)).expect("read");
+        let text = fs::read_to_string(project_path(COMPILER_PROPERTIES)).expect("read");
         let entries = parse_entries(&text).expect("entries");
         let first = generate_accessors(&entries);
         let second = generate_accessors(&entries);
@@ -1160,7 +1160,7 @@ mod tests {
 
     #[test]
     fn snapshot_statistics_match_upstream() {
-        let text = std::fs::read_to_string(project_path(COMPILER_PROPERTIES)).expect("read");
+        let text = fs::read_to_string(project_path(COMPILER_PROPERTIES)).expect("read");
         let entries = parse_entries(&text).expect("entries");
         verify_snapshot(&entries).expect("snapshot");
         verify_names(&entries).expect("names");
@@ -1240,7 +1240,7 @@ mod tests {
             eprintln!("skipping: javac reference tree not present");
             return;
         }
-        let text = std::fs::read_to_string(project_path(COMPILER_PROPERTIES)).expect("read");
+        let text = fs::read_to_string(project_path(COMPILER_PROPERTIES)).expect("read");
         let entries = parse_entries(&text).expect("entries");
         let sites = scan_call_sites(&root).expect("scan");
         assert!(
@@ -1259,7 +1259,7 @@ mod tests {
             return;
         }
         for file in ["ct.properties", "legacy.properties"] {
-            let text = std::fs::read_to_string(root.join(file)).expect("read");
+            let text = fs::read_to_string(root.join(file)).expect("read");
             let map = parse_properties(&text);
             assert!(!map.is_empty(), "{file}");
             for key in map.keys() {

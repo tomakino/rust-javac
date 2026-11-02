@@ -38,8 +38,9 @@ impl MirroredTypeException {
     ///                 type.toString(), type);
     ///           this.type = type; }
     pub fn new(type_: Rc<dyn TypeMirror>) -> MirroredTypeException {
-        let message =
-            JavaString::from(format!("Attempt to access Class object for TypeMirror {type_}").as_str());
+        let message = JavaString::from(
+            format!("Attempt to access Class object for TypeMirror {type_}").as_str(),
+        );
         MirroredTypeException {
             super_: MirroredTypesException::new_single(message, type_.clone()),
             type_,

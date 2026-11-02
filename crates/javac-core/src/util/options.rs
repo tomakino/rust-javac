@@ -448,10 +448,19 @@ mod d5_lint_tests {
         assert!(lint(&["Xlint"]), "-Xlint enables all categories");
         assert!(lint(&["Xlint:all"]), "-Xlint:all enables all categories");
         assert!(!lint(&["Xlint:none"]), "-Xlint:none disables all");
-        assert!(!lint(&["Xlint:all", "Xlint:-classfile"]), "negative removes");
-        assert!(lint(&["Xlint:none", "Xlint:classfile"]), "positive overrides none");
+        assert!(
+            !lint(&["Xlint:all", "Xlint:-classfile"]),
+            "negative removes"
+        );
+        assert!(
+            lint(&["Xlint:none", "Xlint:classfile"]),
+            "positive overrides none"
+        );
         assert!(lint(&["Xlint:all,classfile"]), "comma list (all,classfile)");
         assert!(lint(&["Xlint:all,none"]), "all wins over none");
-        assert!(lint(&["Xlint:classfile,-classfile"]), "add wins over remove");
+        assert!(
+            lint(&["Xlint:classfile,-classfile"]),
+            "add wins over remove"
+        );
     }
 }

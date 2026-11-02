@@ -44,8 +44,8 @@ use crate::util::abstract_diagnostic_formatter::{
     AbstractDiagnosticFormatter, SimpleConfiguration, format_argument_default,
 };
 use crate::util::javac_messages::{JavacMessages, Locale};
-use crate::util::options::Options;
 use crate::util::jc_diagnostic::{DiagnosticArg, JCDiagnostic};
+use crate::util::options::Options;
 use crate::util::position::NOPOS;
 
 /// A raw formatter for diagnostic messages.
@@ -230,8 +230,7 @@ impl AbstractDiagnosticFormatter for RawDiagnosticFormatter {
             let name = format!("{tag:?}").to_lowercase();
             return format!("compiler.misc.tree.tag.{name}");
         }
-        if let Some(kind) =
-            arg.downcast_ref::<crate::resources::diagnostic_contract::KindNameArg>()
+        if let Some(kind) = arg.downcast_ref::<crate::resources::diagnostic_contract::KindNameArg>()
         {
             // Java: Kinds.KindName.toString() is "kindname.<name>" (the raw
             // key), independent of the localized normal-form text.
@@ -252,15 +251,14 @@ impl AbstractDiagnosticFormatter for RawDiagnosticFormatter {
             // uses Printer.visit(symbol) (AbstractDiagnosticFormatter.java:201-203).
             return symbol_arg.qualified_text.clone();
         }
-        if let Some(type_arg) =
-            arg.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>()
+        if let Some(type_arg) = arg.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>()
             && let Some(qualified) = &type_arg.qualified_text
         {
             // Java: Type.toString() is the qualified form (java.lang.String).
             return qualified.clone();
         }
-        if let Some(file_object) = arg
-            .downcast_ref::<Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>>()
+        if let Some(file_object) =
+            arg.downcast_ref::<Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>>()
         {
             // Java: PathFileObject.getShortName().
             let name = file_object.get_name().to_string_lossy();
@@ -308,12 +306,7 @@ impl DiagnosticFormatter<JCDiagnostic> for RawDiagnosticFormatter {
         self.format_source_impl(diag, fullname, Some(locale))
     }
 
-    fn format_position(
-        &self,
-        diag: &JCDiagnostic,
-        pk: PositionKind,
-        locale: &Locale,
-    ) -> String {
+    fn format_position(&self, diag: &JCDiagnostic, pk: PositionKind, locale: &Locale) -> String {
         self.format_position_impl(diag, pk, Some(locale))
     }
 
@@ -325,8 +318,8 @@ impl DiagnosticFormatter<JCDiagnostic> for RawDiagnosticFormatter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::jc_diagnostic::Factory;
     use crate::util::javac_messages::JavacMessages;
+    use crate::util::jc_diagnostic::Factory;
 
     fn factory() -> Factory {
         Factory::new(

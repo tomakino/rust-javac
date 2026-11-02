@@ -16,42 +16,42 @@ processors (`-processor`/`-proc:only`), JVM stack traces for `-doe`, custom
 
 ## 2. Test layers
 
-| Layer | Content | Command | Time |
-|---|---|---|---|
-| L1 unit | 743 lib tests | `cargo test -p javac-core --lib` | ~3 s |
-| L2 diagnostics | 602 comparable upstream examples | `py scripts/check_examples.py` | ~50 s |
-| L3 project bytes | Gson 208 classes, OkHttp 542, Guava 1970 | `py scripts/check_gson.py` etc. | ~50 s |
-| L4 CLI behavior | help/version/errors/exit codes | `py scripts/check_cli.py` | ~5 s |
-| L5 performance | release benchmarks | `py scripts/bench_rust_javac.py` | ~10 s |
+| Layer            | Content                                  | Command                          | Time  |
+|------------------|------------------------------------------|----------------------------------|-------|
+| L1 unit          | 743 lib tests                            | `cargo test -p javac-core --lib` | ~3 s  |
+| L2 diagnostics   | 602 comparable upstream examples         | `py scripts/check_examples.py`   | ~50 s |
+| L3 project bytes | Gson 208 classes, OkHttp 542, Guava 1970 | `py scripts/check_gson.py` etc.  | ~50 s |
+| L4 CLI behavior  | help/version/errors/exit codes           | `py scripts/check_cli.py`        | ~5 s  |
+| L5 performance   | release benchmarks                       | `py scripts/bench_rust_javac.py` | ~10 s |
 
 ## 3. L4 CLI behavior matrix
 
-| Case | Expected (aligned with javac) |
-|---|---|
-| `--help` | standard option table (including the `-J<flag>` line) |
-| `--help-extra` | extended option table, **without** `-J` |
-| `--help-lint` | **byte-identical** to javac (31 keys plus `all`/`none`) |
-| `--version` / `--full-version` | `javac 17.0.19` |
-| no arguments | standard help, exit code **2** |
-| `-J<flag>` | consumed by the launcher (`-J-Duser.language=en` takes effect) |
-| `-Xstdout <file>` | diagnostics go to the file, console empty, **file byte-identical** to javac (including CRLF) |
-| `@argfile` | reads the argument file (`#` comments, whitespace-separated) |
-| invalid option | `error: invalid flag: <arg>` plus usage, exit code **2** |
-| missing source file | `error: file not found: <path>` plus usage, exit code **2** |
-| `-Werror` | `error: warnings found and -Werror specified` when warnings exist, exit code **1** |
-| `-Xmaxerrs N` / `-Xmaxwarns N` | truncation after the limit plus a summary line |
-| `-encoding` | correct UTF-8/GBK reading; an invalid encoding is an error |
-| `-Xlint:all` / `-Xlint:none` / `-Xlint:-rawtypes` | correct warning set |
+| Case                                              | Expected (aligned with javac)                                                                |
+|---------------------------------------------------|----------------------------------------------------------------------------------------------|
+| `--help`                                          | standard option table (including the `-J<flag>` line)                                        |
+| `--help-extra`                                    | extended option table, **without** `-J`                                                      |
+| `--help-lint`                                     | **byte-identical** to javac (31 keys plus `all`/`none`)                                      |
+| `--version` / `--full-version`                    | `javac 17.0.19`                                                                              |
+| no arguments                                      | standard help, exit code **2**                                                               |
+| `-J<flag>`                                        | consumed by the launcher (`-J-Duser.language=en` takes effect)                               |
+| `-Xstdout <file>`                                 | diagnostics go to the file, console empty, **file byte-identical** to javac (including CRLF) |
+| `@argfile`                                        | reads the argument file (`#` comments, whitespace-separated)                                 |
+| invalid option                                    | `error: invalid flag: <arg>` plus usage, exit code **2**                                     |
+| missing source file                               | `error: file not found: <path>` plus usage, exit code **2**                                  |
+| `-Werror`                                         | `error: warnings found and -Werror specified` when warnings exist, exit code **1**           |
+| `-Xmaxerrs N` / `-Xmaxwarns N`                    | truncation after the limit plus a summary line                                               |
+| `-encoding`                                       | correct UTF-8/GBK reading; an invalid encoding is an error                                   |
+| `-Xlint:all` / `-Xlint:none` / `-Xlint:-rawtypes` | correct warning set                                                                          |
 
 ## 4. L3 project bytes and diagnostics
 
-| Case | Pass criterion |
-|---|---|
-| Gson (80 sources -> 208 classes) | **208/208 SHA-256 identical**; `-XDrawDiagnostics` diff empty |
-| OkHttp (229 sources -> 542 classes) | **542/542 identical**; diagnostic diff empty |
-| Guava (630 sources -> 1970 classes) | **1970/1970 identical** |
-| Produced classes run (optional) | run JUnit with classes compiled by rust-javac |
-| Incremental/repeat runs | the same input twice produces stable bytes |
+| Case                                | Pass criterion                                                |
+|-------------------------------------|---------------------------------------------------------------|
+| Gson (80 sources -> 208 classes)    | **208/208 SHA-256 identical**; `-XDrawDiagnostics` diff empty |
+| OkHttp (229 sources -> 542 classes) | **542/542 identical**; diagnostic diff empty                  |
+| Guava (630 sources -> 1970 classes) | **1970/1970 identical**                                       |
+| Produced classes run (optional)     | run JUnit with classes compiled by rust-javac                 |
+| Incremental/repeat runs             | the same input twice produces stable bytes                    |
 
 ## 5. L2 diagnostic corpus gate
 
@@ -65,11 +65,11 @@ processors (`-processor`/`-proc:only`), JVM stack traces for `-doe`, custom
 
 ## 6. L5 performance baseline (release)
 
-| Case | Baseline | Threshold |
-|---|---|---|
-| Gson compilation | rust release **~0.8 s** vs javac **~2.4 s** | rust <= javac x 1.2 |
-| OkHttp compilation | see the benchmark script | same, plus a regression threshold |
-| Cold start vs warm runs | median of 5 runs | record the trend |
+| Case                    | Baseline                                    | Threshold                         |
+|-------------------------|---------------------------------------------|-----------------------------------|
+| Gson compilation        | rust release **~0.8 s** vs javac **~2.4 s** | rust <= javac x 1.2               |
+| OkHttp compilation      | see the benchmark script                    | same, plus a regression threshold |
+| Cold start vs warm runs | median of 5 runs                            | record the trend                  |
 
 ## 7. Known gaps (outside the gate)
 

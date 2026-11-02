@@ -235,7 +235,13 @@ mod tests {
     use crate::util::java_string::JavaString;
 
     fn ty(tag: TypeTag) -> Type {
-        Type::new(tag, None, crate::code::type_::TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base })
+        Type::new(
+            tag,
+            None,
+            crate::code::type_::TypeKindData::JCNoType {
+                kind: crate::code::type_::JCNoTypeKind::Base,
+            },
+        )
     }
 
     #[test]
@@ -262,22 +268,19 @@ mod tests {
             ConstantValue::Short(70000i32 as i16)
         );
         // Unknown/non-primitive tags return the value unchanged.
+        assert_eq!(decode(int_value.clone(), &ty(TypeTag::INT)), int_value);
         assert_eq!(
-            decode(int_value.clone(), &ty(TypeTag::INT)),
-            int_value
-        );
-        assert_eq!(
-            decode(ConstantValue::String(JavaString::from("x")), &ty(TypeTag::CHAR)),
+            decode(
+                ConstantValue::String(JavaString::from("x")),
+                &ty(TypeTag::CHAR)
+            ),
             ConstantValue::String(JavaString::from("x"))
         );
     }
 
     #[test]
     fn format_uses_the_java_source_representation() {
-        assert_eq!(
-            format(ConstantValue::Integer(5), &ty(TypeTag::INT)),
-            "5"
-        );
+        assert_eq!(format(ConstantValue::Integer(5), &ty(TypeTag::INT)), "5");
         assert_eq!(
             format(ConstantValue::Integer(1), &ty(TypeTag::BOOLEAN)),
             "true"
@@ -294,10 +297,7 @@ mod tests {
             format(ConstantValue::Integer(200), &ty(TypeTag::SHORT)),
             "200"
         );
-        assert_eq!(
-            format(ConstantValue::Long(42), &ty(TypeTag::LONG)),
-            "42L"
-        );
+        assert_eq!(format(ConstantValue::Long(42), &ty(TypeTag::LONG)), "42L");
         assert_eq!(
             format(ConstantValue::Integer(65), &ty(TypeTag::CHAR)),
             "'A'"
@@ -332,20 +332,26 @@ mod tests {
     #[test]
     fn float_and_double_formatting_matches_floating_decimal() {
         // Java: Constants.formatFloat / formatDouble semantics
-        assert_eq!(format(ConstantValue::Float(1.0), &ty(TypeTag::FLOAT)), "1.0f");
+        assert_eq!(
+            format(ConstantValue::Float(1.0), &ty(TypeTag::FLOAT)),
+            "1.0f"
+        );
         assert_eq!(
             format(ConstantValue::Float(f32::from_bits(1)), &ty(TypeTag::FLOAT)),
             "1.4E-45f"
         );
-        assert_eq!(format(ConstantValue::Double(1.0), &ty(TypeTag::DOUBLE)), "1.0");
         assert_eq!(
-            format(ConstantValue::Double(f64::from_bits(1)), &ty(TypeTag::DOUBLE)),
+            format(ConstantValue::Double(1.0), &ty(TypeTag::DOUBLE)),
+            "1.0"
+        );
+        assert_eq!(
+            format(
+                ConstantValue::Double(f64::from_bits(1)),
+                &ty(TypeTag::DOUBLE)
+            ),
             "4.9E-324"
         );
-        assert_eq!(
-            format_value(&ConstantValue::Float(f32::NAN)),
-            "0.0f/0.0f"
-        );
+        assert_eq!(format_value(&ConstantValue::Float(f32::NAN)), "0.0f/0.0f");
         assert_eq!(
             format_value(&ConstantValue::Float(f32::INFINITY)),
             "1.0f/0.0f"

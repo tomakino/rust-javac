@@ -1,3 +1,5 @@
+use super::expression_tree::ExpressionTree;
+use super::statement_tree::StatementTree;
 /// A tree node for an {@code if} statement.
 ///
 /// For example:
@@ -17,8 +19,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
-use super::statement_tree::StatementTree;
 
 pub trait IfTree: StatementTree {
     /// Returns the condition of the if-statement.
@@ -33,5 +33,4 @@ pub trait IfTree: StatementTree {
     /// or {@code null} if there is no such statement.
     /// @return the statement to be executed if the condition is false
     fn get_else_statement(&self) -> Option<Rc<dyn StatementTree>>;
-
 }

@@ -252,7 +252,10 @@ impl ModuleNameReader {
     /// Java: void checkZero(int count, String name) throws BadClassFile
     fn check_zero(&self, count: u16, name: &str) -> Result<(), Error> {
         if count != 0 {
-            Err(bad_class_file(format!("invalid {} for module: {}", name, count)))
+            Err(bad_class_file(format!(
+                "invalid {} for module: {}",
+                name, count
+            )))
         } else {
             Ok(())
         }
@@ -314,7 +317,12 @@ mod tests {
         // Cross-check with the container's module list (jimage/jmods).
         let home = baseline_java_home().unwrap();
         let class_path = javac_classpath::ClassPath::system(&home).expect("system class path");
-        assert!(class_path.list_modules().iter().any(|module| module == "java.base"));
+        assert!(
+            class_path
+                .list_modules()
+                .iter()
+                .any(|module| module == "java.base")
+        );
     }
 
     fn assert_bad_class_file(result: Result<javac_strings::JavaString, Error>, expected: &str) {

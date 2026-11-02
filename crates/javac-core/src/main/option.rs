@@ -513,8 +513,7 @@ impl Option {
     /// Java: private boolean matches(String option, String name).
     fn matches_name(self, option: &str, name: &str) -> bool {
         if name.starts_with("--") {
-            return option == name
-                || (self.has_arg() && option.starts_with(&format!("{name}=")));
+            return option == name || (self.has_arg() && option.starts_with(&format!("{name}=")));
         }
 
         let has_suffix =
@@ -749,7 +748,6 @@ enum ChoiceKind {
     ANYOF,
 }
 
-
 // ---------------------------------------------------------------------------
 // Java: Option.handleOption/process and Option.InvalidValueException
 // (Option.java:1130-1245) — the javacFileManagerOptions path used by
@@ -757,8 +755,6 @@ enum ChoiceKind {
 // ---------------------------------------------------------------------------
 
 use crate::main::option_helper::OptionHelper;
-
-
 
 impl Option {
     /// Java: private static int findSeparator(String word) (Option.java:1235-1245).
@@ -781,16 +777,16 @@ impl Option {
                 // aliases not supported
                 let primary = self.primary_name();
                 (primary.to_string(), arg[primary.len()..].to_string())
-            } else if let StdOption::Some(sep) = Option::find_separator(arg) {
+            } else if let Some(sep) = Option::find_separator(arg) {
                 (arg[..sep].to_string(), arg[sep + 1..].to_string())
             } else {
                 match rest.next() {
-                    StdOption::Some(operand) => (arg.to_string(), operand),
-                    StdOption::None => {
+                    Some(operand) => (arg.to_string(), operand),
+                    None => {
                         return Err(helper.new_invalid_value_exception(
-                            crate::resources::compiler_properties::errors::req_arg(JavaString::from(
-                                self.primary_name(),
-                            )),
+                            crate::resources::compiler_properties::errors::req_arg(
+                                JavaString::from(self.primary_name()),
+                            ),
                         ));
                     }
                 }
@@ -847,14 +843,16 @@ impl Option {
             Option::MODULE_SOURCE_PATH => {
                 // Option.java:167-208.
                 if arg.is_empty() {
-                    return Err(helper.new_invalid_value_exception(errors::no_value_for_option(
-                        JavaString::from(option),
-                    )));
+                    return Err(
+                        helper.new_invalid_value_exception(errors::no_value_for_option(
+                            JavaString::from(option),
+                        )),
+                    );
                 }
                 match helper.get(Option::MODULE_SOURCE_PATH) {
-                    StdOption::None => self.default_process(helper, arg),
-                    StdOption::Some(prev) => {
-                        if let StdOption::Some(arg_module) = module_specific_form(arg) {
+                    None => self.default_process(helper, arg),
+                    Some(prev) => {
+                        if let Some(arg_module) = module_specific_form(arg) {
                             let repeated = prev
                                 .split('\0')
                                 .filter_map(module_specific_form)
@@ -896,15 +894,17 @@ impl Option {
             Option::PATCH_MODULE => {
                 // Option.java:216-251.
                 if arg.is_empty() {
-                    return Err(helper.new_invalid_value_exception(errors::no_value_for_option(
-                        JavaString::from(option),
-                    )));
+                    return Err(
+                        helper.new_invalid_value_exception(errors::no_value_for_option(
+                            JavaString::from(option),
+                        )),
+                    );
                 }
                 match patch_module_form(arg) {
-                    StdOption::Some(arg_module_package) => {
+                    Some(arg_module_package) => {
                         match helper.get(Option::PATCH_MODULE) {
-                            StdOption::None => self.default_process(helper, arg),
-                            StdOption::Some(prev) => {
+                            None => self.default_process(helper, arg),
+                            Some(prev) => {
                                 let repeated = prev
                                     .split('\0')
                                     .filter_map(patch_module_form)
@@ -921,8 +921,11 @@ impl Option {
                         }
                         Ok(())
                     }
-                    StdOption::None => Err(helper.new_invalid_value_exception(
-                        errors::bad_value_for_option(JavaString::from(option), JavaString::from(arg)),
+                    None => Err(helper.new_invalid_value_exception(
+                        errors::bad_value_for_option(
+                            JavaString::from(option),
+                            JavaString::from(arg),
+                        ),
                     )),
                 }
             }
@@ -935,9 +938,9 @@ impl Option {
 
     /// Java: the default Option.process body (Option.java:1195-1218).
     fn default_process(&self, helper: &mut dyn OptionHelper, arg: &str) {
-        if let StdOption::Some(choices) = self.choices() {
+        if let Some(choices) = self.choices() {
             match self.choice_kind() {
-                StdOption::Some(ChoiceKind::ONEOF) => {
+                Some(ChoiceKind::ONEOF) => {
                     let primary = self.primary_name();
                     for choice in &choices {
                         helper.remove(&format!("{primary}{choice}"));
@@ -969,15 +972,15 @@ fn module_specific_form(arg: &str) -> StdOption<&str> {
     let sep = arg.find('=')?;
     let module = &arg[..sep];
     if module.is_empty() {
-        return StdOption::None;
+        return None;
     }
     if module
         .chars()
         .all(|ch| ch.is_alphanumeric() || matches!(ch, '$' | '_' | '.'))
     {
-        StdOption::Some(module)
+        Some(module)
     } else {
-        StdOption::None
+        None
     }
 }
 
@@ -987,14 +990,14 @@ fn patch_module_form(arg: &str) -> StdOption<&str> {
     let sep = arg.find('=')?;
     let module = &arg[..sep];
     if module.is_empty() || module.contains('/') {
-        return StdOption::None;
+        return None;
     }
     let value = &arg[sep + 1..];
     let rest = value.trim_start_matches(',');
     if rest.is_empty() || rest.starts_with(',') {
-        return StdOption::None;
+        return None;
     }
-    StdOption::Some(module)
+    Some(module)
 }
 
 #[cfg(test)]
@@ -1015,16 +1018,16 @@ mod tests {
     #[test]
     fn primary_names_and_aliases_match_upstream() {
         assert_eq!(Option::G.primary_name(), "-g");
-        assert_eq!(Option::CLASS_PATH.names(), &["--class-path", "-classpath", "-cp"]);
+        assert_eq!(
+            Option::CLASS_PATH.names(),
+            &["--class-path", "-classpath", "-cp"]
+        );
         assert_eq!(Option::CLASS_PATH.primary_name(), "--class-path");
         assert_eq!(Option::SOURCE.names(), &["--source", "-source"]);
         assert_eq!(Option::HELP.names(), &["--help", "-help", "-?"]);
         assert_eq!(Option::MODULE.names(), &["--module", "-m"]);
         assert_eq!(Option::AT.primary_name(), "@");
-        assert_eq!(
-            Option::MULTIRELEASE.primary_name(),
-            "--multi-release"
-        );
+        assert_eq!(Option::MULTIRELEASE.primary_name(), "--multi-release");
         for option in Option::values() {
             assert!(!option.names().is_empty());
             assert_eq!(option.names()[0], option.primary_name());
@@ -1036,7 +1039,10 @@ mod tests {
         assert_eq!(Option::G.args_name_key(), None);
         assert_eq!(Option::G.descr_key(), Some("opt.g"));
         assert_eq!(Option::G_CUSTOM.args_name_key(), None);
-        assert_eq!(Option::G_CUSTOM.descr_key(), Some("opt.g.lines.vars.source"));
+        assert_eq!(
+            Option::G_CUSTOM.descr_key(),
+            Some("opt.g.lines.vars.source")
+        );
         assert_eq!(Option::XLINT_CUSTOM.args_name_key(), Some("opt.arg.Xlint"));
         assert_eq!(Option::XLINT_CUSTOM.descr_key(), Some("opt.Xlint.custom"));
         assert_eq!(Option::CLASS_PATH.args_name_key(), Some("opt.arg.path"));
@@ -1079,7 +1085,10 @@ mod tests {
         assert_eq!(Option::get_java_compiler_options().len(), 44);
         assert!(Option::get_java_compiler_options().contains(&Option::VERSION));
         assert!(Option::get_java_compiler_options().contains(&Option::SOURCEFILE));
-        assert_eq!(Option::get_javac_file_manager_options()[0], Option::CLASS_PATH);
+        assert_eq!(
+            Option::get_javac_file_manager_options()[0],
+            Option::CLASS_PATH
+        );
         assert_eq!(Option::get_javac_tool_options()[0], Option::G);
     }
 
@@ -1285,9 +1294,7 @@ mod tests {
             true
         }
 
-        fn get_log(
-            &self,
-        ) -> std::option::Option<std::rc::Rc<crate::util::log::Log>> {
+        fn get_log(&self) -> std::option::Option<std::rc::Rc<crate::util::log::Log>> {
             None
         }
 
@@ -1320,16 +1327,20 @@ mod tests {
         Option::MODULE_SOURCE_PATH
             .handle_option(&mut helper, "--module-source-path=m1=src1", &mut rest)
             .expect("module specific value");
-        assert!(helper
-            .values
-            .get(Option::MODULE_SOURCE_PATH.primary_name())
-            .expect("stored")
-            .contains('\0'));
+        assert!(
+            helper
+                .values
+                .get(Option::MODULE_SOURCE_PATH.primary_name())
+                .expect("stored")
+                .contains('\0')
+        );
 
         let mut rest = std::iter::empty();
-        assert!(Option::MODULE_SOURCE_PATH
-            .handle_option(&mut helper, "--module-source-path=m1=src2", &mut rest)
-            .is_err());
+        assert!(
+            Option::MODULE_SOURCE_PATH
+                .handle_option(&mut helper, "--module-source-path=m1=src2", &mut rest)
+                .is_err()
+        );
     }
 
     #[test]
@@ -1340,28 +1351,37 @@ mod tests {
             .handle_option(&mut helper, "--patch-module=m1=src", &mut rest)
             .expect("first value");
         let mut rest = std::iter::empty();
-        assert!(Option::PATCH_MODULE
-            .handle_option(&mut helper, "--patch-module=m1=other", &mut rest)
-            .is_err());
+        assert!(
+            Option::PATCH_MODULE
+                .handle_option(&mut helper, "--patch-module=m1=other", &mut rest)
+                .is_err()
+        );
         let mut rest = std::iter::empty();
-        assert!(Option::PATCH_MODULE
-            .handle_option(&mut helper, "--patch-module=invalid", &mut rest)
-            .is_err());
+        assert!(
+            Option::PATCH_MODULE
+                .handle_option(&mut helper, "--patch-module=invalid", &mut rest)
+                .is_err()
+        );
     }
 
     #[test]
     fn encoding_option_requires_an_argument() {
         let mut helper = RecordingHelper::new();
         let mut rest = std::iter::empty();
-        assert!(Option::ENCODING
-            .handle_option(&mut helper, "-encoding", &mut rest)
-            .is_err());
+        assert!(
+            Option::ENCODING
+                .handle_option(&mut helper, "-encoding", &mut rest)
+                .is_err()
+        );
         let mut rest = vec!["UTF-8".to_string()].into_iter();
         Option::ENCODING
             .handle_option(&mut helper, "-encoding", &mut rest)
             .expect("value");
         assert_eq!(
-            helper.values.get(Option::ENCODING.primary_name()).map(String::as_str),
+            helper
+                .values
+                .get(Option::ENCODING.primary_name())
+                .map(String::as_str),
             Some("UTF-8")
         );
     }
@@ -1411,5 +1431,4 @@ impl PkgInfo {
             },
         }
     }
-
 }

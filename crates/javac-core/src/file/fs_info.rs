@@ -121,15 +121,17 @@ impl FSInfo {
         let Some(bytes) = archive.get_entry("META-INF/MANIFEST.MF") else {
             return Ok(Vec::new());
         };
-        let Some(class_path) = parse_manifest_main_attributes(&bytes)?.get("class-path").cloned()
+        let Some(class_path) = parse_manifest_main_attributes(&bytes)?
+            .get("class-path")
+            .cloned()
         else {
             return Ok(Vec::new());
         };
         let mut list = Vec::new();
         let base = file.to_uri()?;
-        for element in class_path.split(|unit: char| {
-            matches!(unit, ' ' | '\t' | '\n' | '\r' | '\u{000C}')
-        }) {
+        for element in
+            class_path.split(|unit: char| matches!(unit, ' ' | '\t' | '\n' | '\r' | '\u{000C}'))
+        {
             if element.is_empty() {
                 continue;
             }
@@ -184,13 +186,15 @@ impl Default for FSInfo {
     }
 }
 
-
 /// Map a zip read error to the java.nio.file.IOException equivalent used by
 /// FSInfo.getJarClassPath.
 fn zip_error_to_fs_error(error: javac_zip::Error) -> javac_fs::Error {
     match error {
         javac_zip::Error::Io(io_error) => javac_fs::Error::Io(io_error),
-        other => javac_fs::Error::Io(io::Error::new(io::ErrorKind::InvalidData, other.to_string())),
+        other => javac_fs::Error::Io(io::Error::new(
+            io::ErrorKind::InvalidData,
+            other.to_string(),
+        )),
     }
 }
 
@@ -207,7 +211,9 @@ fn io_error(message: String) -> javac_fs::Error {
 ///   space removed and the text appended without a separator
 ///   ("Class-Path: a.jar" + " b.jar" -> "a.jarb.jar");
 /// - header names are case-insensitive.
-pub(crate) fn parse_manifest_main_attributes(bytes: &[u8]) -> Result<HashMap<String, String>, javac_fs::Error> {
+pub(crate) fn parse_manifest_main_attributes(
+    bytes: &[u8],
+) -> Result<HashMap<String, String>, javac_fs::Error> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| io_error(format!("invalid manifest UTF-8: {error}")))?;
     let mut attributes: HashMap<String, String> = HashMap::new();
@@ -309,10 +315,13 @@ fn resolve_url(base: &str, input: &str) -> Result<String, javac_fs::Error> {
     if let Some(colon) = input.find(':') {
         let candidate = &input[..colon];
         let scheme_like = !candidate.is_empty()
-            && candidate.chars().next().is_some_and(|unit| unit.is_ascii_alphabetic())
             && candidate
                 .chars()
-                .all(|unit| unit.is_ascii_alphanumeric() || unit == '+' || unit == '-' || unit == '.');
+                .next()
+                .is_some_and(|unit| unit.is_ascii_alphabetic())
+            && candidate.chars().all(|unit| {
+                unit.is_ascii_alphanumeric() || unit == '+' || unit == '-' || unit == '.'
+            });
         if scheme_like {
             if candidate.len() == 1 {
                 return Err(io_error(format!(
@@ -430,8 +439,6 @@ fn file_url_to_path(url: &str) -> Result<FsPath, javac_fs::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::FSInfo;
-    use javac_fs::Path as FsPath;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir(tag: &str) -> std::path::PathBuf {
@@ -517,7 +524,6 @@ mod tests {
         std::fs::write(path, data).expect("write zip");
     }
 
-
     #[test]
     fn manifest_main_attributes_follow_the_oracle() {
         let parse = |text: &str| {
@@ -537,7 +543,8 @@ mod tests {
             Some("a.jar b.jar".to_string())
         );
         assert_eq!(
-            parse("Manifest-Version: 1.0\r\n\r\nName: x\nClass-Path: not-main.jar\r\n\r\n").unwrap(),
+            parse("Manifest-Version: 1.0\r\n\r\nName: x\nClass-Path: not-main.jar\r\n\r\n")
+                .unwrap(),
             None
         );
         assert_eq!(
@@ -574,7 +581,10 @@ mod tests {
             super::try_resolve_file(base, "file:///other/d.jar").unwrap(),
             Some("file:///other/d.jar".to_string())
         );
-        assert_eq!(super::try_resolve_file(base, "http://h/e.jar").unwrap(), None);
+        assert_eq!(
+            super::try_resolve_file(base, "http://h/e.jar").unwrap(),
+            None
+        );
         assert!(super::try_resolve_file(base, "C:/win/f.jar").is_err());
         assert!(super::try_resolve_file(base, "C:\\win\\g.jar").is_err());
         assert_eq!(
@@ -589,8 +599,9 @@ mod tests {
             super::try_resolve_file(base, "\\\\srv\\share\\i.jar").unwrap(),
             Some("file://srv/share/i.jar".to_string())
         );
-        let url = super::try_resolve_file(base, "a.jar?x=1").unwrap().expect("url");
+        let url = super::try_resolve_file(base, "a.jar?x=1")
+            .unwrap()
+            .expect("url");
         assert!(super::file_url_to_path(&url).is_err());
     }
-
 }

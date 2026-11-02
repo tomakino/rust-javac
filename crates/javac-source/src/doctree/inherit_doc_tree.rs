@@ -7,5 +7,4 @@
 /// @since 1.8
 use super::inline_tag_tree::InlineTagTree;
 
-pub trait InheritDocTree: InlineTagTree {
-}
+pub trait InheritDocTree: InlineTagTree {}

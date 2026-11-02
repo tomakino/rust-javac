@@ -1,3 +1,5 @@
+use super::expression_tree::ExpressionTree;
+use super::tree::Tree;
 /// A tree node for a type cast expression.
 ///
 /// For example:
@@ -11,8 +13,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
-use super::tree::Tree;
 
 pub trait TypeCastTree: ExpressionTree {
     /// Returns the target type of the cast.
@@ -22,5 +22,4 @@ pub trait TypeCastTree: ExpressionTree {
     /// Returns the expression being cast.
     /// @return the expression
     fn get_expression(&self) -> Rc<dyn ExpressionTree>;
-
 }

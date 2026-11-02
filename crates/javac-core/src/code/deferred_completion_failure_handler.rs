@@ -17,8 +17,8 @@ use std::rc::Rc;
 
 use crate::code::kinds::Kind;
 use crate::code::symbol::{Completer, CompleterRef, CompletionFailure, SymbolKind};
-use crate::ids::SymbolId;
 use crate::compiler_context::CompilerContext;
+use crate::ids::SymbolId;
 use crate::ids::TypeId;
 
 /// Java: DeferredCompletionFailureHandler.Handler
@@ -87,7 +87,8 @@ impl FlipSymbolDescription {
             SymbolKind::ClassSymbol { members_field, .. } => *members_field,
             _ => None,
         };
-        if let SymbolKind::ClassSymbol { members_field, .. } = &mut ctx.sym_mut(self.sym).kind_data {
+        if let SymbolKind::ClassSymbol { members_field, .. } = &mut ctx.sym_mut(self.sym).kind_data
+        {
             *members_field = self.members;
         }
         self.members = prev_members;
@@ -148,7 +149,9 @@ impl Handler for UserCodeHandler {
         sym: SymbolId,
         orig_completer: CompleterRef,
     ) {
-        let deferred = Rc::new(std::cell::RefCell::new(DeferredCompleter::new(orig_completer)));
+        let deferred = Rc::new(std::cell::RefCell::new(DeferredCompleter::new(
+            orig_completer,
+        )));
         self.class2flip
             .insert(sym, FlipSymbolDescription::new(ctx, sym, deferred));
     }
@@ -199,7 +202,9 @@ impl Handler for SpeculativeCodeHandler {
         sym: SymbolId,
         orig_completer: CompleterRef,
     ) {
-        let deferred = Rc::new(std::cell::RefCell::new(DeferredCompleter::new(orig_completer)));
+        let deferred = Rc::new(std::cell::RefCell::new(DeferredCompleter::new(
+            orig_completer,
+        )));
         self.class2flip
             .insert(sym, FlipSymbolDescription::new(ctx, sym, deferred));
     }
@@ -275,11 +280,7 @@ impl DeferredCompletionFailureHandler {
     /// Adapter: handler install/uninstall mutate symbols through
     /// CompilerContext, so the context is passed explicitly (Rust has no
     /// Context.current()).
-    pub fn set_handler(
-        &self,
-        ctx: &mut CompilerContext,
-        h: Box<dyn Handler>,
-    ) -> Box<dyn Handler> {
+    pub fn set_handler(&self, ctx: &mut CompilerContext, h: Box<dyn Handler>) -> Box<dyn Handler> {
         let mut handler = self.handler.borrow_mut();
         handler.uninstall(ctx);
         let old = std::mem::replace(&mut *handler, h);
@@ -292,9 +293,7 @@ impl DeferredCompletionFailureHandler {
         &self,
         cf: CompletionFailure,
     ) -> Result<(), CompletionFailure> {
-        self.handler
-            .borrow_mut()
-            .handle_api_completion_failure(cf)
+        self.handler.borrow_mut().handle_api_completion_failure(cf)
     }
 
     /// Java: public void classSymbolCompleteFailed(ClassSymbol sym, Completer origCompleter)
@@ -311,9 +310,7 @@ impl DeferredCompletionFailureHandler {
 
     /// Java: public void classSymbolRemoved(ClassSymbol sym)
     pub fn class_symbol_removed(&self, ctx: &mut CompilerContext, sym: SymbolId) {
-        self.handler
-            .borrow_mut()
-            .class_symbol_removed(ctx, sym);
+        self.handler.borrow_mut().class_symbol_removed(ctx, sym);
     }
 
     /// Java: public boolean isDeferredCompleter(Completer c) { return c instanceof DeferredCompleter; }

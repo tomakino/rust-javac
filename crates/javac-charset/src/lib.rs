@@ -35,8 +35,7 @@ pub mod coder;
 pub mod error;
 pub mod nio;
 
-pub use charset::{available_charsets, Charset, MalformedAction};
+pub use charset::{Charset, MalformedAction, available_charsets};
 pub use coder::{CharsetDecoder, CharsetEncoder};
 pub use error::{CharacterCodingError, CharsetError};
 pub use nio::{ByteBuffer, CharBuffer, CoderResult, CodingErrorAction};
-

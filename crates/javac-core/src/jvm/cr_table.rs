@@ -168,11 +168,7 @@ impl CRTable {
                 continue;
             }
             if self.crt_debug {
-                println!(
-                    "Tree: {:?}, type:{}",
-                    entry.tree,
-                    get_types(entry.flags)
-                );
+                println!("Tree: {:?}, type:{}", entry.tree, get_types(entry.flags));
                 println!("Start: pos = {}, pc = {}", pos.start_pos, entry.start_pc);
             }
             let start_pos = self.encode_position(pos.start_pos, line_map, log);
@@ -197,12 +193,7 @@ impl CRTable {
     }
 
     /// Encode a source position as line/column.
-    fn encode_position(
-        &self,
-        pos: i32,
-        line_map: &dyn LineMap,
-        log: &Rc<Log>,
-    ) -> i32 {
+    fn encode_position(&self, pos: i32, line_map: &dyn LineMap, log: &Rc<Log>) -> i32 {
         let line = line_map.get_line_number(pos);
         let col = line_map.get_column_number(pos);
         let new_pos = position::encode_position(line, col);
@@ -213,11 +204,7 @@ impl CRTable {
             let warning = Warning::from(
                 crate::resources::compiler_properties::warnings::position_overflow(line),
             );
-            crate::util::abstract_log::AbstractLog::warning_at(
-                &*log,
-                pos,
-                warning,
-            );
+            crate::util::abstract_log::AbstractLog::warning_at(&*log, pos, warning);
         }
         new_pos
     }
@@ -335,16 +322,19 @@ impl SourceComputer {
     }
 
     /// Create the source range covering the whole tree.
-    fn range(
-        &mut self,
-        ctx: &mut CompilerContext,
-        tree: TreeId,
-    ) -> SourceRange {
-        SourceRange::with_positions(self.start_pos(ctx, Some(tree)), self.end_pos(ctx, Some(tree)))
+    fn range(&mut self, ctx: &mut CompilerContext, tree: TreeId) -> SourceRange {
+        SourceRange::with_positions(
+            self.start_pos(ctx, Some(tree)),
+            self.end_pos(ctx, Some(tree)),
+        )
     }
 }
 
 impl TreeVisitor for SourceComputer {
+    fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        panic!("AssertionError: unexpected tree in the character range table computer")
+    }
+
     fn visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let body = match &ctx.tree(tree).kind {
@@ -380,7 +370,6 @@ impl TreeVisitor for SourceComputer {
         self.csp_list(ctx, &stats);
         self.result = Some(sr);
     }
-
     fn visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let (body, cond) = match &ctx.tree(tree).kind {
@@ -391,17 +380,11 @@ impl TreeVisitor for SourceComputer {
         sr.merge_with(self.csp(ctx, cond).as_ref());
         self.result = Some(sr);
     }
+
     fn visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let (cond, body) = match &ctx.tree(tree).kind {
-            TreeKind::WhileLoop {
-                cond,
-                body,
-                ..
-            } => (
-                *cond,
-                *body
-            ),
+            TreeKind::WhileLoop { cond, body, .. } => (*cond, *body),
             _ => panic!("expected a while loop"),
         };
         sr.merge_with(self.csp(ctx, cond).as_ref());
@@ -418,12 +401,7 @@ impl TreeVisitor for SourceComputer {
                 step,
                 body,
                 ..
-            } => (
-                init.clone(),
-                *cond,
-                step.clone(),
-                *body
-            ),
+            } => (init.clone(), *cond, step.clone(), *body),
             _ => panic!("expected a for loop"),
         };
         sr.merge_with(self.csp_list(ctx, &init).as_ref());
@@ -437,15 +415,8 @@ impl TreeVisitor for SourceComputer {
         let mut sr = self.range(ctx, tree);
         let (var, expr, body) = match &ctx.tree(tree).kind {
             TreeKind::EnhancedForLoop {
-                var,
-                expr,
-                body,
-                ..
-            } => (
-                *var,
-                *expr,
-                *body
-            ),
+                var, expr, body, ..
+            } => (*var, *expr, *body),
             _ => panic!("expected a enhanced for loop"),
         };
         sr.merge_with(self.csp(ctx, var).as_ref());
@@ -457,10 +428,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_labelled(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let body = match &ctx.tree(tree).kind {
-            TreeKind::LabeledStatement {
-                body,
-                ..
-            } => *body,
+            TreeKind::LabeledStatement { body, .. } => *body,
             _ => panic!("expected a labeled statement"),
         };
         sr.merge_with(self.csp(ctx, body).as_ref());
@@ -471,32 +439,9 @@ impl TreeVisitor for SourceComputer {
         let mut sr = self.range(ctx, tree);
         let (selector, cases) = match &ctx.tree(tree).kind {
             TreeKind::Switch {
-                selector,
-                cases,
-                ..
-            } => (
-                *selector,
-                cases.clone()
-            ),
+                selector, cases, ..
+            } => (*selector, cases.clone()),
             _ => panic!("expected a switch statement"),
-        };
-        sr.merge_with(self.csp(ctx, selector).as_ref());
-        sr.merge_with(self.csp_cases(ctx, &cases).as_ref());
-        self.result = Some(sr);
-    }
-
-    fn visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let mut sr = self.range(ctx, tree);
-        let (selector, cases) = match &ctx.tree(tree).kind {
-            TreeKind::SwitchExpression {
-                selector,
-                cases,
-                ..
-            } => (
-                *selector,
-                cases.clone()
-            ),
-            _ => panic!("expected a switch expression"),
         };
         sr.merge_with(self.csp(ctx, selector).as_ref());
         sr.merge_with(self.csp_cases(ctx, &cases).as_ref());
@@ -506,14 +451,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_case(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let (labels, stats) = match &ctx.tree(tree).kind {
-            TreeKind::Case {
-                labels,
-                stats,
-                ..
-            } => (
-                labels.clone(),
-                stats.clone()
-            ),
+            TreeKind::Case { labels, stats, .. } => (labels.clone(), stats.clone()),
             _ => panic!("expected a case"),
         };
         sr.merge_with(self.csp_list(ctx, &labels).as_ref());
@@ -521,17 +459,23 @@ impl TreeVisitor for SourceComputer {
         self.result = Some(sr);
     }
 
+    fn visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let mut sr = self.range(ctx, tree);
+        let (selector, cases) = match &ctx.tree(tree).kind {
+            TreeKind::SwitchExpression {
+                selector, cases, ..
+            } => (*selector, cases.clone()),
+            _ => panic!("expected a switch expression"),
+        };
+        sr.merge_with(self.csp(ctx, selector).as_ref());
+        sr.merge_with(self.csp_cases(ctx, &cases).as_ref());
+        self.result = Some(sr);
+    }
+
     fn visit_synchronized(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let (lock, body) = match &ctx.tree(tree).kind {
-            TreeKind::Synchronized {
-                lock,
-                body,
-                ..
-            } => (
-                *lock,
-                *body
-            ),
+            TreeKind::Synchronized { lock, body, .. } => (*lock, *body),
             _ => panic!("expected a synchronized statement"),
         };
         sr.merge_with(self.csp(ctx, lock).as_ref());
@@ -548,12 +492,7 @@ impl TreeVisitor for SourceComputer {
                 catchers,
                 finalizer,
                 ..
-            } => (
-                resources.clone(),
-                *body,
-                catchers.clone(),
-                *finalizer
-            ),
+            } => (resources.clone(), *body, catchers.clone(), *finalizer),
             _ => panic!("expected a try statement"),
         };
         sr.merge_with(self.csp_list(ctx, &resources).as_ref());
@@ -566,14 +505,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_catch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let (param, body) = match &ctx.tree(tree).kind {
-            TreeKind::Catch {
-                param,
-                body,
-                ..
-            } => (
-                *param,
-                *body
-            ),
+            TreeKind::Catch { param, body, .. } => (*param, *body),
             _ => panic!("expected a catch clause"),
         };
         sr.merge_with(self.csp(ctx, param).as_ref());
@@ -589,11 +521,7 @@ impl TreeVisitor for SourceComputer {
                 truepart,
                 falsepart,
                 ..
-            } => (
-                *cond,
-                *truepart,
-                *falsepart
-            ),
+            } => (*cond, *truepart, *falsepart),
             _ => panic!("expected a conditional expression"),
         };
         sr.merge_with(self.csp(ctx, cond).as_ref());
@@ -610,11 +538,7 @@ impl TreeVisitor for SourceComputer {
                 thenpart,
                 elsepart,
                 ..
-            } => (
-                *cond,
-                *thenpart,
-                *elsepart
-            ),
+            } => (*cond, *thenpart, *elsepart),
             _ => panic!("expected a if statement"),
         };
         sr.merge_with(self.csp(ctx, cond).as_ref());
@@ -626,10 +550,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_exec(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let expr = match &ctx.tree(tree).kind {
-            TreeKind::ExpressionStatement {
-                expr,
-                ..
-            } => *expr,
+            TreeKind::ExpressionStatement { expr, .. } => *expr,
             _ => panic!("expected a expression statement"),
         };
         sr.merge_with(self.csp(ctx, expr).as_ref());
@@ -644,10 +565,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let value = match &ctx.tree(tree).kind {
-            TreeKind::Yield {
-                value,
-                ..
-            } => *value,
+            TreeKind::Yield { value, .. } => *value,
             _ => panic!("expected a yield statement"),
         };
         sr.merge_with(self.csp(ctx, value).as_ref());
@@ -662,10 +580,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_return(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let expr = match &ctx.tree(tree).kind {
-            TreeKind::Return {
-                expr,
-                ..
-            } => *expr,
+            TreeKind::Return { expr, .. } => *expr,
             _ => panic!("expected a return statement"),
         };
         sr.merge_with(self.csp(ctx, expr).as_ref());
@@ -675,10 +590,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_throw(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let expr = match &ctx.tree(tree).kind {
-            TreeKind::Throw {
-                expr,
-                ..
-            } => *expr,
+            TreeKind::Throw { expr, .. } => *expr,
             _ => panic!("expected a throw statement"),
         };
         sr.merge_with(self.csp(ctx, expr).as_ref());
@@ -688,14 +600,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_assert(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let (cond, detail) = match &ctx.tree(tree).kind {
-            TreeKind::Assert {
-                cond,
-                detail,
-                ..
-            } => (
-                *cond,
-                *detail
-            ),
+            TreeKind::Assert { cond, detail, .. } => (*cond, *detail),
             _ => panic!("expected a assert statement"),
         };
         sr.merge_with(self.csp(ctx, cond).as_ref());
@@ -706,14 +611,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let (meth, args) = match &ctx.tree(tree).kind {
-            TreeKind::MethodInvocation {
-                meth,
-                args,
-                ..
-            } => (
-                *meth,
-                args.clone()
-            ),
+            TreeKind::MethodInvocation { meth, args, .. } => (*meth, args.clone()),
             _ => panic!("expected a method invocation"),
         };
         sr.merge_with(self.csp(ctx, meth).as_ref());
@@ -730,12 +628,7 @@ impl TreeVisitor for SourceComputer {
                 args,
                 def,
                 ..
-            } => (
-                *encl,
-                *clazz,
-                args.clone(),
-                *def
-            ),
+            } => (*encl, *clazz, args.clone(), *def),
             _ => panic!("expected a new class expression"),
         };
         sr.merge_with(self.csp(ctx, encl).as_ref());
@@ -753,26 +646,21 @@ impl TreeVisitor for SourceComputer {
                 dims,
                 elems,
                 ..
-            } => (
-                *elemtype,
-                dims.clone(),
-                elems.clone()
-            ),
+            } => (*elemtype, dims.clone(), elems.clone()),
             _ => panic!("expected a new array expression"),
         };
         sr.merge_with(self.csp(ctx, elemtype).as_ref());
         sr.merge_with(self.csp_list(ctx, &dims).as_ref());
-        if let Some(list) = elems { sr.merge_with(self.csp_list(ctx, &list).as_ref()); }
+        if let Some(list) = elems {
+            sr.merge_with(self.csp_list(ctx, &list).as_ref());
+        }
         self.result = Some(sr);
     }
 
     fn visit_parens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let expr = match &ctx.tree(tree).kind {
-            TreeKind::Parens {
-                expr,
-                ..
-            } => *expr,
+            TreeKind::Parens { expr, .. } => *expr,
             _ => panic!("expected a parenthesized expression"),
         };
         sr.merge_with(self.csp(ctx, expr).as_ref());
@@ -782,14 +670,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_assign(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let (lhs, rhs) = match &ctx.tree(tree).kind {
-            TreeKind::Assign {
-                lhs,
-                rhs,
-                ..
-            } => (
-                *lhs,
-                *rhs
-            ),
+            TreeKind::Assign { lhs, rhs, .. } => (*lhs, *rhs),
             _ => panic!("expected a assignment"),
         };
         sr.merge_with(self.csp(ctx, lhs).as_ref());
@@ -800,14 +681,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_assignop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let (lhs, rhs) = match &ctx.tree(tree).kind {
-            TreeKind::AssignOp {
-                lhs,
-                rhs,
-                ..
-            } => (
-                *lhs,
-                *rhs
-            ),
+            TreeKind::AssignOp { lhs, rhs, .. } => (*lhs, *rhs),
             _ => panic!("expected a compound assignment"),
         };
         sr.merge_with(self.csp(ctx, lhs).as_ref());
@@ -818,10 +692,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_unary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let arg = match &ctx.tree(tree).kind {
-            TreeKind::Unary {
-                arg,
-                ..
-            } => *arg,
+            TreeKind::Unary { arg, .. } => *arg,
             _ => panic!("expected a unary expression"),
         };
         sr.merge_with(self.csp(ctx, arg).as_ref());
@@ -831,14 +702,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let (lhs, rhs) = match &ctx.tree(tree).kind {
-            TreeKind::Binary {
-                lhs,
-                rhs,
-                ..
-            } => (
-                *lhs,
-                *rhs
-            ),
+            TreeKind::Binary { lhs, rhs, .. } => (*lhs, *rhs),
             _ => panic!("expected a binary expression"),
         };
         sr.merge_with(self.csp(ctx, lhs).as_ref());
@@ -849,14 +713,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let (clazz, expr) = match &ctx.tree(tree).kind {
-            TreeKind::TypeCast {
-                clazz,
-                expr,
-                ..
-            } => (
-                *clazz,
-                *expr
-            ),
+            TreeKind::TypeCast { clazz, expr, .. } => (*clazz, *expr),
             _ => panic!("expected a type cast"),
         };
         sr.merge_with(self.csp(ctx, clazz).as_ref());
@@ -867,14 +724,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let (expr, pattern) = match &ctx.tree(tree).kind {
-            TreeKind::InstanceOf {
-                expr,
-                pattern,
-                ..
-            } => (
-                *expr,
-                *pattern
-            ),
+            TreeKind::InstanceOf { expr, pattern, .. } => (*expr, *pattern),
             _ => panic!("expected a instanceof expression"),
         };
         sr.merge_with(self.csp(ctx, expr).as_ref());
@@ -882,17 +732,14 @@ impl TreeVisitor for SourceComputer {
         self.result = Some(sr);
     }
 
+    fn visit_default_case_label(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        self.result = None;
+    }
+
     fn visit_indexed(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let (indexed, index) = match &ctx.tree(tree).kind {
-            TreeKind::ArrayAccess {
-                indexed,
-                index,
-                ..
-            } => (
-                *indexed,
-                *index
-            ),
+            TreeKind::ArrayAccess { indexed, index, .. } => (*indexed, *index),
             _ => panic!("expected a array access"),
         };
         sr.merge_with(self.csp(ctx, indexed).as_ref());
@@ -903,10 +750,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let selected = match &ctx.tree(tree).kind {
-            TreeKind::FieldAccess {
-                selected,
-                ..
-            } => *selected,
+            TreeKind::FieldAccess { selected, .. } => *selected,
             _ => panic!("expected a field access"),
         };
         sr.merge_with(self.csp(ctx, selected).as_ref());
@@ -931,10 +775,7 @@ impl TreeVisitor for SourceComputer {
     fn visit_type_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let elemtype = match &ctx.tree(tree).kind {
-            TreeKind::ArrayTypeTree {
-                elemtype,
-                ..
-            } => *elemtype,
+            TreeKind::ArrayTypeTree { elemtype, .. } => *elemtype,
             _ => panic!("expected a array type"),
         };
         sr.merge_with(self.csp(ctx, elemtype).as_ref());
@@ -945,13 +786,8 @@ impl TreeVisitor for SourceComputer {
         let mut sr = self.range(ctx, tree);
         let (clazz, arguments) = match &ctx.tree(tree).kind {
             TreeKind::TypeApply {
-                clazz,
-                arguments,
-                ..
-            } => (
-                *clazz,
-                arguments.clone()
-            ),
+                clazz, arguments, ..
+            } => (*clazz, arguments.clone()),
             _ => panic!("expected a parameterized type"),
         };
         sr.merge_with(self.csp(ctx, clazz).as_ref());
@@ -959,52 +795,24 @@ impl TreeVisitor for SourceComputer {
         self.result = Some(sr);
     }
 
-    fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let mut sr = self.range(ctx, tree);
-        let (defs, expr) = match &ctx.tree(tree).kind {
-            TreeKind::LetExpr {
-                defs,
-                expr,
-                ..
-            } => (
-                defs.clone(),
-                *expr
-            ),
-            _ => panic!("expected a let expression"),
-        };
-        sr.merge_with(self.csp_list(ctx, &defs).as_ref());
-        sr.merge_with(self.csp(ctx, expr).as_ref());
-        self.result = Some(sr);
-    }
-
-    fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let mut sr = self.range(ctx, tree);
-        let bounds = match &ctx.tree(tree).kind {
-            TreeKind::TypeParameter {
-                bounds,
-                ..
-            } => bounds.clone(),
-            _ => panic!("expected a type parameter"),
-        };
-        sr.merge_with(self.csp_list(ctx, &bounds).as_ref());
-        self.result = Some(sr);
-    }
-
     fn visit_type_union(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut sr = self.range(ctx, tree);
         let alternatives = match &ctx.tree(tree).kind {
-            TreeKind::TypeUnion {
-                alternatives,
-                ..
-            } => alternatives.clone(),
+            TreeKind::TypeUnion { alternatives, .. } => alternatives.clone(),
             _ => panic!("expected a union type"),
         };
         sr.merge_with(self.csp_list(ctx, &alternatives).as_ref());
         self.result = Some(sr);
     }
 
-    fn visit_default_case_label(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
-        self.result = None;
+    fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let mut sr = self.range(ctx, tree);
+        let bounds = match &ctx.tree(tree).kind {
+            TreeKind::TypeParameter { bounds, .. } => bounds.clone(),
+            _ => panic!("expected a type parameter"),
+        };
+        sr.merge_with(self.csp_list(ctx, &bounds).as_ref());
+        self.result = Some(sr);
     }
 
     fn visit_wildcard(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
@@ -1015,8 +823,14 @@ impl TreeVisitor for SourceComputer {
         self.result = None;
     }
 
-    fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
-        panic!("AssertionError: unexpected tree in the character range table computer")
+    fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let mut sr = self.range(ctx, tree);
+        let (defs, expr) = match &ctx.tree(tree).kind {
+            TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
+            _ => panic!("expected a let expression"),
+        };
+        sr.merge_with(self.csp_list(ctx, &defs).as_ref());
+        sr.merge_with(self.csp(ctx, expr).as_ref());
+        self.result = Some(sr);
     }
 }
-

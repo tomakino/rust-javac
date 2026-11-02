@@ -25,7 +25,7 @@ use std::rc::Rc;
 use crate::resources::compiler_properties::errors;
 use crate::util::abstract_log::AbstractLog;
 use crate::util::jc_diagnostic::Error as JCDiagnosticError;
-use crate::util::layout_characters::{tabulate, EOI};
+use crate::util::layout_characters::{EOI, tabulate};
 use crate::util::log::Log;
 
 /// The unicode character reader (Java: UnicodeReader).
@@ -289,7 +289,8 @@ impl UnicodeReader {
         self.next_code_point();
         if let Some(tracking) = &mut self.tracking {
             let character = self.character;
-            if character == '\n' as u16 || character == '\r' as u16 || character == '\u{0C}' as u16 {
+            if character == '\n' as u16 || character == '\r' as u16 || character == '\u{0C}' as u16
+            {
                 tracking.column = 0;
             } else if character == '\t' as u16 {
                 tracking.column = tabulate(tracking.column);
@@ -482,18 +483,26 @@ impl UnicodeReader {
     /// UnicodeReader tests until the Javadoc position-tracking wiring uses it.
     #[cfg(test)]
     pub(crate) fn column(&self) -> i32 {
-        self.tracking.as_ref().map(|tracking| tracking.column).unwrap_or(0)
+        self.tracking
+            .as_ref()
+            .map(|tracking| tracking.column)
+            .unwrap_or(0)
     }
 
     /// Java: PositionTrackingReader.offsetPosition().
     pub(crate) fn offset_position(&self) -> i32 {
-        self.position() + self.tracking.as_ref().map(|tracking| tracking.offset).unwrap_or(0)
+        self.position()
+            + self
+                .tracking
+                .as_ref()
+                .map(|tracking| tracking.offset)
+                .unwrap_or(0)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{is_high_surrogate, is_low_surrogate, to_code_point, UnicodeReader};
+    use super::{UnicodeReader, is_high_surrogate, is_low_surrogate, to_code_point};
     use crate::util::abstract_log::AbstractLog;
     use crate::util::context::Context;
     use crate::util::log::Log;
@@ -501,7 +510,6 @@ mod tests {
     use javac_tools::tools::java_file_object::Kind;
     use javac_tools::tools::simple_java_file_object::SimpleJavaFileObject;
     use javac_tools::uri::URI;
-    use std::cell::RefCell;
     use std::rc::Rc;
 
     fn log() -> Rc<Log> {

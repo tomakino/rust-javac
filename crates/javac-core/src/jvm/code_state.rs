@@ -220,7 +220,7 @@ impl State {
     pub fn unlock(&mut self, register: i32) {
         self.nlocks -= 1;
         let expected = self.locks[self.nlocks as usize];
-        assert!(expected == register, "AssertionError: monitor stack mismatch");
+        assert_eq!(expected, register, "AssertionError: monitor stack mismatch");
         self.locks[self.nlocks as usize] = -1;
     }
 
@@ -228,12 +228,7 @@ impl State {
     ///
     /// Byte/short/char/boolean values are widened to int; wide values occupy two
     /// stack slots. The caller is responsible for updating Code.max_stack.
-    pub fn push(
-        &mut self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) {
+    pub fn push(&mut self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) {
         let mut t = t;
         match ctx.typ(t).get_tag() {
             TypeTag::VOID => return,
@@ -261,13 +256,10 @@ impl State {
     /// Pop one single-width value.
     pub fn pop1(&mut self, ctx: &mut CompilerContext, syms: &Symtab) -> TypeId {
         self.stacksize -= 1;
-        let result = self.stack[self.stacksize as usize]
-            .expect("AssertionError: empty operand stack");
+        let result =
+            self.stack[self.stacksize as usize].expect("AssertionError: empty operand stack");
         self.stack[self.stacksize as usize] = None;
-        assert!(
-            Code::width_type(ctx, syms, Some(result)) == 1,
-            "AssertionError: expected single-width value"
-        );
+        assert_eq!(Code::width_type(ctx, syms, Some(result)), 1, "AssertionError: expected single-width value");
         result
     }
 
@@ -279,17 +271,14 @@ impl State {
     /// Pop one two-slot value.
     pub fn pop2(&mut self, ctx: &mut CompilerContext, syms: &Symtab) -> TypeId {
         self.stacksize -= 2;
-        let result = self.stack[self.stacksize as usize]
-            .expect("AssertionError: empty operand stack");
+        let result =
+            self.stack[self.stacksize as usize].expect("AssertionError: empty operand stack");
         self.stack[self.stacksize as usize] = None;
         assert!(
             self.stack[(self.stacksize + 1) as usize].is_none(),
             "AssertionError: expected a wide value"
         );
-        assert!(
-            Code::width_type(ctx, syms, Some(result)) == 2,
-            "AssertionError: expected a wide value"
-        );
+        assert_eq!(Code::width_type(ctx, syms, Some(result)), 2, "AssertionError: expected a wide value");
         result
     }
 
@@ -340,13 +329,7 @@ impl State {
     }
 
     /// Join this state with another state at a control-flow merge point.
-    pub fn join(
-        &mut self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        types: &Types,
-        other: &State,
-    ) {
+    pub fn join(&mut self, ctx: &mut CompilerContext, syms: &Symtab, types: &Types, other: &State) {
         self.defined.and_set(&other.defined);
         assert!(
             self.stacksize == other.stacksize && self.nlocks == other.nlocks,
@@ -360,19 +343,11 @@ impl State {
                 t
             } else {
                 match (t, tother) {
-                    (Some(t), Some(tother))
-                        if types.is_subtype(ctx, syms, t, tother) =>
-                    {
+                    (Some(t), Some(tother)) if types.is_subtype(ctx, syms, t, tother) => {
                         Some(tother)
                     }
-                    (Some(t), Some(tother))
-                        if types.is_subtype(ctx, syms, tother, t) =>
-                    {
-                        Some(t)
-                    }
-                    _ => panic!(
-                        "AssertionError: inconsistent stack types at join point"
-                    ),
+                    (Some(t), Some(tother)) if types.is_subtype(ctx, syms, tother, t) => Some(t),
+                    _ => panic!("AssertionError: inconsistent stack types at join point"),
                 }
             };
             let result = result.expect("AssertionError: empty stack slot at join point");
@@ -414,4 +389,3 @@ impl Chain {
         Chain { pc, state, next }
     }
 }
-

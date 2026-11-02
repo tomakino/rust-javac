@@ -137,34 +137,15 @@ impl ConstFold {
                 syms.int_type,
                 ConstantValue::Integer(!Self::int_value(value)),
             )),
-            byte_codes::BOOL_NOT => Some((
-                syms.boolean_type,
-                Self::b2i(Self::int_value(value) == 0),
-            )),
-            byte_codes::IFEQ => Some((
-                syms.boolean_type,
-                Self::b2i(Self::int_value(value) == 0),
-            )),
-            byte_codes::IFNE => Some((
-                syms.boolean_type,
-                Self::b2i(Self::int_value(value) != 0),
-            )),
-            byte_codes::IFLT => Some((
-                syms.boolean_type,
-                Self::b2i(Self::int_value(value) < 0),
-            )),
-            byte_codes::IFGT => Some((
-                syms.boolean_type,
-                Self::b2i(Self::int_value(value) > 0),
-            )),
-            byte_codes::IFLE => Some((
-                syms.boolean_type,
-                Self::b2i(Self::int_value(value) <= 0),
-            )),
-            byte_codes::IFGE => Some((
-                syms.boolean_type,
-                Self::b2i(Self::int_value(value) >= 0),
-            )),
+            byte_codes::BOOL_NOT => {
+                Some((syms.boolean_type, Self::b2i(Self::int_value(value) == 0)))
+            }
+            byte_codes::IFEQ => Some((syms.boolean_type, Self::b2i(Self::int_value(value) == 0))),
+            byte_codes::IFNE => Some((syms.boolean_type, Self::b2i(Self::int_value(value) != 0))),
+            byte_codes::IFLT => Some((syms.boolean_type, Self::b2i(Self::int_value(value) < 0))),
+            byte_codes::IFGT => Some((syms.boolean_type, Self::b2i(Self::int_value(value) > 0))),
+            byte_codes::IFLE => Some((syms.boolean_type, Self::b2i(Self::int_value(value) <= 0))),
+            byte_codes::IFGE => Some((syms.boolean_type, Self::b2i(Self::int_value(value) >= 0))),
             byte_codes::LNEG => Some((
                 syms.long_type,
                 ConstantValue::Long(Self::long_value(value).wrapping_neg()),
@@ -471,9 +452,7 @@ impl ConstFold {
                 let rs = ConstFold::string_value(ctx, right, &r);
                 Some((
                     syms.string_type,
-                    ConstantValue::String(JavaString::from(
-                        format!("{ls}{rs}").as_str(),
-                    )),
+                    ConstantValue::String(JavaString::from(format!("{ls}{rs}").as_str())),
                 ))
             }
             _ => None,
@@ -502,7 +481,7 @@ impl ConstFold {
     /// decides how it is rendered, so `'x' + 1` concatenates as "y" rather
     /// than "121".
     fn string_value(
-        ctx: &crate::compiler_context::CompilerContext,
+        ctx: &CompilerContext,
         ty: TypeId,
         value: &ConstantValue,
     ) -> JavaString {
@@ -530,14 +509,8 @@ impl ConstFold {
         etype: TypeId,
         ttype: TypeId,
     ) -> TypeId {
-        let etsym_type = ctx
-            .typ(etype)
-            .tsym
-            .and_then(|tsym| ctx.sym(tsym).ty);
-        let ttsym_type = ctx
-            .typ(ttype)
-            .tsym
-            .and_then(|tsym| ctx.sym(tsym).ty);
+        let etsym_type = ctx.typ(etype).tsym.and_then(|tsym| ctx.sym(tsym).ty);
+        let ttsym_type = ctx.typ(ttype).tsym.and_then(|tsym| ctx.sym(tsym).ty);
         if etsym_type == ttsym_type {
             return etype;
         }

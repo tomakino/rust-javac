@@ -10,8 +10,8 @@
 //! is implemented on pure-Rust dependencies (rawzip + zlib-rs); rawzip also
 //! accepts zip64 archives, which java.util.zip.ZipFile supports.
 
-pub mod cp437;
 mod archive;
+pub mod cp437;
 mod decompress;
 mod entry;
 mod error;
@@ -88,9 +88,7 @@ mod tests {
                 return Some(home);
             }
         }
-        let fallback = PathBuf::from(
-            r"C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot",
-        );
+        let fallback = PathBuf::from(r"C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot");
         if fallback.is_dir() {
             Some(fallback)
         } else {
@@ -224,7 +222,10 @@ mod tests {
             "META-INF/services/java.nio.file.spi.FileSystemProvider"
         );
         assert_eq!(services_entry.compression_method(), 8);
-        assert_eq!(services_entry.uncompressed_size(), JRTFS_SERVICES_LEN as u64);
+        assert_eq!(
+            services_entry.uncompressed_size(),
+            JRTFS_SERVICES_LEN as u64
+        );
     }
 
     struct TestEntry<'a> {
@@ -344,7 +345,10 @@ mod tests {
             archive.get_entry("dir/deflated.txt").as_deref(),
             Some(deflated_data.as_slice())
         );
-        assert_eq!(archive.get_entry_of(0).as_deref(), Some(stored_data.as_slice()));
+        assert_eq!(
+            archive.get_entry_of(0).as_deref(),
+            Some(stored_data.as_slice())
+        );
         assert!(archive.get_entry_of(2).is_none());
         assert_eq!(archive.entries()[0].compression_method(), 0);
         assert_eq!(archive.entries()[1].compression_method(), 8);

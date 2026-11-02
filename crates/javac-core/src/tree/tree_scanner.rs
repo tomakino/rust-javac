@@ -46,6 +46,10 @@ impl TreeScanner {
 }
 
 impl TreeVisitor for TreeScanner {
+    fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        panic!("AssertionError: visitTree");
+    }
+
     fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let defs = match &ctx.tree(tree).kind {
             TreeKind::CompilationUnit { defs, .. } => defs.clone(),
@@ -63,76 +67,6 @@ impl TreeVisitor for TreeScanner {
         };
         self.scan_list(ctx, &annotations);
         self.scan(ctx, pid);
-    }
-
-    fn visit_module_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (mods, qual_id, directives) = match &ctx.tree(tree).kind {
-            TreeKind::ModuleDecl {
-                mods,
-                qual_id,
-                directives,
-                ..
-            } => (*mods, *qual_id, directives.clone()),
-            _ => panic!("expected a module declaration"),
-        };
-        self.scan(ctx, mods);
-        self.scan(ctx, qual_id);
-        self.scan_list_opt(ctx, directives);
-    }
-
-    fn visit_exports(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (qualid, module_names) = match &ctx.tree(tree).kind {
-            TreeKind::Exports {
-                qualid,
-                module_names,
-                ..
-            } => (*qualid, module_names.clone()),
-            _ => panic!("expected an exports directive"),
-        };
-        self.scan(ctx, qualid);
-        self.scan_list_opt(ctx, module_names);
-    }
-
-    fn visit_opens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (qualid, module_names) = match &ctx.tree(tree).kind {
-            TreeKind::Opens {
-                qualid,
-                module_names,
-                ..
-            } => (*qualid, module_names.clone()),
-            _ => panic!("expected an opens directive"),
-        };
-        self.scan(ctx, qualid);
-        self.scan_list_opt(ctx, module_names);
-    }
-
-    fn visit_provides(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (service_name, impl_names) = match &ctx.tree(tree).kind {
-            TreeKind::Provides {
-                service_name,
-                impl_names,
-                ..
-            } => (*service_name, impl_names.clone()),
-            _ => panic!("expected a provides directive"),
-        };
-        self.scan(ctx, service_name);
-        self.scan_list(ctx, &impl_names);
-    }
-
-    fn visit_requires(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let module_name = match &ctx.tree(tree).kind {
-            TreeKind::Requires { module_name, .. } => *module_name,
-            _ => panic!("expected a requires directive"),
-        };
-        self.scan(ctx, module_name);
-    }
-
-    fn visit_uses(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let qualid = match &ctx.tree(tree).kind {
-            TreeKind::Uses { qualid } => *qualid,
-            _ => panic!("expected a uses directive"),
-        };
-        self.scan(ctx, qualid);
     }
 
     fn visit_import(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -674,14 +608,6 @@ impl TreeVisitor for TreeScanner {
 
     fn visit_type_bound_kind(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
-    fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let annotations = match &ctx.tree(tree).kind {
-            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
-            _ => panic!("expected modifiers"),
-        };
-        self.scan_list(ctx, &annotations);
-    }
-
     fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotation_type, args) = match &ctx.tree(tree).kind {
             TreeKind::Annotation {
@@ -693,6 +619,14 @@ impl TreeVisitor for TreeScanner {
         };
         self.scan(ctx, annotation_type);
         self.scan_list(ctx, &args);
+    }
+
+    fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let annotations = match &ctx.tree(tree).kind {
+            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+            _ => panic!("expected modifiers"),
+        };
+        self.scan_list(ctx, &annotations);
     }
 
     fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -709,6 +643,76 @@ impl TreeVisitor for TreeScanner {
 
     fn visit_erroneous(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
+    fn visit_module_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (mods, qual_id, directives) = match &ctx.tree(tree).kind {
+            TreeKind::ModuleDecl {
+                mods,
+                qual_id,
+                directives,
+                ..
+            } => (*mods, *qual_id, directives.clone()),
+            _ => panic!("expected a module declaration"),
+        };
+        self.scan(ctx, mods);
+        self.scan(ctx, qual_id);
+        self.scan_list_opt(ctx, directives);
+    }
+
+    fn visit_exports(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (qualid, module_names) = match &ctx.tree(tree).kind {
+            TreeKind::Exports {
+                qualid,
+                module_names,
+                ..
+            } => (*qualid, module_names.clone()),
+            _ => panic!("expected an exports directive"),
+        };
+        self.scan(ctx, qualid);
+        self.scan_list_opt(ctx, module_names);
+    }
+
+    fn visit_opens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (qualid, module_names) = match &ctx.tree(tree).kind {
+            TreeKind::Opens {
+                qualid,
+                module_names,
+                ..
+            } => (*qualid, module_names.clone()),
+            _ => panic!("expected an opens directive"),
+        };
+        self.scan(ctx, qualid);
+        self.scan_list_opt(ctx, module_names);
+    }
+
+    fn visit_provides(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (service_name, impl_names) = match &ctx.tree(tree).kind {
+            TreeKind::Provides {
+                service_name,
+                impl_names,
+                ..
+            } => (*service_name, impl_names.clone()),
+            _ => panic!("expected a provides directive"),
+        };
+        self.scan(ctx, service_name);
+        self.scan_list(ctx, &impl_names);
+    }
+
+    fn visit_requires(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let module_name = match &ctx.tree(tree).kind {
+            TreeKind::Requires { module_name, .. } => *module_name,
+            _ => panic!("expected a requires directive"),
+        };
+        self.scan(ctx, module_name);
+    }
+
+    fn visit_uses(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let qualid = match &ctx.tree(tree).kind {
+            TreeKind::Uses { qualid } => *qualid,
+            _ => panic!("expected a uses directive"),
+        };
+        self.scan(ctx, qualid);
+    }
+
     fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (defs, expr) = match &ctx.tree(tree).kind {
             TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
@@ -716,10 +720,6 @@ impl TreeVisitor for TreeScanner {
         };
         self.scan_list(ctx, &defs);
         self.scan(ctx, expr);
-    }
-
-    fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
-        panic!("AssertionError: visitTree");
     }
 }
 
@@ -731,7 +731,6 @@ impl TreeScanner {
         }
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // adapter infrastructure: the reusable TreeScanner navigational defaults.
@@ -1441,7 +1440,6 @@ pub trait TreeScannerVisitor: TreeVisitor + Sized {
     fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
         panic!("AssertionError: visitTree");
     }
-
 }
 
 /// Forward every TreeVisitor callback to the TreeScannerVisitor dispatch, so a
@@ -1724,13 +1722,13 @@ mod tests {
     }
 
     impl TreeVisitor for Recorder {
-        fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-            match &ctx.tree(tree).kind {
-                TreeKind::Ident { name, .. } => {
-                    self.names.push(name.to_java_string().to_string_lossy())
-                }
-                _ => panic!("expected an identifier"),
-            }
+        fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+            let (mods, defs) = match &ctx.tree(tree).kind {
+                TreeKind::ClassDecl { mods, defs, .. } => (*mods, defs.clone()),
+                _ => panic!("expected a class declaration"),
+            };
+            self.scan(ctx, mods);
+            self.scan_list(ctx, &defs);
         }
 
         fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -1758,22 +1756,16 @@ mod tests {
             self.scan_list(ctx, &args);
         }
 
-        fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-            let (mods, defs) = match &ctx.tree(tree).kind {
-                TreeKind::ClassDecl { mods, defs, .. } => (*mods, defs.clone()),
-                _ => panic!("expected a class declaration"),
-            };
-            self.scan(ctx, mods);
-            self.scan_list(ctx, &defs);
+        fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+            match &ctx.tree(tree).kind {
+                TreeKind::Ident { name, .. } => {
+                    self.names.push(name.to_java_string().to_string_lossy())
+                }
+                _ => panic!("expected an identifier"),
+            }
         }
 
-        fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-            let annotations = match &ctx.tree(tree).kind {
-                TreeKind::Modifiers { annotations, .. } => annotations.clone(),
-                _ => panic!("expected modifiers"),
-            };
-            self.scan_list(ctx, &annotations);
-        }
+        fn visit_literal(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
         fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
             let (annotation_type, args) = match &ctx.tree(tree).kind {
@@ -1788,7 +1780,13 @@ mod tests {
             self.scan_list(ctx, &args);
         }
 
-        fn visit_literal(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
+        fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+            let annotations = match &ctx.tree(tree).kind {
+                TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+                _ => panic!("expected modifiers"),
+            };
+            self.scan_list(ctx, &annotations);
+        }
     }
 
     #[test]
@@ -1904,7 +1902,9 @@ tree_scanner_visitor_delegate!(ChildCollector);
 
 /// Porting rules helper: collect the direct children of a tree node.
 pub fn tree_children(ctx: &mut CompilerContext, tree: TreeId) -> Vec<TreeId> {
-    let mut collector = ChildCollector { children: Vec::new() };
+    let mut collector = ChildCollector {
+        children: Vec::new(),
+    };
     crate::tree::jc_tree::accept(ctx, tree, &mut collector);
     collector.children
 }

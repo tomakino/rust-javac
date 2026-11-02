@@ -146,7 +146,6 @@ pub fn externalize(buf: &[u8], offset: i32, len: i32) -> Vec<u8> {
 // REGISTERED(P0+): internalize(Name) / externalize(Name) overloads are added together with
 // the Name port (they are trivial wrappers around the byte[] versions above).
 
-
 /// Return the external representation of `name`, converting '/' to '.'.
 ///
 /// shared-table name, so the byte offset/length pair is read through the Name

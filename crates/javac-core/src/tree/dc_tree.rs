@@ -352,13 +352,7 @@ impl fmt::Display for DCTree {
 /// casts such as (DCReference) ref (ClassCastException -> panic).
 pub(crate) fn assert_kind(tree: &Rc<DCTree>, role: &str, expected: Kind) {
     let actual = tree.get_kind();
-    assert!(
-        actual == expected,
-        "{}: expected {:?} but found {:?} (Java: ClassCastException)",
-        role,
-        expected,
-        actual
-    );
+    assert_eq!(actual, expected, "{}: expected {:?} but found {:?} (Java: ClassCastException)", role, expected, actual);
 }
 
 #[cfg(test)]

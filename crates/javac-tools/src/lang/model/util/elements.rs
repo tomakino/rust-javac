@@ -29,8 +29,8 @@ use super::element_filter::ElementFilter;
 use crate::java_io::Writer;
 use crate::lang::model::AnnotatedConstruct;
 use crate::lang::model::element::{
-    AnnotationMirror, AnnotationValue, Element, ExecutableElement, ModuleElement,
-    Name, PackageElement, RecordComponentElement, TypeElement, Value,
+    AnnotationMirror, AnnotationValue, Element, ExecutableElement, ModuleElement, Name,
+    PackageElement, RecordComponentElement, TypeElement, Value,
 };
 use javac_strings::JavaString;
 use std::rc::Rc;
@@ -93,7 +93,8 @@ pub trait Elements {
         } else {
             let mut result: Vec<Rc<dyn PackageElement>> = Vec::new();
             for module in &modules {
-                if let Some(package_elt) = self.get_package_element_in_module(module.as_ref(), name) {
+                if let Some(package_elt) = self.get_package_element_in_module(module.as_ref(), name)
+                {
                     result.push(package_elt);
                 }
             }
@@ -443,8 +444,8 @@ mod tests {
     use crate::java_io::Writer;
     use crate::lang::model::AnnotatedConstruct;
     use crate::lang::model::element::{
-        AnnotationMirror, AnnotationValue, Element, ExecutableElement,
-        Name, PackageElement, TypeElement, Value,
+        AnnotationMirror, AnnotationValue, Element, ExecutableElement, Name, PackageElement,
+        TypeElement, Value,
     };
     use javac_strings::JavaString;
     use std::rc::Rc;
@@ -479,10 +480,7 @@ mod tests {
         fn get_all_members(&self, _type_: &dyn TypeElement) -> Vec<Rc<dyn Element>> {
             Vec::new()
         }
-        fn get_all_annotation_mirrors(
-            &self,
-            _e: &dyn Element,
-        ) -> Vec<Rc<dyn AnnotationMirror>> {
+        fn get_all_annotation_mirrors(&self, _e: &dyn Element) -> Vec<Rc<dyn AnnotationMirror>> {
             Vec::new()
         }
         fn hides(&self, _hider: &dyn Element, _hidden: &dyn Element) -> bool {
@@ -521,7 +519,11 @@ mod tests {
         assert!(elements.get_all_type_elements(&name).is_empty());
         assert!(elements.get_module_of(&DummyElement).is_none());
         assert_eq!(elements.get_origin(&DummyElement), Origin::EXPLICIT);
-        assert!(elements.get_origin_for_construct(&DummyConstruct, &DummyAnnotation).eq(&Origin::EXPLICIT));
+        assert!(
+            elements
+                .get_origin_for_construct(&DummyConstruct, &DummyAnnotation)
+                .eq(&Origin::EXPLICIT)
+        );
         let mut out = NullWriter;
         elements.print_elements(&mut out, &[]);
     }
@@ -636,17 +638,11 @@ mod tests {
     }
 
     impl AnnotationMirror for DummyAnnotation {
-        fn get_annotation_type(
-            &self,
-        ) -> Rc<dyn crate::lang::model::type_::DeclaredType> {
+        fn get_annotation_type(&self) -> Rc<dyn crate::lang::model::type_::DeclaredType> {
             panic!("UnsupportedOperationException: get_annotation_type: test fixture")
         }
-        fn get_element_values(
-            &self,
-        ) -> Vec<(Rc<dyn ExecutableElement>, Rc<dyn AnnotationValue>)> {
+        fn get_element_values(&self) -> Vec<(Rc<dyn ExecutableElement>, Rc<dyn AnnotationValue>)> {
             Vec::new()
         }
     }
-
-
 }

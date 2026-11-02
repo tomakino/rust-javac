@@ -5,8 +5,8 @@ use std::rc::Rc;
 
 use crate::code::kinds::KindSelector;
 use crate::code::symtab::Symtab;
-use crate::comp::type_display::type_display;
 use crate::comp::check::Check;
+use crate::comp::type_display::type_display;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{TreeId, TypeId};
 
@@ -268,4 +268,3 @@ impl ResultInfo {
         result
     }
 }
-

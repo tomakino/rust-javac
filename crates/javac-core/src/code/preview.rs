@@ -41,17 +41,17 @@ use std::rc::Rc;
 use javac_tools::tools::java_file_manager::JavaFileObjectRef;
 use javac_tools::tools::java_file_object::JavaFileObject;
 
+use crate::code::lint::Lint;
 use crate::code::source::{Feature, Source};
 use crate::jvm::target::Target;
 use crate::resources::compiler_properties::errors;
 use crate::resources::diagnostic_contract::{DiagnosticArg, FileObjectArg};
-use crate::code::lint::Lint;
 use crate::util::assert;
-use crate::util::log::Log;
-use crate::util::mandatory_warning_handler::{MandatoryWarningHandler, MandatoryWarningLog};
 use crate::util::context::Context;
 use crate::util::java_string::JavaString;
 use crate::util::jc_diagnostic::{DiagnosticPosition, Error, Warning};
+use crate::util::log::Log;
+use crate::util::mandatory_warning_handler::{MandatoryWarningHandler, MandatoryWarningLog};
 
 /// Helper class to handle preview language features.
 pub struct Preview {
@@ -78,9 +78,7 @@ pub struct Preview {
     source: Option<Source>,
     /// Java: private final MandatoryWarningHandler previewHandler (None for the
     /// service-free adapter constructor).
-    preview_handler: std::cell::RefCell<
-        Option<MandatoryWarningHandler<Rc<Log>>>,
-    >,
+    preview_handler: std::cell::RefCell<Option<MandatoryWarningHandler<Rc<Log>>>>,
 }
 
 /// Adapter: the MandatoryWarningLog implementation over the shared Log cell
@@ -116,7 +114,11 @@ impl MandatoryWarningLog for Rc<Log> {
         MandatoryWarningLog::warning(&**self, lc, pos, warning_key)
     }
 
-    fn mandatory_note(&self, file: Option<Rc<dyn JavaFileObject>>, note: crate::util::jc_diagnostic::Note) {
+    fn mandatory_note(
+        &self,
+        file: Option<Rc<dyn JavaFileObject>>,
+        note: crate::util::jc_diagnostic::Note,
+    ) {
         MandatoryWarningLog::mandatory_note(&**self, file, note)
     }
 
@@ -272,10 +274,15 @@ impl Preview {
             };
             let warning = Warning::from(info);
             let handler = self.preview_handler.borrow();
-            handler.as_ref().expect("Preview handler must be installed").report(
-                Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
-                warning,
-            );
+            handler
+                .as_ref()
+                .expect("Preview handler must be installed")
+                .report(
+                    Some(Rc::new(
+                        crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                    )),
+                    warning,
+                );
         }
     }
 
@@ -309,10 +316,11 @@ impl Preview {
                 None => "",
             };
             let file_arg = FileObjectArg::from(classfile.get_name().to_string_lossy().as_str());
-            let info = crate::resources::compiler_properties::warnings::preview_feature_use_classfile(
-                file_arg,
-                JavaString::from(source_name),
-            );
+            let info =
+                crate::resources::compiler_properties::warnings::preview_feature_use_classfile(
+                    file_arg,
+                    JavaString::from(source_name),
+                );
             let warning = Warning::from(info);
             MandatoryWarningLog::mandatory_warning(
                 &*log,
@@ -336,12 +344,17 @@ impl Preview {
     /// Java: public void reportPreviewWarning(DiagnosticPosition pos, Warning warnKey).
     pub fn report_preview_warning(&self, pos: &dyn DiagnosticPosition, warn_key: Warning) {
         let handler = self.preview_handler.borrow();
-        handler.as_ref().expect("Preview handler must be installed").report(
-            Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
-                pos.get_start_position(),
-            ))),
-            warn_key,
-        );
+        handler
+            .as_ref()
+            .expect("Preview handler must be installed")
+            .report(
+                Some(Rc::new(
+                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                        pos.get_start_position(),
+                    ),
+                )),
+                warn_key,
+            );
     }
 
     /// Java: public boolean usesPreview(JavaFileObject file) {
@@ -394,7 +407,11 @@ impl Preview {
     /// be loaded due to the preview feature support being disabled.
     /// @param classfile the name of the classfile with preview features enabled
     /// @param major_version the major version found in the classfile.
-    pub fn disabled_error_classfile(&self, classfile: &dyn JavaFileObject, major_version: i32) -> Error {
+    pub fn disabled_error_classfile(
+        &self,
+        classfile: &dyn JavaFileObject,
+        major_version: i32,
+    ) -> Error {
         assert::check(!self.is_enabled());
         // Java: majorVersionToSource.get(majorVersion).name -> NullPointerException
         // when the map has no entry for the major version.
@@ -543,7 +560,10 @@ mod tests {
         let file = TestJavaFileObject;
         let error = preview.disabled_error_classfile(&file, 61);
         assert_eq!(error.info().get_type(), DiagnosticType::ERROR);
-        assert_eq!(error.info().get_code(), "preview.feature.disabled.classfile");
+        assert_eq!(
+            error.info().get_code(),
+            "preview.feature.disabled.classfile"
+        );
         let args = error.info().get_args();
         assert_eq!(args.len(), 2);
         assert_eq!(
@@ -637,7 +657,10 @@ mod tests {
         let second: javac_tools::tools::java_file_manager::JavaFileObjectRef =
             std::rc::Rc::new(TestJavaFileObject);
         assert!(!preview.uses_preview(&first));
-        preview.sources_with_preview_features.borrow_mut().push(first.clone());
+        preview
+            .sources_with_preview_features
+            .borrow_mut()
+            .push(first.clone());
         assert!(preview.uses_preview(&first));
         // JavaFileObject has no equals override: a different instance is a
         // different set element.
@@ -651,17 +674,9 @@ mod tests {
         let lint = crate::code::lint::Lint::instance(&mut context);
         let file: javac_tools::tools::java_file_manager::JavaFileObjectRef =
             std::rc::Rc::new(TestJavaFileObject);
-        crate::util::abstract_log::AbstractLog::use_source(
-            &*log,
-            Some(std::rc::Rc::clone(&file)),
-        );
-        let preview = Preview::new_with_services(
-            false,
-            false,
-            log,
-            lint,
-            crate::code::source::Source::JDK17,
-        );
+        crate::util::abstract_log::AbstractLog::use_source(&*log, Some(std::rc::Rc::clone(&file)));
+        let preview =
+            Preview::new_with_services(false, false, log, lint, Source::JDK17);
         let pos = SimpleDiagnosticPosition::new(0);
         preview.mark_uses_preview(&pos);
         assert!(preview.uses_preview(&file));
@@ -672,7 +687,7 @@ mod tests {
         let mut context = crate::util::context::Context::new();
         let preview = Preview::instance(&mut context);
         assert!(!preview.is_enabled());
-        assert!(preview.is_preview(crate::code::source::Feature::CASE_NULL));
-        assert!(preview.is_preview(crate::code::source::Feature::PATTERN_SWITCH));
+        assert!(preview.is_preview(Feature::CASE_NULL));
+        assert!(preview.is_preview(Feature::PATTERN_SWITCH));
     }
 }

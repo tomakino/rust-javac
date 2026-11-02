@@ -56,7 +56,12 @@ impl ValueKind {
 
     /// Java: enum#values().
     pub fn values() -> [ValueKind; 4] {
-        [ValueKind::EMPTY, ValueKind::UNQUOTED, ValueKind::SINGLE, ValueKind::DOUBLE]
+        [
+            ValueKind::EMPTY,
+            ValueKind::UNQUOTED,
+            ValueKind::SINGLE,
+            ValueKind::DOUBLE,
+        ]
     }
 }
 

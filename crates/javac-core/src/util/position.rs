@@ -195,7 +195,10 @@ impl LineMapImpl {
             loop {
                 let ch = src[i as usize];
                 if ch == CR as u16 || ch == LF as u16 {
-                    if ch == CR as u16 && i.wrapping_add(1) < max && src[(i + 1) as usize] == LF as u16 {
+                    if ch == CR as u16
+                        && i.wrapping_add(1) < max
+                        && src[(i + 1) as usize] == LF as u16
+                    {
                         i += 2;
                     } else {
                         i += 1;

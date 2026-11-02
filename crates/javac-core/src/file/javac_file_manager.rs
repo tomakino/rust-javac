@@ -86,16 +86,13 @@ use std::rc::{Rc, Weak};
 use javac_fs::{Files as FsFiles, Path as FsPath};
 use javac_strings::JavaString;
 use javac_tools::error::Error;
-use javac_tools::tools::option_checker::OptionChecker;
 use javac_tools::tools::java_file_manager::{
     FileObjectRef, JavaFileManager, JavaFileObjectRef, Location, LocationRef,
 };
 use javac_tools::tools::java_file_object::Kind;
+use javac_tools::tools::option_checker::OptionChecker;
 use javac_tools::tools::standard_java_file_manager::{PathFactory, StandardJavaFileManager};
 
-use std::sync::Arc;
-use std::sync::Mutex;
-use javac_charset::Charset;
 use crate::file::base_file_manager::BaseFileManager;
 use crate::file::base_file_manager_api::BaseFileManagerApi;
 use crate::file::cache_fs_info::CacheFSInfo;
@@ -104,6 +101,9 @@ use crate::file::path_file_object::PathFileObject;
 use crate::file::relative_path::{RelativeDirectory, RelativeFile};
 use crate::util::log::Log;
 use crate::util::options::Options;
+use javac_charset::Charset;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 /// Java: protected enum SortFiles implements Comparator<Path>.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -350,7 +350,6 @@ impl javac_tools::jdk::ClassLoader for PathClassLoader {
     }
 }
 
-
 /// Java: private final class JavacFileManager.ArchiveContainer
 /// (JavacFileManager.java:557-672): a read-only container over a jar/zip/jmod
 /// archive. The upstream uses the java.nio zip/jmod FileSystem; the port walks
@@ -373,9 +372,8 @@ impl ArchiveContainer {
     /// Java: ArchiveContainer(Path archivePath) throws IOException,
     /// ProviderNotFoundException, SecurityException.
     fn new(archive_path: &FsPath) -> Result<ArchiveContainer, Error> {
-        let archive = javac_zip::ZipArchive::open(&archive_path.to_path_buf()).map_err(|error| {
-            Error::io(JavaString::from(error.to_string().as_str()))
-        })?;
+        let archive = javac_zip::ZipArchive::open(&archive_path.to_path_buf())
+            .map_err(|error| Error::io(JavaString::from(error.to_string().as_str())))?;
         let mut files: Vec<String> = Vec::new();
         let mut packages: Vec<String> = Vec::new();
         let mut entry_index: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -477,7 +475,11 @@ impl ArchiveContainer {
         user_path: &FsPath,
         name: &RelativeFile,
     ) -> Result<StdOption<JavaFileObjectRef>, Error> {
-        let dirname = name.dirname().as_relative_path().get_path().to_string_lossy();
+        let dirname = name
+            .dirname()
+            .as_relative_path()
+            .get_path()
+            .to_string_lossy();
         let basename = name.basename().to_string_lossy();
         let entry = format!("{dirname}{basename}");
         // Java: packages.get(dirname).resolve(basename) (JavacFileManager.java:646-656);
@@ -518,7 +520,15 @@ impl Container for ArchiveContainer {
         recurse: bool,
         results: &mut Vec<JavaFileObjectRef>,
     ) -> Result<(), Error> {
-        ArchiveContainer::list(self, manager, user_path, subdirectory, kinds, recurse, results)
+        ArchiveContainer::list(
+            self,
+            manager,
+            user_path,
+            subdirectory,
+            kinds,
+            recurse,
+            results,
+        )
     }
 
     fn get_file_object(
@@ -542,7 +552,6 @@ impl Container for ArchiveContainer {
         ArchiveContainer::indexed_directories(self)
     }
 }
-
 
 /// Java: private final class JRTImageContainer (the system modules image via JRTIndex).
 struct JRTImageContainer;
@@ -590,7 +599,11 @@ impl Container for JRTImageContainer {
         // module directly. The aggregated JRTIndex entry below cannot distinguish files
         // with the same relative name in different modules (e.g. module-info.class).
         if let Some(module) = jrt_module_name(_user_path) {
-            let relative = name.as_relative_path().get_path().to_string_lossy().replace('\\', "/");
+            let relative = name
+                .as_relative_path()
+                .get_path()
+                .to_string_lossy()
+                .replace('\\', "/");
             let candidate = FsPath::from_path_buf(PathBuf::from(format!(
                 "{MODULES_JRT_PREFIX}{module}/{relative}"
             )));
@@ -609,7 +622,11 @@ impl Container for JRTImageContainer {
             return Ok(None);
         }
         let basename = name.basename().to_string_lossy();
-        match entry.files.iter().find(|(file_name, _)| *file_name == basename) {
+        match entry
+            .files
+            .iter()
+            .find(|(file_name, _)| *file_name == basename)
+        {
             None => Ok(None),
             Some((_, path)) => {
                 let fo = PathFileObject::for_jrt_path(manager.manager_api(), path);
@@ -676,9 +693,10 @@ pub struct JavacFileManager {
     /// Java: private final Map<Path, Container> containers.
     containers: Arc<Mutex<HashMap<FsPath, Arc<dyn Container>>>>,
     /// Java: pathsAndContainersByLocationAndRelativeDirectory (two-layer cache).
-    paths_and_containers: Arc<std::sync::Mutex<HashMap<String, HashMap<RelativeDirectory, Vec<PathAndContainer>>>>>,
+    paths_and_containers:
+        Arc<Mutex<HashMap<String, HashMap<RelativeDirectory, Vec<PathAndContainer>>>>>,
     /// Java: private Map<Location, List<PathAndContainer>> nonIndexingContainersByLocation.
-    non_indexing_containers: Arc<std::sync::Mutex<HashMap<String, Vec<PathAndContainer>>>>,
+    non_indexing_containers: Arc<Mutex<HashMap<String, Vec<PathAndContainer>>>>,
     /// Opened archive readers reused by PathFileObject.openInputStream.
     /// Adapter: the upstream ArchiveContainer holds one FileSystem per archive
     /// (JavacFileManager.java:557-575, PathFileObject.java:459).
@@ -744,9 +762,9 @@ impl JavacFileManager {
                 java_home,
                 this_system_modules,
                 jrt_index: RefCell::new(None),
-                containers: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                paths_and_containers: Arc::new(std::sync::Mutex::new(HashMap::new())),
-                non_indexing_containers: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                containers: Arc::new(Mutex::new(HashMap::new())),
+                paths_and_containers: Arc::new(Mutex::new(HashMap::new())),
+                non_indexing_containers: Arc::new(Mutex::new(HashMap::new())),
                 archive_readers: Arc::new(Mutex::new(HashMap::new())),
             }
         })
@@ -795,8 +813,15 @@ impl JavacFileManager {
     }
 
     /// Downcast helper (see the file header).
-    pub(crate) fn lookup_path_file_object(&self, fo: &FileObjectRef) -> StdOption<Rc<PathFileObject>> {
-        CREATED_FILE_OBJECTS.with(|map| map.borrow().get(&fo.get_name()).and_then(|weak| weak.upgrade()))
+    pub(crate) fn lookup_path_file_object(
+        &self,
+        fo: &FileObjectRef,
+    ) -> StdOption<Rc<PathFileObject>> {
+        CREATED_FILE_OBJECTS.with(|map| {
+            map.borrow()
+                .get(&fo.get_name())
+                .and_then(|weak| weak.upgrade())
+        })
     }
 
     /// Java: private Path getPath(String first, String... more).
@@ -868,7 +893,9 @@ impl JavacFileManager {
         }
         if self.fs_info.is_file(path) && path == &self.this_system_modules {
             let container: Arc<dyn Container> = Arc::new(JRTImageContainer);
-            self.containers.lock().unwrap()
+            self.containers
+                .lock()
+                .unwrap()
                 .insert(path.clone(), container.clone());
             return Ok(container);
         }
@@ -883,7 +910,9 @@ impl JavacFileManager {
             .starts_with("/modules/")
         {
             let container: Arc<dyn Container> = Arc::new(JRTImageContainer);
-            self.containers.lock().unwrap()
+            self.containers
+                .lock()
+                .unwrap()
                 .insert(path.clone(), container.clone());
             return Ok(container);
         }
@@ -893,7 +922,9 @@ impl JavacFileManager {
         // cached container, release the guard, then insert the alias.
         let cached = self.containers.lock().unwrap().get(&real_path).cloned();
         if let Some(container) = cached {
-            self.containers.lock().unwrap()
+            self.containers
+                .lock()
+                .unwrap()
                 .insert(path.clone(), container.clone());
             return Ok(container);
         }
@@ -906,9 +937,13 @@ impl JavacFileManager {
         } else {
             Arc::new(ArchiveContainer::new(&real_path)?)
         };
-        self.containers.lock().unwrap()
+        self.containers
+            .lock()
+            .unwrap()
             .insert(real_path, container.clone());
-        self.containers.lock().unwrap()
+        self.containers
+            .lock()
+            .unwrap()
             .insert(path.clone(), container.clone());
         Ok(container)
     }
@@ -922,7 +957,10 @@ impl JavacFileManager {
         let key = location.get_name().to_string_lossy();
         if !self.paths_and_containers.lock().unwrap().contains_key(&key) {
             let index = self.index_paths_and_containers_by_relative_directory(location)?;
-            self.paths_and_containers.lock().unwrap().insert(key.clone(), index);
+            self.paths_and_containers
+                .lock()
+                .unwrap()
+                .insert(key.clone(), index);
         }
         let cache = self.paths_and_containers.lock().unwrap();
         let index = cache.get(&key).expect("index");
@@ -930,7 +968,8 @@ impl JavacFileManager {
             Some(list) => Ok(list.clone()),
             None => Ok(self
                 .non_indexing_containers
-                .lock().unwrap()
+                .lock()
+                .unwrap()
                 .get(&key)
                 .cloned()
                 .unwrap_or_default()),
@@ -954,7 +993,9 @@ impl JavacFileManager {
         for path_and_container in &all {
             if path_and_container.container.maintains_directory_index() {
                 for directory in path_and_container.container.indexed_directories() {
-                    let entry = result.entry(directory).or_insert_with(|| non_indexing.clone());
+                    let entry = result
+                        .entry(directory)
+                        .or_insert_with(|| non_indexing.clone());
                     entry.push(path_and_container.clone());
                 }
             }
@@ -963,7 +1004,10 @@ impl JavacFileManager {
             list.sort_by(|a, b| a.index.cmp(&b.index));
         }
         let key = location.get_name().to_string_lossy();
-        self.non_indexing_containers.lock().unwrap().insert(key, non_indexing);
+        self.non_indexing_containers
+            .lock()
+            .unwrap()
+            .insert(key, non_indexing);
         Ok(result)
     }
 
@@ -991,7 +1035,10 @@ impl JavacFileManager {
 
     /// Java: Collection<Path> getLocationAsPaths(Location) via Locations.
     fn get_location_as_paths_impl(&self, location: &dyn Location) -> StdOption<Vec<FsPath>> {
-        self.base.borrow_mut().locations_mut().get_location(location)
+        self.base
+            .borrow_mut()
+            .locations_mut()
+            .get_location(location)
     }
 
     /// Java: private void clearCachesForLocation(Location location).
@@ -1009,18 +1056,16 @@ impl JavacFileManager {
 
     /// Java: private Path getClassOutDir().
     fn get_class_out_dir(&self) -> StdOption<FsPath> {
-        self.base
-            .borrow_mut()
-            .locations_mut()
-            .get_output_location(&javac_tools::tools::standard_location::StandardLocation::CLASS_OUTPUT)
+        self.base.borrow_mut().locations_mut().get_output_location(
+            &StandardLocation::CLASS_OUTPUT,
+        )
     }
 
     /// Java: private Path getSourceOutDir().
     fn get_source_out_dir(&self) -> StdOption<FsPath> {
-        self.base
-            .borrow_mut()
-            .locations_mut()
-            .get_output_location(&javac_tools::tools::standard_location::StandardLocation::SOURCE_OUTPUT)
+        self.base.borrow_mut().locations_mut().get_output_location(
+            &StandardLocation::SOURCE_OUTPUT,
+        )
     }
 }
 
@@ -1118,7 +1163,8 @@ impl JavacFileManager {
                 }
             }
         } else if location_is(location, StandardLocation::SOURCE_OUTPUT) {
-            self.get_source_out_dir().or_else(|| self.get_class_out_dir())
+            self.get_source_out_dir()
+                .or_else(|| self.get_class_out_dir())
         } else {
             self.get_location_as_paths_impl(location)
                 .and_then(|paths| paths.into_iter().next())
@@ -1135,12 +1181,7 @@ impl JavacFileManager {
             Err(_) => return Err(Error::io(jstr("bad filename"))),
         };
         let relative_path = name.as_relative_path().clone();
-        let fo = PathFileObject::for_directory_path(
-            self.manager_api(),
-            &path,
-            &dir,
-            relative_path,
-        );
+        let fo = PathFileObject::for_directory_path(self.manager_api(), &path, &dir, relative_path);
         self.register(&fo);
         Ok(fo as JavaFileObjectRef)
     }
@@ -1185,9 +1226,10 @@ impl JavaFileManager for JavacFileManager {
         // Java: new URLClassLoader over File.toURI().toURL() (JavacFileManager.java:
         // getClassLoader); the ported loader returns the class/resource bytes
         // (registered adapter: the port does not run a JVM).
-        Some(Rc::new(PathClassLoader::new(paths.expect("location paths")))
-            as Rc<dyn javac_tools::jdk::ClassLoader>)
-
+        Some(
+            Rc::new(PathClassLoader::new(paths.expect("location paths")))
+                as Rc<dyn javac_tools::jdk::ClassLoader>,
+        )
     }
     fn list(
         &self,
@@ -1224,7 +1266,10 @@ impl JavaFileManager for JavacFileManager {
     }
 
     fn is_same_file(&self, a: &FileObjectRef, b: &FileObjectRef) -> bool {
-        match (self.lookup_path_file_object(a), self.lookup_path_file_object(b)) {
+        match (
+            self.lookup_path_file_object(a),
+            self.lookup_path_file_object(b),
+        ) {
             (Some(a), Some(b)) => a.is_same_file(&b),
             // Java: a.equals(b); the port falls back to Rc identity.
             _ => Rc::ptr_eq(a, b),
@@ -1250,7 +1295,10 @@ impl JavaFileManager for JavacFileManager {
     }
 
     fn has_location(&self, location: &dyn Location) -> bool {
-        self.base.borrow_mut().locations_mut().has_location(location)
+        self.base
+            .borrow_mut()
+            .locations_mut()
+            .has_location(location)
     }
 
     fn get_java_file_for_input(
@@ -1298,7 +1346,10 @@ impl JavaFileManager for JavacFileManager {
         let name = if package_name.len() == 0 {
             RelativeFile::new(relative_name)
         } else {
-            RelativeFile::with_directory(&RelativeDirectory::for_package(package_name), relative_name)
+            RelativeFile::with_directory(
+                &RelativeDirectory::for_package(package_name),
+                relative_name,
+            )
         };
         Ok(self
             .get_file_for_input_relative(location, &name)?
@@ -1322,7 +1373,10 @@ impl JavaFileManager for JavacFileManager {
         let name = if package_name.len() == 0 {
             RelativeFile::new(relative_name)
         } else {
-            RelativeFile::with_directory(&RelativeDirectory::for_package(package_name), relative_name)
+            RelativeFile::with_directory(
+                &RelativeDirectory::for_package(package_name),
+                relative_name,
+            )
         };
         Ok(self.get_file_for_output_relative(location, &name, sibling)? as FileObjectRef)
     }
@@ -1369,14 +1423,16 @@ impl JavaFileManager for JavacFileManager {
                 }
                 containers.lock().expect("containers").clear();
                 paths_and_containers.lock().expect("paths").clear();
-                non_indexing_containers.lock().expect("non indexing").clear();
+                non_indexing_containers
+                    .lock()
+                    .expect("non indexing")
+                    .clear();
                 content_cache.lock().expect("content cache").clear();
             });
             return Ok(());
         }
         self.close_now()
     }
-
 
     fn get_location_for_module(
         &self,
@@ -1400,7 +1456,9 @@ impl JavaFileManager for JavacFileManager {
     ) -> Result<LocationRef, Error> {
         self.check_module_oriented_or_output_location(location);
         let Some(path_file_object) = self.lookup_by_name(&fo.get_name()) else {
-            return Err(Error::io(jstr("IllegalArgumentException: not a PathFileObject")));
+            return Err(Error::io(jstr(
+                "IllegalArgumentException: not a PathFileObject",
+            )));
         };
         let path = path_file_object.get_path().clone();
         match self
@@ -1416,9 +1474,16 @@ impl JavaFileManager for JavacFileManager {
 
     fn infer_module_name(&self, location: &dyn Location) -> Result<JavaString, Error> {
         self.check_not_module_oriented_location(location);
-        match self.base.borrow_mut().locations_mut().infer_module_name(location) {
+        match self
+            .base
+            .borrow_mut()
+            .locations_mut()
+            .infer_module_name(location)
+        {
             Some(name) => Ok(jstr(name)),
-            None => Err(Error::io(jstr("IllegalArgumentException: not a module location"))),
+            None => Err(Error::io(jstr(
+                "IllegalArgumentException: not a module location",
+            ))),
         }
     }
 
@@ -1436,7 +1501,10 @@ impl JavaFileManager for JavacFileManager {
     fn contains(&self, location: &dyn Location, fo: &FileObjectRef) -> Result<bool, Error> {
         let path = self.as_path_or_panic(fo);
         let file = FsPath::from_path_buf(path);
-        self.base.borrow_mut().locations_mut().contains(location, &file)
+        self.base
+            .borrow_mut()
+            .locations_mut()
+            .contains(location, &file)
     }
 }
 
@@ -1445,11 +1513,7 @@ impl JavacFileManager {
     /// Main.java:265 hands the deferred file manager options to the file manager
     /// directly, without re-running Option.process, so this entry point skips
     /// the repeated-value checks of the command line parser.
-    pub fn handle_option_value(
-        &self,
-        option: crate::main::option::Option,
-        value: &str,
-    ) -> bool {
+    pub fn handle_option_value(&self, option: crate::main::option::Option, value: &str) -> bool {
         self.base.borrow_mut().handle_option_value(option, value)
     }
 
@@ -1476,7 +1540,10 @@ impl JavacFileManager {
 
 impl StandardJavaFileManager for JavacFileManager {
     fn get_java_file_objects_from_files(&self, files: &[PathBuf]) -> Vec<JavaFileObjectRef> {
-        files.iter().map(|path| self.simple_path_file_object(path)).collect()
+        files
+            .iter()
+            .map(|path| self.simple_path_file_object(path))
+            .collect()
     }
 
     fn get_java_file_objects(&self, files: &[PathBuf]) -> Vec<JavaFileObjectRef> {
@@ -1551,10 +1618,7 @@ impl StandardJavaFileManager for JavacFileManager {
     fn set_path_factory(&self, f: Rc<dyn PathFactory>) {
         *self.path_factory.borrow_mut() = Some(f.clone());
         // Java: locations.setPathFactory(f) (JavacFileManager.setPathFactory).
-        self.base
-            .borrow_mut()
-            .locations_mut()
-            .set_path_factory(f);
+        self.base.borrow_mut().locations_mut().set_path_factory(f);
     }
 }
 
@@ -1606,10 +1670,7 @@ impl BaseFileManagerApi for JavacFileManager {
         self.base.borrow().get_encoding_name()
     }
 
-    fn make_byte_buffer(
-        &self,
-        input: &mut dyn std::io::Read,
-    ) -> Result<Vec<u8>, Error> {
+    fn make_byte_buffer(&self, input: &mut dyn std::io::Read) -> Result<Vec<u8>, Error> {
         self.base.borrow().make_byte_buffer(input)
     }
 
@@ -1628,16 +1689,15 @@ impl BaseFileManagerApi for JavacFileManager {
     fn use_source(
         &self,
         file: &PathFileObject,
-    ) -> std::option::Option<
-        std::rc::Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>,
-    > {
+    ) -> Option<Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>>
+    {
         self.base.borrow().use_source(file)
     }
 
     fn restore_source(
         &self,
-        previous: std::option::Option<
-            std::rc::Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>,
+        previous: Option<
+            Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>,
         >,
     ) {
         self.base.borrow().restore_source(previous);
@@ -1660,12 +1720,21 @@ fn is_relative_uri(value: &str) -> bool {
     // characters; a trailing slash is legal for a relative URI (upstream
     // URI.normalize().getPath() equals the original path for "a/").
     for (index, ch) in value.char_indices() {
-        if ch.is_control() || ch.is_whitespace() || matches!(ch, '<' | '>' | '"' | '{' | '}' | '|' | '^' | '`' | '[' | ']') {
+        if ch.is_control()
+            || ch.is_whitespace()
+            || matches!(
+                ch,
+                '<' | '>' | '"' | '{' | '}' | '|' | '^' | '`' | '[' | ']'
+            )
+        {
             return false;
         }
         if ch == '%' {
             let rest = &value[index + 1..];
-            if rest.len() < 2 || !rest.as_bytes()[0].is_ascii_hexdigit() || !rest.as_bytes()[1].is_ascii_hexdigit() {
+            if rest.len() < 2
+                || !rest.as_bytes()[0].is_ascii_hexdigit()
+                || !rest.as_bytes()[1].is_ascii_hexdigit()
+            {
                 return false;
             }
         }
@@ -1700,20 +1769,18 @@ impl OptionChecker for JavacFileManager {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_relative_uri, JavacFileManager};
+    use super::{JavacFileManager, is_relative_uri};
     use crate::file::cache_fs_info::CacheFSInfo;
     use crate::util::context::Context;
-    use javac_fs::Path as FsPath;
     use crate::util::log::Log;
     use crate::util::options::Options;
+    use javac_fs::Path as FsPath;
     use javac_strings::JavaString;
     use javac_tools::tools::java_file_manager::JavaFileManager;
     use javac_tools::tools::java_file_object::Kind;
-    use javac_tools::tools::standard_java_file_manager::StandardJavaFileManager;
     use javac_tools::tools::standard_location::StandardLocation;
     use std::path::PathBuf;
     use std::rc::Rc;
-use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir(tag: &str) -> PathBuf {
@@ -1749,13 +1816,7 @@ use std::sync::Arc;
         let mut context = Context::new();
         let log = Log::instance(&mut context);
         let options = Options::instance(&mut context);
-        JavacFileManager::new(
-            None,
-            java_home(),
-            log,
-            options,
-            Rc::new(CacheFSInfo::new()),
-        )
+        JavacFileManager::new(None, java_home(), log, options, Rc::new(CacheFSInfo::new()))
     }
 
     fn js(s: &str) -> JavaString {
@@ -1826,19 +1887,12 @@ use std::sync::Arc;
         assert!(is_relative_uri("pkg/File.java"));
     }
 
-
     fn manager_with_defer_close(seconds: &str) -> Rc<JavacFileManager> {
         let mut context = Context::new();
         let log = Log::instance(&mut context);
         let options = Options::instance(&mut context);
         options.put("fileManager.deferClose", seconds);
-        JavacFileManager::new(
-            None,
-            java_home(),
-            log,
-            options,
-            Rc::new(CacheFSInfo::new()),
-        )
+        JavacFileManager::new(None, java_home(), log, options, Rc::new(CacheFSInfo::new()))
     }
 
     /// Java: repeated close() calls with the timeout armed schedule independent
@@ -1861,5 +1915,4 @@ use std::sync::Arc;
         // The timeout is now zero: a third close runs the immediate path.
         manager.close().expect("third close");
     }
-
 }

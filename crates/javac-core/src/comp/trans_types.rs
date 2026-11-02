@@ -135,11 +135,7 @@ impl TransTypes {
 
     /// Java: public <T extends JCTree> T translate(T tree)
     /// (TreeTranslator.java).
-    pub fn translate(
-        &mut self,
-        ctx: &mut CompilerContext,
-        tree: Option<TreeId>,
-    ) -> Option<TreeId> {
+    pub fn translate(&mut self, ctx: &mut CompilerContext, tree: Option<TreeId>) -> Option<TreeId> {
         match tree {
             None => None,
             Some(tree) => {
@@ -174,10 +170,10 @@ impl TransTypes {
         let mut result: List<TreeId> = List::nil();
         let current = trees.clone();
         for tree in &current {
-        match self.translate(ctx, Some(tree)) {
-            Some(translated) => result = result.append(translated),
-            None => panic!("translation of a list element produced null"),
-        }
+            match self.translate(ctx, Some(tree)) {
+                Some(translated) => result = result.append(translated),
+                None => panic!("translation of a list element produced null"),
+            }
         }
         result
     }
@@ -265,12 +261,7 @@ impl TransTypes {
     }
 
     /// Java: JCExpression cast(JCExpression tree, Type target) (TransTypes.java).
-    fn cast(
-        &mut self,
-        ctx: &mut CompilerContext,
-        tree: TreeId,
-        target: TypeId,
-    ) -> TreeId {
+    fn cast(&mut self, ctx: &mut CompilerContext, tree: TreeId, target: TypeId) -> TreeId {
         let tree_ty = ctx.tree(tree).ty.expect("tree type");
         let syms = &*self.syms;
         let same = self.types.is_same_type(ctx, &syms, tree_ty, target);
@@ -279,13 +270,8 @@ impl TransTypes {
             .tsym
             .map(|_tsym| {
                 let env = self.env.clone().expect("env");
-                self.resolve.is_accessible_type(
-                    ctx,
-                    &syms,
-                    &env,
-                    target,
-                    true,
-                )
+                self.resolve
+                    .is_accessible_type(ctx, &syms, &env, target, true)
             })
             .unwrap_or(true);
         let _ = syms;
@@ -296,13 +282,8 @@ impl TransTypes {
             let env = self.env.clone().expect("env");
             {
                 let syms_borrow = &*self.syms;
-                self.resolve.log_access_error_internal(
-                    ctx,
-                    &syms_borrow,
-                    &env,
-                    tree,
-                    target,
-                );
+                self.resolve
+                    .log_access_error_internal(ctx, &syms_borrow, &env, tree, target);
             }
         }
         let pos = ctx.tree(tree).pos;
@@ -401,7 +382,8 @@ impl TransTypes {
             let arg = *current_args.head();
             let param = *current_params.head();
             translated = translated.append(
-                self.translate_with_pt(ctx, Some(arg), Some(param)).expect("arg"),
+                self.translate_with_pt(ctx, Some(arg), Some(param))
+                    .expect("arg"),
             );
             current_args = current_args.tail();
             current_params = current_params.tail();
@@ -427,7 +409,8 @@ impl TransTypes {
                 );
                 let arg = *current_args.head();
                 translated = translated.append(
-                    self.translate_with_pt(ctx, Some(arg), Some(parameter)).expect("arg"),
+                    self.translate_with_pt(ctx, Some(arg), Some(parameter))
+                        .expect("arg"),
                 );
             }
         }
@@ -475,10 +458,10 @@ impl TransTypes {
         let bridge_type = self.symbol_erasure(ctx, meth);
         let access_flags = flags::AccessFlags as i64;
         let mut bridge_flags = (ctx.sym(impl_sym).flags_field & access_flags)
-            | crate::code::flags::SYNTHETIC as i64
-            | crate::code::flags::BRIDGE;
-        if (ctx.sym(origin).flags_field & crate::code::flags::INTERFACE as i64) != 0 {
-            bridge_flags |= crate::code::flags::DEFAULT;
+            | flags::SYNTHETIC as i64
+            | flags::BRIDGE;
+        if (ctx.sym(origin).flags_field & flags::INTERFACE as i64) != 0 {
+            bridge_flags |= flags::DEFAULT;
         }
         let meth_name = ctx.sym(meth).name.clone();
         let bridge = ctx.alloc_symbol(Symbol::new_method_symbol(
@@ -526,17 +509,10 @@ impl TransTypes {
             let param_ty = *types_current.head();
             let (p_name, p_flags) = (ctx.sym(param).name.clone(), ctx.sym(param).flags_field);
             let p_mods = { self.make.modifiers(ctx, p_flags) };
-            let p_type_tree = {
-                self.make
-                    .type_from_type(ctx, &*self.syms, param_ty)
-            };
-            let p_tree = self.make.var_def(
-                ctx,
-                p_mods,
-                p_name,
-                Some(p_type_tree),
-                None,
-            );
+            let p_type_tree = { self.make.type_from_type(ctx, &*self.syms, param_ty) };
+            let p_tree = self
+                .make
+                .var_def(ctx, p_mods, p_name, Some(p_type_tree), None);
             ctx.tree_mut(p_tree).ty = Some(param_ty);
             if let TreeKind::VariableDecl { sym: slot, .. } = &mut ctx.tree_mut(p_tree).kind {
                 *slot = Some(param);
@@ -589,7 +565,9 @@ impl TransTypes {
             };
             self.make.idents(ctx, method_params)
         };
-        let impl_param_types = self.types.get_parameter_types_public(ctx, impl_type_erasure);
+        let impl_param_types = self
+            .types
+            .get_parameter_types_public(ctx, impl_type_erasure);
         let call_args = self.translate_args(ctx, idents, impl_param_types, None);
         let call = self.make.apply(ctx, List::nil(), select_tree, call_args);
         ctx.tree_mut(call).ty = Some(calltype);
@@ -637,10 +615,10 @@ impl TransTypes {
                 ctx.sym(impl_param).name.clone(),
                 ctx.sym(impl_param).flags_field,
             );
-            let flags_value = param_flags
-                | crate::code::flags::SYNTHETIC as i64
-                | crate::code::flags::PARAMETER;
-            let param = ctx.alloc_symbol(Symbol::new_var_symbol(flags_value, name, arg_type, bridge));
+            let flags_value =
+                param_flags | flags::SYNTHETIC as i64 | flags::PARAMETER;
+            let param =
+                ctx.alloc_symbol(Symbol::new_var_symbol(flags_value, name, arg_type, bridge));
             let impl_param_symbol = ctx.sym(impl_param).clone();
             let mut param_symbol = ctx.sym(param).clone();
             // Symbol::clone deliberately drops the arena id (a clone normally
@@ -677,16 +655,31 @@ impl TransTypes {
         };
         if ctx.sym(sym).kind == Kind::MTH
             && !sym_name.content_equals(&init_name.to_java_string())
-            && (sym_flags & (crate::code::flags::PRIVATE as i64 | crate::code::flags::STATIC as i64)) == 0
-            && (sym_flags & crate::code::flags::SYNTHETIC as i64)
-                != crate::code::flags::SYNTHETIC as i64
+            && (sym_flags
+                & (flags::PRIVATE as i64 | flags::STATIC as i64))
+                == 0
+            && (sym_flags & flags::SYNTHETIC as i64)
+                != flags::SYNTHETIC as i64
             && is_member
         {
             let meth = sym;
             let (bridge, impl_sym) = {
                 let syms = &*self.syms;
-                let bridge = crate::code::symbol::binary_implementation(ctx, &syms, &self.types, meth, origin);
-                let impl_sym = crate::code::symbol::implementation(ctx, &syms, &self.types, meth, origin, true);
+                let bridge = crate::code::symbol::binary_implementation(
+                    ctx,
+                    &syms,
+                    &self.types,
+                    meth,
+                    origin,
+                );
+                let impl_sym = crate::code::symbol::implementation(
+                    ctx,
+                    &syms,
+                    &self.types,
+                    meth,
+                    origin,
+                    true,
+                );
                 (bridge, impl_sym)
             };
             let bridge_is_absent_or_self = match bridge {
@@ -698,7 +691,13 @@ impl TransTypes {
                     let syms = &*self.syms;
                     let bridge_owner = ctx.sym(bridge).owner.expect("bridge owner");
                     let impl_owner = ctx.sym(impl_sym).owner.expect("impl owner");
-                    !crate::code::symbol::symbol_is_sub_class(ctx, &self.types, &syms, bridge_owner, impl_owner)
+                    !crate::code::symbol::symbol_is_sub_class(
+                        ctx,
+                        &self.types,
+                        &syms,
+                        bridge_owner,
+                        impl_owner,
+                    )
                 }
                 _ => false,
             };
@@ -710,15 +709,16 @@ impl TransTypes {
                     && self.is_bridge_needed(ctx, meth, impl_sym, origin_ty);
                 let reflection_workaround = impl_sym == meth
                     && ctx.sym(impl_sym).owner != Some(origin)
-                    && (ctx.sym(impl_sym).flags_field & crate::code::flags::FINAL as i64) == 0
+                    && (ctx.sym(impl_sym).flags_field & flags::FINAL as i64) == 0
                     && (ctx.sym(meth).flags_field
-                        & (crate::code::flags::ABSTRACT as i64 | crate::code::flags::PUBLIC as i64))
-                        == crate::code::flags::PUBLIC as i64
-                    && ((ctx.sym(origin).flags_field & crate::code::flags::PUBLIC as i64)
+                        & (flags::ABSTRACT as i64
+                            | flags::PUBLIC as i64))
+                        == flags::PUBLIC as i64
+                    && ((ctx.sym(origin).flags_field & flags::PUBLIC as i64)
                         > ctx
                             .sym(impl_sym)
                             .owner
-                            .map(|o| ctx.sym(o).flags_field & crate::code::flags::PUBLIC as i64)
+                            .map(|o| ctx.sym(o).flags_field & flags::PUBLIC as i64)
                             .unwrap_or(0));
                 if needs_bridge || reflection_workaround {
                     self.add_bridge(ctx, pos, meth, impl_sym, origin, bridges);
@@ -745,10 +745,12 @@ impl TransTypes {
                 return true;
             }
             let syms = &*self.syms;
-            let same = self.types.is_same_type(ctx, &syms, impl_erasure, method_erasure);
+            let same = self
+                .types
+                .is_same_type(ctx, &syms, impl_erasure, method_erasure);
             return !same;
         }
-        if (ctx.sym(method).flags_field & crate::code::flags::ABSTRACT as i64) != 0 {
+        if (ctx.sym(method).flags_field & flags::ABSTRACT as i64) != 0 {
             return false;
         }
         let method_erasure = self.symbol_erasure(ctx, method);
@@ -851,11 +853,7 @@ impl TransTypes {
     // ------------------------------------------------------------------
 
     /// Java: void translateClass(ClassSymbol c) (TransTypes.java).
-    fn translate_class(
-        &mut self,
-        ctx: &mut CompilerContext,
-        c: SymbolId,
-    ) {
+    fn translate_class(&mut self, ctx: &mut CompilerContext, c: SymbolId) {
         let c_type = ctx.sym(c).ty.expect("class type");
         let st = {
             let syms = &*self.syms;
@@ -870,10 +868,10 @@ impl TransTypes {
         let Some(my_env) = my_env else {
             return;
         };
-        if (ctx.sym(c).flags_field & crate::code::flags::TYPE_TRANSLATED) != 0 {
+        if (ctx.sym(c).flags_field & flags::TYPE_TRANSLATED) != 0 {
             return;
         }
-        ctx.sym_mut(c).flags_field |= crate::code::flags::TYPE_TRANSLATED;
+        ctx.sym_mut(c).flags_field |= flags::TYPE_TRANSLATED;
         let env_has_comp_state = {
             let states = self.compile_states.borrow();
             states.get(&my_env).is_some()
@@ -912,10 +910,10 @@ impl TransTypes {
         self.default_visit_class_def(ctx, tree);
         // Java: visitClassDef passes tree.pos(), a DiagnosticPosition, so the
         // maker position is TreeInfo.getStartPos(tree) — mods.pos for a class.
-        let pos = crate::tree::tree_info::get_start_pos(ctx, tree);
+        let pos = tree_info::get_start_pos(ctx, tree);
         self.make.at(pos);
         let mut bridges: Vec<TreeId> = Vec::new();
-        let is_interface = (ctx.sym(c).flags_field & crate::code::flags::INTERFACE as i64) != 0;
+        let is_interface = (ctx.sym(c).flags_field & flags::INTERFACE as i64) != 0;
         if self.allow_interface_bridges || !is_interface {
             self.add_bridges(ctx, pos, c, &mut bridges);
         }
@@ -959,9 +957,20 @@ impl TransTypes {
     /// translateClass (TransTypes.java:955: super.visitClassDef(tree)).
     fn default_visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, typarams, extending, implementing, defs) = match &ctx.tree(tree).kind {
-            TreeKind::ClassDecl { mods, typarams, extending, implementing, defs, .. } => {
-                (*mods, typarams.clone(), *extending, implementing.clone(), defs.clone())
-            }
+            TreeKind::ClassDecl {
+                mods,
+                typarams,
+                extending,
+                implementing,
+                defs,
+                ..
+            } => (
+                *mods,
+                typarams.clone(),
+                *extending,
+                implementing.clone(),
+                defs.clone(),
+            ),
             _ => panic!("class declaration expected"),
         };
         let mods = self.translate_with_pt(ctx, mods, None);
@@ -988,8 +997,57 @@ impl TransTypes {
     }
 }
 
-
 impl TreeVisitor for TransTypes {
+    /// Java: public void visitTree(JCTree tree) (TreeTranslator.java).
+    fn visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
+        panic!("AssertionError: visitTree {:?}", tree);
+    }
+
+    fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let defs = match &ctx.tree(tree).kind {
+            TreeKind::CompilationUnit { defs, .. } => defs.clone(),
+            _ => panic!("expected a compilation unit"),
+        };
+        let defs = self.translate_list(ctx, &defs);
+        if let TreeKind::CompilationUnit { defs: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = defs;
+        }
+        self.result = Some(tree);
+    }
+
+    fn visit_package_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (annotations, pid) = match &ctx.tree(tree).kind {
+            TreeKind::PackageDecl {
+                annotations, pid, ..
+            } => (annotations.clone(), *pid),
+            _ => panic!("expected a package declaration"),
+        };
+        let annotations = self.translate_list(ctx, &annotations);
+        let pid = self.translate(ctx, pid);
+        if let TreeKind::PackageDecl {
+            annotations: a,
+            pid: p,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
+            *a = annotations;
+            *p = pid;
+        }
+        self.result = Some(tree);
+    }
+
+    fn visit_import(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let qualid = match &ctx.tree(tree).kind {
+            TreeKind::Import { qualid, .. } => *qualid,
+            _ => panic!("expected an import"),
+        };
+        let qualid = self.translate(ctx, qualid);
+        if let TreeKind::Import { qualid: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = qualid;
+        }
+        self.result = Some(tree);
+    }
+
     /// Java: public void visitClassDef(JCClassDecl tree) (TransTypes.java).
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let sym = match &ctx.tree(tree).kind {
@@ -1053,18 +1111,41 @@ impl TreeVisitor for TransTypes {
     /// Java: public void visitVarDef(JCVariableDecl tree) (TransTypes.java).
     fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (vartype, init, sym, tree_ty) = match &ctx.tree(tree).kind {
-            TreeKind::VariableDecl { vartype, init, sym, .. } => (*vartype, *init, *sym, ctx.tree(tree).ty),
+            TreeKind::VariableDecl {
+                vartype, init, sym, ..
+            } => (*vartype, *init, *sym, ctx.tree(tree).ty),
             _ => panic!("variable declaration expected"),
         };
         let vartype = self.translate_with_pt(ctx, vartype, None);
         let init_pt = sym.map(|sym| self.symbol_erasure(ctx, sym));
         let init = self.translate_with_pt(ctx, init, init_pt);
         let erased = tree_ty.map(|ty| self.erasure(ctx, ty));
-        if let TreeKind::VariableDecl { vartype: vt, init: i, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::VariableDecl {
+            vartype: vt,
+            init: i,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *vt = vartype;
             *i = init;
         }
         ctx.tree_mut(tree).ty = erased;
+        self.result = Some(tree);
+    }
+    /// Java: public void visitSkip(JCSkip tree) (TreeTranslator.java).
+    fn visit_skip(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
+        self.result = Some(tree);
+    }
+
+    fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let stats = match &ctx.tree(tree).kind {
+            TreeKind::Block { stats, .. } => stats.clone(),
+            _ => panic!("expected a block"),
+        };
+        let stats = self.translate_list(ctx, &stats);
+        if let TreeKind::Block { stats: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = stats;
+        }
         self.result = Some(tree);
     }
 
@@ -1103,7 +1184,12 @@ impl TreeVisitor for TransTypes {
     /// Java: public void visitForLoop(JCForLoop tree) (TransTypes.java).
     fn visit_for_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (init, cond, step, body) = match &ctx.tree(tree).kind {
-            TreeKind::ForLoop { init, cond, step, body } => (init.clone(), *cond, step.clone(), *body),
+            TreeKind::ForLoop {
+                init,
+                cond,
+                step,
+                body,
+            } => (init.clone(), *cond, step.clone(), *body),
             _ => panic!("for loop expected"),
         };
         let init = self.translate_list_with_pt(ctx, &init, None);
@@ -1115,7 +1201,13 @@ impl TreeVisitor for TransTypes {
         };
         let step = self.translate_list_with_pt(ctx, &step, None);
         let body = self.translate_with_pt(ctx, body, None);
-        if let TreeKind::ForLoop { init: i, cond: c, step: s, body: b } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::ForLoop {
+            init: i,
+            cond: c,
+            step: s,
+            body: b,
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *i = init;
             *c = cond;
             *s = step;
@@ -1136,7 +1228,9 @@ impl TreeVisitor for TransTypes {
         let expr = self.translate_with_pt(ctx, expr, expr_erasure);
         let elemtype = {
             let syms = &*self.syms;
-            let expr_ty = expr.and_then(|expr| ctx.tree(expr).ty).expect("foreach expr type");
+            let expr_ty = expr
+                .and_then(|expr| ctx.tree(expr).ty)
+                .expect("foreach expr type");
             self.types.elemtype(ctx, &syms, expr_ty)
         };
         let no_type = crate::code::symtab::no_type_id(ctx);
@@ -1147,77 +1241,42 @@ impl TreeVisitor for TransTypes {
             }
         }
         let body = self.translate_with_pt(ctx, body, None);
-        if let TreeKind::EnhancedForLoop { var: v, expr: e, body: b } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::EnhancedForLoop {
+            var: v,
+            expr: e,
+            body: b,
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *v = var;
             *e = expr;
             *b = body;
         }
         self.result = Some(tree);
     }
-    /// Java: public void visitLambda(JCLambda tree) (TransTypes.java).
-    fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let prev_ret = self.return_type;
-        let (params, body, target, tree_ty) = match &ctx.tree(tree).kind {
-            TreeKind::Lambda { params, body, target, .. } => (params.clone(), *body, *target, ctx.tree(tree).ty),
-            _ => panic!("lambda expected"),
+
+    fn visit_labelled(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let body = match &ctx.tree(tree).kind {
+            TreeKind::LabeledStatement { body, .. } => *body,
+            _ => panic!("expected a labelled statement"),
         };
-        let descriptor = {
-            let diags = Rc::clone(&self.diags);
-            let chk = Rc::clone(&self.chk);
-            let chk = chk;
-            let syms = &*self.syms;
-            self.types
-                .lambda_descriptor_type(ctx, &syms, &diags, &chk, target)
-        };
-        self.return_type = Some(self.erased_return_type(ctx, descriptor));
-        let params = self.translate_list_with_pt(ctx, &params, None);
-        let body_ty = body.and_then(|body| ctx.tree(body).ty);
-        let body_pt = match (body_ty, self.return_type) {
-            (None, _) => None,
-            (Some(_), Some(ret)) => {
-                if ctx.typ(ret).has_tag(TypeTag::VOID) { None } else { Some(ret) }
-            }
-            (Some(_), None) => None,
-        };
-        let body = self.translate_with_pt(ctx, body, body_pt);
-        let new_ty = match tree_ty {
-            Some(ty) => {
-                if !ctx.typ(ty).is_intersection() {
-                    Some(self.erasure(ctx, ty))
-                } else {
-                    let tsym = ctx.typ(ty).tsym.expect("intersection symbol");
-                    let desc = {
-                        let diags = Rc::clone(&self.diags);
-                        let chk = Rc::clone(&self.chk);
-                        let chk = chk;
-                        let syms = &*self.syms;
-                        self.types
-                            .find_descriptor_symbol(ctx, &syms, &diags, &chk, tsym)
-                            .expect("descriptor symbol")
-                    };
-                    let owner = ctx.sym(desc).owner.expect("descriptor owner");
-                    let owner_ty = ctx.sym(owner).ty.expect("descriptor owner type");
-                    Some(self.erasure(ctx, owner_ty))
-                }
-            }
-            None => None,
-        };
-        if let TreeKind::Lambda { params: p, body: b, .. } = &mut ctx.tree_mut(tree).kind {
-            *p = params;
-            *b = body;
+        let body = self.translate(ctx, body);
+        if let TreeKind::LabeledStatement { body: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = body;
         }
-        ctx.tree_mut(tree).ty = new_ty;
         self.result = Some(tree);
-        self.return_type = prev_ret;
     }
 
     /// Java: public void visitSwitch(JCSwitch tree) (TransTypes.java).
     fn visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
-            TreeKind::Switch { selector, cases, .. } => (*selector, cases.clone()),
+            TreeKind::Switch {
+                selector, cases, ..
+            } => (*selector, cases.clone()),
             _ => panic!("switch expected"),
         };
-        let selector_ty = selector.and_then(|selector| ctx.tree(selector).ty).expect("switch selector type");
+        let selector_ty = selector
+            .and_then(|selector| ctx.tree(selector).ty)
+            .expect("switch selector type");
         let enum_switch = {
             let syms = &*self.syms;
             let selsuper = self.types.supertype(ctx, &syms, selector_ty, None);
@@ -1230,7 +1289,12 @@ impl TreeVisitor for TransTypes {
         };
         let selector = self.translate_with_pt(ctx, selector, Some(target));
         let cases = self.translate_cases(ctx, &cases);
-        if let TreeKind::Switch { selector: sel, cases: c, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::Switch {
+            selector: sel,
+            cases: c,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *sel = selector;
             *c = cases;
         }
@@ -1245,22 +1309,14 @@ impl TreeVisitor for TransTypes {
         };
         let labels = self.translate_list_with_pt(ctx, &labels, None);
         let stats = self.translate_list_with_pt(ctx, &stats, None);
-        if let TreeKind::Case { labels: l, stats: s, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::Case {
+            labels: l,
+            stats: s,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *l = labels;
             *s = stats;
-        }
-        self.result = Some(tree);
-    }
-
-    /// Java: public void visitBindingPattern(JCBindingPattern tree) (TransTypes.java).
-    fn visit_binding_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let var = match &ctx.tree(tree).kind {
-            TreeKind::BindingPattern { var } => *var,
-            _ => panic!("binding pattern expected"),
-        };
-        let var = self.translate_with_pt(ctx, var, None);
-        if let TreeKind::BindingPattern { var: slot } = &mut ctx.tree_mut(tree).kind {
-            *slot = var;
         }
         self.result = Some(tree);
     }
@@ -1268,12 +1324,14 @@ impl TreeVisitor for TransTypes {
     /// Java: public void visitSwitchExpression(JCSwitchExpression tree) (TransTypes.java).
     fn visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases, tree_ty) = match &ctx.tree(tree).kind {
-            TreeKind::SwitchExpression { selector, cases, .. } => {
-                (*selector, cases.clone(), ctx.tree(tree).ty)
-            }
+            TreeKind::SwitchExpression {
+                selector, cases, ..
+            } => (*selector, cases.clone(), ctx.tree(tree).ty),
             _ => panic!("switch expression expected"),
         };
-        let selector_ty = selector.and_then(|selector| ctx.tree(selector).ty).expect("selector type");
+        let selector_ty = selector
+            .and_then(|selector| ctx.tree(selector).ty)
+            .expect("selector type");
         let enum_switch = {
             let syms = &*self.syms;
             let selsuper = self.types.supertype(ctx, &syms, selector_ty, None);
@@ -1287,42 +1345,17 @@ impl TreeVisitor for TransTypes {
         let selector = self.translate_with_pt(ctx, selector, Some(target));
         let cases = self.translate_cases(ctx, &cases);
         let erased = tree_ty.map(|ty| self.erasure(ctx, ty));
-        if let TreeKind::SwitchExpression { selector: sel, cases: c, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::SwitchExpression {
+            selector: sel,
+            cases: c,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *sel = selector;
             *c = cases;
         }
         ctx.tree_mut(tree).ty = erased;
         self.result = Some(self.retype(ctx, tree, erased.expect("switch type"), self.pt));
-    }
-
-    /// Java: public void visitParenthesizedPattern(JCParenthesizedPattern tree)
-    /// (TransTypes.java).
-    fn visit_parenthesized_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let pattern = match &ctx.tree(tree).kind {
-            TreeKind::ParenthesizedPattern { pattern } => *pattern,
-            _ => panic!("parenthesized pattern expected"),
-        };
-        let pattern = self.translate_with_pt(ctx, pattern, None);
-        if let TreeKind::ParenthesizedPattern { pattern: slot } = &mut ctx.tree_mut(tree).kind {
-            *slot = pattern;
-        }
-        self.result = Some(tree);
-    }
-
-    /// Java: public void visitGuardPattern(JCGuardPattern tree) (TransTypes.java).
-    fn visit_guard_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (patt, expr) = match &ctx.tree(tree).kind {
-            TreeKind::GuardPattern { patt, expr } => (*patt, *expr),
-            _ => panic!("guard pattern expected"),
-        };
-        let patt = self.translate_with_pt(ctx, patt, None);
-        let bool_ty = self.syms.boolean_type;
-        let expr = self.translate_with_pt(ctx, expr, Some(bool_ty));
-        if let TreeKind::GuardPattern { patt: p, expr: e } = &mut ctx.tree_mut(tree).kind {
-            *p = patt;
-            *e = expr;
-        }
-        self.result = Some(tree);
     }
 
     /// Java: public void visitSynchronized(JCSynchronized tree) (TransTypes.java).
@@ -1331,7 +1364,9 @@ impl TreeVisitor for TransTypes {
             TreeKind::Synchronized { lock, body } => (*lock, *body),
             _ => panic!("synchronized expected"),
         };
-        let lock_pt = lock.and_then(|lock| ctx.tree(lock).ty).map(|ty| self.erasure(ctx, ty));
+        let lock_pt = lock
+            .and_then(|lock| ctx.tree(lock).ty)
+            .map(|ty| self.erasure(ctx, ty));
         let lock = self.translate_with_pt(ctx, lock, lock_pt);
         let body = self.translate_with_pt(ctx, body, None);
         if let TreeKind::Synchronized { lock: l, body: b } = &mut ctx.tree_mut(tree).kind {
@@ -1344,9 +1379,13 @@ impl TreeVisitor for TransTypes {
     /// Java: public void visitTry(JCTry tree) (TransTypes.java).
     fn visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (resources, body, catchers, finalizer) = match &ctx.tree(tree).kind {
-            TreeKind::Try { resources, body, catchers, finalizer, .. } => {
-                (resources.clone(), *body, catchers.clone(), *finalizer)
-            }
+            TreeKind::Try {
+                resources,
+                body,
+                catchers,
+                finalizer,
+                ..
+            } => (resources.clone(), *body, catchers.clone(), *finalizer),
             _ => panic!("try expected"),
         };
         let auto_closeable = self.syms.auto_closeable_type;
@@ -1354,7 +1393,14 @@ impl TreeVisitor for TransTypes {
         let body = self.translate_with_pt(ctx, body, None);
         let catchers = self.translate_catchers(ctx, &catchers);
         let finalizer = self.translate_with_pt(ctx, finalizer, None);
-        if let TreeKind::Try { resources: r, body: b, catchers: c, finalizer: f, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::Try {
+            resources: r,
+            body: b,
+            catchers: c,
+            finalizer: f,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *r = resources;
             *b = body;
             *c = catchers;
@@ -1363,12 +1409,29 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
+    fn visit_catch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (param, body) = match &ctx.tree(tree).kind {
+            TreeKind::Catch { param, body } => (*param, *body),
+            _ => panic!("expected a catch clause"),
+        };
+        let param = self.translate(ctx, param);
+        let body = self.translate(ctx, body);
+        if let TreeKind::Catch { param: p, body: b } = &mut ctx.tree_mut(tree).kind {
+            *p = param;
+            *b = body;
+        }
+        self.result = Some(tree);
+    }
+
     /// Java: public void visitConditional(JCConditional tree) (TransTypes.java).
     fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, truepart, falsepart, tree_ty) = match &ctx.tree(tree).kind {
-            TreeKind::Conditional { cond, truepart, falsepart, .. } => {
-                (*cond, *truepart, *falsepart, ctx.tree(tree).ty)
-            }
+            TreeKind::Conditional {
+                cond,
+                truepart,
+                falsepart,
+                ..
+            } => (*cond, *truepart, *falsepart, ctx.tree(tree).ty),
             _ => panic!("conditional expected"),
         };
         let bool_ty = self.syms.boolean_type;
@@ -1376,7 +1439,13 @@ impl TreeVisitor for TransTypes {
         let erased = self.erasure(ctx, tree_ty.expect("conditional type"));
         let truepart = self.translate_with_pt(ctx, truepart, Some(erased));
         let falsepart = self.translate_with_pt(ctx, falsepart, Some(erased));
-        if let TreeKind::Conditional { cond: c, truepart: t, falsepart: f, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::Conditional {
+            cond: c,
+            truepart: t,
+            falsepart: f,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *c = cond;
             *t = truepart;
             *f = falsepart;
@@ -1388,14 +1457,23 @@ impl TreeVisitor for TransTypes {
     /// Java: public void visitIf(JCIf tree) (TransTypes.java).
     fn visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, thenpart, elsepart) = match &ctx.tree(tree).kind {
-            TreeKind::If { cond, thenpart, elsepart } => (*cond, *thenpart, *elsepart),
+            TreeKind::If {
+                cond,
+                thenpart,
+                elsepart,
+            } => (*cond, *thenpart, *elsepart),
             _ => panic!("if expected"),
         };
         let bool_ty = self.syms.boolean_type;
         let cond = self.translate_with_pt(ctx, cond, Some(bool_ty));
         let thenpart = self.translate_with_pt(ctx, thenpart, None);
         let elsepart = self.translate_with_pt(ctx, elsepart, None);
-        if let TreeKind::If { cond: c, thenpart: t, elsepart: e } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::If {
+            cond: c,
+            thenpart: t,
+            elsepart: e,
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *c = cond;
             *t = thenpart;
             *e = elsepart;
@@ -1416,6 +1494,35 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
+    /// Java: public void visitBreak(JCBreak tree) (TransTypes.java).
+    fn visit_break(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
+        self.result = Some(tree);
+    }
+
+    /// Java: public void visitYield(JCYield tree) (TransTypes.java).
+    fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let value = match &ctx.tree(tree).kind {
+            TreeKind::Yield { value, .. } => *value,
+            _ => panic!("yield expected"),
+        };
+        let value_ty = value
+            .and_then(|value| ctx.tree(value).ty)
+            .expect("yield value type");
+        let erased = self.erasure(ctx, value_ty);
+        let translated = self.translate_with_pt(ctx, value, Some(erased));
+        ctx.tree_mut(translated.expect("yield value")).ty = Some(erased);
+        let retyped = self.retype(ctx, translated.expect("yield value"), erased, self.pt);
+        if let TreeKind::Yield { value: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = Some(retyped);
+        }
+        self.result = Some(tree);
+    }
+
+    /// Java: public void visitContinue(JCContinue tree) (TreeTranslator.java).
+    fn visit_continue(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
+        self.result = Some(tree);
+    }
+
     /// Java: public void visitReturn(JCReturn tree) (TransTypes.java).
     fn visit_return(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
@@ -1433,35 +1540,15 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitBreak(JCBreak tree) (TransTypes.java).
-    fn visit_break(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        self.result = Some(tree);
-    }
-
-    /// Java: public void visitYield(JCYield tree) (TransTypes.java).
-    fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let value = match &ctx.tree(tree).kind {
-            TreeKind::Yield { value, .. } => *value,
-            _ => panic!("yield expected"),
-        };
-        let value_ty = value.and_then(|value| ctx.tree(value).ty).expect("yield value type");
-        let erased = self.erasure(ctx, value_ty);
-        let translated = self.translate_with_pt(ctx, value, Some(erased));
-        ctx.tree_mut(translated.expect("yield value")).ty = Some(erased);
-        let retyped = self.retype(ctx, translated.expect("yield value"), erased, self.pt);
-        if let TreeKind::Yield { value: slot, .. } = &mut ctx.tree_mut(tree).kind {
-            *slot = Some(retyped);
-        }
-        self.result = Some(tree);
-    }
-
     /// Java: public void visitThrow(JCThrow tree) (TransTypes.java).
     fn visit_throw(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Throw { expr } => *expr,
             _ => panic!("throw expected"),
         };
-        let pt = expr.and_then(|expr| ctx.tree(expr).ty).map(|ty| self.erasure(ctx, ty));
+        let pt = expr
+            .and_then(|expr| ctx.tree(expr).ty)
+            .map(|ty| self.erasure(ctx, ty));
         let expr = self.translate_with_pt(ctx, expr, pt);
         if let TreeKind::Throw { expr: slot } = &mut ctx.tree_mut(tree).kind {
             *slot = expr;
@@ -1477,7 +1564,9 @@ impl TreeVisitor for TransTypes {
         };
         let bool_ty = self.syms.boolean_type;
         let cond = self.translate_with_pt(ctx, cond, Some(bool_ty));
-        let detail_pt = detail.and_then(|detail| ctx.tree(detail).ty).map(|ty| self.erasure(ctx, ty));
+        let detail_pt = detail
+            .and_then(|detail| ctx.tree(detail).ty)
+            .map(|ty| self.erasure(ctx, ty));
         let detail = self.translate_with_pt(ctx, detail, detail_pt);
         if let TreeKind::Assert { cond: c, detail: d } = &mut ctx.tree_mut(tree).kind {
             *c = cond;
@@ -1489,16 +1578,27 @@ impl TreeVisitor for TransTypes {
     /// Java: public void visitApply(JCMethodInvocation tree) (TransTypes.java).
     fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (meth, args, varargs_element) = match &ctx.tree(tree).kind {
-            TreeKind::MethodInvocation { meth, args, varargs_element, .. } => (*meth, args.clone(), *varargs_element),
+            TreeKind::MethodInvocation {
+                meth,
+                args,
+                varargs_element,
+                ..
+            } => (*meth, args.clone(), *varargs_element),
             _ => panic!("method invocation expected"),
         };
-        let meth = self.translate_with_pt(ctx, meth, None).expect("method expression");
+        let meth = self
+            .translate_with_pt(ctx, meth, None)
+            .expect("method expression");
         let meth_sym = tree_info::symbol(ctx, meth).expect("method symbol");
         let mt = self.symbol_erasure(ctx, meth_sym);
         let use_instantiated_pt_args = {
             let syms = &*self.syms;
             self.allow_graph_inference
-                && !self.types.is_signature_polymorphic(ctx, &syms, crate::code::symbol::base_symbol(ctx, meth_sym))
+                && !self.types.is_signature_polymorphic(
+                    ctx,
+                    &syms,
+                    crate::code::symbol::base_symbol(ctx, meth_sym),
+                )
         };
         let mut argtypes = if use_instantiated_pt_args {
             let meth_ty = ctx.tree(meth).ty.expect("method expression type");
@@ -1508,7 +1608,9 @@ impl TreeVisitor for TransTypes {
         };
         let is_enum_init = {
             let syms = &*self.syms;
-            ctx.sym(meth_sym).name.content_equals(&self.names.init.to_java_string())
+            ctx.sym(meth_sym)
+                .name
+                .content_equals(&self.names.init.to_java_string())
                 && ctx.sym(meth_sym).owner == Some(syms.enum_sym)
         };
         if is_enum_init {
@@ -1520,10 +1622,12 @@ impl TreeVisitor for TransTypes {
         // variadically.
         let mut varargs_element = varargs_element;
         if varargs_element.is_none()
-            && (ctx.sym(meth_sym).flags_field & crate::code::flags::VARARGS as i64) != 0
+            && (ctx.sym(meth_sym).flags_field & flags::VARARGS) != 0
             && args.length() > argtypes.length()
             && !argtypes.is_empty()
-            && ctx.typ(argtypes.last().expect("last parameter")).has_tag(TypeTag::ARRAY)
+            && ctx
+                .typ(argtypes.last().expect("last parameter"))
+                .has_tag(TypeTag::ARRAY)
         {
             let last = argtypes.last().expect("last parameter");
             let elem = {
@@ -1542,7 +1646,7 @@ impl TreeVisitor for TransTypes {
                     .clone()
                     .and_then(|env| env.toplevel)
                     .and_then(|unit| match &ctx.tree(unit).kind {
-                        crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => {
+                        TreeKind::CompilationUnit { sourcefile, .. } => {
                             sourcefile.clone()
                         }
                         _ => None,
@@ -1553,7 +1657,11 @@ impl TreeVisitor for TransTypes {
                 let method_name = crate::comp::resolve::symbol_display_name(ctx, meth_sym);
                 let arg_ty_ids: Vec<_> = args
                     .iter()
-                    .map(|arg| ctx.tree(arg).ty.unwrap_or_else(|| crate::code::symtab::no_type_id(ctx)))
+                    .map(|arg| {
+                        ctx.tree(arg)
+                            .ty
+                            .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx))
+                    })
                     .collect();
                 let arg_display: Vec<String> = arg_ty_ids
                     .iter()
@@ -1576,7 +1684,13 @@ impl TreeVisitor for TransTypes {
         let tree_ty = ctx.tree(tree).ty.expect("call type");
         let erased = self.erasure(ctx, tree_ty);
         let mt_return = self.types.get_return_type_public(ctx, mt);
-        if let TreeKind::MethodInvocation { meth: m, args: a, varargs_element: v, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::MethodInvocation {
+            meth: m,
+            args: a,
+            varargs_element: v,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *m = Some(meth);
             *a = args;
             *v = varargs_element;
@@ -1587,12 +1701,28 @@ impl TreeVisitor for TransTypes {
 
     /// Java: public void visitNewClass(JCNewClass tree) (TransTypes.java).
     fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (encl, clazz, args, def, constructor, constructor_type, varargs_element) = match &ctx.tree(tree).kind {
-            TreeKind::NewClass { encl, clazz, args, def, constructor, constructor_type, varargs_element, .. } => (
-                *encl, *clazz, args.clone(), *def, *constructor, *constructor_type, *varargs_element,
-            ),
-            _ => panic!("new class expected"),
-        };
+        let (encl, clazz, args, def, constructor, constructor_type, varargs_element) =
+            match &ctx.tree(tree).kind {
+                TreeKind::NewClass {
+                    encl,
+                    clazz,
+                    args,
+                    def,
+                    constructor,
+                    constructor_type,
+                    varargs_element,
+                    ..
+                } => (
+                    *encl,
+                    *clazz,
+                    args.clone(),
+                    *def,
+                    *constructor,
+                    *constructor_type,
+                    *varargs_element,
+                ),
+                _ => panic!("new class expected"),
+            };
         let mut encl = encl;
         let mut args = args;
         if let Some(encl_tree) = encl {
@@ -1601,7 +1731,10 @@ impl TreeVisitor for TransTypes {
                 encl = self.translate_with_pt(ctx, Some(encl_tree), pt);
             } else {
                 let env = self.env.clone().expect("env");
-                let null_check = self.attr.borrow_mut().make_null_check(ctx, &&*self.syms, encl_tree);
+                let null_check =
+                    self.attr
+                        .borrow_mut()
+                        .make_null_check(ctx, &&*self.syms, encl_tree);
                 let mut new_args: List<TreeId> = List::nil();
                 new_args = new_args.append(null_check);
                 let mut current = args;
@@ -1628,13 +1761,24 @@ impl TreeVisitor for TransTypes {
             let ctor_erasure = self.symbol_erasure(ctx, ctor);
             self.types.get_parameter_types_public(ctx, ctor_erasure)
         };
-        let clazz = self.translate_with_pt(ctx, clazz, None).expect("class expression");
+        let clazz = self
+            .translate_with_pt(ctx, clazz, None)
+            .expect("class expression");
         let varargs_element = varargs_element.map(|ty| self.erasure(ctx, ty));
         let args = self.translate_args(ctx, args, argtypes, varargs_element);
         let def = self.translate_with_pt(ctx, def, None);
         let tree_ty = ctx.tree(tree).ty.expect("new class type");
         let erased = self.erasure(ctx, tree_ty);
-        if let TreeKind::NewClass { encl: e, clazz: c, args: a, def: d, constructor_type: ct, varargs_element: v, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::NewClass {
+            encl: e,
+            clazz: c,
+            args: a,
+            def: d,
+            constructor_type: ct,
+            varargs_element: v,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *e = encl;
             *c = Some(clazz);
             *a = args;
@@ -1649,7 +1793,12 @@ impl TreeVisitor for TransTypes {
     /// Java: public void visitNewArray(JCNewArray tree) (TransTypes.java).
     fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (elemtype, dims, elems, tree_ty) = match &ctx.tree(tree).kind {
-            TreeKind::NewArray { elemtype, dims, elems, .. } => (*elemtype, dims.clone(), elems.clone(), ctx.tree(tree).ty),
+            TreeKind::NewArray {
+                elemtype,
+                dims,
+                elems,
+                ..
+            } => (*elemtype, dims.clone(), elems.clone(), ctx.tree(tree).ty),
             _ => panic!("new array expected"),
         };
         let elemtype = self.translate_with_pt(ctx, elemtype, None);
@@ -1667,7 +1816,13 @@ impl TreeVisitor for TransTypes {
             let elems = elems.map(|elems| self.translate_list_with_pt(ctx, &elems, None));
             (elems, None)
         };
-        if let TreeKind::NewArray { elemtype: e, dims: d, elems: el, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::NewArray {
+            elemtype: e,
+            dims: d,
+            elems: el,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *e = elemtype;
             *d = dims;
             *el = elems;
@@ -1676,13 +1831,84 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
+    /// Java: public void visitLambda(JCLambda tree) (TransTypes.java).
+    fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let prev_ret = self.return_type;
+        let (params, body, target, tree_ty) = match &ctx.tree(tree).kind {
+            TreeKind::Lambda {
+                params,
+                body,
+                target,
+                ..
+            } => (params.clone(), *body, *target, ctx.tree(tree).ty),
+            _ => panic!("lambda expected"),
+        };
+        let descriptor = {
+            let diags = Rc::clone(&self.diags);
+            let chk = Rc::clone(&self.chk);
+            let chk = chk;
+            let syms = &*self.syms;
+            self.types
+                .lambda_descriptor_type(ctx, &syms, &diags, &chk, target)
+        };
+        self.return_type = Some(self.erased_return_type(ctx, descriptor));
+        let params = self.translate_list_with_pt(ctx, &params, None);
+        let body_ty = body.and_then(|body| ctx.tree(body).ty);
+        let body_pt = match (body_ty, self.return_type) {
+            (None, _) => None,
+            (Some(_), Some(ret)) => {
+                if ctx.typ(ret).has_tag(TypeTag::VOID) {
+                    None
+                } else {
+                    Some(ret)
+                }
+            }
+            (Some(_), None) => None,
+        };
+        let body = self.translate_with_pt(ctx, body, body_pt);
+        let new_ty = match tree_ty {
+            Some(ty) => {
+                if !ctx.typ(ty).is_intersection() {
+                    Some(self.erasure(ctx, ty))
+                } else {
+                    let tsym = ctx.typ(ty).tsym.expect("intersection symbol");
+                    let desc = {
+                        let diags = Rc::clone(&self.diags);
+                        let chk = Rc::clone(&self.chk);
+                        let chk = chk;
+                        let syms = &*self.syms;
+                        self.types
+                            .find_descriptor_symbol(ctx, &syms, &diags, &chk, tsym)
+                            .expect("descriptor symbol")
+                    };
+                    let owner = ctx.sym(desc).owner.expect("descriptor owner");
+                    let owner_ty = ctx.sym(owner).ty.expect("descriptor owner type");
+                    Some(self.erasure(ctx, owner_ty))
+                }
+            }
+            None => None,
+        };
+        if let TreeKind::Lambda {
+            params: p, body: b, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
+            *p = params;
+            *b = body;
+        }
+        ctx.tree_mut(tree).ty = new_ty;
+        self.result = Some(tree);
+        self.return_type = prev_ret;
+    }
+
     /// Java: public void visitParens(JCParens tree) (TransTypes.java).
     fn visit_parens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Parens { expr } => *expr,
             _ => panic!("parens expected"),
         };
-        let expr = self.translate_with_pt(ctx, expr, self.pt).expect("parens expr");
+        let expr = self
+            .translate_with_pt(ctx, expr, self.pt)
+            .expect("parens expr");
         let expr_ty = ctx.tree(expr).ty.expect("parens expr type");
         let erased = self.erasure(ctx, expr_ty);
         if let TreeKind::Parens { expr: slot } = &mut ctx.tree_mut(tree).kind {
@@ -1774,23 +2000,6 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitAnnotatedType(JCAnnotatedType tree) (TransTypes.java).
-    fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (annotations, underlying_type) = match &ctx.tree(tree).kind {
-            TreeKind::AnnotatedType { annotations, underlying_type } => (annotations.clone(), *underlying_type),
-            _ => panic!("annotated type expected"),
-        };
-        let mirrors = self.annotate.from_annotations(ctx, &annotations);
-        let underlying_type = self.translate_with_pt(ctx, underlying_type, None);
-        let underlying_ty = underlying_type.and_then(|underlying| ctx.tree(underlying).ty);
-        let new_ty = underlying_ty.map(|ty| ctx.annotated_type_id(ty, &mirrors));
-        if let TreeKind::AnnotatedType { underlying_type: u, .. } = &mut ctx.tree_mut(tree).kind {
-            *u = underlying_type;
-        }
-        ctx.tree_mut(tree).ty = new_ty;
-        self.result = Some(tree);
-    }
-
     /// Java: public void visitTypeCast(JCTypeCast tree) (TransTypes.java).
     fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, expr) = match &ctx.tree(tree).kind {
@@ -1800,7 +2009,9 @@ impl TreeVisitor for TransTypes {
         let clazz = self.translate_with_pt(ctx, clazz, None);
         let original_target = ctx.tree(tree).ty.expect("cast type");
         let erased = self.erasure(ctx, original_target);
-        let new_expr = self.translate_with_pt(ctx, expr, Some(erased)).expect("cast expr");
+        let new_expr = self
+            .translate_with_pt(ctx, expr, Some(erased))
+            .expect("cast expr");
         let mut final_expr = new_expr;
         if final_expr != expr.expect("cast expr") {
             let cast_ty = if ctx.tree(final_expr).has_tag(Tag::TYPECAST) {
@@ -1813,7 +2024,9 @@ impl TreeVisitor for TransTypes {
                 if self.types.is_same_type(ctx, &syms, cast_ty, erased) {
                     let _ = syms;
                     final_expr = match &ctx.tree(final_expr).kind {
-                        TreeKind::TypeCast { expr: Some(expr), .. } => *expr,
+                        TreeKind::TypeCast {
+                            expr: Some(expr), ..
+                        } => *expr,
                         _ => final_expr,
                     };
                 }
@@ -1854,9 +2067,62 @@ impl TreeVisitor for TransTypes {
         };
         let expr = self.translate_with_pt(ctx, expr, None);
         let pattern = self.translate_with_pt(ctx, pattern, None);
-        if let TreeKind::InstanceOf { expr: e, pattern: p } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::InstanceOf {
+            expr: e,
+            pattern: p,
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *e = expr;
             *p = pattern;
+        }
+        self.result = Some(tree);
+    }
+
+    /// Java: public void visitBindingPattern(JCBindingPattern tree) (TransTypes.java).
+    fn visit_binding_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let var = match &ctx.tree(tree).kind {
+            TreeKind::BindingPattern { var } => *var,
+            _ => panic!("binding pattern expected"),
+        };
+        let var = self.translate_with_pt(ctx, var, None);
+        if let TreeKind::BindingPattern { var: slot } = &mut ctx.tree_mut(tree).kind {
+            *slot = var;
+        }
+        self.result = Some(tree);
+    }
+
+    /// Java: public void visitDefaultCaseLabel(JCDefaultCaseLabel tree)
+    /// (TreeTranslator.java).
+    fn visit_default_case_label(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
+        self.result = Some(tree);
+    }
+
+    /// Java: public void visitParenthesizedPattern(JCParenthesizedPattern tree)
+    /// (TransTypes.java).
+    fn visit_parenthesized_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let pattern = match &ctx.tree(tree).kind {
+            TreeKind::ParenthesizedPattern { pattern } => *pattern,
+            _ => panic!("parenthesized pattern expected"),
+        };
+        let pattern = self.translate_with_pt(ctx, pattern, None);
+        if let TreeKind::ParenthesizedPattern { pattern: slot } = &mut ctx.tree_mut(tree).kind {
+            *slot = pattern;
+        }
+        self.result = Some(tree);
+    }
+
+    /// Java: public void visitGuardPattern(JCGuardPattern tree) (TransTypes.java).
+    fn visit_guard_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (patt, expr) = match &ctx.tree(tree).kind {
+            TreeKind::GuardPattern { patt, expr } => (*patt, *expr),
+            _ => panic!("guard pattern expected"),
+        };
+        let patt = self.translate_with_pt(ctx, patt, None);
+        let bool_ty = self.syms.boolean_type;
+        let expr = self.translate_with_pt(ctx, expr, Some(bool_ty));
+        if let TreeKind::GuardPattern { patt: p, expr: e } = &mut ctx.tree_mut(tree).kind {
+            *p = patt;
+            *e = expr;
         }
         self.result = Some(tree);
     }
@@ -1867,49 +2133,28 @@ impl TreeVisitor for TransTypes {
             TreeKind::ArrayAccess { indexed, index } => (*indexed, *index),
             _ => panic!("indexed expected"),
         };
-        let indexed_pt = indexed.and_then(|indexed| ctx.tree(indexed).ty).map(|ty| self.erasure(ctx, ty));
+        let indexed_pt = indexed
+            .and_then(|indexed| ctx.tree(indexed).ty)
+            .map(|ty| self.erasure(ctx, ty));
         let indexed = self.translate_with_pt(ctx, indexed, indexed_pt);
         let int_ty = self.syms.int_type;
         let index = self.translate_with_pt(ctx, index, Some(int_ty));
-        let indexed_ty = indexed.and_then(|indexed| ctx.tree(indexed).ty).expect("indexed type");
+        let indexed_ty = indexed
+            .and_then(|indexed| ctx.tree(indexed).ty)
+            .expect("indexed type");
         let elem = {
             let syms = &*self.syms;
             self.types.elemtype(ctx, &syms, indexed_ty)
         };
-        if let TreeKind::ArrayAccess { indexed: i, index: n } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::ArrayAccess {
+            indexed: i,
+            index: n,
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *i = indexed;
             *n = index;
         }
         self.result = Some(self.retype(ctx, tree, elem, self.pt));
-    }
-
-    /// Java: public void visitAnnotation(JCAnnotation tree) (TransTypes.java).
-    fn visit_annotation(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        self.result = Some(tree);
-    }
-
-    /// Java: public void visitIdent(JCIdent tree) (TransTypes.java).
-    fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let sym = tree_info::symbol(ctx, tree).expect("ident symbol");
-        let et = self.symbol_erasure(ctx, sym);
-        let sym_ty = ctx.sym(sym).ty.expect("symbol type");
-        if ctx.sym(sym).kind == Kind::TYP && ctx.typ(sym_ty).has_tag(TypeTag::TYPEVAR) {
-            // Java: result = make.at(tree.pos).Type(et);
-            let pos = ctx.tree(tree).pos;
-            let type_tree = {
-                self.make.at(pos).type_from_type(ctx, &*self.syms, et)
-            };
-            self.result = Some(type_tree);
-        } else if ctx.typ(ctx.tree(tree).ty.expect("ident type")).const_value().is_some() {
-            self.result = Some(tree);
-        } else if ctx.sym(sym).kind == Kind::VAR {
-            self.result = Some(self.retype(ctx, tree, et, self.pt));
-        } else {
-            let tree_ty = ctx.tree(tree).ty.expect("ident type");
-            let erased = self.erasure(ctx, tree_ty);
-            ctx.tree_mut(tree).ty = Some(erased);
-            self.result = Some(tree);
-        }
     }
 
     /// Java: public void visitSelect(JCFieldAccess tree) (TransTypes.java).
@@ -1925,8 +2170,7 @@ impl TreeVisitor for TransTypes {
         // Java: TransTypes.visitSelect only translates the qualifier and
         // erases the selection type; a synthetic this/super qualifier is
         // never coerced (there is no field access to widen).
-        let is_self_select =
-            name == self.names._this || name == self.names._super;
+        let is_self_select = name == self.names._this || name == self.names._super;
         // A bare qualifier that resolves to a synthetic member of the
         // enclosing type (notably super) carries no tree type of its own;
         // the qualifier type is the type that owns the symbol.
@@ -1934,7 +2178,7 @@ impl TreeVisitor for TransTypes {
             Some(t) => t,
             None => {
                 let sel = selected.expect("selected tree");
-                let sel_sym = crate::tree::tree_info::symbol(ctx, sel).expect("selected symbol");
+                let sel_sym = tree_info::symbol(ctx, sel).expect("selected symbol");
                 let owner = ctx.sym(sel_sym).owner.expect("selected owner");
                 ctx.sym(owner).ty.expect("selected owner type")
             }
@@ -1947,7 +2191,9 @@ impl TreeVisitor for TransTypes {
             let owner_ty = ctx.sym(owner).ty.expect("field owner type");
             let owner_erasure = self.erasure(ctx, owner_ty);
             let original_erasure = self.erasure(ctx, selected_ty);
-            let inner = self.translate_with_pt(ctx, selected, Some(original_erasure)).expect("selected");
+            let inner = self
+                .translate_with_pt(ctx, selected, Some(original_erasure))
+                .expect("selected");
             Some(self.coerce_tree(ctx, inner, owner_erasure))
         } else {
             let t_erasure = self.erasure(ctx, t);
@@ -1972,7 +2218,10 @@ impl TreeVisitor for TransTypes {
             }
             ctx.tree_mut(tree).ty = Some(erased);
             self.result = Some(tree);
-        } else if sym.map(|sym| ctx.sym(sym).kind == Kind::VAR).unwrap_or(false) {
+        } else if sym
+            .map(|sym| ctx.sym(sym).kind == Kind::VAR)
+            .unwrap_or(false)
+        {
             let sym = sym.expect("field symbol");
             let et = self.symbol_erasure(ctx, sym);
             if let TreeKind::FieldAccess { selected: slot, .. } = &mut ctx.tree_mut(tree).kind {
@@ -1992,12 +2241,18 @@ impl TreeVisitor for TransTypes {
     /// Java: public void visitReference(JCMemberReference tree) (TransTypes.java).
     fn visit_reference(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, kind, sym, varargs_element, tree_ty) = match &ctx.tree(tree).kind {
-            TreeKind::MemberReference { expr, kind, sym, varargs_element, .. } => {
-                (*expr, *kind, *sym, *varargs_element, ctx.tree(tree).ty)
-            }
+            TreeKind::MemberReference {
+                expr,
+                kind,
+                sym,
+                varargs_element,
+                ..
+            } => (*expr, *kind, *sym, *varargs_element, ctx.tree(tree).ty),
             _ => panic!("member reference expected"),
         };
-        let expr_ty = expr.and_then(|expr| ctx.tree(expr).ty).expect("reference expr type");
+        let expr_ty = expr
+            .and_then(|expr| ctx.tree(expr).ty)
+            .expect("reference expr type");
         let t = self.types.skip_type_vars_public(ctx, expr_ty);
         let is_compound = self.types.is_compound_public(ctx, t);
         let receiver_target = if is_compound {
@@ -2012,7 +2267,9 @@ impl TreeVisitor for TransTypes {
         let expr = if is_unbound {
             let pos = ctx.tree(tree).pos;
             let type_tree = {
-                self.make.at(pos).type_from_type(ctx, &*self.syms, receiver_target)
+                self.make
+                    .at(pos)
+                    .type_from_type(ctx, &*self.syms, receiver_target)
             };
             Some(type_tree)
         } else {
@@ -2041,11 +2298,53 @@ impl TreeVisitor for TransTypes {
             None => None,
         };
         let varargs_element = varargs_element.map(|ty| self.erasure(ctx, ty));
-        if let TreeKind::MemberReference { expr: e, varargs_element: v, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::MemberReference {
+            expr: e,
+            varargs_element: v,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *e = expr;
             *v = varargs_element;
         }
         ctx.tree_mut(tree).ty = new_ty;
+        self.result = Some(tree);
+    }
+
+    /// Java: public void visitIdent(JCIdent tree) (TransTypes.java).
+    fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let sym = tree_info::symbol(ctx, tree).expect("ident symbol");
+        let et = self.symbol_erasure(ctx, sym);
+        let sym_ty = ctx.sym(sym).ty.expect("symbol type");
+        if ctx.sym(sym).kind == Kind::TYP && ctx.typ(sym_ty).has_tag(TypeTag::TYPEVAR) {
+            // Java: result = make.at(tree.pos).Type(et);
+            let pos = ctx.tree(tree).pos;
+            let type_tree = { self.make.at(pos).type_from_type(ctx, &*self.syms, et) };
+            self.result = Some(type_tree);
+        } else if ctx
+            .typ(ctx.tree(tree).ty.expect("ident type"))
+            .const_value()
+            .is_some()
+        {
+            self.result = Some(tree);
+        } else if ctx.sym(sym).kind == Kind::VAR {
+            self.result = Some(self.retype(ctx, tree, et, self.pt));
+        } else {
+            let tree_ty = ctx.tree(tree).ty.expect("ident type");
+            let erased = self.erasure(ctx, tree_ty);
+            ctx.tree_mut(tree).ty = Some(erased);
+            self.result = Some(tree);
+        }
+    }
+
+    /// Java: public void visitLiteral(JCLiteral tree) (TreeTranslator.java).
+    fn visit_literal(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
+        self.result = Some(tree);
+    }
+
+    /// Java: public void visitTypeIdent(JCPrimitiveTypeTree tree)
+    /// (TreeTranslator.java).
+    fn visit_type_ident(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
 
@@ -2075,6 +2374,18 @@ impl TreeVisitor for TransTypes {
         self.result = translated;
     }
 
+    fn visit_type_union(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let alternatives = match &ctx.tree(tree).kind {
+            TreeKind::TypeUnion { alternatives } => alternatives.clone(),
+            _ => panic!("expected a union type"),
+        };
+        let alternatives = self.translate_list(ctx, &alternatives);
+        if let TreeKind::TypeUnion { alternatives: slot } = &mut ctx.tree_mut(tree).kind {
+            *slot = alternatives;
+        }
+        self.result = Some(tree);
+    }
+
     /// Java: public void visitTypeIntersection(JCTypeIntersection tree)
     /// (TransTypes.java).
     fn visit_type_intersection(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -2089,102 +2400,6 @@ impl TreeVisitor for TransTypes {
             *slot = bounds;
         }
         ctx.tree_mut(tree).ty = Some(erased);
-        self.result = Some(tree);
-    }
-
-
-    fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let defs = match &ctx.tree(tree).kind {
-            TreeKind::CompilationUnit { defs, .. } => defs.clone(),
-            _ => panic!("expected a compilation unit"),
-        };
-        let defs = self.translate_list(ctx, &defs);
-        if let TreeKind::CompilationUnit { defs: slot, .. } = &mut ctx.tree_mut(tree).kind {
-            *slot = defs;
-        }
-        self.result = Some(tree);
-    }
-
-    fn visit_package_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (annotations, pid) = match &ctx.tree(tree).kind {
-            TreeKind::PackageDecl {
-                annotations, pid, ..
-            } => (annotations.clone(), *pid),
-            _ => panic!("expected a package declaration"),
-        };
-        let annotations = self.translate_list(ctx, &annotations);
-        let pid = self.translate(ctx, pid);
-        if let TreeKind::PackageDecl {
-            annotations: a,
-            pid: p,
-            ..
-        } = &mut ctx.tree_mut(tree).kind
-        {
-            *a = annotations;
-            *p = pid;
-        }
-        self.result = Some(tree);
-    }
-
-    fn visit_import(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let qualid = match &ctx.tree(tree).kind {
-            TreeKind::Import { qualid, .. } => *qualid,
-            _ => panic!("expected an import"),
-        };
-        let qualid = self.translate(ctx, qualid);
-        if let TreeKind::Import { qualid: slot, .. } = &mut ctx.tree_mut(tree).kind {
-            *slot = qualid;
-        }
-        self.result = Some(tree);
-    }
-
-    fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let stats = match &ctx.tree(tree).kind {
-            TreeKind::Block { stats, .. } => stats.clone(),
-            _ => panic!("expected a block"),
-        };
-        let stats = self.translate_list(ctx, &stats);
-        if let TreeKind::Block { stats: slot, .. } = &mut ctx.tree_mut(tree).kind {
-            *slot = stats;
-        }
-        self.result = Some(tree);
-    }
-
-    fn visit_labelled(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let body = match &ctx.tree(tree).kind {
-            TreeKind::LabeledStatement { body, .. } => *body,
-            _ => panic!("expected a labelled statement"),
-        };
-        let body = self.translate(ctx, body);
-        if let TreeKind::LabeledStatement { body: slot, .. } = &mut ctx.tree_mut(tree).kind {
-            *slot = body;
-        }
-        self.result = Some(tree);
-    }
-
-    fn visit_catch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (param, body) = match &ctx.tree(tree).kind {
-            TreeKind::Catch { param, body } => (*param, *body),
-            _ => panic!("expected a catch clause"),
-        };
-        let param = self.translate(ctx, param);
-        let body = self.translate(ctx, body);
-        if let TreeKind::Catch { param: p, body: b } = &mut ctx.tree_mut(tree).kind {
-            *p = param;
-            *b = body;
-        }
-        self.result = Some(tree);
-    }
-
-    fn visit_type_union(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let alternatives = match &ctx.tree(tree).kind {
-            TreeKind::TypeUnion { alternatives } => alternatives.clone(),
-            _ => panic!("expected a union type"),
-        };
-        let alternatives = self.translate_list(ctx, &alternatives);
-        if let TreeKind::TypeUnion { alternatives: slot } = &mut ctx.tree_mut(tree).kind {
-            *slot = alternatives;
-        }
         self.result = Some(tree);
     }
 
@@ -2229,6 +2444,11 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
+    /// Java: public void visitAnnotation(JCAnnotation tree) (TransTypes.java).
+    fn visit_annotation(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
+        self.result = Some(tree);
+    }
+
     fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let annotations = match &ctx.tree(tree).kind {
             TreeKind::Modifiers { annotations, .. } => annotations.clone(),
@@ -2244,20 +2464,31 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (defs, expr) = match &ctx.tree(tree).kind {
-            TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
-            _ => panic!("expected a let expression"),
+    /// Java: public void visitAnnotatedType(JCAnnotatedType tree) (TransTypes.java).
+    fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (annotations, underlying_type) = match &ctx.tree(tree).kind {
+            TreeKind::AnnotatedType {
+                annotations,
+                underlying_type,
+            } => (annotations.clone(), *underlying_type),
+            _ => panic!("annotated type expected"),
         };
-        let defs = self.translate_list(ctx, &defs);
-        let expr = self.translate(ctx, expr);
-        if let TreeKind::LetExpr {
-            defs: d, expr: e, ..
+        let mirrors = self.annotate.from_annotations(ctx, &annotations);
+        let underlying_type = self.translate_with_pt(ctx, underlying_type, None);
+        let underlying_ty = underlying_type.and_then(|underlying| ctx.tree(underlying).ty);
+        let new_ty = underlying_ty.map(|ty| ctx.annotated_type_id(ty, &mirrors));
+        if let TreeKind::AnnotatedType {
+            underlying_type: u, ..
         } = &mut ctx.tree_mut(tree).kind
         {
-            *d = defs;
-            *e = expr;
+            *u = underlying_type;
         }
+        ctx.tree_mut(tree).ty = new_ty;
+        self.result = Some(tree);
+    }
+
+    /// Java: public void visitErroneous(JCErroneous tree) (TreeTranslator.java).
+    fn visit_erroneous(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
 
@@ -2384,41 +2615,20 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-
-    /// Java: public void visitSkip(JCSkip tree) (TreeTranslator.java).
-    fn visit_skip(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
+    fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (defs, expr) = match &ctx.tree(tree).kind {
+            TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
+            _ => panic!("expected a let expression"),
+        };
+        let defs = self.translate_list(ctx, &defs);
+        let expr = self.translate(ctx, expr);
+        if let TreeKind::LetExpr {
+            defs: d, expr: e, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
+            *d = defs;
+            *e = expr;
+        }
         self.result = Some(tree);
-    }
-
-    /// Java: public void visitContinue(JCContinue tree) (TreeTranslator.java).
-    fn visit_continue(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        self.result = Some(tree);
-    }
-
-    /// Java: public void visitDefaultCaseLabel(JCDefaultCaseLabel tree)
-    /// (TreeTranslator.java).
-    fn visit_default_case_label(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        self.result = Some(tree);
-    }
-
-    /// Java: public void visitLiteral(JCLiteral tree) (TreeTranslator.java).
-    fn visit_literal(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        self.result = Some(tree);
-    }
-
-    /// Java: public void visitTypeIdent(JCPrimitiveTypeTree tree)
-    /// (TreeTranslator.java).
-    fn visit_type_ident(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        self.result = Some(tree);
-    }
-
-    /// Java: public void visitErroneous(JCErroneous tree) (TreeTranslator.java).
-    fn visit_erroneous(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        self.result = Some(tree);
-    }
-
-    /// Java: public void visitTree(JCTree tree) (TreeTranslator.java).
-    fn visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        panic!("AssertionError: visitTree {:?}", tree);
     }
 }

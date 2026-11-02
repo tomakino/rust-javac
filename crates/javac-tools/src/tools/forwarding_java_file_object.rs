@@ -37,7 +37,9 @@ impl<F: JavaFileObject> ForwardingJavaFileObject<F> {
     /// Java: protected ForwardingJavaFileObject(F fileObject) {
     ///           super(fileObject); }
     pub fn new(file_object: F) -> ForwardingJavaFileObject<F> {
-        ForwardingJavaFileObject { super_: ForwardingFileObject::new(file_object) }
+        ForwardingJavaFileObject {
+            super_: ForwardingFileObject::new(file_object),
+        }
     }
 
     /// The file object which all methods are delegated to (the inherited
@@ -69,7 +71,9 @@ impl<F: JavaFileObject> FileObject for ForwardingJavaFileObject<F> {
     }
 
     fn get_char_content(&self, ignore_encoding_errors: bool) -> Result<Option<JavaString>, Error> {
-        self.super_.file_object.get_char_content(ignore_encoding_errors)
+        self.super_
+            .file_object
+            .get_char_content(ignore_encoding_errors)
     }
 
     fn open_writer(&self) -> Result<Box<dyn Writer>, Error> {
@@ -91,7 +95,9 @@ impl<F: JavaFileObject> JavaFileObject for ForwardingJavaFileObject<F> {
     }
 
     fn is_name_compatible(&self, simple_name: &JavaString, kind: Kind) -> bool {
-        self.super_.file_object.is_name_compatible(simple_name, kind)
+        self.super_
+            .file_object
+            .is_name_compatible(simple_name, kind)
     }
 
     fn get_nesting_kind(&self) -> Option<NestingKind> {

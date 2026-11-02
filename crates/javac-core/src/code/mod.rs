@@ -1,19 +1,19 @@
 //! com.sun.tools.javac.code
 
 pub mod attribute;
+pub mod bound_kind;
 pub mod class_finder;
 pub mod deferred_completion_failure_handler;
 pub mod deferred_lint_handler;
-pub mod bound_kind;
 pub mod dependencies;
 pub mod directive;
 pub mod flags;
 pub mod kinds;
+pub mod lint;
 pub mod missing_info_handler;
 pub mod module_finder;
-pub mod lint;
-pub mod printer;
 pub mod preview;
+pub mod printer;
 pub mod scope;
 pub mod source;
 pub mod symbol;
@@ -21,9 +21,9 @@ pub mod symbol_element;
 pub mod symbol_metadata;
 pub mod symtab;
 pub mod target_type;
+pub mod type_;
 pub mod type_annotation_position;
 pub mod type_annotations;
-pub mod type_;
 pub mod type_metadata;
 pub mod type_tag;
 pub mod types;

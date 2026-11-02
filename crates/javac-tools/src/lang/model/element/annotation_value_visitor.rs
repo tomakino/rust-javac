@@ -169,7 +169,9 @@ pub trait AnnotationValueVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit_enum_constant: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_enum_constant: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an annotation value in an annotation.
@@ -180,7 +182,9 @@ pub trait AnnotationValueVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit_annotation: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_annotation: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an array value in an annotation.

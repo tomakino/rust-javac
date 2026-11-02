@@ -1,3 +1,7 @@
+use super::block_tree::BlockTree;
+use super::catch_tree::CatchTree;
+use super::statement_tree::StatementTree;
+use super::tree::Tree;
 /// A tree node for a {@code try} statement.
 ///
 /// For example:
@@ -15,10 +19,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::block_tree::BlockTree;
-use super::catch_tree::CatchTree;
-use super::statement_tree::StatementTree;
-use super::tree::Tree;
 
 pub trait TryTree: StatementTree {
     /// Returns the block of the {@code try} statement.
@@ -41,5 +41,4 @@ pub trait TryTree: StatementTree {
     /// resource declarations.
     /// @return the resource declarations
     fn get_resources(&self) -> Vec<Rc<dyn Tree>>;
-
 }

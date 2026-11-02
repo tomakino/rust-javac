@@ -131,16 +131,18 @@ impl Attribute {
 
     fn values_length(&self) -> usize {
         match &self.kind {
-            AttributeKind::Compound { values, .. }
-            | AttributeKind::TypeCompound { values, .. } => values.length() as usize,
+            AttributeKind::Compound { values, .. } | AttributeKind::TypeCompound { values, .. } => {
+                values.length() as usize
+            }
             _ => 0,
         }
     }
 
     fn values(&self) -> List<Pair<SymbolId, AttributeId>> {
         match &self.kind {
-            AttributeKind::Compound { values, .. }
-            | AttributeKind::TypeCompound { values, .. } => values.clone(),
+            AttributeKind::Compound { values, .. } | AttributeKind::TypeCompound { values, .. } => {
+                values.clone()
+            }
             _ => List::nil(),
         }
     }
@@ -200,12 +202,8 @@ impl Attribute {
             _ => return false,
         };
         if from_position.type_ != crate::code::target_type::TargetType::UNKNOWN {
-            if let AttributeKind::Compound {
-                position: slot, ..
-            }
-            | AttributeKind::TypeCompound {
-                position: slot, ..
-            } = &mut self.kind
+            if let AttributeKind::Compound { position: slot, .. }
+            | AttributeKind::TypeCompound { position: slot, .. } = &mut self.kind
             {
                 *slot = Some(from_position);
             }
@@ -215,7 +213,11 @@ impl Attribute {
     }
 
     /// Java: Compound.member(Name member)
-    pub fn member(&self, ctx: &CompilerContext, member: &crate::util::name::Name) -> Option<AttributeId> {
+    pub fn member(
+        &self,
+        ctx: &CompilerContext,
+        member: &crate::util::name::Name,
+    ) -> Option<AttributeId> {
         self.get_elem_pair(ctx, member).map(|pair| pair.1)
     }
 
@@ -241,10 +243,7 @@ impl Attribute {
     /// Java: Compound.getElementValues() — a LinkedHashMap<MethodSymbol,
     /// Attribute> in the upstream (insertion order); the port returns the
     /// ordered pairs (registered adapter).
-    pub fn get_element_values(
-        &self,
-        _ctx: &CompilerContext,
-    ) -> Vec<(SymbolId, AttributeId)> {
+    pub fn get_element_values(&self, _ctx: &CompilerContext) -> Vec<(SymbolId, AttributeId)> {
         let values = self.values();
         let mut result = Vec::new();
         let mut current = values;
@@ -342,7 +341,10 @@ impl Attribute {
             types.erasure(ctx, syms, class_type)
         };
         let class_ty = syms.class_type;
-        let enclosing = ctx.typ(class_ty).get_enclosing_type().expect("classType enclosing");
+        let enclosing = ctx
+            .typ(class_ty)
+            .get_enclosing_type()
+            .expect("classType enclosing");
         let tsym = ctx.typ(class_ty).tsym.expect("classType tsym");
         let ty = ctx.alloc_type(crate::code::type_::Type::new(
             crate::code::type_tag::TypeTag::CLASS,
@@ -516,7 +518,9 @@ mod tests {
     }
 
     fn visit(attribute: &Attribute) -> Vec<&'static str> {
-        let mut visitor = RecordingVisitor { visited: Vec::new() };
+        let mut visitor = RecordingVisitor {
+            visited: Vec::new(),
+        };
         attribute.accept(&mut visitor);
         visitor.visited
     }
@@ -550,7 +554,10 @@ mod tests {
             Some(&ConstantValue::Integer(7))
         );
         assert_eq!(ctx.type_base_type(constant_type), syms.int_type);
-        assert_eq!(ctx.typ(constant_type).get_tag(), crate::code::type_tag::TypeTag::INT);
+        assert_eq!(
+            ctx.typ(constant_type).get_tag(),
+            crate::code::type_tag::TypeTag::INT
+        );
     }
 
     #[test]
@@ -578,7 +585,10 @@ mod tests {
         );
         let member = compound.member(&ctx, &name(&names, "m"));
         assert_eq!(member, Some(constant));
-        assert_eq!(compound.get_elem_pair(&ctx, &name(&names, "m")), Some((method, constant)));
+        assert_eq!(
+            compound.get_elem_pair(&ctx, &name(&names, "m")),
+            Some((method, constant))
+        );
         assert_eq!(compound.get_element_values(&ctx), vec![(method, constant)]);
         assert_eq!(compound.get_annotation_type(), Some(syms.int_type));
         assert!(!compound.is_synthesized());
@@ -594,7 +604,7 @@ mod tests {
             syms.java_base,
         ));
         let position = TypeAnnotationPosition::field(
-            crate::code::type_annotation_position::TypeAnnotationPosition::empty_path(),
+            TypeAnnotationPosition::empty_path(),
             5,
             None,
         );
@@ -699,7 +709,7 @@ impl Attribute {
     /// values, TypeAnnotationPosition position) (Attribute.java:166)
     pub fn new_compound_at(
         ty: Option<TypeId>,
-        values: List<crate::util::pair::Pair<SymbolId, AttributeId>>,
+        values: List<Pair<SymbolId, AttributeId>>,
         position: Option<TypeAnnotationPosition>,
     ) -> Attribute {
         Attribute::new(
@@ -716,7 +726,7 @@ impl Attribute {
     /// values) (Attribute.java:174) — the position is null.
     pub fn new_compound(
         ty: Option<TypeId>,
-        values: List<crate::util::pair::Pair<SymbolId, AttributeId>>,
+        values: List<Pair<SymbolId, AttributeId>>,
     ) -> Attribute {
         Attribute::new_compound_at(ty, values, None)
     }
@@ -725,7 +735,7 @@ impl Attribute {
     /// values, TypeAnnotationPosition position) (Attribute.java:322-326)
     pub fn new_type_compound(
         ty: Option<TypeId>,
-        values: List<crate::util::pair::Pair<SymbolId, AttributeId>>,
+        values: List<Pair<SymbolId, AttributeId>>,
         position: Option<TypeAnnotationPosition>,
     ) -> Attribute {
         Attribute::new(
@@ -745,12 +755,7 @@ impl Attribute {
 
     /// Java: public Enum(Type type, VarSymbol value) (Attribute.java:363)
     pub fn new_enum(ty: Option<TypeId>, value: SymbolId) -> Attribute {
-        Attribute::new(
-            ty,
-            AttributeKind::Enum {
-                value: Some(value),
-            },
-        )
+        Attribute::new(ty, AttributeKind::Enum { value: Some(value) })
     }
 
     /// Java: public Error(Type type) (Attribute.java:383)
@@ -760,10 +765,7 @@ impl Attribute {
 
     /// Java: public UnresolvedClass(Type type, Type classType)
     /// (Attribute.java:403-406)
-    pub fn new_unresolved_class(
-        ty: Option<TypeId>,
-        class_type: Option<TypeId>,
-    ) -> Attribute {
+    pub fn new_unresolved_class(ty: Option<TypeId>, class_type: Option<TypeId>) -> Attribute {
         Attribute::new(ty, AttributeKind::UnresolvedClass { class_type })
     }
 
@@ -772,22 +774,19 @@ impl Attribute {
     pub fn get_value(&self, self_id: AttributeId) -> AttributeValue {
         match &self.kind {
             AttributeKind::Constant { value } => AttributeValue::Constant(value.clone()),
-            AttributeKind::Class { class_type } => AttributeValue::Class(
-                class_type.expect("Attribute.Class.getValue: classType"),
-            ),
-            AttributeKind::Compound { values, .. }
-            | AttributeKind::TypeCompound { values, .. } => {
+            AttributeKind::Class { class_type } => {
+                AttributeValue::Class(class_type.expect("Attribute.Class.getValue: classType"))
+            }
+            AttributeKind::Compound { values, .. } | AttributeKind::TypeCompound { values, .. } => {
                 let _ = values;
                 AttributeValue::Compound(self_id)
             }
             AttributeKind::Array { values } => AttributeValue::Array(values.clone()),
-            AttributeKind::Enum { value } => AttributeValue::Enum(
-                value.expect("Attribute.Enum.getValue: VarSymbol"),
-            ),
-            AttributeKind::Error => AttributeValue::Error(String::from("<error>")),
-            AttributeKind::UnresolvedClass { .. } => {
-                AttributeValue::Error(String::from("<error>"))
+            AttributeKind::Enum { value } => {
+                AttributeValue::Enum(value.expect("Attribute.Enum.getValue: VarSymbol"))
             }
+            AttributeKind::Error => AttributeValue::Error(String::from("<error>")),
+            AttributeKind::UnresolvedClass { .. } => AttributeValue::Error(String::from("<error>")),
         }
     }
 }

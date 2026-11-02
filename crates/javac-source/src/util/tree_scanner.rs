@@ -75,6 +75,7 @@ use crate::tree::switch_tree::SwitchTree;
 use crate::tree::synchronized_tree::SynchronizedTree;
 use crate::tree::throw_tree::ThrowTree;
 use crate::tree::tree::Tree;
+use crate::tree::tree_visitor::TreeVisitor;
 use crate::tree::try_tree::TryTree;
 use crate::tree::type_cast_tree::TypeCastTree;
 use crate::tree::type_parameter_tree::TypeParameterTree;
@@ -85,7 +86,6 @@ use crate::tree::variable_tree::VariableTree;
 use crate::tree::while_loop_tree::WhileLoopTree;
 use crate::tree::wildcard_tree::WildcardTree;
 use crate::tree::yield_tree::YieldTree;
-use crate::tree::tree_visitor::TreeVisitor;
 use crate::util::dispatch::dispatch_tree_scanner;
 use std::rc::Rc;
 
@@ -151,7 +151,13 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_compilation_unit(&mut self, node: &dyn CompilationUnitTree, p: P) -> Option<R> {
-        let mut r = match node.get_package() { Some(child) => { let child: Rc<dyn Tree> = child; self.scan(child.as_ref(), p.clone()) }, None => None };
+        let mut r = match node.get_package() {
+            Some(child) => {
+                let child: Rc<dyn Tree> = child;
+                self.scan(child.as_ref(), p.clone())
+            }
+            None => None,
+        };
         for child in node.get_imports() {
             let child: Rc<dyn Tree> = child;
             r = self.scan_and_reduce(child.as_ref(), p.clone(), r);
@@ -178,7 +184,7 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_import(&mut self, node: &dyn ImportTree, p: P) -> Option<R> {
-        return self.scan(node.get_qualified_identifier().as_ref(), p.clone());
+        self.scan(node.get_qualified_identifier().as_ref(), p.clone())
     }
 
     fn visit_class(&mut self, node: &dyn ClassTree, p: P) -> Option<R> {
@@ -292,7 +298,7 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_labeled_statement(&mut self, node: &dyn LabeledStatementTree, p: P) -> Option<R> {
-        return self.scan(node.get_statement().as_ref(), p.clone());
+        self.scan(node.get_statement().as_ref(), p.clone())
     }
 
     fn visit_switch(&mut self, node: &dyn SwitchTree, p: P) -> Option<R> {
@@ -343,7 +349,11 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
         r
     }
 
-    fn visit_conditional_expression(&mut self, node: &dyn ConditionalExpressionTree, p: P) -> Option<R> {
+    fn visit_conditional_expression(
+        &mut self,
+        node: &dyn ConditionalExpressionTree,
+        p: P,
+    ) -> Option<R> {
         let mut r = self.scan(node.get_condition().as_ref(), p.clone());
         r = self.scan_and_reduce(node.get_true_expression().as_ref(), p.clone(), r);
         r = self.scan_and_reduce(node.get_false_expression().as_ref(), p.clone(), r);
@@ -360,8 +370,12 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
         r
     }
 
-    fn visit_expression_statement(&mut self, node: &dyn ExpressionStatementTree, p: P) -> Option<R> {
-        return self.scan(node.get_expression().as_ref(), p.clone());
+    fn visit_expression_statement(
+        &mut self,
+        node: &dyn ExpressionStatementTree,
+        p: P,
+    ) -> Option<R> {
+        self.scan(node.get_expression().as_ref(), p.clone())
     }
 
     fn visit_break(&mut self, _node: &dyn BreakTree, _p: P) -> Option<R> {
@@ -373,11 +387,11 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_return(&mut self, node: &dyn ReturnTree, p: P) -> Option<R> {
-        return self.scan(node.get_expression().as_ref(), p.clone());
+        self.scan(node.get_expression().as_ref(), p.clone())
     }
 
     fn visit_throw(&mut self, node: &dyn ThrowTree, p: P) -> Option<R> {
-        return self.scan(node.get_expression().as_ref(), p.clone());
+        self.scan(node.get_expression().as_ref(), p.clone())
     }
 
     fn visit_assert(&mut self, node: &dyn AssertTree, p: P) -> Option<R> {
@@ -401,7 +415,13 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_new_class(&mut self, node: &dyn NewClassTree, p: P) -> Option<R> {
-        let mut r = match node.get_enclosing_expression() { Some(child) => { let child: Rc<dyn Tree> = child; self.scan(child.as_ref(), p.clone()) }, None => None };
+        let mut r = match node.get_enclosing_expression() {
+            Some(child) => {
+                let child: Rc<dyn Tree> = child;
+                self.scan(child.as_ref(), p.clone())
+            }
+            None => None,
+        };
         r = self.scan_and_reduce(node.get_identifier().as_ref(), p.clone(), r);
         for child in node.get_type_arguments() {
             let child: Rc<dyn Tree> = child;
@@ -426,7 +446,7 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_parenthesized(&mut self, node: &dyn ParenthesizedTree, p: P) -> Option<R> {
-        return self.scan(node.get_expression().as_ref(), p.clone());
+        self.scan(node.get_expression().as_ref(), p.clone())
     }
 
     fn visit_assignment(&mut self, node: &dyn AssignmentTree, p: P) -> Option<R> {
@@ -442,7 +462,7 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_unary(&mut self, node: &dyn UnaryTree, p: P) -> Option<R> {
-        return self.scan(node.get_expression().as_ref(), p.clone());
+        self.scan(node.get_expression().as_ref(), p.clone())
     }
 
     fn visit_binary(&mut self, node: &dyn BinaryTree, p: P) -> Option<R> {
@@ -458,7 +478,7 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_binding_pattern(&mut self, node: &dyn BindingPatternTree, p: P) -> Option<R> {
-        return self.scan(node.get_variable().as_ref(), p.clone());
+        self.scan(node.get_variable().as_ref(), p.clone())
     }
 
     fn visit_default_case_label(&mut self, _node: &dyn DefaultCaseLabelTree, _p: P) -> Option<R> {
@@ -472,11 +492,15 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_member_select(&mut self, node: &dyn MemberSelectTree, p: P) -> Option<R> {
-        return self.scan(node.get_expression().as_ref(), p.clone());
+        self.scan(node.get_expression().as_ref(), p.clone())
     }
 
-    fn visit_parenthesized_pattern(&mut self, node: &dyn ParenthesizedPatternTree, p: P) -> Option<R> {
-        return self.scan(node.get_pattern().as_ref(), p.clone());
+    fn visit_parenthesized_pattern(
+        &mut self,
+        node: &dyn ParenthesizedPatternTree,
+        p: P,
+    ) -> Option<R> {
+        self.scan(node.get_pattern().as_ref(), p.clone())
     }
 
     fn visit_member_reference(&mut self, node: &dyn MemberReferenceTree, p: P) -> Option<R> {
@@ -501,7 +525,7 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_array_type(&mut self, node: &dyn ArrayTypeTree, p: P) -> Option<R> {
-        return self.scan(node.get_type().as_ref(), p.clone());
+        self.scan(node.get_type().as_ref(), p.clone())
     }
 
     fn visit_parameterized_type(&mut self, node: &dyn ParameterizedTypeTree, p: P) -> Option<R> {
@@ -545,7 +569,7 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_wildcard(&mut self, node: &dyn WildcardTree, p: P) -> Option<R> {
-        return self.scan(node.get_bound().as_ref(), p.clone());
+        self.scan(node.get_bound().as_ref(), p.clone())
     }
 
     fn visit_modifiers(&mut self, node: &dyn ModifiersTree, p: P) -> Option<R> {
@@ -618,11 +642,11 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_requires(&mut self, node: &dyn RequiresTree, p: P) -> Option<R> {
-        return self.scan(node.get_module_name().as_ref(), p.clone());
+        self.scan(node.get_module_name().as_ref(), p.clone())
     }
 
     fn visit_uses(&mut self, node: &dyn UsesTree, p: P) -> Option<R> {
-        return self.scan(node.get_service_name().as_ref(), p.clone());
+        self.scan(node.get_service_name().as_ref(), p.clone())
     }
 
     fn visit_other(&mut self, _node: &dyn Tree, _p: P) -> Option<R> {
@@ -634,7 +658,7 @@ pub trait TreeScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_yield(&mut self, node: &dyn YieldTree, p: P) -> Option<R> {
-        return self.scan(node.get_value().as_ref(), p.clone());
+        self.scan(node.get_value().as_ref(), p.clone())
     }
 
     /// {@inheritDoc}

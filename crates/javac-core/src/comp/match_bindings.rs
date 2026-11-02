@@ -14,8 +14,8 @@
 use std::rc::Rc;
 
 use crate::code::flags;
-use crate::ids::SymbolId;
 use crate::compiler_context::CompilerContext;
+use crate::ids::SymbolId;
 use crate::resources::compiler_properties::errors;
 use crate::tree::jc_tree::Tag;
 use crate::util::jc_diagnostic::{DiagnosticType, Factory, SimpleDiagnosticPosition};
@@ -142,10 +142,8 @@ impl MatchBindingsComputer {
         // error recovery:
         // e.T = union(y.T ∩ z.T, x.T ∩ z.T, x.F ∩ y.T)
         // e.F = union(y.F ∩ z.F, x.T ∩ z.F, x.F ∩ y.F)
-        let bindings_when_true =
-            self.union(ctx, pos, &y_t_z_t, &[&x_t_z_t, &x_f_y_t]);
-        let bindings_when_false =
-            self.union(ctx, pos, &y_f_z_f, &[&x_t_z_f, &x_f_y_f]);
+        let bindings_when_true = self.union(ctx, pos, &y_t_z_t, &[&x_t_z_t, &x_f_y_t]);
+        let bindings_when_false = self.union(ctx, pos, &y_f_z_f, &[&x_t_z_f, &x_f_y_f]);
         MatchBindings::new(bindings_when_true, bindings_when_false)
     }
 
@@ -371,9 +369,10 @@ impl MatchBindingsComputer {
         let source = self.log.current_source();
         // A diagnostic cannot carry a source position without a source (the
         // factory asserts this); test harnesses have no current source.
-        let position = source
-            .as_ref()
-            .map(|_| Rc::new(SimpleDiagnosticPosition::new(pos)) as Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>);
+        let position = source.as_ref().map(|_| {
+            Rc::new(SimpleDiagnosticPosition::new(pos))
+                as Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>
+        });
         let diagnostic = self.diags.create(
             DiagnosticType::ERROR,
             source,
@@ -431,7 +430,9 @@ mod tests {
     fn empty_inputs_produce_empty_bindings() {
         let mut h = harness();
         let empty = MatchBindings::empty();
-        let result = h.computer.conditional(&mut h.ctx, -1, &empty, &empty, &empty);
+        let result = h
+            .computer
+            .conditional(&mut h.ctx, -1, &empty, &empty, &empty);
         assert!(result.is_empty_bindings());
         assert!(result.bindings_when_true.is_empty());
     }
@@ -477,7 +478,7 @@ mod tests {
         // lists; the union of the two same-name bindings reports the clash.
         let and = h.computer.binary(&mut h.ctx, Tag::AND, -1, &lhs, &rhs);
         assert_eq!(and.bindings_when_true.length(), 2);
-        assert_ne!(h.ctx.sym(x2).flags_field & crate::code::flags::CLASH, 0);
+        assert_ne!(h.ctx.sym(x2).flags_field & flags::CLASH, 0);
         let _ = Rc::clone(&h.log);
     }
 
@@ -491,11 +492,15 @@ mod tests {
         assert_eq!(*first.bindings_when_true.head(), x);
         // nullPattern on prev -> current
         let prev_null = MatchBindings::new_with_null(List::nil(), List::nil(), true);
-        let second = h.computer.switch_case(&mut h.ctx, -1, Some(&prev_null), &current);
+        let second = h
+            .computer
+            .switch_case(&mut h.ctx, -1, Some(&prev_null), &current);
         assert_eq!(*second.bindings_when_true.head(), x);
         // nullPattern on current -> prev
         let cur_null = MatchBindings::new_with_null(List::nil(), List::nil(), true);
-        let third = h.computer.switch_case(&mut h.ctx, -1, Some(&current), &cur_null);
+        let third = h
+            .computer
+            .switch_case(&mut h.ctx, -1, Some(&current), &cur_null);
         assert_eq!(*third.bindings_when_true.head(), x);
     }
 

@@ -1,3 +1,6 @@
+use super::class_tree::ClassTree;
+use super::expression_tree::ExpressionTree;
+use super::tree::Tree;
 /// A tree node to declare a new instance of a class.
 ///
 /// For example:
@@ -18,9 +21,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::class_tree::ClassTree;
-use super::expression_tree::ExpressionTree;
-use super::tree::Tree;
 
 pub trait NewClassTree: ExpressionTree {
     /// Returns the enclosing expression, or {@code null} if none.
@@ -43,5 +43,4 @@ pub trait NewClassTree: ExpressionTree {
     /// instantiated, and {@code null} otherwise.
     /// @return the class body
     fn get_class_body(&self) -> Rc<dyn ClassTree>;
-
 }

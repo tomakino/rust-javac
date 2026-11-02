@@ -116,9 +116,11 @@ impl AttrContext {
     pub fn get_local_elements(&self, ctx: &mut CompilerContext) -> Vec<SymbolId> {
         match self.scope {
             None => Vec::new(),
-            Some(scope) => {
-                ctx.scope_get_symbols(scope, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true)
-            }
+            Some(scope) => ctx.scope_get_symbols(
+                scope,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+            ),
         }
     }
 

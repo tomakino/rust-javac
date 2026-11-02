@@ -1082,7 +1082,7 @@ pub fn flags(ctx: &CompilerContext, tree: TreeId) -> i64 {
 /// symbol is not declared in the tree, use the tree position.
 pub fn diagnostic_position_for(
     ctx: &mut CompilerContext,
-    sym: crate::ids::SymbolId,
+    sym: SymbolId,
     tree: TreeId,
 ) -> i32 {
     match find_diagnostic_tree(ctx, sym, tree) {
@@ -1094,16 +1094,28 @@ pub fn diagnostic_position_for(
 /// Java: TreeInfo.DeclScanner/DiagScanner (TreeInfo.java:716-781).
 fn find_diagnostic_tree(
     ctx: &mut CompilerContext,
-    sym: crate::ids::SymbolId,
+    sym: SymbolId,
     tree: TreeId,
 ) -> Option<TreeId> {
     let matches = match &ctx.tree(tree).kind {
-        TreeKind::ClassDecl { sym: Some(found), .. }
-        | TreeKind::MethodDecl { sym: Some(found), .. }
-        | TreeKind::VariableDecl { sym: Some(found), .. }
-        | TreeKind::Ident { sym: Some(found), .. }
-        | TreeKind::FieldAccess { sym: Some(found), .. }
-        | TreeKind::MemberReference { sym: Some(found), .. } => *found == sym,
+        TreeKind::ClassDecl {
+            sym: Some(found), ..
+        }
+        | TreeKind::MethodDecl {
+            sym: Some(found), ..
+        }
+        | TreeKind::VariableDecl {
+            sym: Some(found), ..
+        }
+        | TreeKind::Ident {
+            sym: Some(found), ..
+        }
+        | TreeKind::FieldAccess {
+            sym: Some(found), ..
+        }
+        | TreeKind::MemberReference {
+            sym: Some(found), ..
+        } => *found == sym,
         _ => false,
     };
     if matches {
@@ -1534,7 +1546,6 @@ pub fn primary_pattern_tree(ctx: &CompilerContext, pat: TreeId) -> TreeId {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // TreeInfo.containsTypeAnnotation / TypeAnnotationFinder (TreeInfo.java:1304-1322)
 // ---------------------------------------------------------------------------
@@ -1561,7 +1572,7 @@ impl Default for TypeAnnotationFinder {
 
 tree_scanner_visitor_delegate!(TypeAnnotationFinder);
 
-impl crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationFinder {
+impl TreeScannerVisitor for TypeAnnotationFinder {
     fn scan(&mut self, ctx: &mut CompilerContext, tree: Option<TreeId>) {
         if self.found_type_anno || tree.is_none() {
             return;
@@ -1573,7 +1584,8 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationFinder {
 
     fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let _ = ctx;
-        self.found_type_anno = self.found_type_anno || tree_has_tag(ctx, tree, Tag::TYPE_ANNOTATION);
+        self.found_type_anno =
+            self.found_type_anno || tree_has_tag(ctx, tree, Tag::TYPE_ANNOTATION);
     }
 }
 
@@ -1589,7 +1601,6 @@ pub fn contains_type_annotation(ctx: &mut CompilerContext, e: TreeId) -> bool {
     finder.scan(ctx, Some(e));
     finder.found_type_anno
 }
-
 
 /// helper (Porting rules registered): mirrors "tree instanceof JCExpression"
 /// (JCTree.java class hierarchy) by the node tag. Used by Attr.PostAttrAnalyzer
@@ -1668,7 +1679,6 @@ pub fn is_expression(ctx: &CompilerContext, tree: TreeId) -> bool {
     )
 }
 
-
 /// Java: public static DiagnosticPosition diagnosticPositionFor(final Symbol
 /// sym, final JCTree tree, boolean returnNullIfNotFound) (TreeInfo.java:715-735).
 ///
@@ -1689,12 +1699,12 @@ pub fn is_expression(ctx: &CompilerContext, tree: TreeId) -> bool {
 /// Upstream: TreeInfo.java:715-735.
 pub fn diagnostic_position_for_with_flag(
     ctx: &mut CompilerContext,
-    sym: crate::ids::SymbolId,
+    sym: SymbolId,
     tree: TreeId,
     _return_null_if_not_found: bool,
 ) -> Option<i32> {
     let pos = diagnostic_position_for(ctx, sym, tree);
-    if pos == crate::util::position::NOPOS {
+    if pos == NOPOS {
         None
     } else {
         Some(pos)
@@ -2036,12 +2046,12 @@ mod tests {
 
 /// Java: static class DeclScanner extends TreeScanner (TreeInfo.java:735-783)
 struct DeclScanner {
-    sym: crate::ids::SymbolId,
+    sym: SymbolId,
     result: Option<TreeId>,
 }
 
 impl DeclScanner {
-    fn new(sym: crate::ids::SymbolId) -> DeclScanner {
+    fn new(sym: SymbolId) -> DeclScanner {
         DeclScanner { sym, result: None }
     }
 
@@ -2055,7 +2065,7 @@ impl DeclScanner {
     }
 }
 
-use crate::tree::tree_scanner::{tree_scanner_visitor_delegate, TreeScannerVisitor};
+use crate::tree::tree_scanner::{TreeScannerVisitor, tree_scanner_visitor_delegate};
 
 tree_scanner_visitor_delegate!(DeclScanner);
 
@@ -2080,17 +2090,6 @@ impl TreeScannerVisitor for DeclScanner {
         }
     }
 
-    fn visit_module_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let sym = match &ctx.tree(tree).kind {
-            TreeKind::ModuleDecl { sym, .. } => *sym,
-            _ => panic!("expected a module declaration"),
-        };
-        if sym == Some(self.sym) {
-            self.result = Some(tree);
-        }
-        // no need to scan within module declaration
-    }
-
     fn visit_package_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let packge = match &ctx.tree(tree).kind {
             TreeKind::PackageDecl { packge, .. } => *packge,
@@ -2109,6 +2108,17 @@ impl TreeScannerVisitor for DeclScanner {
             self.scan_list(ctx, &annotations);
             self.scan(ctx, pid);
         }
+    }
+
+    fn visit_module_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let sym = match &ctx.tree(tree).kind {
+            TreeKind::ModuleDecl { sym, .. } => *sym,
+            _ => panic!("expected a module declaration"),
+        };
+        if sym == Some(self.sym) {
+            self.result = Some(tree);
+        }
+        // no need to scan within module declaration
     }
 
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -2243,7 +2253,7 @@ impl TreeScannerVisitor for DeclScanner {
 /// tree) (TreeInfo.java:785-789)
 pub fn declaration_for(
     ctx: &mut CompilerContext,
-    sym: crate::ids::SymbolId,
+    sym: SymbolId,
     tree: TreeId,
 ) -> Option<TreeId> {
     let mut scanner = DeclScanner::new(sym);
@@ -2258,7 +2268,7 @@ mod type_annotation_finder_tests {
 
     #[test]
     fn contains_type_annotation_finds_type_use_annotations() {
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let annotation = ctx.alloc_tree(JCTree {
             pos: 0,
             ty: None,
@@ -2311,7 +2321,7 @@ mod type_annotation_finder_tests {
 ///
 /// Upstream: TreeInfo.java:381-391 (TreePath.getPath(env.toplevel, tree) walk).
 pub fn is_in_annotation(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     env: &std::rc::Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
     tree: TreeId,
 ) -> bool {
@@ -2323,14 +2333,16 @@ pub fn is_in_annotation(
         stack: Vec<TreeId>,
         found: Option<Vec<TreeId>>,
     }
-    crate::tree::tree_scanner::tree_scanner_visitor_delegate!(PathFinder);
-    impl crate::tree::tree_scanner::TreeScannerVisitor for PathFinder {
+    tree_scanner_visitor_delegate!(PathFinder);
+    impl TreeScannerVisitor for PathFinder {
         fn scan(
             &mut self,
-            ctx: &mut crate::compiler_context::CompilerContext,
+            ctx: &mut CompilerContext,
             tree: Option<TreeId>,
         ) {
-            let Some(tree) = tree else { return; };
+            let Some(tree) = tree else {
+                return;
+            };
             self.stack.push(tree);
             if tree == self.target {
                 self.found = Some(self.stack.clone());
@@ -2345,10 +2357,12 @@ pub fn is_in_annotation(
         stack: Vec::new(),
         found: None,
     };
-    crate::tree::tree_scanner::TreeScannerVisitor::scan(&mut finder, ctx, Some(toplevel));
+    TreeScannerVisitor::scan(&mut finder, ctx, Some(toplevel));
     let Some(path) = finder.found else {
         return false;
     };
-    path.iter()
-        .any(|node| ctx.tree(*node).has_tag(crate::tree::jc_tree::Tag::ANNOTATION))
+    path.iter().any(|node| {
+        ctx.tree(*node)
+            .has_tag(Tag::ANNOTATION)
+    })
 }

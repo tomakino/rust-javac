@@ -1,3 +1,4 @@
+use super::expression_tree::ExpressionTree;
 /// A tree node for a binary expression.
 /// Use {@link #getKind getKind} to determine the kind of operator.
 ///
@@ -19,7 +20,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
 
 pub trait BinaryTree: ExpressionTree {
     /// Returns the left (first) operand of the expression.
@@ -29,5 +29,4 @@ pub trait BinaryTree: ExpressionTree {
     /// Returns the right (second) operand of the expression.
     /// @return the right operand
     fn get_right_operand(&self) -> Rc<dyn ExpressionTree>;
-
 }

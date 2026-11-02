@@ -1,3 +1,7 @@
+use super::modifiers_tree::ModifiersTree;
+use super::statement_tree::StatementTree;
+use super::tree::Tree;
+use super::type_parameter_tree::TypeParameterTree;
 /// A tree node for a class, interface, enum, record, or annotation
 /// type declaration.
 ///
@@ -22,10 +26,6 @@
 /// @since 1.6
 use javac_tools::lang::model::element::Name;
 use std::rc::Rc;
-use super::modifiers_tree::ModifiersTree;
-use super::statement_tree::StatementTree;
-use super::tree::Tree;
-use super::type_parameter_tree::TypeParameterTree;
 
 pub trait ClassTree: StatementTree {
     /// Returns the modifiers, including any annotations,
@@ -53,7 +53,6 @@ pub trait ClassTree: StatementTree {
     /// Returns the members declared in this type declaration.
     /// @return the members
     fn get_members(&self) -> Vec<Rc<dyn Tree>>;
-
 
     /// Returns the permits clause of this class declaration.
     /// @return the permits clause of this class declaration

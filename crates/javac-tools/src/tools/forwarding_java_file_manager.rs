@@ -1,6 +1,8 @@
 //! Forwards calls to a given file manager.
 
-use super::java_file_manager::{FileObjectRef, JavaFileManager, JavaFileObjectRef, Location, LocationRef};
+use super::java_file_manager::{
+    FileObjectRef, JavaFileManager, JavaFileObjectRef, Location, LocationRef,
+};
 use super::java_file_object::Kind;
 use super::option_checker::OptionChecker;
 use crate::error::Error;
@@ -65,7 +67,8 @@ impl<M: JavaFileManager> JavaFileManager for ForwardingJavaFileManager<M> {
         kinds: &[Kind],
         recurse: bool,
     ) -> Result<Vec<JavaFileObjectRef>, Error> {
-        self.file_manager.list(location, package_name, kinds, recurse)
+        self.file_manager
+            .list(location, package_name, kinds, recurse)
     }
 
     /// @throws IllegalStateException {@inheritDoc}
@@ -104,7 +107,8 @@ impl<M: JavaFileManager> JavaFileManager for ForwardingJavaFileManager<M> {
         class_name: &JavaString,
         kind: Kind,
     ) -> Result<Option<JavaFileObjectRef>, Error> {
-        self.file_manager.get_java_file_for_input(location, class_name, kind)
+        self.file_manager
+            .get_java_file_for_input(location, class_name, kind)
     }
 
     /// @throws IllegalArgumentException {@inheritDoc}
@@ -116,7 +120,8 @@ impl<M: JavaFileManager> JavaFileManager for ForwardingJavaFileManager<M> {
         kind: Kind,
         sibling: Option<&FileObjectRef>,
     ) -> Result<JavaFileObjectRef, Error> {
-        self.file_manager.get_java_file_for_output(location, class_name, kind, sibling)
+        self.file_manager
+            .get_java_file_for_output(location, class_name, kind, sibling)
     }
 
     /// @throws IllegalArgumentException {@inheritDoc}
@@ -127,7 +132,8 @@ impl<M: JavaFileManager> JavaFileManager for ForwardingJavaFileManager<M> {
         package_name: &JavaString,
         relative_name: &JavaString,
     ) -> Result<Option<FileObjectRef>, Error> {
-        self.file_manager.get_file_for_input(location, package_name, relative_name)
+        self.file_manager
+            .get_file_for_input(location, package_name, relative_name)
     }
 
     /// @throws IllegalArgumentException {@inheritDoc}
@@ -139,7 +145,8 @@ impl<M: JavaFileManager> JavaFileManager for ForwardingJavaFileManager<M> {
         relative_name: &JavaString,
         sibling: Option<&FileObjectRef>,
     ) -> Result<FileObjectRef, Error> {
-        self.file_manager.get_file_for_output(location, package_name, relative_name, sibling)
+        self.file_manager
+            .get_file_for_output(location, package_name, relative_name, sibling)
     }
 
     fn flush(&self) -> Result<(), Error> {
@@ -156,7 +163,8 @@ impl<M: JavaFileManager> JavaFileManager for ForwardingJavaFileManager<M> {
         location: &dyn Location,
         module_name: &JavaString,
     ) -> Result<LocationRef, Error> {
-        self.file_manager.get_location_for_module(location, module_name)
+        self.file_manager
+            .get_location_for_module(location, module_name)
     }
 
     /// @since 9
@@ -165,7 +173,8 @@ impl<M: JavaFileManager> JavaFileManager for ForwardingJavaFileManager<M> {
         location: &dyn Location,
         fo: &JavaFileObjectRef,
     ) -> Result<LocationRef, Error> {
-        self.file_manager.get_location_for_module_of_file(location, fo)
+        self.file_manager
+            .get_location_for_module_of_file(location, fo)
     }
 
     /// @since 9
@@ -205,7 +214,9 @@ mod tests {
     use crate::error::Error;
     use crate::jdk::{Class, ClassLoader, ServiceLoader};
     use crate::tools::file_object::FileObject;
-    use crate::tools::java_file_manager::{FileObjectRef, JavaFileManager, JavaFileObjectRef, Location};
+    use crate::tools::java_file_manager::{
+        FileObjectRef, JavaFileManager, JavaFileObjectRef, Location,
+    };
     use crate::tools::java_file_object::{JavaFileObject, Kind};
     use crate::tools::option_checker::OptionChecker;
     use crate::uri::URI;
@@ -268,7 +279,9 @@ mod tests {
         fn is_name_compatible(&self, simple_name: &JavaString, kind: Kind) -> bool {
             kind == Kind::SOURCE && *simple_name == js("Inner")
         }
-        fn get_nesting_kind(&self) -> Option<crate::lang::model::element::nesting_kind::NestingKind> {
+        fn get_nesting_kind(
+            &self,
+        ) -> Option<crate::lang::model::element::nesting_kind::NestingKind> {
             None
         }
         fn get_access_level(&self) -> Option<crate::lang::model::element::modifier::Modifier> {
@@ -368,7 +381,12 @@ mod tests {
         let location = InnerLocation;
         assert_eq!(forwarding.is_supported_option(&js("-d")), 1);
         assert!(forwarding.has_location(&location));
-        assert!(forwarding.list(&location, &js("p"), &[Kind::SOURCE], false).unwrap().is_empty());
+        assert!(
+            forwarding
+                .list(&location, &js("p"), &[Kind::SOURCE], false)
+                .unwrap()
+                .is_empty()
+        );
         assert!(forwarding.flush().is_ok());
         assert!(forwarding.close().is_ok());
         let fo: JavaFileObjectRef = Rc::new(InnerFile);
@@ -379,7 +397,9 @@ mod tests {
         // overridden default method is forwarded, so it uses the inner
         // manager's default implementation (UnsupportedOperationException).
         assert_eq!(
-            forwarding.get_location_for_module(&location, &js("m")).err(),
+            forwarding
+                .get_location_for_module(&location, &js("m"))
+                .err(),
             Some(Error::UnsupportedOperationException)
         );
     }
@@ -404,7 +424,9 @@ mod tests {
         let forwarding = ForwardingJavaFileManager::new(Inner);
         let location = InnerLocation;
         assert_eq!(
-            forwarding.get_service_loader(&location, Class::<()>::new()).err(),
+            forwarding
+                .get_service_loader(&location, Class::<()>::new())
+                .err(),
             Some(Error::UnsupportedOperationException)
         );
         let _ = ServiceLoader::<()>::new();

@@ -1,3 +1,4 @@
+use super::tree::Tree;
 /// A tree node for an import declaration.
 ///
 /// For example:
@@ -13,7 +14,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::tree::Tree;
 
 pub trait ImportTree: Tree {
     /// Returns true if this is a static import declaration.
@@ -27,5 +27,4 @@ pub trait ImportTree: Tree {
     /// @return a qualified identifier, ending in "*" if and only if
     /// this is an import-on-demand
     fn get_qualified_identifier(&self) -> Rc<dyn Tree>;
-
 }

@@ -1,3 +1,5 @@
+use super::directive_tree::DirectiveTree;
+use super::expression_tree::ExpressionTree;
 /// A tree node for an 'opens' directive in a module declaration.
 ///
 /// For example:
@@ -8,8 +10,6 @@
 ///
 /// @since 9
 use std::rc::Rc;
-use super::directive_tree::DirectiveTree;
-use super::expression_tree::ExpressionTree;
 
 pub trait OpensTree: DirectiveTree {
     /// Returns the name of the package to be opened.
@@ -21,5 +21,4 @@ pub trait OpensTree: DirectiveTree {
     ///
     /// @return the names of the modules to which the package is opened, or null
     fn get_module_names(&self) -> Vec<Rc<dyn ExpressionTree>>;
-
 }

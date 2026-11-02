@@ -36,14 +36,14 @@ use std::rc::Rc;
 use javac_tools::lang::model::SourceVersion;
 
 use crate::jvm::target::Target;
+use crate::main::option::Option as MainOption;
 use crate::resources::compiler_properties::{errors, fragments};
 use crate::resources::diagnostic_contract::DiagnosticArg;
 use crate::util::assert;
-use crate::main::option::Option as MainOption;
 use crate::util::context::Context;
-use crate::util::options::Options;
 use crate::util::java_string::JavaString;
 use crate::util::jc_diagnostic::{Error, Fragment};
+use crate::util::options::Options;
 
 /// The source language version accepted.
 #[allow(non_camel_case_types)]
@@ -53,7 +53,6 @@ pub enum Source {
     // JDK1_0("1.0");
     // 1.1 did not have strictfp, and so could not pass the JCK:
     // JDK1_1("1.1");
-
     /// 1.2 introduced strictfp.
     JDK1_2,
     /// 1.3 is the same language as 1.2.
@@ -455,9 +454,7 @@ impl Feature {
             Feature::VAR_SYNTAX_IMPLICIT_LAMBDAS => {
                 Some(fragments::feature_var_syntax_in_implicit_lambda())
             }
-            Feature::SWITCH_MULTIPLE_CASE_LABELS => {
-                Some(fragments::feature_multiple_case_labels())
-            }
+            Feature::SWITCH_MULTIPLE_CASE_LABELS => Some(fragments::feature_multiple_case_labels()),
             Feature::SWITCH_RULE => Some(fragments::feature_switch_rules()),
             Feature::SWITCH_EXPRESSION => Some(fragments::feature_switch_expressions()),
             Feature::TEXT_BLOCKS => Some(fragments::feature_text_blocks()),
@@ -811,8 +808,14 @@ mod tests {
     fn fragment_builds_the_fragment_key_behind_the_error() {
         let fragment = Feature::DIAMOND.fragment("8");
         assert_eq!(fragment.info().get_type(), DiagnosticType::FRAGMENT);
-        assert_eq!(fragment.info().get_code(), "feature.not.supported.in.source");
-        assert_eq!(Feature::MODULES.fragment("8").info().get_code(), "feature.not.supported.in.source.plural");
+        assert_eq!(
+            fragment.info().get_code(),
+            "feature.not.supported.in.source"
+        );
+        assert_eq!(
+            Feature::MODULES.fragment("8").info().get_code(),
+            "feature.not.supported.in.source.plural"
+        );
     }
 
     #[test]

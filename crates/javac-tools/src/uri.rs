@@ -90,7 +90,9 @@ impl URI {
         }
         let (prefix, authority, path, suffix) = self.parts();
         let normalized = normalize_path(&path);
-        URI::create(&JavaString::from(format!("{prefix}{authority}{normalized}{suffix}").as_str()))
+        URI::create(&JavaString::from(
+            format!("{prefix}{authority}{normalized}{suffix}").as_str(),
+        ))
     }
 
     /// Java: URI.resolve(URI) — RFC 2396 reference resolution, followed by
@@ -110,8 +112,7 @@ impl URI {
             format!("{prefix}{other_raw}")
         } else if other_raw.starts_with('/') {
             format!("{prefix}{authority}{other_raw}")
-        } else if other_raw.starts_with('#') 
-            || other_raw.starts_with('?') {
+        } else if other_raw.starts_with('#') || other_raw.starts_with('?') {
             format!("{}{}{}{}", prefix, authority, raw_path, other_raw)
         } else {
             let base_dir = match raw_path.rfind('/') {
@@ -184,16 +185,15 @@ impl URI {
         }
         let (authority, after_authority) = if let Some(stripped) = rest.strip_prefix("//") {
             match stripped.find(['/', '?', '#']) {
-                Some(index) => (
-                    format!("//{}", &stripped[..index]),
-                    &stripped[index..],
-                ),
+                Some(index) => (format!("//{}", &stripped[..index]), &stripped[index..]),
                 None => (format!("//{stripped}"), ""),
             }
         } else {
             (String::new(), rest)
         };
-        let path_end = after_authority.find(['?', '#']).unwrap_or(after_authority.len());
+        let path_end = after_authority
+            .find(['?', '#'])
+            .unwrap_or(after_authority.len());
         (
             prefix,
             authority,
@@ -260,7 +260,12 @@ fn parse(s: &JavaString) -> Result<URI, JavaString> {
     let opaque = scheme.is_some() && (rest.is_empty() || rest.char_at(0) != b'/' as u16);
 
     if opaque {
-        return Ok(URI { raw: s.clone(), scheme, path: None, opaque: true });
+        return Ok(URI {
+            raw: s.clone(),
+            scheme,
+            path: None,
+            opaque: true,
+        });
     }
 
     // Hierarchical URI: optional authority, then the path up to '?' or '#'.
@@ -277,7 +282,12 @@ fn parse(s: &JavaString) -> Result<URI, JavaString> {
     let raw_path = after_authority.substring(0, path_end);
     let path = decode(&raw_path);
 
-    Ok(URI { raw: s.clone(), scheme, path: Some(path), opaque: false })
+    Ok(URI {
+        raw: s.clone(),
+        scheme,
+        path: Some(path),
+        opaque: false,
+    })
 }
 
 /// Java: the character checks performed while parsing a URI string.  The URI
@@ -403,7 +413,11 @@ fn normalize_path(path: &str) -> String {
             other => segments.push(other),
         }
     }
-    let mut result = if absolute { String::from("/") } else { String::new() };
+    let mut result = if absolute {
+        String::from("/")
+    } else {
+        String::new()
+    };
     result.push_str(&segments.join("/"));
     if trailing && !result.ends_with('/') {
         result.push('/');

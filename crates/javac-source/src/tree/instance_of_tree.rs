@@ -1,3 +1,6 @@
+use super::expression_tree::ExpressionTree;
+use super::pattern_tree::PatternTree;
+use super::tree::Tree;
 /// A tree node for an {@code instanceof} expression.
 ///
 /// For example:
@@ -11,9 +14,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
-use super::pattern_tree::PatternTree;
-use super::tree::Tree;
 
 pub trait InstanceOfTree: ExpressionTree {
     /// Returns the expression to be tested.
@@ -43,5 +43,4 @@ pub trait InstanceOfTree: ExpressionTree {
     /// @return the tested pattern, or null if this instanceof does not use a pattern
     /// @since 16
     fn get_pattern(&self) -> Option<Rc<dyn PatternTree>>;
-
 }

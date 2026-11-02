@@ -9,14 +9,14 @@ use std::rc::Rc;
 
 use javac_strings::JavaString;
 use javac_tools::jdk::{Annotation, Class};
+use javac_tools::lang::model::AnnotatedConstruct;
 use javac_tools::lang::model::element::{
     AnnotationMirror, Element, ElementKind, ElementVisitor, Modifier, Name as ModelName,
 };
-use javac_tools::lang::model::AnnotatedConstruct;
 use javac_tools::lang::model::type_::type_mirror::TypeMirror;
 
-use crate::ids::SymbolId;
 use crate::compiler_context::CompilerContext;
+use crate::ids::SymbolId;
 use crate::model::annotation_mirrors::JavacNoType;
 
 /// A model view over one arena Symbol.
@@ -33,7 +33,14 @@ impl<'a> SymbolElement<'a> {
 
 impl fmt::Display for SymbolElement<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.ctx.sym(self.sym).name.to_java_string().to_string_lossy())
+        f.write_str(
+            &self
+                .ctx
+                .sym(self.sym)
+                .name
+                .to_java_string()
+                .to_string_lossy(),
+        )
     }
 }
 

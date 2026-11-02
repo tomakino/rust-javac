@@ -82,7 +82,9 @@ impl Section {
             Section::NativeLibs,
             Section::NativeCmds,
         ];
-        ALL.iter().copied().find(|section| section.jmod_dir() == dir)
+        ALL.iter()
+            .copied()
+            .find(|section| section.jmod_dir() == dir)
     }
 }
 
@@ -336,14 +338,17 @@ mod tests {
     #[test]
     fn opens_baseline_jmod_and_reads_classes() {
         if !cfg!(windows) {
-            eprintln!("skipping opens_baseline_jmod_and_reads_classes: recorded from the Windows JDK");
+            eprintln!(
+                "skipping opens_baseline_jmod_and_reads_classes: recorded from the Windows JDK"
+            );
             return;
         }
         let Some(path) = baseline_jmod() else {
             eprintln!("skipping opens_baseline_jmod_and_reads_classes: no JDK jmods found");
             return;
         };
-        let mut jmod = JMod::open(&path).unwrap_or_else(|err| panic!("cannot open {}: {}", path.display(), err));
+        let mut jmod = JMod::open(&path)
+            .unwrap_or_else(|err| panic!("cannot open {}: {}", path.display(), err));
 
         assert_eq!(jmod.module_name(), "java.base");
         assert!(!jmod.list_entries().is_empty());
@@ -381,7 +386,8 @@ mod tests {
             eprintln!("skipping matches_the_recorded_jmod_list: no JDK jmods found");
             return;
         };
-        let mut jmod = JMod::open(&path).unwrap_or_else(|err| panic!("cannot open {}: {}", path.display(), err));
+        let mut jmod = JMod::open(&path)
+            .unwrap_or_else(|err| panic!("cannot open {}: {}", path.display(), err));
         if jmod.list_entries().len() != EXPECTED_ENTRY_COUNT
             || jmod.list_classes().len() != EXPECTED_CLASS_ENTRY_COUNT
         {
@@ -428,10 +434,14 @@ mod tests {
         }
 
         // Recorded class/resource sizes and payloads.
-        let object = jmod.get_class_bytes("java.lang.Object").expect("Object.class");
+        let object = jmod
+            .get_class_bytes("java.lang.Object")
+            .expect("Object.class");
         assert_eq!(object.len(), EXPECTED_OBJECT_CLASS_LEN);
         assert_eq!(&object[..4], &[0xCA, 0xFE, 0xBA, 0xBE]);
-        let string = jmod.get_class_bytes("java.lang.String").expect("String.class");
+        let string = jmod
+            .get_class_bytes("java.lang.String")
+            .expect("String.class");
         assert_eq!(string.len(), EXPECTED_STRING_CLASS_LEN);
         let module_info = jmod.module_info_bytes().expect("module-info.class");
         assert_eq!(module_info.len(), EXPECTED_MODULE_INFO_LEN);
@@ -463,7 +473,10 @@ mod tests {
 
         // Right length, not a jmod (plain zip magic).
         let plain_zip = temp_file("plain-zip", b"PK\x03\x04rest of a zip");
-        assert!(matches!(JMod::open(&plain_zip).unwrap_err(), Error::NotAZip(_)));
+        assert!(matches!(
+            JMod::open(&plain_zip).unwrap_err(),
+            Error::NotAZip(_)
+        ));
         std::fs::remove_file(&plain_zip).ok();
 
         // Right magic, unsupported major version 2.0.

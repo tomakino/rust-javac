@@ -23,19 +23,18 @@ impl Hasher for FxHasher {
 
     fn write(&mut self, bytes: &[u8]) {
         for &byte in bytes {
-            self.hash = (self.hash.rotate_left(5) ^ u64::from(byte))
-                .wrapping_mul(0x517c_c1b7_2722_0a95);
+            self.hash =
+                (self.hash.rotate_left(5) ^ u64::from(byte)).wrapping_mul(0x517c_c1b7_2722_0a95);
         }
     }
 
     fn write_u32(&mut self, value: u32) {
-        self.hash = (self.hash.rotate_left(5) ^ u64::from(value))
-            .wrapping_mul(0x517c_c1b7_2722_0a95);
+        self.hash =
+            (self.hash.rotate_left(5) ^ u64::from(value)).wrapping_mul(0x517c_c1b7_2722_0a95);
     }
 
     fn write_u64(&mut self, value: u64) {
-        self.hash = (self.hash.rotate_left(5) ^ value)
-            .wrapping_mul(0x517c_c1b7_2722_0a95);
+        self.hash = (self.hash.rotate_left(5) ^ value).wrapping_mul(0x517c_c1b7_2722_0a95);
     }
 
     fn write_usize(&mut self, value: usize) {

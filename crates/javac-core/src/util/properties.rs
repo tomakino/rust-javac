@@ -137,7 +137,9 @@ mod tests {
     }
 
     fn get<'a>(map: &'a BTreeMap<String, String>, key: &str) -> &'a str {
-        map.get(key).map(String::as_str).unwrap_or_else(|| panic!("missing {key}"))
+        map.get(key)
+            .map(String::as_str)
+            .unwrap_or_else(|| panic!("missing {key}"))
     }
 
     #[test]

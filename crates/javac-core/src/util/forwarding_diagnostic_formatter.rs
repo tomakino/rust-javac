@@ -39,7 +39,9 @@ pub struct ForwardingDiagnosticFormatter<D> {
 
 impl<D> ForwardingDiagnosticFormatter<D> {
     /// Java: public ForwardingDiagnosticFormatter(F formatter)
-    pub fn new(formatter: Rc<RefCell<dyn DiagnosticFormatter<D>>>) -> ForwardingDiagnosticFormatter<D> {
+    pub fn new(
+        formatter: Rc<RefCell<dyn DiagnosticFormatter<D>>>,
+    ) -> ForwardingDiagnosticFormatter<D> {
         let configuration = ForwardingConfiguration {
             formatter: Rc::clone(&formatter),
         };
@@ -80,7 +82,9 @@ impl<D> DiagnosticFormatter<D> for ForwardingDiagnosticFormatter<D> {
     }
 
     fn format_source(&self, diag: &D, fullname: bool, locale: &Locale) -> String {
-        self.formatter.borrow().format_source(diag, fullname, locale)
+        self.formatter
+            .borrow()
+            .format_source(diag, fullname, locale)
     }
 
     fn format_position(&self, diag: &D, pk: PositionKind, locale: &Locale) -> String {
@@ -124,7 +128,10 @@ impl<D> Configuration for ForwardingConfiguration<D> {
     }
 
     fn get_visible(&self) -> Vec<DiagnosticPart> {
-        self.formatter.borrow_mut().get_configuration().get_visible()
+        self.formatter
+            .borrow_mut()
+            .get_configuration()
+            .get_visible()
     }
 
     fn set_multiline_limit(&mut self, limit: MultilineLimit, value: i32) {
@@ -204,8 +211,14 @@ mod tests {
         let forwarding = ForwardingDiagnosticFormatter::new(Rc::clone(&delegated));
         assert!(forwarding.display_source(&7));
         assert_eq!(forwarding.format(&7, None), "format:7");
-        assert_eq!(forwarding.format_message(&7, &Locale::default_locale()), "message:7");
-        assert_eq!(forwarding.format_kind(&7, &Locale::default_locale()), "kind");
+        assert_eq!(
+            forwarding.format_message(&7, &Locale::default_locale()),
+            "message:7"
+        );
+        assert_eq!(
+            forwarding.format_kind(&7, &Locale::default_locale()),
+            "kind"
+        );
         assert_eq!(
             forwarding.format_source(&7, true, &Locale::default_locale()),
             "full"
@@ -214,7 +227,10 @@ mod tests {
             forwarding.format_position(&7, PositionKind::Line, &Locale::default_locale()),
             "Line"
         );
-        assert!(Rc::ptr_eq(&forwarding.get_delegated_formatter(), &delegated));
+        assert!(Rc::ptr_eq(
+            &forwarding.get_delegated_formatter(),
+            &delegated
+        ));
         let _ = forwarding.get_configuration();
     }
 
@@ -237,10 +253,7 @@ mod tests {
         );
         {
             let configuration = forwarding.get_configuration();
-            assert_eq!(
-                configuration.get_visible(),
-                vec![DiagnosticPart::Details]
-            );
+            assert_eq!(configuration.get_visible(), vec![DiagnosticPart::Details]);
         }
         {
             let mut configuration =
@@ -252,7 +265,9 @@ mod tests {
     }
 
     impl<D> ForwardingConfiguration<D> {
-        fn new_for_test(formatter: Rc<RefCell<dyn DiagnosticFormatter<D>>>) -> ForwardingConfiguration<D> {
+        fn new_for_test(
+            formatter: Rc<RefCell<dyn DiagnosticFormatter<D>>>,
+        ) -> ForwardingConfiguration<D> {
             ForwardingConfiguration { formatter }
         }
     }

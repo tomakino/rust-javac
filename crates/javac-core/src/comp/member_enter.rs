@@ -55,7 +55,7 @@ pub struct MemberEnter {
     pub types: Rc<Types>,
     pub deferred_lint_handler: Rc<DeferredLintHandler>,
     /// Java: protected Env<AttrContext> env;
-    pub env: std::cell::RefCell<Option<Rc<Env<AttrContext>>>>,
+    pub env: RefCell<Option<Rc<Env<AttrContext>>>>,
     /// Java: Annotate annotate = Annotate.instance(context) — explicit
     /// injection adapter (ADR 0001): the cell is filled after Annotate is
     /// constructed (Rc cycle MemberEnter/TypeEnter -> Annotate -> Attr ->
@@ -79,7 +79,7 @@ impl MemberEnter {
             chk,
             types,
             deferred_lint_handler,
-            env: std::cell::RefCell::new(None),
+            env: RefCell::new(None),
             annotate,
         }
     }
@@ -142,16 +142,14 @@ impl MemberEnter {
         while current.non_empty() {
             let thrown_tree = *current.head();
             let mut exc = self.attrib_type(ctx, syms, thrown_tree, env, attr);
-            if !ctx.typ(exc).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
+            if !ctx
+                .typ(exc)
+                .has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
+            {
                 exc = self
                     .chk
                     .check_class_type(ctx, syms, ctx.tree(thrown_tree).pos, exc);
-            } else if ctx
-                .typ(exc)
-                .tsym
-                .and_then(|tsym| ctx.sym(tsym).owner)
-                == Some(msym)
-            {
+            } else if ctx.typ(exc).tsym.and_then(|tsym| ctx.sym(tsym).owner) == Some(msym) {
                 // mark inference variables in 'throws' clause
                 let flags_now = ctx.sym(msym).flags_field;
                 let _ = flags_now;
@@ -243,12 +241,9 @@ impl MemberEnter {
         let result = self.visit(ctx, syms, tree, attr);
         if let Err(failure) = result {
             // Java: chk.completionError(tree.pos(), ex)
-            let _ = self.chk.completion_error(
-                ctx,
-                ctx.tree(tree).pos,
-                &failure,
-                syms,
-            );
+            let _ = self
+                .chk
+                .completion_error(ctx, ctx.tree(tree).pos, &failure, syms);
         }
         *self.env.borrow_mut() = prev_env;
     }
@@ -312,13 +307,9 @@ impl MemberEnter {
             },
         ));
         let mods_flags = method_decl_mods_flags(ctx, tree);
-        let checked = self.chk.check_flags(
-            ctx,
-            ctx.tree(tree).pos,
-            mods_flags,
-            m,
-            tree,
-        );
+        let checked = self
+            .chk
+            .check_flags(ctx, ctx.tree(tree).pos, mods_flags, m, tree);
         ctx.sym_mut(m).flags_field = checked;
         set_method_decl_symbol(ctx, tree, m);
         // if this is a default method, add the DEFAULT flag to the enclosing interface.
@@ -349,7 +340,8 @@ impl MemberEnter {
         while current.non_empty() {
             let param = *current.head();
             last_param = Some(param);
-            params_list = params_list.append(var_decl_symbol(ctx, param).expect("parameter symbol"));
+            params_list =
+                params_list.append(var_decl_symbol(ctx, param).expect("parameter symbol"));
             current = current.tail();
         }
         ctx.sym_mut(m).set_params(params_list);
@@ -363,13 +355,9 @@ impl MemberEnter {
         // localEnv.info.scope.leave();
         let local_scope = local_env.info.borrow().scope.expect("local scope");
         let _ = ctx.scope_leave(local_scope);
-        let unique = self.chk.check_unique(
-            ctx,
-            syms,
-            ctx.tree(tree).pos,
-            m,
-            encl_scope,
-        );
+        let unique = self
+            .chk
+            .check_unique(ctx, syms, ctx.tree(tree).pos, m, encl_scope);
         if unique {
             ctx.scope_enter(encl_scope, m);
         }
@@ -396,8 +384,10 @@ impl MemberEnter {
         if let Some(default_value) = method_decl_default_value(ctx, tree) {
             // m.defaultValue = annotate.unfinishedDefaultValue(); (temporary
             // sentinel for now)
-            if let crate::code::symbol::SymbolKind::MethodSymbol { default_value: slot, .. } =
-                &mut ctx.sym_mut(m).kind_data
+            if let SymbolKind::MethodSymbol {
+                default_value: slot,
+                ..
+            } = &mut ctx.sym_mut(m).kind_data
             {
                 *slot = Some(annotate.unfinished_default_value());
             }
@@ -577,13 +567,9 @@ impl MemberEnter {
                 data: None,
             },
         ));
-        let checked = self.chk.check_flags(
-            ctx,
-            ctx.tree(tree).pos,
-            mods_flags,
-            v,
-            tree,
-        );
+        let checked = self
+            .chk
+            .check_flags(ctx, ctx.tree(tree).pos, mods_flags, v, tree);
         ctx.sym_mut(v).flags_field = checked;
         set_var_decl_symbol(ctx, tree, v);
         if var_decl_init(ctx, tree).is_some() {
@@ -665,10 +651,12 @@ impl MemberEnter {
         error: crate::resources::diagnostic_contract::ErrorInfo,
     ) {
         if let Some(tree_ty) = ctx.tree(tree).ty
-            && !ctx.typ(tree_ty).has_tag(crate::code::type_tag::TypeTag::ERROR)
+            && !ctx
+                .typ(tree_ty)
+                .has_tag(crate::code::type_tag::TypeTag::ERROR)
             && !self.types.is_same_type(ctx, syms, tree_ty, expected)
         {
-            crate::util::abstract_log::AbstractLog::error_at(
+            AbstractLog::error_at(
                 &*self.log,
                 ctx.tree(tree).pos,
                 crate::util::jc_diagnostic::Error::from(error),
@@ -690,7 +678,9 @@ impl MemberEnter {
         }
         let encl_method = local_env.encl_method.expect("enclosing method");
         let m = method_decl_symbol(ctx, encl_method).expect("method symbol");
-        let is_constructor = ctx.sym(m).is_constructor(&crate::util::names::Names::new(false));
+        let is_constructor = ctx
+            .sym(m)
+            .is_constructor(&crate::util::names::Names::new(false));
         if is_constructor {
             let owner = ctx.sym(m).owner.expect("method owner");
             let owner_owner = ctx.sym(owner).owner.expect("owner owner");
@@ -709,7 +699,9 @@ impl MemberEnter {
                 .has_tag(crate::code::type_tag::TypeTag::CLASS)
             {
                 let (vartype, nameexpr) = match &ctx.tree(tree).kind {
-                    TreeKind::VariableDecl { vartype, nameexpr, .. } => (*vartype, *nameexpr),
+                    TreeKind::VariableDecl {
+                        vartype, nameexpr, ..
+                    } => (*vartype, *nameexpr),
                     _ => (None, None),
                 };
                 if let Some(vartype) = vartype {
@@ -751,36 +743,40 @@ impl MemberEnter {
         } else {
             let owner_type = ctx.sym(m).owner.and_then(|owner| ctx.sym(owner).ty);
             let (vartype, nameexpr) = match &ctx.tree(tree).kind {
-                TreeKind::VariableDecl { vartype, nameexpr, .. } => (*vartype, *nameexpr),
+                TreeKind::VariableDecl {
+                    vartype, nameexpr, ..
+                } => (*vartype, *nameexpr),
                 _ => (None, None),
             };
             if let Some(outer_type) = owner_type {
                 if let Some(vartype) = vartype {
                     let vartype_ty = ctx.tree(vartype).ty;
-                    let info = crate::resources::compiler_properties::errors::incorrect_receiver_type(
-                        crate::resources::diagnostic_contract::TypeArg::placeholder(
-                            crate::comp::attr::type_display_of(ctx, outer_type),
-                        ),
-                        crate::resources::diagnostic_contract::TypeArg::placeholder(
-                            vartype_ty
-                                .map(|ty| crate::comp::attr::type_display_of(ctx, ty))
-                                .unwrap_or_default(),
-                        ),
-                    );
+                    let info =
+                        crate::resources::compiler_properties::errors::incorrect_receiver_type(
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                crate::comp::attr::type_display_of(ctx, outer_type),
+                            ),
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                vartype_ty
+                                    .map(|ty| crate::comp::attr::type_display_of(ctx, ty))
+                                    .unwrap_or_default(),
+                            ),
+                        );
                     self.check_type(ctx, syms, vartype, outer_type, info);
                 }
                 if let Some(nameexpr) = nameexpr {
                     let nameexpr_ty = ctx.tree(nameexpr).ty;
-                    let info = crate::resources::compiler_properties::errors::incorrect_receiver_name(
-                        crate::resources::diagnostic_contract::TypeArg::placeholder(
-                            crate::comp::attr::type_display_of(ctx, outer_type),
-                        ),
-                        crate::resources::diagnostic_contract::TypeArg::placeholder(
-                            nameexpr_ty
-                                .map(|ty| crate::comp::attr::type_display_of(ctx, ty))
-                                .unwrap_or_default(),
-                        ),
-                    );
+                    let info =
+                        crate::resources::compiler_properties::errors::incorrect_receiver_name(
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                crate::comp::attr::type_display_of(ctx, outer_type),
+                            ),
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                nameexpr_ty
+                                    .map(|ty| crate::comp::attr::type_display_of(ctx, ty))
+                                    .unwrap_or_default(),
+                            ),
+                        );
                     self.check_type(ctx, syms, nameexpr, outer_type, info);
                 }
             }
@@ -839,27 +835,24 @@ impl MemberEnter {
         if owner_is_type {
             // Java: localEnv.info.scope = env.info.scope.dupUnshared(tree.sym);
             if let Some(scope_id) = env.info.borrow().scope {
-                let new_scope = ctx.scope(scope_id).dup_unshared(
-                    scope_id,
-                    Some(sym),
-                    ctx.scopes_arena(),
-                );
+                let new_scope =
+                    ctx.scope(scope_id)
+                        .dup_unshared(scope_id, Some(sym), ctx.scopes_arena());
                 let new_scope_id = ctx.alloc_scope(new_scope);
                 info.scope = Some(new_scope_id);
             }
         }
-        let owner_is_static = (crate::tree::tree_info::flags(ctx, tree)
-            & crate::code::flags::STATIC as i64)
-            != 0;
+        let owner_is_static =
+            (crate::tree::tree_info::flags(ctx, tree) & flags::STATIC as i64) != 0;
         let encl_class_interface = env
             .encl_class
             .and_then(|clazz_tree| match &ctx.tree(clazz_tree).kind {
-                TreeKind::ClassDecl { sym: Some(clazz), .. } => Some(*clazz),
+                TreeKind::ClassDecl {
+                    sym: Some(clazz), ..
+                } => Some(*clazz),
                 _ => None,
             })
-            .map(|clazz| {
-                (ctx.sym(clazz).flags_field & crate::code::flags::INTERFACE as i64) != 0
-            })
+            .map(|clazz| (ctx.sym(clazz).flags_field & flags::INTERFACE as i64) != 0)
             .unwrap_or(false);
         if owner_is_static || (encl_class_interface && env.encl_method.is_none()) {
             info.static_level += 1;
@@ -1192,7 +1185,6 @@ fn modifiers_flags(ctx: &CompilerContext, mods: TreeId) -> i64 {
 fn set_tree_type(ctx: &mut CompilerContext, tree: TreeId, ty: TypeId) {
     ctx.tree_mut(tree).ty = Some(ty);
 }
-
 
 // ---------------------------------------------------------------------------
 // Tree accessors used by the Annotate call sites (local tree/arena adapters).

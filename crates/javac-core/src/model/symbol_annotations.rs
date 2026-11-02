@@ -47,7 +47,10 @@ impl Symbol {
         types: &Types,
         anno_type: &Class<()>,
     ) -> Option<AttributeId> {
-        let symbol = self.id.get().expect("AssertionError: symbol is not allocated");
+        let symbol = self
+            .id
+            .get()
+            .expect("AssertionError: symbol is not allocated");
         get_attribute(ctx, syms, types, symbol, anno_type)
     }
 
@@ -68,7 +71,10 @@ impl Symbol {
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
     ) -> Vec<Rc<dyn javac_tools::lang::model::element::annotation_mirror::AnnotationMirror>> {
-        let symbol = self.id.get().expect("AssertionError: symbol is not allocated");
+        let symbol = self
+            .id
+            .get()
+            .expect("AssertionError: symbol is not allocated");
         if matches!(
             ctx.sym(symbol).kind_data,
             crate::code::symbol::SymbolKind::TypeVariableSymbol
@@ -80,9 +86,7 @@ impl Symbol {
             return attributes
                 .iter()
                 .map(|attribute| {
-                    crate::model::annotation_mirrors::build_annotation_mirror(
-                        ctx, syms, attribute,
-                    )
+                    crate::model::annotation_mirrors::build_annotation_mirror(ctx, syms, attribute)
                 })
                 .collect();
         }
@@ -111,7 +115,10 @@ impl Symbol {
         anno_type: &Class<()>,
     ) -> Option<Rc<dyn AnnotationProxy>> {
         check_annotation_type(ctx, syms, anno_type);
-        let symbol = self.id.get().expect("AssertionError: symbol is not allocated");
+        let symbol = self
+            .id
+            .get()
+            .expect("AssertionError: symbol is not allocated");
         get_attribute(ctx, syms, types, symbol, anno_type)
             .map(|attribute| generate_annotation(ctx, attribute))
     }
@@ -138,7 +145,10 @@ impl Symbol {
         anno_type: &Class<()>,
     ) -> Vec<Rc<dyn AnnotationProxy>> {
         check_annotation_type(ctx, syms, anno_type);
-        let symbol = self.id.get().expect("AssertionError: symbol is not allocated");
+        let symbol = self
+            .id
+            .get()
+            .expect("AssertionError: symbol is not allocated");
         get_annotations_by_type(ctx, syms, types, symbol, anno_type)
     }
 
@@ -165,7 +175,10 @@ impl Symbol {
         anno_type: &Class<()>,
     ) -> Vec<Rc<dyn AnnotationProxy>> {
         check_annotation_type(ctx, syms, anno_type);
-        let symbol = self.id.get().expect("AssertionError: symbol is not allocated");
+        let symbol = self
+            .id
+            .get()
+            .expect("AssertionError: symbol is not allocated");
         get_inherited_annotations(ctx, syms, types, symbol, anno_type)
     }
 }
@@ -236,8 +249,8 @@ fn get_annotations_by_type(
         return Vec::new();
     };
     let container_type = get_container(ctx, syms, annotation_symbol);
-    let container_name = container_type
-        .map(|container| ctx.sym(container).flat_name().to_java_string());
+    let container_name =
+        container_type.map(|container| ctx.sym(container).flat_name().to_java_string());
     let inherited = annotation_has_inherited(ctx, syms, annotation_symbol);
     let Some(container_name) = container_name else {
         // If annoType does not declare a container this is equivalent to
@@ -350,14 +363,17 @@ fn get_container(
         }
         let members = ctx.sym(repeatable).members()?;
         let value_member = ctx
-            .scope_get_symbols(members, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true)
+            .scope_get_symbols(
+                members,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+            )
             .into_iter()
-            .find(|member| {
-                ctx.sym(*member).name.to_java_string() == JavaString::from("value")
-            })?;
+            .find(|member| ctx.sym(*member).name.to_java_string() == JavaString::from("value"))?;
         let values = match &ctx.attr(attribute).kind {
-            AttributeKind::Compound { values, .. }
-            | AttributeKind::TypeCompound { values, .. } => values.clone(),
+            AttributeKind::Compound { values, .. } | AttributeKind::TypeCompound { values, .. } => {
+                values.clone()
+            }
             _ => return None,
         };
         for pair in values.iter() {
@@ -390,15 +406,20 @@ fn unpack_contained(
         return Vec::new();
     };
     let Some(value_member) = ctx
-        .scope_get_symbols(members, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true)
+        .scope_get_symbols(
+            members,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        )
         .into_iter()
         .find(|member| ctx.sym(*member).name.to_java_string() == JavaString::from("value"))
     else {
         return Vec::new();
     };
     let values = match &ctx.attr(container).kind {
-        AttributeKind::Compound { values, .. }
-        | AttributeKind::TypeCompound { values, .. } => values.clone(),
+        AttributeKind::Compound { values, .. } | AttributeKind::TypeCompound { values, .. } => {
+            values.clone()
+        }
         _ => return Vec::new(),
     };
     for pair in values.iter() {
@@ -457,12 +478,7 @@ fn annotation_has_inherited(
     ctx.sym(annotation_type)
         .get_raw_attributes()
         .iter()
-        .any(|attribute| {
-            ctx.attr(attribute)
-                .ty
-                .and_then(|ty| ctx.typ(ty).tsym)
-                == Some(inherited)
-        })
+        .any(|attribute| ctx.attr(attribute).ty.and_then(|ty| ctx.typ(ty).tsym) == Some(inherited))
 }
 
 /// Java: ClassSymbol.getSuperClassToSearchForAnnotations
@@ -481,17 +497,15 @@ fn super_class_to_search_for_annotations(
     ctx.typ(super_type).tsym
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::code::attribute::{Attribute, AttributeKind};
-    use crate::ids::TypeId;
     use crate::code::source::Source;
     use crate::code::symbol::SymbolKind;
-    use crate::code::type_::{Type, TypeKindData};
     use crate::code::symtab::Symtab;
+    use crate::code::type_::{Type, TypeKindData};
+    use crate::ids::TypeId;
     use crate::jvm::target::Target;
     use crate::util::constants::ConstantValue;
     use crate::util::list::List;
@@ -511,12 +525,7 @@ mod tests {
         fn new() -> Fixture {
             let mut ctx = CompilerContext::new();
             let names = Rc::new(Names::new(false));
-            let syms = Symtab::new(
-                &mut ctx,
-                Rc::clone(&names),
-                Target::JDK1_17,
-                Source::JDK17,
-            );
+            let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, Source::JDK17);
             let types = Types::with_names(Rc::clone(&names));
             Fixture {
                 ctx,
@@ -549,12 +558,7 @@ mod tests {
             members
         }
 
-        fn method(
-            &mut self,
-            owner: SymbolId,
-            name: &str,
-            restype: TypeId,
-        ) -> SymbolId {
+        fn method(&mut self, owner: SymbolId, name: &str, restype: TypeId) -> SymbolId {
             let method_type = self.ctx.alloc_type(Type::new_method_type(
                 List::nil(),
                 restype,
@@ -562,7 +566,7 @@ mod tests {
                 self.syms.method_class,
             ));
             self.ctx
-                .alloc_symbol(crate::code::symbol::Symbol::new_method_symbol(
+                .alloc_symbol(Symbol::new_method_symbol(
                     (flags::PUBLIC | flags::ABSTRACT) as i64,
                     self.name(name),
                     method_type,
@@ -753,9 +757,10 @@ mod tests {
             Some(AnnotationValueProxy::Integer(1))
         ));
         match proxy.member_value(&JavaString::from("type")) {
-            Some(AnnotationValueProxy::Exception(
-                AnnotationProxyException::MirroredType { type_name, .. },
-            )) => assert_eq!(type_name, JavaString::from("java.lang.String")),
+            Some(AnnotationValueProxy::Exception(AnnotationProxyException::MirroredType {
+                type_name,
+                ..
+            })) => assert_eq!(type_name, JavaString::from("java.lang.String")),
             _ => panic!("MirroredTypeException proxy expected"),
         }
         match proxy.member_value(&JavaString::from("e")) {
@@ -862,10 +867,8 @@ mod tests {
         fixture.ctx.scope_enter(container_members, container_value);
         let container_type = fixture.ctx.sym(container).ty.expect("container type");
         let container_class_value = fixture.class_attribute(container_type);
-        let repeatable_attribute = fixture.compound_attribute(
-            repeatable,
-            vec![(repeatable_value, container_class_value)],
-        );
+        let repeatable_attribute =
+            fixture.compound_attribute(repeatable, vec![(repeatable_value, container_class_value)]);
         fixture.annotate(repeated, repeatable_attribute);
         let annotated = fixture.class("p.C", 0);
         let one = fixture.int_attribute(1);
@@ -873,10 +876,8 @@ mod tests {
         let first = fixture.compound_attribute(repeated, vec![(repeated_value, one)]);
         let second = fixture.compound_attribute(repeated, vec![(repeated_value, two)]);
         let contained_array = fixture.array_attribute(repeated_array, vec![first, second]);
-        let container_attribute = fixture.compound_attribute(
-            container,
-            vec![(container_value, contained_array)],
-        );
+        let container_attribute =
+            fixture.compound_attribute(container, vec![(container_value, contained_array)]);
         fixture.annotate(annotated, container_attribute);
         let handle = fixture.handle("p.R");
         let proxies = get_annotations_by_type(
@@ -970,8 +971,7 @@ mod tests {
         let parent = fixture.class("p.Parent", 0);
         let parent_type = fixture.ctx.sym(parent).ty.expect("parent type");
         let nine = fixture.int_attribute(9);
-        let parent_attribute =
-            fixture.compound_attribute(annotation, vec![(value_method, nine)]);
+        let parent_attribute = fixture.compound_attribute(annotation, vec![(value_method, nine)]);
         fixture.annotate(parent, parent_attribute);
         let child = fixture.class("p.Child", 0);
         let child_type = fixture.ctx.sym(child).ty.expect("child type");
@@ -1019,8 +1019,7 @@ mod tests {
         let parent = fixture.class("p.Parent2", 0);
         let parent_type = fixture.ctx.sym(parent).ty.expect("parent type");
         let one = fixture.int_attribute(1);
-        let parent_attribute =
-            fixture.compound_attribute(annotation, vec![(value_method, one)]);
+        let parent_attribute = fixture.compound_attribute(annotation, vec![(value_method, one)]);
         fixture.annotate(parent, parent_attribute);
         let child = fixture.class("p.Child2", 0);
         let child_type = fixture.ctx.sym(child).ty.expect("child type");
@@ -1031,14 +1030,16 @@ mod tests {
             *supertype_field = Some(parent_type);
         }
         let handle = fixture.handle("p.B");
-        assert!(get_attribute(
-            &mut fixture.ctx,
-            &fixture.syms,
-            &fixture.types,
-            child,
-            &handle,
-        )
-        .is_none());
+        assert!(
+            get_attribute(
+                &mut fixture.ctx,
+                &fixture.syms,
+                &fixture.types,
+                child,
+                &handle,
+            )
+            .is_none()
+        );
     }
     #[test]
     fn get_annotation_mirrors_exposes_explicit_values() {
@@ -1067,19 +1068,33 @@ mod tests {
         assert_eq!(mirrors.len(), 1);
         let mirror = &mirrors[0];
         let annotation_element = mirror.get_annotation_type().as_element();
-        assert_eq!(annotation_element.get_kind(), crate::code::symbol::ElementKind::ANNOTATION_TYPE);
-        assert!(annotation_element
-            .get_simple_name()
-            .content_equals(&JavaString::from("A")));
+        assert_eq!(
+            annotation_element.get_kind(),
+            crate::code::symbol::ElementKind::ANNOTATION_TYPE
+        );
+        assert!(
+            annotation_element
+                .get_simple_name()
+                .content_equals(&JavaString::from("A"))
+        );
         let enclosed = annotation_element.get_enclosed_elements();
         assert_eq!(enclosed.len(), 2);
         let values = mirror.get_element_values();
-        assert_eq!(values.len(), 1, "default values are not part of element values");
+        assert_eq!(
+            values.len(),
+            1,
+            "default values are not part of element values"
+        );
         let (method, value) = &values[0];
-        assert!(method
-            .get_simple_name()
-            .content_equals(&JavaString::from("value")));
-        assert!(matches!(value.get_value(), javac_tools::lang::model::element::annotation_value::Value::Integer(3)));
+        assert!(
+            method
+                .get_simple_name()
+                .content_equals(&JavaString::from("value"))
+        );
+        assert!(matches!(
+            value.get_value(),
+            javac_tools::lang::model::element::annotation_value::Value::Integer(3)
+        ));
         assert!(method.is_default());
         let default = method.get_default_value().expect("default value");
         assert!(matches!(
@@ -1087,10 +1102,18 @@ mod tests {
             javac_tools::lang::model::element::annotation_value::Value::Integer(7)
         ));
         let declared = mirror.get_annotation_type();
-        assert_eq!(declared.get_kind(), javac_tools::lang::model::type_::type_kind::TypeKind::DECLARED);
+        assert_eq!(
+            declared.get_kind(),
+            javac_tools::lang::model::type_::type_kind::TypeKind::DECLARED
+        );
         assert!(declared.get_type_arguments().is_empty());
     }
-    fn compile_annotation_source(source: &str) -> (crate::main::mini_compiler::MiniCompiler, Vec<crate::main::mini_compiler::CompiledClass>) {
+    fn compile_annotation_source(
+        source: &str,
+    ) -> (
+        crate::main::mini_compiler::MiniCompiler,
+        Vec<crate::main::mini_compiler::CompiledClass>,
+    ) {
         use javac_tools::tools::standard_java_file_manager::StandardJavaFileManager;
         let root = std::env::temp_dir().join(format!(
             "rust-javac-annotation-e2e-{}-{}",
@@ -1108,7 +1131,7 @@ mod tests {
         std::fs::write(&file, source).expect("write");
         let mut compiler = crate::main::mini_compiler::MiniCompiler::new(&out);
         let sp = javac_tools::tools::standard_location::StandardLocation::location_for(
-            &javac_strings::JavaString::from("SOURCE_PATH"),
+            &JavaString::from("SOURCE_PATH"),
         );
         compiler
             .file_manager
@@ -1124,5 +1147,4 @@ mod tests {
     fn has_bytes(bytes: &[u8], needle: &[u8]) -> bool {
         bytes.windows(needle.len()).any(|window| window == needle)
     }
-
 }

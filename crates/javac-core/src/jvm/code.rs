@@ -16,16 +16,14 @@ use crate::jvm::class_file;
 use crate::jvm::cr_table::CRTable;
 use crate::jvm::pool_constant::LoadableConstantRef;
 use crate::jvm::pool_writer::PoolWriter;
-use crate::jvm::stack_map::{
-    StackMapFormat, StackMapFrame, StackMapTableFrame,
-};
+use crate::jvm::stack_map::{StackMapFormat, StackMapFrame, StackMapTableFrame};
+use crate::resources::compiler_properties::errors;
 use crate::util::array_utils;
 use crate::util::bits::Bits;
+use crate::util::jc_diagnostic::Error;
 use crate::util::list::List;
 use crate::util::log::Log;
 use crate::util::position::{LineMap, NOPOS};
-use crate::util::jc_diagnostic::Error;
-use crate::resources::compiler_properties::errors;
 
 pub use crate::jvm::code_state::{Chain, LocalVar, Range, State};
 
@@ -188,10 +186,7 @@ impl Code {
     ///
     /// # Panics
     ///   - none.
-    pub fn typecode(
-        ctx: &CompilerContext,
-        type_: TypeId,
-    ) -> i32 {
+    pub fn typecode(ctx: &CompilerContext, type_: TypeId) -> i32 {
         match ctx.typ(type_).get_tag() {
             TypeTag::BYTE => BYTE_CODE,
             TypeTag::SHORT => SHORT_CODE,
@@ -260,11 +255,7 @@ impl Code {
     ///
     /// # Panics
     ///   - none.
-    pub fn width_type(
-        ctx: &CompilerContext,
-        _syms: &Symtab,
-        type_: Option<TypeId>,
-    ) -> i32 {
+    pub fn width_type(ctx: &CompilerContext, _syms: &Symtab, type_: Option<TypeId>) -> i32 {
         match type_ {
             Some(t) => Code::width(Code::typecode(ctx, t)),
             None => 1,
@@ -283,11 +274,7 @@ impl Code {
     ///
     /// # Panics
     ///   - none.
-    pub fn width_list(
-        ctx: &CompilerContext,
-        syms: &Symtab,
-        types: &List<TypeId>,
-    ) -> i32 {
+    pub fn width_list(ctx: &CompilerContext, syms: &Symtab, types: &List<TypeId>) -> i32 {
         let mut w = 0;
         let mut current = types.clone();
         while current.non_empty() {
@@ -324,7 +311,6 @@ impl Code {
             tag => panic!("AssertionError: arraycode {}", tag),
         }
     }
-
 }
 impl Code {
     /// Return the current output code pointer, resolving pending jumps first.
@@ -490,11 +476,7 @@ impl Code {
     }
 
     /// Emit a ldc (or ldc_w) instruction.
-    pub fn emit_ldc(
-        &mut self,
-        ctx: &mut CompilerContext,
-        constant: LoadableConstantRef,
-    ) {
+    pub fn emit_ldc(&mut self, ctx: &mut CompilerContext, constant: LoadableConstantRef) {
         let syms_rc = Rc::clone(&self.syms);
         let syms = &*syms_rc;
         let od = {
@@ -531,12 +513,7 @@ impl Code {
     }
 
     /// Emit a newarray instruction.
-    pub fn emit_newarray(
-        &mut self,
-        ctx: &mut CompilerContext,
-        elemcode: i32,
-        array_type: TypeId,
-    ) {
+    pub fn emit_newarray(&mut self, ctx: &mut CompilerContext, elemcode: i32, array_type: TypeId) {
         self.emitop(ctx, NEWARRAY);
         if !self.alive {
             return;
@@ -547,12 +524,7 @@ impl Code {
     }
 
     /// Emit an anewarray instruction.
-    pub fn emit_anewarray(
-        &mut self,
-        ctx: &mut CompilerContext,
-        od: i32,
-        array_type: TypeId,
-    ) {
+    pub fn emit_anewarray(&mut self, ctx: &mut CompilerContext, od: i32, array_type: TypeId) {
         self.emitop(ctx, ANEWARRAY);
         if !self.alive {
             return;
@@ -561,7 +533,6 @@ impl Code {
         self.pop_n(1);
         self.push(ctx, array_type);
     }
-
 }
 impl Code {
     /// Return the total verifier width of a method type's parameter types.
@@ -589,8 +560,8 @@ impl Code {
         if !self.alive {
             return;
         }
-                let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = &*syms_rc;
         let index = {
             let mut pool_writer = self.pool_writer.borrow_mut();
             pool_writer.put_member(ctx, &syms, member)
@@ -615,8 +586,8 @@ impl Code {
         if !self.alive {
             return;
         }
-                let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = &*syms_rc;
         let index = {
             let mut pool_writer = self.pool_writer.borrow_mut();
             pool_writer.put_member(ctx, &syms, member)
@@ -628,8 +599,7 @@ impl Code {
             if !matches!(
                 &ctx.typ(old).kind,
                 crate::code::type_::TypeKindData::UninitializedType { .. }
-            ) {
-            }
+            ) {}
             self.mark_initialized(ctx, old);
         }
         self.pop_n(1);
@@ -654,8 +624,8 @@ impl Code {
         if !self.alive {
             return;
         }
-                let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = &*syms_rc;
         let index = {
             let mut pool_writer = self.pool_writer.borrow_mut();
             pool_writer.put_member(ctx, &syms, member)
@@ -678,8 +648,8 @@ impl Code {
         if !self.alive {
             return;
         }
-                let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = &*syms_rc;
         let index = {
             let mut pool_writer = self.pool_writer.borrow_mut();
             pool_writer.put_member(ctx, &syms, member)
@@ -702,8 +672,8 @@ impl Code {
         if !self.alive {
             return;
         }
-                let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = &*syms_rc;
         let index = {
             let mut pool_writer = self.pool_writer.borrow_mut();
             pool_writer.put_dynamic(ctx, &syms, dyn_member)
@@ -714,7 +684,6 @@ impl Code {
         let restype = self.method_restype(ctx, mtype);
         self.push(ctx, restype);
     }
-
 }
 impl Code {
     /// Emit an opcode with no operand field.
@@ -734,7 +703,7 @@ impl Code {
                 );
                 self.pop_n(1);
                 let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+                let syms = &*syms_rc;
                 let elem = self.types.elemtype(ctx, &syms, a);
                 let erased = self.types.erasure(ctx, &syms, elem);
                 self.push(ctx, erased);
@@ -747,8 +716,8 @@ impl Code {
                 let bot = self.syms.bot_type;
                 self.push(ctx, bot);
             }
-            ICONST_M1 | ICONST_0 | ICONST_1 | ICONST_2 | ICONST_3 | ICONST_4
-            | ICONST_5 | ILOAD_0 | ILOAD_1 | ILOAD_2 | ILOAD_3 => {
+            ICONST_M1 | ICONST_0 | ICONST_1 | ICONST_2 | ICONST_3 | ICONST_4 | ICONST_5
+            | ILOAD_0 | ILOAD_1 | ILOAD_2 | ILOAD_3 => {
                 let int = self.syms.int_type;
                 self.push(ctx, int);
             }
@@ -756,8 +725,7 @@ impl Code {
                 let long = self.syms.long_type;
                 self.push(ctx, long);
             }
-            FCONST_0 | FCONST_1 | FCONST_2 | FLOAD_0 | FLOAD_1 | FLOAD_2
-            | FLOAD_3 => {
+            FCONST_0 | FCONST_1 | FCONST_2 | FLOAD_0 | FLOAD_1 | FLOAD_2 | FLOAD_3 => {
                 let float = self.syms.float_type;
                 self.push(ctx, float);
             }
@@ -766,7 +734,8 @@ impl Code {
                 self.push(ctx, double);
             }
             ALOAD_0 => {
-                let t = ctx.sym(self.lvar[0].as_ref().expect("local 0").sym)
+                let t = ctx
+                    .sym(self.lvar[0].as_ref().expect("local 0").sym)
                     .ty
                     .expect("local type");
                 self.push(ctx, t);
@@ -784,7 +753,11 @@ impl Code {
                             extra_params,
                             captured_locals,
                             ..
-                        } => (params.length(), extra_params.length(), captured_locals.length()),
+                        } => (
+                            params.length(),
+                            extra_params.length(),
+                            captured_locals.length(),
+                        ),
                         _ => (-1, -1, -1),
                     };
                     let locals: Vec<String> = self
@@ -813,13 +786,15 @@ impl Code {
                 self.push(ctx, t);
             }
             ALOAD_2 => {
-                let t = ctx.sym(self.lvar[2].as_ref().expect("local 2").sym)
+                let t = ctx
+                    .sym(self.lvar[2].as_ref().expect("local 2").sym)
                     .ty
                     .expect("local type");
                 self.push(ctx, t);
             }
             ALOAD_3 => {
-                let t = ctx.sym(self.lvar[3].as_ref().expect("local 3").sym)
+                let t = ctx
+                    .sym(self.lvar[3].as_ref().expect("local 3").sym)
                     .ty
                     .expect("local type");
                 self.push(ctx, t);
@@ -844,16 +819,12 @@ impl Code {
                 let double = self.syms.double_type;
                 self.push(ctx, double);
             }
-            ISTORE_0 | ISTORE_1 | ISTORE_2 | ISTORE_3 | FSTORE_0 | FSTORE_1
-            | FSTORE_2 | FSTORE_3 | ASTORE_0 | ASTORE_1 | ASTORE_2 | ASTORE_3
-            | POP | LSHR | LSHL | LUSHR => {
+            ISTORE_0 | ISTORE_1 | ISTORE_2 | ISTORE_3 | FSTORE_0 | FSTORE_1 | FSTORE_2
+            | FSTORE_3 | ASTORE_0 | ASTORE_1 | ASTORE_2 | ASTORE_3 | POP | LSHR | LSHL | LUSHR => {
                 self.pop_n(1);
             }
             ARETURN | IRETURN | FRETURN => {
-                assert!(
-                    self.state.nlocks == 0,
-                    "AssertionError: locks active on return"
-                );
+                assert_eq!(self.state.nlocks, 0, "AssertionError: locks active on return");
                 self.pop_n(1);
                 self.mark_dead();
             }
@@ -861,15 +832,12 @@ impl Code {
                 self.pop_n(1);
                 self.mark_dead();
             }
-            LSTORE_0 | LSTORE_1 | LSTORE_2 | LSTORE_3 | DSTORE_0 | DSTORE_1
-            | DSTORE_2 | DSTORE_3 | POP2 => {
+            LSTORE_0 | LSTORE_1 | LSTORE_2 | LSTORE_3 | DSTORE_0 | DSTORE_1 | DSTORE_2
+            | DSTORE_3 | POP2 => {
                 self.pop_n(2);
             }
             LRETURN | DRETURN => {
-                assert!(
-                    self.state.nlocks == 0,
-                    "AssertionError: locks active on return"
-                );
+                assert_eq!(self.state.nlocks, 0, "AssertionError: locks active on return");
                 self.pop_n(2);
                 self.mark_dead();
             }
@@ -879,10 +847,7 @@ impl Code {
                 self.push(ctx, t);
             }
             RETURN => {
-                assert!(
-                    self.state.nlocks == 0,
-                    "AssertionError: locks active on return"
-                );
+                assert_eq!(self.state.nlocks, 0, "AssertionError: locks active on return");
                 self.mark_dead();
             }
             ARRAYLENGTH => {
@@ -890,8 +855,7 @@ impl Code {
                 let int = self.syms.int_type;
                 self.push(ctx, int);
             }
-            ISUB | IADD | IMUL | IDIV | IMOD | ISHL | ISHR | IUSHR | IAND | IOR
-            | IXOR => {
+            ISUB | IADD | IMUL | IDIV | IMOD | ISHL | ISHR | IUSHR | IAND | IOR | IXOR => {
                 self.pop_n(1);
             }
             AASTORE => {
@@ -1112,7 +1076,6 @@ impl Code {
         }
         self.postop();
     }
-
 }
 impl Code {
     /// Emit an opcode with a one-byte operand field.
@@ -1179,7 +1142,8 @@ impl Code {
                 self.push(ctx, double);
             }
             ALOAD => {
-                let t = ctx.sym(self.lvar[od as usize].as_ref().expect("local var").sym)
+                let t = ctx
+                    .sym(self.lvar[od as usize].as_ref().expect("local var").sym)
                     .ty
                     .expect("local type");
                 self.push(ctx, t);
@@ -1199,13 +1163,7 @@ impl Code {
     }
 
     /// Emit an iinc instruction, widening when needed.
-    pub fn emitop1w_char(
-        &mut self,
-        ctx: &mut CompilerContext,
-        op: i32,
-        od1: i32,
-        od2: i32,
-    ) {
+    pub fn emitop1w_char(&mut self, ctx: &mut CompilerContext, op: i32, od1: i32, od2: i32) {
         if od1 > 0xFF || !(-128..=127).contains(&od2) {
             self.emitop(ctx, WIDE);
             self.emitop(ctx, op);
@@ -1226,13 +1184,7 @@ impl Code {
     }
 
     /// Emit an opcode with a two-byte operand field and symbol data.
-    pub fn emitop2_symbol(
-        &mut self,
-        ctx: &mut CompilerContext,
-        op: i32,
-        od: i32,
-        data: SymbolId,
-    ) {
+    pub fn emitop2_symbol(&mut self, ctx: &mut CompilerContext, op: i32, od: i32, data: SymbolId) {
         self.emitop(ctx, op);
         if !self.alive {
             return;
@@ -1241,14 +1193,14 @@ impl Code {
         match op {
             GETSTATIC => {
                 let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+                let syms = &*syms_rc;
                 let ty = ctx.sym(data).ty.expect("symbol type");
                 let erased = self.types.erasure(ctx, &syms, ty);
                 self.push(ctx, erased);
             }
             PUTSTATIC => {
                 let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+                let syms = &*syms_rc;
                 let ty = ctx.sym(data).ty.expect("symbol type");
                 let erased = self.types.erasure(ctx, &syms, ty);
                 self.pop_type(ctx, erased);
@@ -1258,7 +1210,7 @@ impl Code {
             }
             PUTFIELD => {
                 let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+                let syms = &*syms_rc;
                 let ty = ctx.sym(data).ty.expect("symbol type");
                 let erased = self.types.erasure(ctx, &syms, ty);
                 self.pop_type(ctx, erased);
@@ -1267,7 +1219,7 @@ impl Code {
             GETFIELD => {
                 self.pop_n(1); // object ref
                 let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+                let syms = &*syms_rc;
                 let ty = ctx.sym(data).ty.expect("symbol type");
                 let erased = self.types.erasure(ctx, &syms, ty);
                 self.push(ctx, erased);
@@ -1279,13 +1231,7 @@ impl Code {
     }
 
     /// Emit an opcode with a two-byte operand field and a type operand.
-    pub fn emitop2_type(
-        &mut self,
-        ctx: &mut CompilerContext,
-        op: i32,
-        od: i32,
-        data: TypeId,
-    ) {
+    pub fn emitop2_type(&mut self, ctx: &mut CompilerContext, op: i32, od: i32, data: TypeId) {
         self.emitop(ctx, op);
         if !self.alive {
             return;
@@ -1294,7 +1240,7 @@ impl Code {
         match op {
             NEW => {
                 let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+                let syms = &*syms_rc;
                 let tsym = ctx.typ(data).tsym.expect("class type symbol");
                 let owner_ty = ctx.sym(tsym).ty.expect("class symbol type");
                 let erased = self.types.erasure(ctx, &syms, owner_ty);
@@ -1305,7 +1251,7 @@ impl Code {
             CHECKCAST => {
                 self.pop_n(1); // object ref
                 let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+                let syms = &*syms_rc;
                 let erased = self.types.erasure(ctx, &syms, data);
                 self.push(ctx, erased);
             }
@@ -1343,12 +1289,11 @@ impl Code {
                 let int = self.syms.int_type;
                 self.push(ctx, int);
             }
-            IF_ACMP_NULL | IF_ACMP_NONNULL | IFEQ | IFNE | IFLT | IFGE | IFGT
-            | IFLE => {
+            IF_ACMP_NULL | IF_ACMP_NONNULL | IFEQ | IFNE | IFLT | IFGE | IFGT | IFLE => {
                 self.pop_n(1);
             }
-            IF_ICMPEQ | IF_ICMPNE | IF_ICMPLT | IF_ICMPGE | IF_ICMPGT | IF_ICMPLE
-            | IF_ACMPEQ | IF_ACMPNE => {
+            IF_ICMPEQ | IF_ICMPNE | IF_ICMPLT | IF_ICMPGE | IF_ICMPGT | IF_ICMPLE | IF_ACMPEQ
+            | IF_ACMPNE => {
                 self.pop_n(2);
             }
             GOTO => {
@@ -1451,11 +1396,7 @@ impl Code {
     }
 
     /// Declare an entry point with an initial state and return the code pointer.
-    pub fn entry_point_state(
-        &mut self,
-        ctx: &mut CompilerContext,
-        state: &State,
-    ) -> i32 {
+    pub fn entry_point_state(&mut self, ctx: &mut CompilerContext, state: &State) -> i32 {
         let pc = self.cur_cp(ctx);
         self.alive = true;
         let new_state = state.dup();
@@ -1520,11 +1461,7 @@ impl Code {
     ///
     /// # Panics
     ///   - none.
-    pub fn check_limits(
-        &self,
-        pos: i32,
-        log: &Rc<Log>,
-    ) -> bool {
+    pub fn check_limits(&self, pos: i32, log: &Rc<Log>) -> bool {
         if self.cp > class_file::MAX_CODE {
             crate::util::abstract_log::AbstractLog::error_at(
                 &*log,
@@ -1554,7 +1491,8 @@ impl Code {
 
     /// Add a catch clause to the exception table.
     pub fn add_catch(&mut self, start_pc: u16, end_pc: u16, handler_pc: u16, catch_type: u16) {
-        self.catch_info.push([start_pc, end_pc, handler_pc, catch_type]);
+        self.catch_info
+            .push([start_pc, end_pc, handler_pc, catch_type]);
     }
 
     /// Compress the exception table by dropping empty ranges.
@@ -1567,9 +1505,7 @@ impl Code {
         for entry in &self.catch_info {
             let startpc = entry[0] as i32;
             let endpc = entry[1] as i32;
-            if startpc == endpc
-                || (startpc == endpc - 1 && handler_pcs.contains(&startpc))
-            {
+            if startpc == endpc || (startpc == endpc - 1 && handler_pcs.contains(&startpc)) {
                 continue;
             }
             compressed.push(*entry);
@@ -1580,14 +1516,10 @@ impl Code {
     /// Add a line number entry.
     pub fn add_line_number(&mut self, start_pc: u16, line_number: u16) {
         if self.line_debug_info {
-            if self.line_info.non_empty()
-                && self.line_info.head()[0] == start_pc
-            {
+            if self.line_info.non_empty() && self.line_info.head()[0] == start_pc {
                 self.line_info = self.line_info.tail();
             }
-            if self.line_info.is_empty()
-                || self.line_info.head()[1] != line_number
-            {
+            if self.line_info.is_empty() || self.line_info.head()[1] != line_number {
                 self.line_info = self.line_info.prepend([start_pc, line_number]);
             }
         }
@@ -1615,7 +1547,6 @@ impl Code {
         let _ = ctx;
     }
 }
-
 
 impl Code {
     /// Emit a stack map at the current PC.
@@ -1646,7 +1577,7 @@ impl Code {
                 && let Some(lv) = &self.lvar[i as usize]
             {
                 let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+                let syms = &*syms_rc;
                 let ty = ctx.sym(lv.sym).ty.expect("local type");
                 let erased = self.types.erasure(ctx, &syms, ty);
                 next_local = i + Code::width(Code::typecode(ctx, erased));
@@ -1658,16 +1589,10 @@ impl Code {
     }
 
     /// Emit a CLDC stack map frame.
-    fn emit_cldc_stack_map(
-        &mut self,
-        ctx: &mut CompilerContext,
-        pc: i32,
-        locals_size: i32,
-    ) {
+    fn emit_cldc_stack_map(&mut self, ctx: &mut CompilerContext, pc: i32, locals_size: i32) {
         if self.last_stack_map_pc == pc {
             self.stack_map_buffer_size -= 1;
-            self.stack_map_buffer[self.stack_map_buffer_size as usize] =
-                StackMapFrame::new();
+            self.stack_map_buffer[self.stack_map_buffer_size as usize] = StackMapFrame::new();
         }
         self.last_stack_map_pc = pc;
         if self.stack_map_buffer.len() <= self.stack_map_buffer_size as usize {
@@ -1684,7 +1609,7 @@ impl Code {
                 && let Some(lv) = &self.lvar[i as usize]
             {
                 let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+                let syms = &*syms_rc;
                 let ty = ctx.sym(lv.sym).ty.expect("local type");
                 let vtype = if ctx.typ(ty).get_tag() == TypeTag::UNINITIALIZED_THIS
                     || ctx.typ(ty).get_tag() == TypeTag::UNINITIALIZED_OBJECT
@@ -1698,21 +1623,16 @@ impl Code {
         }
         frame.stack = Vec::new();
         for i in 0..self.state.stacksize {
-            frame.stack.push(
-                self.state.stack[i as usize].expect("stack type"),
-            );
+            frame
+                .stack
+                .push(self.state.stack[i as usize].expect("stack type"));
         }
         self.stack_map_buffer[self.stack_map_buffer_size as usize] = frame;
         self.stack_map_buffer_size += 1;
     }
 
     /// Emit a JSR202 stack map frame.
-    fn emit_stack_map_frame(
-        &mut self,
-        ctx: &mut CompilerContext,
-        pc: i32,
-        locals_size: i32,
-    ) {
+    fn emit_stack_map_frame(&mut self, ctx: &mut CompilerContext, pc: i32, locals_size: i32) {
         if self.last_frame.is_none() {
             self.last_frame = Some(self.get_initial_frame(ctx));
         } else if self.last_frame.as_ref().expect("last frame").pc == pc {
@@ -1732,7 +1652,7 @@ impl Code {
                 && let Some(lv) = &self.lvar[i as usize]
             {
                 let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+                let syms = &*syms_rc;
                 let ty = ctx.sym(lv.sym).ty.expect("local type");
                 let vtype = if ctx.typ(ty).get_tag() == TypeTag::UNINITIALIZED_THIS
                     || ctx.typ(ty).get_tag() == TypeTag::UNINITIALIZED_OBJECT
@@ -1758,10 +1678,7 @@ impl Code {
         let mut i = 0;
         let mut j = 0;
         while i < locals_size {
-            assert!(
-                j < local_count,
-                "AssertionError: local variable count"
-            );
+            assert!(j < local_count, "AssertionError: local variable count");
             let local = locals[i as usize];
             frame.locals.push(local);
             let w = match local {
@@ -1784,17 +1701,17 @@ impl Code {
         for i in 0..self.state.stacksize {
             if let Some(t) = self.state.stack[i as usize] {
                 let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+                let syms = &*syms_rc;
                 let erased = self.types.erasure(ctx, &syms, t);
                 frame.stack.push(erased);
             }
         }
         let _ = stack_count;
         if self.stack_map_table_buffer.len() <= self.stack_map_buffer_size as usize {
-            self.stack_map_table_buffer.resize_with(
-                (self.stack_map_buffer_size + 20) as usize,
-                || StackMapTableFrame::Same { offset_delta: 0 },
-            );
+            self.stack_map_table_buffer
+                .resize_with((self.stack_map_buffer_size + 20) as usize, || {
+                    StackMapTableFrame::Same { offset_delta: 0 }
+                });
         }
         let last_frame = self.last_frame.as_ref().expect("last frame");
         let syms_rc = Rc::clone(&self.syms);
@@ -1845,9 +1762,9 @@ impl Code {
             frame.locals = vec![None; (len + 1) as usize];
             let is_constructor = Code::symbol_is_constructor(ctx, self.meth);
             if is_constructor && this_type != syms.object_type {
-                frame.locals[count] = Some(
-                    crate::jvm::uninitialized_type::uninitialized_this(ctx, this_type),
-                );
+                frame.locals[count] = Some(crate::jvm::uninitialized_type::uninitialized_this(
+                    ctx, this_type,
+                ));
                 count += 1;
             } else {
                 let erased = self.types.erasure(ctx, &syms, this_type);
@@ -1870,7 +1787,6 @@ impl Code {
         frame.stack = Vec::new();
         frame
     }
-
 }
 impl Code {
     /// Negate a branch opcode.
@@ -1971,9 +1887,7 @@ impl Code {
             } else {
                 if self.fatcode {
                     self.put4(node.pc + 1, target - node.pc);
-                } else if target - node.pc < i16::MIN as i32
-                    || target - node.pc > i16::MAX as i32
-                {
+                } else if target - node.pc < i16::MIN as i32 || target - node.pc > i16::MAX as i32 {
                     self.fatcode = true;
                 } else {
                     self.put2(node.pc + 1, target - node.pc);
@@ -1993,7 +1907,7 @@ impl Code {
                 }
                 if self.alive {
                     let syms_rc = Rc::clone(&self.syms);
-            let syms = &*syms_rc;
+                    let syms = &*syms_rc;
                     let mut joined = node.state.dup();
                     joined.join(ctx, &syms, &self.types, &new_state);
                     new_state = joined;
@@ -2018,18 +1932,12 @@ impl Code {
     }
 
     /// Resolve a chain to point to the current code pointer.
-    pub fn resolve_pending_chain(
-        &mut self,
-        ctx: &mut CompilerContext,
-        chain: Option<Box<Chain>>,
-    ) {
+    pub fn resolve_pending_chain(&mut self, ctx: &mut CompilerContext, chain: Option<Box<Chain>>) {
         assert!(
             !self.alive
                 || chain.is_none()
-                || self.state.stacksize
-                    == chain.as_ref().map(|c| c.state.stacksize).unwrap_or(0)
-                    && self.state.nlocks
-                        == chain.as_ref().map(|c| c.state.nlocks).unwrap_or(0),
+                || self.state.stacksize == chain.as_ref().map(|c| c.state.stacksize).unwrap_or(0)
+                    && self.state.nlocks == chain.as_ref().map(|c| c.state.nlocks).unwrap_or(0),
             "AssertionError: incompatible pending chain"
         );
         self.pending_jumps = Code::merge_chains(chain, self.pending_jumps.take());
@@ -2183,10 +2091,7 @@ impl Code {
                 .as_ref()
                 .is_some_and(|var| var.is_last_range_initialized())
         {
-            let var = self.lvar[adr as usize]
-                .as_ref()
-                .expect("local var")
-                .clone();
+            let var = self.lvar[adr as usize].as_ref().expect("local var").clone();
             let start_pc = var.last_range().expect("last range").start_pc;
             let length = self.cur_cp(ctx) - start_pc;
             if length < u16::MAX as i32 {
@@ -2250,20 +2155,18 @@ impl Code {
         let attrs = crate::code::symbol::symbol_raw_type_attributes(ctx, lv.sym);
         let current = attrs;
         for attr in &current {
-        let Some(mut pos) = ctx.attr(attr).get_position(ctx) else {
-            continue;
-        };
-        pos.lvar_offset = Some(append_array(pos.lvar_offset, &lvar_offset));
-        pos.lvar_length = Some(append_array(pos.lvar_length, &lvar_length));
-        pos.lvar_index = Some(append_array(pos.lvar_index, &lvar_index));
-        pos.is_valid_offset = true;
-        if let crate::code::attribute::AttributeKind::TypeCompound {
-            position, ..
-        } = &mut ctx.attr_mut(attr).kind
-        {
-            *position = Some(pos);
-        }
-
+            let Some(mut pos) = ctx.attr(attr).get_position(ctx) else {
+                continue;
+            };
+            pos.lvar_offset = Some(append_array(pos.lvar_offset, &lvar_offset));
+            pos.lvar_length = Some(append_array(pos.lvar_length, &lvar_length));
+            pos.lvar_index = Some(append_array(pos.lvar_index, &lvar_index));
+            pos.is_valid_offset = true;
+            if let crate::code::attribute::AttributeKind::TypeCompound { position, .. } =
+                &mut ctx.attr_mut(attr).kind
+            {
+                *position = Some(pos);
+            }
         }
     }
 
@@ -2282,29 +2185,29 @@ impl Code {
             let attrs = crate::code::symbol::symbol_raw_type_attributes(ctx, lv.sym);
             let current = attrs;
             for attr in &current {
-            let Some(mut pos) = ctx.attr(attr).get_position(ctx) else {
-                continue;
-            };
-            if pos.has_catch_type() {
-                let idx = self.find_exception_index(&pos);
-                assert!(
-                    idx != -1,
-                    "AssertionError: Could not find exception index for type annotation"
-                );
-                pos.set_exception_index(idx);
-                if let crate::code::attribute::AttributeKind::TypeCompound {
-                    position, ..
-                } = &mut ctx.attr_mut(attr).kind
-                {
-                    *position = Some(pos);
+                let Some(mut pos) = ctx.attr(attr).get_position(ctx) else {
+                    continue;
+                };
+                if pos.has_catch_type() {
+                    let idx = self.find_exception_index(&pos);
+                    assert_ne!(idx, -1, "AssertionError: Could not find exception index for type annotation");
+                    pos.set_exception_index(idx);
+                    if let crate::code::attribute::AttributeKind::TypeCompound {
+                        position, ..
+                    } = &mut ctx.attr_mut(attr).kind
+                    {
+                        *position = Some(pos);
+                    }
                 }
-            }
             }
         }
     }
 
     /// Return the exception table index of an exception-parameter annotation.
-    fn find_exception_index(&self, pos: &crate::code::type_annotation_position::TypeAnnotationPosition) -> i32 {
+    fn find_exception_index(
+        &self,
+        pos: &crate::code::type_annotation_position::TypeAnnotationPosition,
+    ) -> i32 {
         let catch_type = pos.get_catch_type();
         let start_pos = pos.get_start_pos();
         for (i, entry) in self.catch_info.iter().enumerate() {
@@ -2328,14 +2231,10 @@ impl Code {
         }
         // don't keep synthetic vars, unless they are lambda method parameters
         let sym = ctx.sym(var.sym);
-        let ignored_synthetic_var = (sym.flags_field
-            & crate::code::flags::SYNTHETIC as i64)
-            != 0
+        let ignored_synthetic_var = (sym.flags_field & crate::code::flags::SYNTHETIC as i64) != 0
             && (sym
                 .owner
-                .map(|owner| {
-                    (ctx.sym(owner).flags_field & crate::code::flags::LAMBDA_METHOD) == 0
-                })
+                .map(|owner| (ctx.sym(owner).flags_field & crate::code::flags::LAMBDA_METHOD) == 0)
                 .unwrap_or(true)
                 || (sym.flags_field & crate::code::flags::PARAMETER) == 0);
         if ignored_synthetic_var {

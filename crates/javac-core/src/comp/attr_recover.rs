@@ -29,9 +29,9 @@ use crate::comp::env::Env;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{SymbolId, TreeId, TypeId};
 use crate::tree::jc_tree::{JCTree, Tag, TreeKind};
+use crate::tree::tree_maker::TreeFactory;
 use crate::util::list::List;
 use crate::util::names::Names;
-use crate::tree::tree_maker::TreeFactory;
 
 /// Java: class AttrRecover
 /// # Fields
@@ -64,34 +64,47 @@ pub struct RecoverTodo {
 /// Porting rules: the upstream ListBuffer<Runnable> rollback actions.
 enum RollbackAction {
     /// lambda.body = translate(lambda.body) replacing err with the return.
-    RestoreReturnInLambdaBody { lambda: TreeId, from: TreeId, to: TreeId },
+    RestoreReturnInLambdaBody {
+        lambda: TreeId,
+        from: TreeId,
+        to: TreeId,
+    },
     /// tree.expr = null
     ResetReturnExpr { ret: TreeId },
     /// block.stats = List.filter(stats, ret)
     RemoveAppendedReturn { block: TreeId, ret: TreeId },
     /// mit.args = prevArgs
-    RestoreArgs { mit: TreeId, prev_args: List<TreeId> },
+    RestoreArgs {
+        mit: TreeId,
+        prev_args: List<TreeId>,
+    },
 }
 
 impl AttrRecover {
     /// Java: protected AttrRecover(Context context)
-/// # Arguments
-///   - the explicit services (ctx/names/make/syms/types/log/diags).
-///
-/// # Returns
-///   - an AttrRecover.
-///
-/// # Panics
-///   - none.
-///
-/// Upstream: Attr.java:3990-4000.
+    /// # Arguments
+    ///   - the explicit services (ctx/names/make/syms/types/log/diags).
+    ///
+    /// # Returns
+    ///   - an AttrRecover.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:3990-4000.
     pub fn new(
         names: Rc<Names>,
         make: Rc<crate::tree::tree_maker::TreeMaker>,
         syms: Rc<Symtab>,
         types: Rc<Types>,
     ) -> AttrRecover {
-        AttrRecover { names, make, syms, types, recovery_todo: RefCell::new(Vec::new()) }
+        AttrRecover {
+            names,
+            make,
+            syms,
+            types,
+            recovery_todo: RefCell::new(Vec::new()),
+        }
     }
 
     fn make_erroneous(&self, ctx: &mut CompilerContext, ty: TypeId) -> TreeId {
@@ -116,23 +129,25 @@ impl AttrRecover {
         let err_type = self.syms.err_type;
         let expr = self.make_erroneous(ctx, err_type);
         let maker = Rc::clone(&self.make);
-        maker.at(crate::util::position::NOPOS).return_(ctx, Some(expr))
+        maker
+            .at(crate::util::position::NOPOS)
+            .return_(ctx, Some(expr))
     }
 }
 
 impl AttrRecover {
     /// Java: public void doRecovery() (AttrRecover.java:97-200)
     #[allow(clippy::too_many_arguments)]
-/// # Arguments
-///   - ctx/syms/attr/rs/infer/chk/diags: explicit services.
-///
-/// # Returns
-///   - none; the recovery queue is drained.
-///
-/// # Panics
-///   - none.
-///
-/// Upstream: AttrRecover.java:97-200.
+    /// # Arguments
+    ///   - ctx/syms/attr/rs/infer/chk/diags: explicit services.
+    ///
+    /// # Returns
+    ///   - none; the recovery queue is drained.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: AttrRecover.java:97-200.
     pub fn do_recovery(
         &self,
         ctx: &mut CompilerContext,
@@ -197,7 +212,8 @@ impl AttrRecover {
                             let formal_tsym = ctx.typ(formal).tsym;
                             let formal_is_functional = formal_tsym
                                 .map(|tsym| {
-                                    self.types.is_functional_interface(ctx, syms, diags, chk, tsym)
+                                    self.types
+                                        .is_functional_interface(ctx, syms, diags, chk, tsym)
                                 })
                                 .unwrap_or(false);
                             if formal_is_functional {
@@ -262,8 +278,9 @@ impl AttrRecover {
                 rollback.push(RollbackAction::RestoreArgs { mit, prev_args });
             }
             let owntype = if repaired {
-                let args_trees = crate::tree::tree_info::args(ctx, todo.env.tree.expect("env tree"))
-                    .unwrap_or_else(List::nil);
+                let args_trees =
+                    crate::tree::tree_info::args(ctx, todo.env.tree.expect("env tree"))
+                        .unwrap_or_else(List::nil);
                 let pt = todo.result_info.pt.expect("resultInfo.pt");
                 let mut pats = self.types.get_parameter_types_public(ctx, pt);
                 while pats.length() < args_trees.length() {
@@ -355,16 +372,16 @@ impl AttrRecover {
     /// Java: Type recoverMethodInvocation(JCTree tree, Type site, Symbol sym,
     /// Env<AttrContext> env, ResultInfo resultInfo) (AttrRecover.java:202-215)
     #[allow(clippy::too_many_arguments)]
-/// # Arguments
-///   - ctx/syms/attr/rs/infer/chk/diags, tree/site/sym/env/result_info.
-///
-/// # Returns
-///   - the recovered type.
-///
-/// # Panics
-///   - none.
-///
-/// Upstream: AttrRecover.java:202-215.
+    /// # Arguments
+    ///   - ctx/syms/attr/rs/infer/chk/diags, tree/site/sym/env/result_info.
+    ///
+    /// # Returns
+    ///   - the recovered type.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: AttrRecover.java:202-215.
     pub fn recover_method_invocation(
         &self,
         ctx: &mut CompilerContext,
@@ -410,9 +427,9 @@ impl AttrRecover {
     fn recovery_candidate(&self, ctx: &CompilerContext, sym: SymbolId) -> SymbolId {
         let sym_type = ctx.sym(sym).ty.expect("error symbol type");
         match &ctx.typ(sym_type).kind {
-            TypeKindData::ErrorType { candidate_symbol, .. } => {
-                candidate_symbol.expect("RecoveryErrorType candidate")
-            }
+            TypeKindData::ErrorType {
+                candidate_symbol, ..
+            } => candidate_symbol.expect("RecoveryErrorType candidate"),
             _ => panic!("ClassCastException: RecoveryErrorType expected"),
         }
     }
@@ -453,9 +470,8 @@ impl AttrRecover {
         } else {
             crate::code::symtab::no_type_id(ctx)
         };
-        let owntype = attr.check_id_internal(
-            ctx, syms, tree, site, sym, Some(pt), env, result_info,
-        );
+        let owntype =
+            attr.check_id_internal(ctx, syms, tree, site, sym, Some(pt), env, result_info);
         let mut map2 = RecoveryDeferredTypeMap::new(AttrMode::CHECK, Some(sym), phase);
         let mut dctx2 = DeferredMapCtx {
             attr,
@@ -470,16 +486,16 @@ impl AttrRecover {
 
     /// Java: void wrongMethodSymbolCandidate(TypeSymbol errSymbol, Symbol candSym,
     /// JCDiagnostic diag) (AttrRecover.java:228-260)
-/// # Arguments
-///   - ctx/syms/attr/rs/infer/chk/diags and the candidate.
-///
-/// # Returns
-///   - true when the candidate matches the recovery keys.
-///
-/// # Panics
-///   - none.
-///
-/// Upstream: AttrRecover.java:228-260.
+    /// # Arguments
+    ///   - ctx/syms/attr/rs/infer/chk/diags and the candidate.
+    ///
+    /// # Returns
+    ///   - true when the candidate matches the recovery keys.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: AttrRecover.java:228-260.
     pub fn wrong_method_symbol_candidate(
         &self,
         ctx: &mut CompilerContext,
@@ -501,7 +517,9 @@ impl AttrRecover {
             }
             if !recoverable {
                 for arg in d.get_args() {
-                    if let Some(nested) = arg.downcast_ref::<crate::util::jc_diagnostic::JCDiagnostic>() {
+                    if let Some(nested) =
+                        arg.downcast_ref::<crate::util::jc_diagnostic::JCDiagnostic>()
+                    {
                         diags.push(nested.clone());
                     }
                 }
@@ -522,29 +540,37 @@ impl AttrRecover {
         original: TypeId,
         candidate: SymbolId,
     ) -> TypeId {
-        let (original_type, tsym, outer, typarams, allparams, supertype, interfaces, all_interfaces) =
-            match &ctx.typ(original).kind {
-                TypeKindData::ErrorType {
-                    outer_field,
-                    typarams_field,
-                    allparams_field,
-                    supertype_field,
-                    interfaces_field,
-                    all_interfaces_field,
-                    original_type,
-                    ..
-                } => (
-                    *original_type,
-                    ctx.typ(original).tsym,
-                    *outer_field,
-                    typarams_field.clone(),
-                    allparams_field.clone(),
-                    *supertype_field,
-                    interfaces_field.clone(),
-                    all_interfaces_field.clone(),
-                ),
-                _ => panic!("ClassCastException: ErrorType expected"),
-            };
+        let (
+            original_type,
+            tsym,
+            outer,
+            typarams,
+            allparams,
+            supertype,
+            interfaces,
+            all_interfaces,
+        ) = match &ctx.typ(original).kind {
+            TypeKindData::ErrorType {
+                outer_field,
+                typarams_field,
+                allparams_field,
+                supertype_field,
+                interfaces_field,
+                all_interfaces_field,
+                original_type,
+                ..
+            } => (
+                *original_type,
+                ctx.typ(original).tsym,
+                *outer_field,
+                typarams_field.clone(),
+                allparams_field.clone(),
+                *supertype_field,
+                interfaces_field.clone(),
+                all_interfaces_field.clone(),
+            ),
+            _ => panic!("ClassCastException: ErrorType expected"),
+        };
         ctx.alloc_type(crate::code::type_::Type::new(
             crate::code::type_tag::TypeTag::ERROR,
             tsym,
@@ -579,35 +605,33 @@ impl AttrRecover {
         };
         let mut actions: Vec<RollbackAction> = Vec::new();
         let err_type = self.syms.err_type;
-        let new_body = self.walk_returns(
-            ctx,
-            body,
-            &mut |ctx: &mut CompilerContext, ret: TreeId| -> TreeId {
-                if void_compatible {
-                    let has_expr = matches!(&ctx.tree(ret).kind, TreeKind::Return { expr: Some(_) });
-                    if has_expr {
-                        let err = self.make_erroneous_trees(ctx, List::of(ret));
-                        actions.push(RollbackAction::RestoreReturnInLambdaBody {
-                            lambda,
-                            from: err,
-                            to: ret,
-                        });
-                        return err;
-                    }
-                    ret
-                } else {
-                    let is_none = matches!(&ctx.tree(ret).kind, TreeKind::Return { expr: None });
-                    if is_none {
-                        let erroneous = self.make_erroneous(ctx, err_type);
-                        if let TreeKind::Return { expr: slot } = &mut ctx.tree_mut(ret).kind {
-                            *slot = Some(erroneous);
-                        }
-                        actions.push(RollbackAction::ResetReturnExpr { ret });
-                    }
-                    ret
+        let new_body = self.walk_returns(ctx, body, &mut |ctx: &mut CompilerContext,
+                                                          ret: TreeId|
+         -> TreeId {
+            if void_compatible {
+                let has_expr = matches!(&ctx.tree(ret).kind, TreeKind::Return { expr: Some(_) });
+                if has_expr {
+                    let err = self.make_erroneous_trees(ctx, List::of(ret));
+                    actions.push(RollbackAction::RestoreReturnInLambdaBody {
+                        lambda,
+                        from: err,
+                        to: ret,
+                    });
+                    return err;
                 }
-            },
-        );
+                ret
+            } else {
+                let is_none = matches!(&ctx.tree(ret).kind, TreeKind::Return { expr: None });
+                if is_none {
+                    let erroneous = self.make_erroneous(ctx, err_type);
+                    if let TreeKind::Return { expr: slot } = &mut ctx.tree_mut(ret).kind {
+                        *slot = Some(erroneous);
+                    }
+                    actions.push(RollbackAction::ResetReturnExpr { ret });
+                }
+                ret
+            }
+        });
         (new_body, actions)
     }
 
@@ -628,11 +652,20 @@ impl AttrRecover {
                     }
                     node
                 }
-                TreeKind::If { cond, thenpart, elsepart } => {
+                TreeKind::If {
+                    cond,
+                    thenpart,
+                    elsepart,
+                } => {
                     let cond1 = cond.map(|c| self.walk_returns(ctx, c, on_return));
                     let then1 = thenpart.map(|c| self.walk_returns(ctx, c, on_return));
                     let else1 = elsepart.map(|c| self.walk_returns(ctx, c, on_return));
-                    if let TreeKind::If { cond, thenpart, elsepart } = &mut ctx.tree_mut(node).kind {
+                    if let TreeKind::If {
+                        cond,
+                        thenpart,
+                        elsepart,
+                    } = &mut ctx.tree_mut(node).kind
+                    {
                         *cond = cond1;
                         *thenpart = then1;
                         *elsepart = else1;
@@ -657,12 +690,23 @@ impl AttrRecover {
                     }
                     node
                 }
-                TreeKind::ForLoop { init, cond, step, body } => {
+                TreeKind::ForLoop {
+                    init,
+                    cond,
+                    step,
+                    body,
+                } => {
                     let init1 = self.walk_list(ctx, &init, on_return);
                     let cond1 = cond.map(|c| self.walk_returns(ctx, c, on_return));
                     let step1 = self.walk_list(ctx, &step, on_return);
                     let body1 = body.map(|c| self.walk_returns(ctx, c, on_return));
-                    if let TreeKind::ForLoop { init, cond, step, body } = &mut ctx.tree_mut(node).kind {
+                    if let TreeKind::ForLoop {
+                        init,
+                        cond,
+                        step,
+                        body,
+                    } = &mut ctx.tree_mut(node).kind
+                    {
                         *init = init1;
                         *cond = cond1;
                         *step = step1;
@@ -674,7 +718,9 @@ impl AttrRecover {
                     let var1 = var.map(|c| self.walk_returns(ctx, c, on_return));
                     let expr1 = expr.map(|c| self.walk_returns(ctx, c, on_return));
                     let body1 = body.map(|c| self.walk_returns(ctx, c, on_return));
-                    if let TreeKind::EnhancedForLoop { var, expr, body } = &mut ctx.tree_mut(node).kind {
+                    if let TreeKind::EnhancedForLoop { var, expr, body } =
+                        &mut ctx.tree_mut(node).kind
+                    {
                         *var = var1;
                         *expr = expr1;
                         *body = body1;
@@ -683,26 +729,43 @@ impl AttrRecover {
                 }
                 TreeKind::LabeledStatement { body, .. } => {
                     let body1 = body.map(|c| self.walk_returns(ctx, c, on_return));
-                    if let TreeKind::LabeledStatement { label: _, body } = &mut ctx.tree_mut(node).kind {
+                    if let TreeKind::LabeledStatement { label: _, body } =
+                        &mut ctx.tree_mut(node).kind
+                    {
                         *body = body1;
                     }
                     node
                 }
-                TreeKind::Switch { selector, cases, .. } => {
+                TreeKind::Switch {
+                    selector, cases, ..
+                } => {
                     let selector1 = selector.map(|c| self.walk_returns(ctx, c, on_return));
                     let cases1 = self.walk_list(ctx, &cases, on_return);
-                    if let TreeKind::Switch { selector, cases, .. } = &mut ctx.tree_mut(node).kind {
+                    if let TreeKind::Switch {
+                        selector, cases, ..
+                    } = &mut ctx.tree_mut(node).kind
+                    {
                         *selector = selector1;
                         *cases = cases1;
                     }
                     node
                 }
-                TreeKind::Case { labels, stats, body, .. } => {
+                TreeKind::Case {
+                    labels,
+                    stats,
+                    body,
+                    ..
+                } => {
                     let labels1 = labels;
                     let stats1 = self.walk_list(ctx, &stats, on_return);
                     let body1 = body.map(|c| self.walk_returns(ctx, c, on_return));
-                    if let TreeKind::Case { case_kind: _, labels, stats, body, .. } =
-                        &mut ctx.tree_mut(node).kind
+                    if let TreeKind::Case {
+                        case_kind: _,
+                        labels,
+                        stats,
+                        body,
+                        ..
+                    } = &mut ctx.tree_mut(node).kind
                     {
                         *labels = labels1;
                         *stats = stats1;
@@ -710,13 +773,24 @@ impl AttrRecover {
                     }
                     node
                 }
-                TreeKind::Try { body, catchers, finalizer, resources, .. } => {
+                TreeKind::Try {
+                    body,
+                    catchers,
+                    finalizer,
+                    resources,
+                    ..
+                } => {
                     let body1 = body.map(|c| self.walk_returns(ctx, c, on_return));
                     let catchers1 = self.walk_list(ctx, &catchers, on_return);
                     let finalizer1 = finalizer.map(|c| self.walk_returns(ctx, c, on_return));
                     let resources1 = self.walk_list(ctx, &resources, on_return);
-                    if let TreeKind::Try { body, catchers, finalizer, resources, .. } =
-                        &mut ctx.tree_mut(node).kind
+                    if let TreeKind::Try {
+                        body,
+                        catchers,
+                        finalizer,
+                        resources,
+                        ..
+                    } = &mut ctx.tree_mut(node).kind
                     {
                         *body = body1;
                         *catchers = catchers1;
@@ -761,23 +835,26 @@ impl AttrRecover {
         result
     }
 
-    fn replace_in_tree(&self, ctx: &mut CompilerContext, node: TreeId, from: TreeId, to: TreeId) -> TreeId {
-        self.walk_returns(ctx, node, &mut |_ctx: &mut CompilerContext, tree: TreeId| -> TreeId {
-            if tree == from {
-                to
-            } else {
-                tree
-            }
+    fn replace_in_tree(
+        &self,
+        ctx: &mut CompilerContext,
+        node: TreeId,
+        from: TreeId,
+        to: TreeId,
+    ) -> TreeId {
+        self.walk_returns(ctx, node, &mut |_ctx: &mut CompilerContext,
+                                           tree: TreeId|
+         -> TreeId {
+            if tree == from { to } else { tree }
         })
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::code::symtab::Symtab;
     use crate::code::symbol::{Symbol, SymbolKind};
+    use crate::code::symtab::Symtab;
     use crate::code::type_::Type;
     use crate::code::type_tag::TypeTag;
     use crate::resources::compiler_properties::fragments;
@@ -785,7 +862,6 @@ mod tests {
     use crate::util::context::Context;
     use crate::util::javac_messages::JavacMessages;
     use crate::util::jc_diagnostic::{Factory, Fragment, JCDiagnostic};
-    use std::cell::RefCell;
     use std::rc::Rc;
 
     fn build() -> (CompilerContext, Rc<Names>, Symtab, Rc<Types>, Rc<Factory>) {
@@ -829,11 +905,9 @@ mod tests {
         let nested = diags.fragment(Fragment::from(fragments::missing_ret_val(
             crate::resources::diagnostic_contract::TypeArg::placeholder("T"),
         )));
-        let outer = diags.fragment(Fragment::from(
-            fragments::incompatible_ret_type_in_lambda(DiagnosticArg::JCDiagnostic(Rc::new(
-                nested.clone(),
-            ))),
-        ));
+        let outer = diags.fragment(Fragment::from(fragments::incompatible_ret_type_in_lambda(
+            DiagnosticArg::JCDiagnostic(Rc::new(nested.clone())),
+        )));
         let args = outer.get_args();
         assert_eq!(args.len(), 1);
         let retrieved = args[0]
@@ -876,9 +950,9 @@ mod tests {
         )));
         let recover = AttrRecover::new(
             Rc::clone(&names),
-            Rc::new(crate::tree::tree_maker::TreeMaker::new(Some(
-                Rc::clone(&names),
-            ))),
+            Rc::new(crate::tree::tree_maker::TreeMaker::new(Some(Rc::clone(
+                &names,
+            )))),
             Rc::new(syms),
             types,
         );
@@ -887,11 +961,12 @@ mod tests {
         assert_ne!(flags & flags::RECOVERABLE, 0, "RECOVERABLE flag");
         let ty = ctx.sym(err_symbol).ty.expect("recovery type");
         match &ctx.typ(ty).kind {
-            TypeKindData::ErrorType { candidate_symbol, .. } => {
+            TypeKindData::ErrorType {
+                candidate_symbol, ..
+            } => {
                 assert_eq!(*candidate_symbol, Some(cand));
             }
             _ => panic!("expected an ErrorType"),
         }
     }
 }
-

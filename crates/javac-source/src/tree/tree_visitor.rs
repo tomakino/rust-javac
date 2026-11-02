@@ -6,36 +6,6 @@
 //! defaults through subtraits.  Methods take `&mut self` and the visited node as
 //! `&dyn XxxTree`.
 
-/// A visitor of trees, in the style of the visitor design pattern.
-/// Classes implementing this interface are used to operate
-/// on a tree when the kind of tree is unknown at compile time.
-/// When a visitor is passed to an tree's {@link Tree#accept
-/// accept} method, the <code>visit<i>Xyz</i></code> method most applicable
-/// to that tree is invoked.
-///
-/// <p> Classes implementing this interface may or may not throw a
-/// {@code NullPointerException} if the additional parameter {@code p}
-/// is {@code null}; see documentation of the implementing class for
-/// details.
-///
-/// <p> <b>WARNING:</b> It is possible that methods will be added to
-/// this interface to accommodate new, currently unknown, language
-/// structures added to future versions of the Java programming
-/// language.  Therefore, visitor classes directly implementing this
-/// interface may be source incompatible with future versions of the
-/// platform.
-///
-/// @param <R> the return type of this visitor's methods.  Use {@link
-///            Void} for visitors that do not need to return results.
-/// @param <P> the type of the additional parameter to this visitor's
-///            methods.  Use {@code Void} for visitors that do not need an
-///            additional parameter.
-///
-/// @author Peter von der Ah&eacute;
-/// @author Jonathan Gibbons
-///
-/// @since 1.6
-use super::tree::Tree;
 use super::annotated_type_tree::AnnotatedTypeTree;
 use super::annotation_tree::AnnotationTree;
 use super::array_access_tree::ArrayAccessTree;
@@ -91,6 +61,36 @@ use super::switch_expression_tree::SwitchExpressionTree;
 use super::switch_tree::SwitchTree;
 use super::synchronized_tree::SynchronizedTree;
 use super::throw_tree::ThrowTree;
+/// A visitor of trees, in the style of the visitor design pattern.
+/// Classes implementing this interface are used to operate
+/// on a tree when the kind of tree is unknown at compile time.
+/// When a visitor is passed to an tree's {@link Tree#accept
+/// accept} method, the <code>visit<i>Xyz</i></code> method most applicable
+/// to that tree is invoked.
+///
+/// <p> Classes implementing this interface may or may not throw a
+/// {@code NullPointerException} if the additional parameter {@code p}
+/// is {@code null}; see documentation of the implementing class for
+/// details.
+///
+/// <p> <b>WARNING:</b> It is possible that methods will be added to
+/// this interface to accommodate new, currently unknown, language
+/// structures added to future versions of the Java programming
+/// language.  Therefore, visitor classes directly implementing this
+/// interface may be source incompatible with future versions of the
+/// platform.
+///
+/// @param <R> the return type of this visitor's methods.  Use {@link
+///            Void} for visitors that do not need to return results.
+/// @param <P> the type of the additional parameter to this visitor's
+///            methods.  Use {@code Void} for visitors that do not need an
+///            additional parameter.
+///
+/// @author Peter von der Ah&eacute;
+/// @author Jonathan Gibbons
+///
+/// @since 1.6
+use super::tree::Tree;
 use super::try_tree::TryTree;
 use super::type_cast_tree::TypeCastTree;
 use super::type_parameter_tree::TypeParameterTree;
@@ -108,7 +108,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_annotated_type(&mut self, _node: &dyn AnnotatedTypeTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_annotated_type: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_annotated_type: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an AnnotatedTree node.
@@ -116,7 +118,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_annotation(&mut self, _node: &dyn AnnotationTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_annotation: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_annotation: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a MethodInvocationTree node.
@@ -124,7 +128,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_method_invocation(&mut self, _node: &dyn MethodInvocationTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_method_invocation: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_method_invocation: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an AssertTree node.
@@ -140,7 +146,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_assignment(&mut self, _node: &dyn AssignmentTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_assignment: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_assignment: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a CompoundAssignmentTree node.
@@ -148,7 +156,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_compound_assignment(&mut self, _node: &dyn CompoundAssignmentTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_compound_assignment: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_compound_assignment: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a BinaryTree node.
@@ -204,7 +214,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_conditional_expression(&mut self, _node: &dyn ConditionalExpressionTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_conditional_expression: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_conditional_expression: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a ContinueTree node.
@@ -220,7 +232,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_do_while_loop(&mut self, _node: &dyn DoWhileLoopTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_do_while_loop: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_do_while_loop: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an ErroneousTree node.
@@ -228,7 +242,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_erroneous(&mut self, _node: &dyn ErroneousTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_erroneous: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_erroneous: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an ExpressionStatementTree node.
@@ -236,7 +252,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_expression_statement(&mut self, _node: &dyn ExpressionStatementTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_expression_statement: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_expression_statement: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an EnhancedForLoopTree node.
@@ -244,7 +262,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_enhanced_for_loop(&mut self, _node: &dyn EnhancedForLoopTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_enhanced_for_loop: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_enhanced_for_loop: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a ForLoopTree node.
@@ -260,7 +280,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_identifier(&mut self, _node: &dyn IdentifierTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_identifier: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_identifier: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an IfTree node.
@@ -284,7 +306,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_array_access(&mut self, _node: &dyn ArrayAccessTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_array_access: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_array_access: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a LabeledStatementTree node.
@@ -292,7 +316,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_labeled_statement(&mut self, _node: &dyn LabeledStatementTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_labeled_statement: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_labeled_statement: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a LiteralTree node.
@@ -309,7 +335,9 @@ pub trait TreeVisitor<R, P> {
     /// @return a result value
     /// @since 16
     fn visit_binding_pattern(&mut self, _node: &dyn BindingPatternTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_binding_pattern: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_binding_pattern: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a DefaultCaseLabelTree node.
@@ -318,7 +346,9 @@ pub trait TreeVisitor<R, P> {
     /// @return a result value
     /// @since 17
     fn visit_default_case_label(&mut self, _node: &dyn DefaultCaseLabelTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_default_case_label: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_default_case_label: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a MethodTree node.
@@ -334,7 +364,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_modifiers(&mut self, _node: &dyn ModifiersTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_modifiers: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_modifiers: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a NewArrayTree node.
@@ -342,7 +374,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_new_array(&mut self, _node: &dyn NewArrayTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_new_array: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_new_array: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a GuardPatternTree node.
@@ -351,7 +385,9 @@ pub trait TreeVisitor<R, P> {
     /// @return a result value
     /// @since 17
     fn visit_guarded_pattern(&mut self, _node: &dyn GuardedPatternTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_guarded_pattern: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_guarded_pattern: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a ParenthesizedPatternTree node.
@@ -360,7 +396,9 @@ pub trait TreeVisitor<R, P> {
     /// @return a result value
     /// @since 17
     fn visit_parenthesized_pattern(&mut self, _node: &dyn ParenthesizedPatternTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_parenthesized_pattern: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_parenthesized_pattern: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a NewClassTree node.
@@ -368,7 +406,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_new_class(&mut self, _node: &dyn NewClassTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_new_class: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_new_class: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a LambdaExpressionTree node.
@@ -376,7 +416,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_lambda_expression(&mut self, _node: &dyn LambdaExpressionTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_lambda_expression: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_lambda_expression: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a PackageTree node.
@@ -392,7 +434,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_parenthesized(&mut self, _node: &dyn ParenthesizedTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_parenthesized: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_parenthesized: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a ReturnTree node.
@@ -408,7 +452,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_member_select(&mut self, _node: &dyn MemberSelectTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_member_select: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_member_select: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a MemberReferenceTree node.
@@ -416,7 +462,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_member_reference(&mut self, _node: &dyn MemberReferenceTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_member_reference: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_member_reference: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an EmptyStatementTree node.
@@ -424,7 +472,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_empty_statement(&mut self, _node: &dyn EmptyStatementTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_empty_statement: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_empty_statement: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a SwitchTree node.
@@ -442,7 +492,9 @@ pub trait TreeVisitor<R, P> {
     /// @return a result value
     /// @since 12
     fn visit_switch_expression(&mut self, _node: &dyn SwitchExpressionTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_switch_expression: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_switch_expression: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a SynchronizedTree node.
@@ -450,7 +502,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_synchronized(&mut self, _node: &dyn SynchronizedTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_synchronized: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_synchronized: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a ThrowTree node.
@@ -466,7 +520,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_compilation_unit(&mut self, _node: &dyn CompilationUnitTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_compilation_unit: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_compilation_unit: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a TryTree node.
@@ -482,7 +538,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_parameterized_type(&mut self, _node: &dyn ParameterizedTypeTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_parameterized_type: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_parameterized_type: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a UnionTypeTree node.
@@ -490,7 +548,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_union_type(&mut self, _node: &dyn UnionTypeTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_union_type: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_union_type: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an IntersectionTypeTree node.
@@ -498,7 +558,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_intersection_type(&mut self, _node: &dyn IntersectionTypeTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_intersection_type: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_intersection_type: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an ArrayTypeTree node.
@@ -506,7 +568,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_array_type(&mut self, _node: &dyn ArrayTypeTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_array_type: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_array_type: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a TypeCastTree node.
@@ -514,7 +578,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_type_cast(&mut self, _node: &dyn TypeCastTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_type_cast: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_type_cast: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a PrimitiveTypeTree node.
@@ -522,7 +588,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_primitive_type(&mut self, _node: &dyn PrimitiveTypeTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_primitive_type: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_primitive_type: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a TypeParameterTree node.
@@ -530,7 +598,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_type_parameter(&mut self, _node: &dyn TypeParameterTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_type_parameter: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_type_parameter: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an InstanceOfTree node.
@@ -538,7 +608,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_instance_of(&mut self, _node: &dyn InstanceOfTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_instance_of: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_instance_of: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a UnaryTree node.
@@ -562,7 +634,9 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_while_loop(&mut self, _node: &dyn WhileLoopTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_while_loop: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_while_loop: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a WildcardTypeTree node.
@@ -639,16 +713,15 @@ pub trait TreeVisitor<R, P> {
     fn visit_yield(&mut self, _node: &dyn YieldTree, _p: P) -> R {
         panic!("AbstractMethodError: visit_yield: Rust: visitor interface method not overridden")
     }
-
 }
 
 #[cfg(test)]
 mod tests {
     use super::TreeVisitor;
     use crate::tree::identifier_tree::IdentifierTree;
-    use javac_tools::lang::model::element::Name;
     use crate::tree::tree::{Kind, Tree};
     use javac_strings::JavaString;
+    use javac_tools::lang::model::element::Name;
 
     struct TestName;
 

@@ -57,7 +57,11 @@ impl DocTreePath {
         if Rc::ptr_eq(&path.get_leaf(), &target) {
             return Some(path);
         }
-        let mut finder = PathFinder { current: Some(path.clone()), target, result: None };
+        let mut finder = PathFinder {
+            current: Some(path.clone()),
+            target,
+            result: None,
+        };
         let _ = finder.scan_path(path, ());
         finder.result
     }
@@ -67,7 +71,12 @@ impl DocTreePath {
     /// @param tree_path the {@code TreePath} from which the root node was created
     /// @param t the {@code DocCommentTree} to create the path for
     pub fn new(tree_path: Rc<TreePath>, t: Rc<dyn DocCommentTree>) -> DocTreePath {
-        DocTreePath { tree_path, doc_comment: t.clone(), leaf: t, parent: None }
+        DocTreePath {
+            tree_path,
+            doc_comment: t.clone(),
+            leaf: t,
+            parent: None,
+        }
     }
 
     /// Creates a {@code DocTreePath} for a child node.
@@ -82,7 +91,12 @@ impl DocTreePath {
         }
         let tree_path = p.tree_path.clone();
         let doc_comment = p.doc_comment.clone();
-        DocTreePath { tree_path, doc_comment, leaf: t, parent: Some(p) }
+        DocTreePath {
+            tree_path,
+            doc_comment,
+            leaf: t,
+            parent: Some(p),
+        }
     }
 
     /// Returns the {@code TreePath} associated with this path.
@@ -135,7 +149,7 @@ struct PathFinder {
 
 impl crate::doctree::doc_tree_visitor::DocTreeVisitor<Option<Rc<DocTreePath>>, ()> for PathFinder {}
 
-impl crate::util::doc_tree_path_scanner::DocTreePathScanner<Rc<DocTreePath>, ()> for PathFinder {
+impl DocTreePathScanner<Rc<DocTreePath>, ()> for PathFinder {
     fn get_current_path(&self) -> Option<Rc<DocTreePath>> {
         self.current.clone()
     }
@@ -209,7 +223,9 @@ mod tests {
     #[test]
     fn get_path_finds_a_node_in_the_doc_comment_tree() {
         let leaf: Rc<dyn DocTree> = Rc::new(DocLeaf);
-        let doc: Rc<dyn DocCommentTree> = Rc::new(DocCommentWithBody { body: vec![leaf.clone()] });
+        let doc: Rc<dyn DocCommentTree> = Rc::new(DocCommentWithBody {
+            body: vec![leaf.clone()],
+        });
         let doc_tree: Rc<dyn DocTree> = doc.clone();
         let path = DocTreePath::get_path(root_path(), doc, leaf.clone()).expect("target found");
         assert!(Rc::ptr_eq(&path.get_leaf(), &leaf));
@@ -228,7 +244,9 @@ mod tests {
     #[test]
     fn get_path_in_path_searches_a_subtree() {
         let leaf: Rc<dyn DocTree> = Rc::new(DocLeaf);
-        let doc: Rc<dyn DocCommentTree> = Rc::new(DocCommentWithBody { body: vec![leaf.clone()] });
+        let doc: Rc<dyn DocCommentTree> = Rc::new(DocCommentWithBody {
+            body: vec![leaf.clone()],
+        });
         let root = Rc::new(DocTreePath::new(root_path(), doc));
         let path = DocTreePath::get_path_in_path(root.clone(), leaf.clone()).expect("found");
         assert!(Rc::ptr_eq(&path.get_leaf(), &leaf));

@@ -3,5 +3,4 @@
 /// @since 17
 use super::case_label_tree::CaseLabelTree;
 
-pub trait DefaultCaseLabelTree: CaseLabelTree {
-}
+pub trait DefaultCaseLabelTree: CaseLabelTree {}

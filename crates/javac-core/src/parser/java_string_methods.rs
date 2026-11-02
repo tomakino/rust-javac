@@ -179,10 +179,7 @@ pub(crate) fn translate_escapes(text: &JavaString) -> Result<JavaString, String>
                     continue;
                 }
                 _ => {
-                    return Err(format!(
-                        "Invalid escape sequence: \\u{:04X}",
-                        ch
-                    ));
+                    return Err(format!("Invalid escape sequence: \\u{:04X}", ch));
                 }
             }
         }

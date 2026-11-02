@@ -141,10 +141,14 @@ mod tests {
 
     #[test]
     fn forwards_every_method() {
-        let forwarding =
-            ForwardingFileObject::new(BaseFile { name: JavaString::from("Base.java") });
+        let forwarding = ForwardingFileObject::new(BaseFile {
+            name: JavaString::from("Base.java"),
+        });
         assert_eq!(forwarding.get_name(), JavaString::from("Base.java"));
-        assert_eq!(forwarding.to_uri(), URI::create(&JavaString::from("mem:///base")));
+        assert_eq!(
+            forwarding.to_uri(),
+            URI::create(&JavaString::from("mem:///base"))
+        );
         assert_eq!(
             forwarding.get_char_content(false).unwrap(),
             Some(JavaString::from("Base.java"))

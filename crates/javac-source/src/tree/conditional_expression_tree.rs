@@ -1,3 +1,4 @@
+use super::expression_tree::ExpressionTree;
 /// A tree node for the conditional operator {@code ? :}.
 ///
 /// For example:
@@ -11,7 +12,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
 
 pub trait ConditionalExpressionTree: ExpressionTree {
     /// Returns the condition.
@@ -25,5 +25,4 @@ pub trait ConditionalExpressionTree: ExpressionTree {
     /// Returns the expression to be evaluated if the condition is false.
     /// @return the expression to be evaluated if the condition is false
     fn get_false_expression(&self) -> Rc<dyn ExpressionTree>;
-
 }

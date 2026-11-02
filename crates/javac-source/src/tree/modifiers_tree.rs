@@ -1,3 +1,5 @@
+use super::annotation_tree::AnnotationTree;
+use super::tree::Tree;
 /// A tree node for the modifiers, including annotations, for a declaration.
 ///
 /// For example:
@@ -20,8 +22,6 @@
 /// @since 1.6
 use javac_tools::lang::model::element::Modifier;
 use std::rc::Rc;
-use super::annotation_tree::AnnotationTree;
-use super::tree::Tree;
 
 pub trait ModifiersTree: Tree {
     /// Returns the flags in this modifiers tree.
@@ -31,5 +31,4 @@ pub trait ModifiersTree: Tree {
     /// Returns the annotations in this modifiers tree.
     /// @return the annotations
     fn get_annotations(&self) -> Vec<Rc<dyn AnnotationTree>>;
-
 }

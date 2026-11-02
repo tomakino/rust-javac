@@ -1,3 +1,6 @@
+use super::annotation_tree::AnnotationTree;
+use super::expression_tree::ExpressionTree;
+use super::tree::Tree;
 /// Represents the package declaration.
 ///
 /// @jls 7.3 Compilation Units
@@ -6,9 +9,6 @@
 /// @author Paul Govereau
 /// @since 9
 use std::rc::Rc;
-use super::annotation_tree::AnnotationTree;
-use super::expression_tree::ExpressionTree;
-use super::tree::Tree;
 
 pub trait PackageTree: Tree {
     /// Returns the annotations associated with this package declaration.
@@ -18,5 +18,4 @@ pub trait PackageTree: Tree {
     /// Returns the name of the package being declared.
     /// @return the name
     fn get_package_name(&self) -> Rc<dyn ExpressionTree>;
-
 }

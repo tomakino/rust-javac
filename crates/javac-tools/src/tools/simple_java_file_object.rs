@@ -70,7 +70,9 @@ impl FileObject for SimpleJavaFileObject {
         // Java: return toUri().getPath();
         // Rust: toUri() cannot be overridden in Rust and the
         // constructor guarantees a path, so the Java null case is unreachable.
-        self.to_uri().get_path().expect("SimpleJavaFileObject URI has a path")
+        self.to_uri()
+            .get_path()
+            .expect("SimpleJavaFileObject URI has a path")
     }
 
     /// This implementation always throws {@linkplain
@@ -193,7 +195,8 @@ impl JavaFileObject for SimpleJavaFileObject {
         match path {
             Some(path) => {
                 kind == self.get_kind()
-                    && (path == base_name || path.ends_with(&JavaString::from("/").concat(&base_name)))
+                    && (path == base_name
+                        || path.ends_with(&JavaString::from("/").concat(&base_name)))
             }
             // Java would throw NullPointerException here; the constructor
             // guarantees a path, so this branch is unreachable for this type.
@@ -256,7 +259,8 @@ mod tests {
 
     #[test]
     fn uri_and_name() {
-        let file = SimpleJavaFileObject::new(URI::create(&js("string:///a/b/Foo.java")), Kind::SOURCE);
+        let file =
+            SimpleJavaFileObject::new(URI::create(&js("string:///a/b/Foo.java")), Kind::SOURCE);
         assert_eq!(file.to_uri().to_uri_string(), js("string:///a/b/Foo.java"));
         assert_eq!(file.get_name(), js("/a/b/Foo.java"));
         assert_eq!(file.get_kind(), Kind::SOURCE);
@@ -268,11 +272,13 @@ mod tests {
 
     #[test]
     fn name_compatibility() {
-        let file = SimpleJavaFileObject::new(URI::create(&js("string:///a/b/Foo.java")), Kind::SOURCE);
+        let file =
+            SimpleJavaFileObject::new(URI::create(&js("string:///a/b/Foo.java")), Kind::SOURCE);
         // path equals simpleName + extension
         assert!(file.is_name_compatible(&js("Foo"), Kind::SOURCE));
         // path ends with "/" + simpleName + extension
-        let file2 = SimpleJavaFileObject::new(URI::create(&js("string:///x/Foo.java")), Kind::SOURCE);
+        let file2 =
+            SimpleJavaFileObject::new(URI::create(&js("string:///x/Foo.java")), Kind::SOURCE);
         assert!(file2.is_name_compatible(&js("Foo"), Kind::SOURCE));
         // different kind
         assert!(!file.is_name_compatible(&js("Foo"), Kind::CLASS));
@@ -285,8 +291,14 @@ mod tests {
     #[test]
     fn default_byte_access_is_unsupported() {
         let file = SimpleJavaFileObject::new(URI::create(&js("string:///Foo.java")), Kind::SOURCE);
-        assert_eq!(file.open_input_stream().err(), Some(Error::UnsupportedOperationException));
-        assert_eq!(file.open_output_stream().err(), Some(Error::UnsupportedOperationException));
+        assert_eq!(
+            file.open_input_stream().err(),
+            Some(Error::UnsupportedOperationException)
+        );
+        assert_eq!(
+            file.open_output_stream().err(),
+            Some(Error::UnsupportedOperationException)
+        );
         assert_eq!(
             file.get_char_content(false).err(),
             Some(Error::UnsupportedOperationException)
@@ -321,9 +333,7 @@ mod tests {
                 let char_content = self.get_char_content(ignore)?;
                 match char_content {
                     None => Err(Error::UnsupportedOperationException),
-                    Some(content) => {
-                        Ok(Box::new(crate::java_io::StringReader::new(content)))
-                    }
+                    Some(content) => Ok(Box::new(crate::java_io::StringReader::new(content))),
                 }
             }
             fn get_char_content(&self, _ignore: bool) -> Result<Option<JavaString>, Error> {

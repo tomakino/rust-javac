@@ -88,7 +88,6 @@ impl MethodResolutionPhase {
             _ => prev,
         }
     }
-
 }
 
 /// Java: final List<MethodResolutionPhase> methodResolutionSteps
@@ -100,4 +99,3 @@ pub fn method_resolution_steps() -> crate::util::list::List<MethodResolutionPhas
         MethodResolutionPhase::VARARITY,
     )
 }
-

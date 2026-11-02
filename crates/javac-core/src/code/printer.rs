@@ -13,10 +13,10 @@ use std::collections::HashSet;
 use crate::code::flags;
 use crate::code::kinds::Kind;
 use crate::code::symbol::SymbolKind;
-use crate::ids::SymbolId;
 use crate::code::type_::TypeKindData;
 use crate::code::type_tag::TypeTag;
 use crate::compiler_context::CompilerContext;
+use crate::ids::SymbolId;
 use crate::ids::TypeId;
 use crate::util::javac_messages::JavacMessages;
 use crate::util::list::List;
@@ -52,10 +52,16 @@ fn visit_type_inner(ctx: &CompilerContext, ty: TypeId, seen: &mut HashSet<TypeId
         | TypeKindData::ErasedClassType { .. }
         | TypeKindData::UnionClassType { .. }
         | TypeKindData::IntersectionClassType { .. } => visit_class_type(ctx, ty, seen),
-        TypeKindData::MethodType { argtypes, restype, .. }
-        | TypeKindData::PartiallyInferredMethodType { argtypes, restype, .. } => {
+        TypeKindData::MethodType {
+            argtypes, restype, ..
+        }
+        | TypeKindData::PartiallyInferredMethodType {
+            argtypes, restype, ..
+        } => {
             let args = print_method_args(ctx, argtypes, false, seen);
-            let restype = restype.map(|restype| visit_type_inner(ctx, restype, seen)).unwrap_or_default();
+            let restype = restype
+                .map(|restype| visit_type_inner(ctx, restype, seen))
+                .unwrap_or_default();
             format!("({args}){restype}")
         }
         TypeKindData::WildcardType { type_, kind, .. } => {
@@ -70,7 +76,11 @@ fn visit_type_inner(ctx: &CompilerContext, ty: TypeId, seen: &mut HashSet<TypeId
         }
         TypeKindData::ArrayType { .. } => {
             let mut root = ty;
-            while let TypeKindData::ArrayType { elemtype: Some(inner), .. } = &ctx.typ(root).kind {
+            while let TypeKindData::ArrayType {
+                elemtype: Some(inner),
+                ..
+            } = &ctx.typ(root).kind
+            {
                 root = *inner;
             }
             let mut text = visit_type_inner(ctx, root, seen);
@@ -78,7 +88,10 @@ fn visit_type_inner(ctx: &CompilerContext, ty: TypeId, seen: &mut HashSet<TypeId
             loop {
                 text.push_str("[]");
                 match &ctx.typ(current).kind {
-                    TypeKindData::ArrayType { elemtype: Some(elemtype), .. } if ctx.typ(*elemtype).has_tag(TypeTag::ARRAY) => {
+                    TypeKindData::ArrayType {
+                        elemtype: Some(elemtype),
+                        ..
+                    } if ctx.typ(*elemtype).has_tag(TypeTag::ARRAY) => {
                         current = *elemtype;
                     }
                     _ => break,
@@ -101,7 +114,9 @@ fn visit_type_inner(ctx: &CompilerContext, ty: TypeId, seen: &mut HashSet<TypeId
         }
         TypeKindData::ForAll { tvars, qtype } => {
             let tvars = visit_types(ctx, tvars, seen);
-            let qtype = qtype.map(|qtype| visit_type_inner(ctx, qtype, seen)).unwrap_or_default();
+            let qtype = qtype
+                .map(|qtype| visit_type_inner(ctx, qtype, seen))
+                .unwrap_or_default();
             format!("<{tvars}>{qtype}")
         }
         TypeKindData::UndetVar { qtype, inst, .. } => match inst {
@@ -167,8 +182,12 @@ fn visit_type_qualified_inner(
         | TypeKindData::ErasedClassType { .. }
         | TypeKindData::UnionClassType { .. }
         | TypeKindData::IntersectionClassType { .. } => visit_class_type_qualified(ctx, ty, seen),
-        TypeKindData::MethodType { argtypes, restype, .. }
-        | TypeKindData::PartiallyInferredMethodType { argtypes, restype, .. } => {
+        TypeKindData::MethodType {
+            argtypes, restype, ..
+        }
+        | TypeKindData::PartiallyInferredMethodType {
+            argtypes, restype, ..
+        } => {
             let args = print_method_args_qualified(ctx, argtypes, false, seen);
             let restype = restype
                 .map(|restype| visit_type_qualified_inner(ctx, restype, seen))
@@ -187,7 +206,11 @@ fn visit_type_qualified_inner(
         }
         TypeKindData::ArrayType { .. } => {
             let mut root = ty;
-            while let TypeKindData::ArrayType { elemtype: Some(inner), .. } = &ctx.typ(root).kind {
+            while let TypeKindData::ArrayType {
+                elemtype: Some(inner),
+                ..
+            } = &ctx.typ(root).kind
+            {
                 root = *inner;
             }
             let mut text = visit_type_qualified_inner(ctx, root, seen);
@@ -195,9 +218,10 @@ fn visit_type_qualified_inner(
             loop {
                 text.push_str("[]");
                 match &ctx.typ(current).kind {
-                    TypeKindData::ArrayType { elemtype: Some(elemtype), .. }
-                        if ctx.typ(*elemtype).has_tag(TypeTag::ARRAY) =>
-                    {
+                    TypeKindData::ArrayType {
+                        elemtype: Some(elemtype),
+                        ..
+                    } if ctx.typ(*elemtype).has_tag(TypeTag::ARRAY) => {
                         current = *elemtype;
                     }
                     _ => break,
@@ -329,7 +353,11 @@ fn print_method_args_qualified(
     if current.non_empty() {
         let head = *current.head();
         if ctx.typ(head).has_tag(TypeTag::ARRAY) {
-            if let TypeKindData::ArrayType { elemtype: Some(elemtype), .. } = &ctx.typ(head).kind {
+            if let TypeKindData::ArrayType {
+                elemtype: Some(elemtype),
+                ..
+            } = &ctx.typ(head).kind
+            {
                 text.push_str(&visit_type_qualified_inner(ctx, *elemtype, seen));
             }
             text.push_str("...");
@@ -411,24 +439,55 @@ fn class_name(ctx: &CompilerContext, ty: TypeId, longform: bool) -> String {
 
 fn class_type_parts(ctx: &CompilerContext, ty: TypeId) -> (Option<TypeId>, Option<List<TypeId>>) {
     match &ctx.typ(ty).kind {
-        TypeKindData::ClassType { outer_field, typarams_field, .. }
-        | TypeKindData::ErasedClassType { outer_field, typarams_field, .. }
-        | TypeKindData::UnionClassType { outer_field, typarams_field, .. }
-        | TypeKindData::IntersectionClassType { outer_field, typarams_field, .. } => {
-            (*outer_field, typarams_field.clone())
+        TypeKindData::ClassType {
+            outer_field,
+            typarams_field,
+            ..
         }
+        | TypeKindData::ErasedClassType {
+            outer_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::UnionClassType {
+            outer_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::IntersectionClassType {
+            outer_field,
+            typarams_field,
+            ..
+        } => (*outer_field, typarams_field.clone()),
         _ => panic!("ClassCastException: ClassType expected"),
     }
 }
 
 fn class_type_fields(ctx: &CompilerContext, ty: TypeId) -> (Option<TypeId>, List<TypeId>) {
     match &ctx.typ(ty).kind {
-        TypeKindData::ClassType { supertype_field, interfaces_field, .. }
-        | TypeKindData::ErasedClassType { supertype_field, interfaces_field, .. }
-        | TypeKindData::UnionClassType { supertype_field, interfaces_field, .. }
-        | TypeKindData::IntersectionClassType { supertype_field, interfaces_field, .. } => {
-            (*supertype_field, interfaces_field.clone().unwrap_or_else(List::nil))
+        TypeKindData::ClassType {
+            supertype_field,
+            interfaces_field,
+            ..
         }
+        | TypeKindData::ErasedClassType {
+            supertype_field,
+            interfaces_field,
+            ..
+        }
+        | TypeKindData::UnionClassType {
+            supertype_field,
+            interfaces_field,
+            ..
+        }
+        | TypeKindData::IntersectionClassType {
+            supertype_field,
+            interfaces_field,
+            ..
+        } => (
+            *supertype_field,
+            interfaces_field.clone().unwrap_or_else(List::nil),
+        ),
         _ => panic!("ClassCastException: ClassType expected"),
     }
 }
@@ -446,7 +505,12 @@ fn visit_types(ctx: &CompilerContext, types: &List<TypeId>, seen: &mut HashSet<T
     text
 }
 
-fn print_method_args(ctx: &CompilerContext, args: &List<TypeId>, varargs: bool, seen: &mut HashSet<TypeId>) -> String {
+fn print_method_args(
+    ctx: &CompilerContext,
+    args: &List<TypeId>,
+    varargs: bool,
+    seen: &mut HashSet<TypeId>,
+) -> String {
     if !varargs {
         return visit_types(ctx, args, seen);
     }
@@ -460,7 +524,11 @@ fn print_method_args(ctx: &CompilerContext, args: &List<TypeId>, varargs: bool, 
     if current.non_empty() {
         let head = *current.head();
         if ctx.typ(head).has_tag(TypeTag::ARRAY) {
-            if let TypeKindData::ArrayType { elemtype: Some(elemtype), .. } = &ctx.typ(head).kind {
+            if let TypeKindData::ArrayType {
+                elemtype: Some(elemtype),
+                ..
+            } = &ctx.typ(head).kind
+            {
                 text.push_str(&visit_type_inner(ctx, *elemtype, seen));
             }
             text.push_str("...");
@@ -528,7 +596,9 @@ fn method_type_parameter_types(ctx: &CompilerContext, ty: TypeId) -> List<TypeId
     match &ctx.typ(ty).kind {
         TypeKindData::MethodType { argtypes, .. }
         | TypeKindData::PartiallyInferredMethodType { argtypes, .. } => argtypes.clone(),
-        TypeKindData::ForAll { qtype: Some(qtype), .. } => method_type_parameter_types(ctx, *qtype),
+        TypeKindData::ForAll {
+            qtype: Some(qtype), ..
+        } => method_type_parameter_types(ctx, *qtype),
         _ => List::nil(),
     }
 }

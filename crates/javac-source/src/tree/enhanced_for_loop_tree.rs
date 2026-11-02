@@ -1,3 +1,6 @@
+use super::expression_tree::ExpressionTree;
+use super::statement_tree::StatementTree;
+use super::variable_tree::VariableTree;
 /// A tree node for an "enhanced" {@code for} loop statement.
 ///
 /// For example:
@@ -12,9 +15,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
-use super::statement_tree::StatementTree;
-use super::variable_tree::VariableTree;
 
 pub trait EnhancedForLoopTree: StatementTree {
     /// Returns the control variable for the loop.
@@ -28,5 +28,4 @@ pub trait EnhancedForLoopTree: StatementTree {
     /// Returns the body of the loop.
     /// @return the body of the loop
     fn get_statement(&self) -> Rc<dyn StatementTree>;
-
 }

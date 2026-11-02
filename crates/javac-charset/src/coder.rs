@@ -174,40 +174,36 @@ impl CharsetDecoder {
                     input.advance(consumed);
                 }
                 DecodeStep::Incomplete => return CoderResult::Underflow,
-                DecodeStep::Malformed { length } => {
-                    match self.malformed_action {
-                        CodingErrorAction::Report => {
-                            return CoderResult::MalformedForLength(length);
-                        }
-                        CodingErrorAction::Replace => {
-                            if output.remaining() < 1 {
-                                return CoderResult::Overflow;
-                            }
-                            output.put(DECODER_REPLACEMENT);
-                            input.advance(length);
-                        }
-                        CodingErrorAction::Ignore => {
-                            input.advance(length);
-                        }
+                DecodeStep::Malformed { length } => match self.malformed_action {
+                    CodingErrorAction::Report => {
+                        return CoderResult::MalformedForLength(length);
                     }
-                }
-                DecodeStep::Unmappable { length } => {
-                    match self.unmappable_action {
-                        CodingErrorAction::Report => {
-                            return CoderResult::UnmappableForLength(length);
+                    CodingErrorAction::Replace => {
+                        if output.remaining() < 1 {
+                            return CoderResult::Overflow;
                         }
-                        CodingErrorAction::Replace => {
-                            if output.remaining() < 1 {
-                                return CoderResult::Overflow;
-                            }
-                            output.put(DECODER_REPLACEMENT);
-                            input.advance(length);
-                        }
-                        CodingErrorAction::Ignore => {
-                            input.advance(length);
-                        }
+                        output.put(DECODER_REPLACEMENT);
+                        input.advance(length);
                     }
-                }
+                    CodingErrorAction::Ignore => {
+                        input.advance(length);
+                    }
+                },
+                DecodeStep::Unmappable { length } => match self.unmappable_action {
+                    CodingErrorAction::Report => {
+                        return CoderResult::UnmappableForLength(length);
+                    }
+                    CodingErrorAction::Replace => {
+                        if output.remaining() < 1 {
+                            return CoderResult::Overflow;
+                        }
+                        output.put(DECODER_REPLACEMENT);
+                        input.advance(length);
+                    }
+                    CodingErrorAction::Ignore => {
+                        input.advance(length);
+                    }
+                },
             }
         }
     }
@@ -446,7 +442,10 @@ fn decode_utf8_step(bytes: &[u8], end_of_input: bool) -> DecodeStep {
     };
     let units = if code_point >= 0x10000 {
         let value = code_point - 0x10000;
-        vec![0xD800 + (value >> 10) as u16, 0xDC00 + (value & 0x3FF) as u16]
+        vec![
+            0xD800 + (value >> 10) as u16,
+            0xDC00 + (value & 0x3FF) as u16,
+        ]
     } else {
         vec![code_point as u16]
     };

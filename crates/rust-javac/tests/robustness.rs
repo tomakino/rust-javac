@@ -12,7 +12,10 @@ fn malformed_inputs_do_not_panic() {
         ("UnclosedComment.java", "class A { } /*"),
         ("BadUnicode.java", "class A { String s = \\uZZZZ; }"),
         ("Dup.java", "class A { int x; int x; }"),
-        ("BadType.java", "class A { void m() { Object o = new Missing(); } }"),
+        (
+            "BadType.java",
+            "class A { void m() { Object o = new Missing(); } }",
+        ),
     ];
     for (name, src) in cases {
         let path = dir.join(name);

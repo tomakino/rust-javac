@@ -9,18 +9,16 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use javac_core::code::source::Source;
-use javac_core::comp::resolve::{
-    InapplicableMethodExceptionPayload, InferenceExceptionPayload,
-};
+use javac_core::comp::resolve::{InapplicableMethodExceptionPayload, InferenceExceptionPayload};
 use javac_core::main::mini_compiler::MiniCompiler;
 use javac_core::main::option::ArgKind;
 use javac_core::main::option::Option as JavacOption;
 use javac_core::main::option::OptionKind;
 use javac_core::main::option_helper::OptionHelper;
-use javac_core::util::log::Log;
 use javac_core::util::javac_messages::{
-    JavacMessages, Locale, DEFAULT_BUNDLE_NAME, JAVAC_BUNDLE_NAME,
+    DEFAULT_BUNDLE_NAME, JAVAC_BUNDLE_NAME, JavacMessages, Locale,
 };
+use javac_core::util::log::Log;
 
 const OK: i32 = 0;
 const ERROR: i32 = 1;
@@ -51,13 +49,10 @@ fn main() {
         .stack_size(64 * 1024 * 1024)
         .spawn(|| {
             let args: Vec<String> = std::env::args().skip(1).collect();
-            let code = match compile(&args) {
-                Ok(code) => code,
-                Err(message) => {
-                    eprintln!("javac: {message}");
-                    CMDERR
-                }
-            };
+            let code = compile(&args).unwrap_or_else(|message| {
+                eprintln!("javac: {message}");
+                CMDERR
+            });
             // The driver owns the whole compiler object graph: the arenas, the
             // symbol tables, the parse forest, every Rc. The process exits one
             // instruction later, so unwinding that graph buys nothing - the OS
@@ -220,7 +215,6 @@ impl OptionHelper for CommandLineHelper {
     fn add_class_name(&mut self, name: &str) {
         self.class_names.push(name.to_string());
     }
-
 }
 
 fn select_locale(args: &[String]) -> Locale {
@@ -276,11 +270,7 @@ fn help_synopsis(entry: &HelpEntry, name: &str, messages: &JavacMessages) -> Str
 }
 
 /// Java: Option.help(Log, String) (Option.java:1260-1290).
-fn render_help_entry(
-    entry: &HelpEntry,
-    messages: &JavacMessages,
-    supported: &str,
-) -> Vec<String> {
+fn render_help_entry(entry: &HelpEntry, messages: &JavacMessages, supported: &str) -> Vec<String> {
     let synopses = entry
         .names
         .iter()
@@ -291,10 +281,7 @@ fn render_help_entry(
         &format!("javac.{}", entry.descr_key),
         &[supported.to_string()],
     );
-    if synopses.len() < 28
-        && !descr.contains('\n')
-        && 2 + 28 + 1 + descr.len() <= 80
-    {
+    if synopses.len() < 28 && !descr.contains('\n') && 2 + 28 + 1 + descr.len() <= 80 {
         return vec![format!("  {synopses:<28} {descr}")];
     }
     let mut out = Vec::new();
@@ -406,18 +393,12 @@ fn help_text(messages: &JavacMessages, extra: bool) -> String {
 /// Collator is not available; compare the primary name with the leading '-'
 /// removed, case-insensitively (the observed javac order for these names).
 fn sort_key(entry: &HelpEntry) -> String {
-    entry.names[0]
-        .trim_start_matches('-')
-        .to_lowercase()
+    entry.names[0].trim_start_matches('-').to_lowercase()
 }
 
 /// Emit the command-line warnings javac produces while processing options.
 /// Returns the number of warnings written so the final count stays correct.
-fn emit_option_warnings(
-    args: &[String],
-    options: &[(String, String)],
-    locale: &Locale,
-) -> i32 {
+fn emit_option_warnings(args: &[String], options: &[(String, String)], locale: &Locale) -> i32 {
     let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
     let has = |name: &str| options.iter().any(|(key, _)| key == name);
     let options_suppressed = args.iter().any(|arg| {
@@ -515,9 +496,7 @@ fn emit_option_warnings(
         obsolete = true;
     }
     if !options_suppressed && target_release == Some(7) && has("-parameters") {
-        eprintln!(
-            "warning: -parameters is not supported for target value 7. Use 8 or later."
-        );
+        eprintln!("warning: -parameters is not supported for target value 7. Use 8 or later.");
         warnings += 1;
     }
     if obsolete {
@@ -570,10 +549,7 @@ fn emit_option_warnings(
 
 /// Validate the module options that cannot be combined with --release
 /// (javac 17 reports these during option processing).
-fn module_option_errors(
-    options: &[(String, String)],
-    locale: &Locale,
-) -> Vec<String> {
+fn module_option_errors(options: &[(String, String)], locale: &Locale) -> Vec<String> {
     if !options.iter().any(|(key, _)| key == "--release") {
         return Vec::new();
     }
@@ -605,10 +581,7 @@ fn module_option_errors(
 /// Validate the source/target releases that javac 17 no longer supports. The
 /// upstream option processing reports these as errors after the option warnings
 /// and does not run the compiler.
-fn removed_option_errors(
-    options: &[(String, String)],
-    locale: &Locale,
-) -> Vec<String> {
+fn removed_option_errors(options: &[(String, String)], locale: &Locale) -> Vec<String> {
     let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
     let normalize = |value: &str| {
         value
@@ -658,13 +631,11 @@ fn compile(args: &[String]) -> Result<i32, String> {
                 println!("javac 17.0.19");
             }
             JavacOption::HELP_LINT => {
-                let messages =
-                    JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
+                let messages = JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
                 print!("{}", help_lint_text(&messages));
             }
             _ => {
-                let messages =
-                    JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
+                let messages = JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
                 print!("{}", help_text(&messages, option == JavacOption::X));
             }
         }
@@ -761,8 +732,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
             let mut rest = expanded[index + 1..].iter().cloned();
             let remaining_before = rest.clone().count();
             if let Err(error) = option.handle_option(&mut helper, arg, &mut rest) {
-                let messages =
-                    JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
+                let messages = JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
                 eprintln!("error: {}", error.get_message());
                 eprintln!(
                     "{}",
@@ -783,10 +753,10 @@ fn compile(args: &[String]) -> Result<i32, String> {
     if let Some(path) = helper.get(JavacOption::XSTDOUT) {
         match std::fs::File::create(&path) {
             Ok(file) => {
-                let writer: javac_core::util::log::WriterHandle = Rc::new(RefCell::new(
-                    Box::new(javac_core::util::log::LineSeparatorWriter::new(file))
-                        as Box<dyn std::io::Write>,
-                ));
+                let writer: javac_core::util::log::WriterHandle = Rc::new(RefCell::new(Box::new(
+                    javac_core::util::log::LineSeparatorWriter::new(file),
+                )
+                    as Box<dyn std::io::Write>));
                 helper
                     .get_log()
                     .expect("command line log")
@@ -798,8 +768,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
                     javac_strings::JavaString::from(error.to_string().as_str()),
                 );
                 let exception = helper.new_invalid_value_exception(info);
-                let messages =
-                    JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
+                let messages = JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
                 eprintln!("error: {}", exception.get_message());
                 eprintln!(
                     "{}",
@@ -852,7 +821,10 @@ fn compile(args: &[String]) -> Result<i32, String> {
             if module.is_empty() {
                 continue;
             }
-            for entry in module_source_path.split(';').filter(|entry| !entry.is_empty()) {
+            for entry in module_source_path
+                .split(';')
+                .filter(|entry| !entry.is_empty())
+            {
                 let module_dir = PathBuf::from(entry).join(module);
                 if module_dir.is_dir() {
                     collect_sources(&module_dir, &mut sources)?;
@@ -901,10 +873,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
         if name == "--add-modules" {
             for module in value.split(',') {
                 if module.is_empty()
-                    || matches!(
-                        module,
-                        "ALL-MODULE-PATH" | "ALL-DEFAULT" | "ALL-SYSTEM"
-                    )
+                    || matches!(module, "ALL-MODULE-PATH" | "ALL-DEFAULT" | "ALL-SYSTEM")
                 {
                     continue;
                 }
@@ -934,10 +903,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
             eprintln!("error: {text}");
             return Ok(CMDERR);
         }
-        if !options
-            .iter()
-            .any(|(key, _)| key == "--module-source-path")
-        {
+        if !options.iter().any(|(key, _)| key == "--module-source-path") {
             let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
             let text = messages.get_localized_string(
                 "compiler.err.modulesourcepath.must.be.specified.with.dash.m.option",
@@ -987,9 +953,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
     // Java: Arguments.validate - avoid confusion between directories of
     // modules and exploded module directories.
     if let Some(out_dir) = &out_dir
-        && options
-            .iter()
-            .any(|(key, _)| key == "--module-source-path")
+        && options.iter().any(|(key, _)| key == "--module-source-path")
         && out_dir.join("module-info.class").exists()
     {
         let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
@@ -1046,8 +1010,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
         // stdout and exits with CMDERR (verified against
         // JAVA_HOME/bin/javac: 68 stdout lines, exit 2). With options but no
         // source files javac reports no.source.files instead.
-        let javac_messages =
-            JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
+        let javac_messages = JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
         print!("{}", help_text(&javac_messages, false));
         return Ok(CMDERR);
     }

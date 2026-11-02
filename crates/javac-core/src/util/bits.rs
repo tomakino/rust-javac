@@ -311,8 +311,7 @@ impl Bits {
         // (int overflow of the shift follows Java semantics via wrapping_shl)
         0 <= x
             && x < len.wrapping_shl(WORDSHIFT)
-            && (self.bits.as_slice()[((x as u32) >> WORDSHIFT) as usize]
-                & (1i32 << (x & WORDMASK)))
+            && (self.bits.as_slice()[((x as u32) >> WORDSHIFT) as usize] & (1i32 << (x & WORDMASK)))
                 != 0
     }
 
@@ -449,7 +448,7 @@ impl Bits {
         if windex >= bits.len() as i32 {
             return -1;
         }
-        let mut word = bits[windex as usize] & !((1i32 << (x & WORDMASK)).wrapping_sub(1));
+        let mut word = bits[windex as usize] & !(1i32 << (x & WORDMASK)).wrapping_sub(1);
         loop {
             if word != 0 {
                 return windex

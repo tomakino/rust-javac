@@ -526,4 +526,3 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
         }
     }
 }
-

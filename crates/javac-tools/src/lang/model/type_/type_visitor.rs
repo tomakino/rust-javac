@@ -58,7 +58,9 @@ pub trait TypeVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit_primitive: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_primitive: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits the null type.
@@ -113,7 +115,9 @@ pub trait TypeVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit_type_variable: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_type_variable: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a wildcard type.
@@ -135,7 +139,9 @@ pub trait TypeVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit_executable: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_executable: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a {@link NoType} instance.
@@ -187,6 +193,8 @@ pub trait TypeVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit_intersection: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_intersection: Rust: visitor interface method not overridden"
+        )
     }
 }

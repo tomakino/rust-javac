@@ -47,17 +47,15 @@
 //! * setContext is implemented (166-172) and calls Locations.update (184) with
 //!   the Log/Options/CacheFSInfo services.
 
-use std::sync::{Arc, Condvar, Mutex};
-use std::time::{Duration, Instant};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::io::Read;
 use std::option::Option as StdOption;
 use std::rc::Rc;
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
-use javac_charset::{
-    ByteBuffer, CharBuffer, Charset, CharsetDecoder, CodingErrorAction,
-};
+use javac_charset::{ByteBuffer, CharBuffer, Charset, CharsetDecoder, CodingErrorAction};
 use javac_fs::Path as FsPath;
 use javac_strings::JavaString;
 use javac_tools::error::Error;
@@ -164,7 +162,7 @@ impl BaseFileManager {
     /// factory is registered as unavailable (ADR 0001 explicit construction).
     pub fn set_context(&mut self, context: &mut crate::util::context::Context) {
         let log = crate::util::log::Log::instance(context);
-        let options = crate::util::options::Options::instance(context);
+        let options = Options::instance(context);
         // Java: FSInfo.instance(context); REGISTERED: the FSInfo Context factory is
         // unavailable, so the same object class is constructed directly (ADR 0001).
         self.init_services(log, options, Rc::new(CacheFSInfo::new()));
@@ -211,10 +209,7 @@ impl BaseFileManager {
     /// Java: protected final Map<JavaFileObject, ContentCacheEntry> contentCache; (clear()).
     /// Java: protected void clearContentCache() — contentCache.clear().
     pub(crate) fn clear_content_cache(&mut self) {
-        self.content_cache
-            .lock()
-            .expect("content cache")
-            .clear();
+        self.content_cache.lock().expect("content cache").clear();
     }
 
     /// The shared deferred-close state (used by the file-manager close path).
@@ -223,9 +218,7 @@ impl BaseFileManager {
     }
 
     /// The shared content-cache handle (cleared by the deferred-close thread).
-    pub(crate) fn content_cache_handle(
-        &self,
-    ) -> Arc<Mutex<HashMap<String, ContentCacheEntry>>> {
+    pub(crate) fn content_cache_handle(&self) -> Arc<Mutex<HashMap<String, ContentCacheEntry>>> {
         Arc::clone(&self.content_cache)
     }
 
@@ -407,7 +400,10 @@ impl BaseFileManager {
     /// counterpart in the javac-charset adapter (whole-input decode/encode); only decode()
     /// below is expressed; the streaming decoder is REGISTERED as unavailable and
     /// PathFileObject.openReader is a separate registered unit.
-    fn get_charset(&self, encoding_name: &JavaString) -> Result<Charset, crate::util::jc_diagnostic::Error> {
+    fn get_charset(
+        &self,
+        encoding_name: &JavaString,
+    ) -> Result<Charset, crate::util::jc_diagnostic::Error> {
         match &self.charset {
             Some(charset) => Ok(*charset),
             None => match Charset::for_name(encoding_name) {
@@ -575,7 +571,10 @@ impl BaseFileManager {
     /// Java: public void flushCache(JavaFileObject file).
     pub fn flush_cache_object(&self, file: &PathFileObject) {
         let key = file.get_name().to_string_lossy();
-        self.content_cache.lock().expect("content cache").remove(&key);
+        self.content_cache
+            .lock()
+            .expect("content cache")
+            .remove(&key);
     }
 
     /// Java: public static Kind getKind(Path path).
@@ -642,10 +641,7 @@ impl BaseFileManagerApi for BaseFileManager {
         BaseFileManager::get_encoding_name(self)
     }
 
-    fn make_byte_buffer(
-        &self,
-        input: &mut dyn Read,
-    ) -> Result<Vec<u8>, Error> {
+    fn make_byte_buffer(&self, input: &mut dyn Read) -> Result<Vec<u8>, Error> {
         BaseFileManager::make_byte_buffer(self, input)
     }
 
@@ -855,12 +851,10 @@ fn now_millis() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::{BaseFileManager, DeferredCloseState};
-    use crate::file::path_file_object::PathFileObject;
     use javac_fs::Path as FsPath;
     use javac_strings::JavaString;
     use javac_tools::tools::java_file_object::Kind;
     use std::io::Cursor;
-    use std::rc::Rc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn js(s: &str) -> JavaString {
@@ -892,19 +886,27 @@ mod tests {
         let log = crate::util::log::Log::instance(&mut context);
         let mut manager =
             BaseFileManager::new(None, FsPath::from_path_buf(std::path::PathBuf::from(".")));
-        manager.init_services(log, options, std::rc::Rc::new(
-            crate::file::cache_fs_info::CacheFSInfo::new(),
-        ));
+        manager.init_services(
+            log,
+            options,
+            std::rc::Rc::new(crate::file::cache_fs_info::CacheFSInfo::new()),
+        );
 
         // Java: BaseFileManager.handleOption(Option.ENCODING, value).
         let mut rest = vec![js("UTF-16LE")].into_iter();
-        assert!(manager.handle_option("-encoding", &mut rest).expect("handled"));
+        assert!(
+            manager
+                .handle_option("-encoding", &mut rest)
+                .expect("handled")
+        );
         assert_eq!(manager.get_encoding_name().to_string_lossy(), "UTF-16LE");
 
         // An unknown option is not handled.
-        assert!(!manager
-            .handle_option("--definitely-not-an-option", &mut std::iter::empty())
-            .expect("not handled"));
+        assert!(
+            !manager
+                .handle_option("--definitely-not-an-option", &mut std::iter::empty())
+                .expect("not handled")
+        );
 
         // Java: handleOptions(Map<Option,String>): every entry is applied.
         assert!(manager.handle_options(&[(JavacOption::ENCODING, js("UTF-8"))]));
@@ -915,9 +917,11 @@ mod tests {
     fn handle_option_misses_are_not_errors() {
         let mut manager =
             BaseFileManager::new(None, FsPath::from_path_buf(std::path::PathBuf::from(".")));
-        assert!(!manager
-            .handle_option("--not-an-option", &mut std::iter::empty())
-            .expect("not handled"));
+        assert!(
+            !manager
+                .handle_option("--not-an-option", &mut std::iter::empty())
+                .expect("not handled")
+        );
     }
 
     #[test]
@@ -1020,7 +1024,9 @@ struct BaseFileManagerOptionHelper {
 
 impl crate::main::option_helper::OptionHelper for BaseFileManagerOptionHelper {
     fn get(&self, option: JavacOption) -> StdOption<String> {
-        self.options.as_ref().and_then(|options| options.get_option(option))
+        self.options
+            .as_ref()
+            .and_then(|options| options.get_option(option))
     }
 
     fn put(&mut self, name: &str, value: &str) {

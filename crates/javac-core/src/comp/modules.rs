@@ -22,17 +22,20 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 
-use javac_tools::tools::java_file_manager::{JavaFileManager, JavaFileObjectRef, Location, LocationRef};
+use javac_tools::tools::java_file_manager::{
+    JavaFileManager, JavaFileObjectRef, Location, LocationRef,
+};
 use javac_tools::tools::java_file_object::Kind as FileKind;
 use javac_tools::tools::standard_location::StandardLocation;
 
+use crate::code::deferred_lint_handler::DeferredLintHandler;
 use crate::code::directive::{Directive, RequiresFlag};
 use crate::code::flags;
-use crate::code::symbol::ModuleFlags;
-use crate::code::lint::LintCategory;
 use crate::code::kinds::Kind;
+use crate::code::lint::LintCategory;
 use crate::code::module_finder::ModuleFinder;
 use crate::code::source::{Feature, Source};
+use crate::code::symbol::ModuleFlags;
 use crate::code::symbol::{
     Completer, CompleterRef, CompletionFailure, ModuleResolutionFlags, SymbolKind,
 };
@@ -41,7 +44,6 @@ use crate::code::type_tag::TypeTag;
 use crate::comp::attr::Attr;
 use crate::comp::attr_context::AttrContext;
 use crate::comp::check::Check;
-use crate::code::deferred_lint_handler::DeferredLintHandler;
 use crate::comp::env::Env;
 use crate::comp::type_envs::TypeEnvs;
 use crate::compiler_context::CompilerContext;
@@ -50,16 +52,18 @@ use crate::jvm::target::Target;
 use crate::resources::compiler_properties::{errors, warnings};
 use crate::resources::diagnostic_contract::SymbolArg;
 use crate::tree::jc_tree::TreeKind;
-use javac_source::tree::module_tree::ModuleKind;
 use crate::tree::tree_info;
-use crate::util::list::List;
 use crate::util::abstract_log::AbstractLog;
 use crate::util::java_string::JavaString;
-use crate::util::jc_diagnostic::{Error as JCDiagnosticError, SimpleDiagnosticPosition, Warning as JCDiagnosticWarning};
+use crate::util::jc_diagnostic::{
+    Error as JCDiagnosticError, SimpleDiagnosticPosition, Warning as JCDiagnosticWarning,
+};
+use crate::util::list::List;
 use crate::util::log::Log;
 use crate::util::name::Name;
 use crate::util::names::Names;
 use crate::util::options::Options;
+use javac_source::tree::module_tree::ModuleKind;
 
 /// Java: interface Modules.PackageNameFinder (Modules.java:1816-1818).
 pub trait PackageNameFinder {
@@ -150,10 +154,11 @@ impl Modules {
         self_ref: Weak<Modules>,
     ) -> Modules {
         let allow_modules = Feature::MODULES.allowed_in_source(source);
-        let allow_access_into_system = options.is_unset_option(crate::main::option::Option::RELEASE);
+        let allow_access_into_system =
+            options.is_unset_option(crate::main::option::Option::RELEASE);
         let lint_options = options.is_unset_choice(
             crate::main::option::Option::XLINT_CUSTOM,
-            &format!("-{}", crate::code::lint::LintCategory::OPTIONS.option()),
+            &format!("-{}", LintCategory::OPTIONS.option()),
         );
         let multi_module_mode = file_manager.has_location(&StandardLocation::MODULE_SOURCE_PATH);
         let add_exports_opt = options
@@ -221,7 +226,6 @@ impl Modules {
             set.insert((*extra).to_string());
         }
     }
-
 }
 
 impl Modules {
@@ -230,7 +234,10 @@ impl Modules {
     pub fn init_modules(&self, ctx: &mut CompilerContext, syms: &Symtab, trees: &[TreeId]) {
         assert!(!self.in_init_modules.get(), "AssertionError: inInitModules");
         self.in_init_modules.set(true);
-        assert!(self.root_modules.borrow().is_none(), "AssertionError: rootModules");
+        assert!(
+            self.root_modules.borrow().is_none(),
+            "AssertionError: rootModules"
+        );
         let result = self.enter_with(ctx, syms, trees, None, &mut |modules, ctx, syms| {
             assert!(self.root_modules.borrow().is_none());
             assert!(self.all_modules.borrow().is_none());
@@ -387,10 +394,8 @@ impl Modules {
     ) {
         let sourcefile = compilation_unit_sourcefile(ctx, toplevel)
             .expect("CompilationUnit.sourcefile (upstream non-null)");
-        let is_module_info = sourcefile.is_name_compatible(
-            &JavaString::from("module-info"),
-            FileKind::SOURCE,
-        );
+        let is_module_info =
+            sourcefile.is_name_compatible(&JavaString::from("module-info"), FileKind::SOURCE);
         let module_decl = tree_info::get_module(ctx, toplevel);
         if let Some(decl) = module_decl {
             if !is_module_info {
@@ -427,7 +432,9 @@ impl Modules {
                             self.log.error_at(
                                 ctx.tree(decl).pos,
                                 JCDiagnosticError::from(errors::duplicate_module(
-                                    SymbolArg::placeholder(ctx.sym(sym).name.to_java_string().to_string_lossy()),
+                                    SymbolArg::placeholder(
+                                        ctx.sym(sym).name.to_java_string().to_string_lossy(),
+                                    ),
                                 )),
                             );
                         }
@@ -463,9 +470,7 @@ impl Modules {
             self.type_envs.put(sym, env);
         } else if is_module_info && self.multi_module_mode {
             let tree = match &ctx.tree(toplevel).kind {
-                TreeKind::CompilationUnit { defs, .. } if !defs.is_empty() => {
-                    Some(*defs.head())
-                }
+                TreeKind::CompilationUnit { defs, .. } if !defs.is_empty() => Some(*defs.head()),
                 _ => Some(toplevel),
             };
             if let Some(tree) = tree {
@@ -499,8 +504,8 @@ impl Modules {
                     set_compilation_unit_module(ctx, *tree, syms.unnamed_module);
                     continue;
                 }
-                let sourcefile = compilation_unit_sourcefile(ctx, *tree)
-                    .expect("CompilationUnit.sourcefile");
+                let sourcefile =
+                    compilation_unit_sourcefile(ctx, *tree).expect("CompilationUnit.sourcefile");
                 let prev = AbstractLog::use_source(&*self.log, Some(sourcefile.clone()));
                 let msp_locn = self.get_module_location(ctx, *tree);
                 let patch_locn = if self
@@ -517,25 +522,21 @@ impl Modules {
                     None
                 };
                 if let Some(plocn) = patch_locn {
-                    let name = self
-                        .names
-                        .from_string(&self.module_name(ctx, &plocn));
-                    let msym = self
-                        .module_finder.find_module_by_name(ctx, syms, &name);
+                    let name = self.names.from_string(&self.module_name(ctx, &plocn));
+                    let msym = self.module_finder.find_module_by_name(ctx, syms, &name);
                     set_compilation_unit_module(ctx, *tree, msym);
                     root_modules.push(msym);
                     patches_automatic_modules |=
                         (ctx.sym(msym).flags_field & flags::AUTOMATIC_MODULE) != 0;
                     if let Some(msplocn) = &msp_locn {
-                        let mspname = self
-                            .names
-                            .from_string(&self.module_name(ctx, msplocn));
-                        if ctx.sym(msym).name.to_java_string()
-                            != mspname.to_java_string()
-                        {
+                        let mspname = self.names.from_string(&self.module_name(ctx, msplocn));
+                        if ctx.sym(msym).name.to_java_string() != mspname.to_java_string() {
                             self.log.error_at(
                                 ctx.tree(*tree).pos,
-                                JCDiagnosticError::from(errors::file_patched_and_msp(ctx.sym(msym).name.clone(), mspname.clone())),
+                                JCDiagnosticError::from(errors::file_patched_and_msp(
+                                    ctx.sym(msym).name.clone(),
+                                    mspname.clone(),
+                                )),
                             );
                         }
                     }
@@ -553,9 +554,12 @@ impl Modules {
                             .flatten();
                         let same = canonical
                             .map(|canonical| {
-                                !self
-                                    .file_manager
-                                    .is_same_file(&(canonical as javac_tools::tools::java_file_manager::FileObjectRef), &(sourcefile.clone() as javac_tools::tools::java_file_manager::FileObjectRef))
+                                !self.file_manager.is_same_file(
+                                    &(canonical
+                                        as javac_tools::tools::java_file_manager::FileObjectRef),
+                                    &(sourcefile.clone()
+                                        as javac_tools::tools::java_file_manager::FileObjectRef),
+                                )
                             })
                             .unwrap_or(true);
                         if same {
@@ -567,9 +571,7 @@ impl Modules {
                             );
                         }
                     }
-                    let name = self
-                        .names
-                        .from_string(&self.module_name(ctx, msplocn));
+                    let name = self.names.from_string(&self.module_name(ctx, msplocn));
                     let msym = match decl {
                         Some(decl) => {
                             // A duplicate module declaration has no symbol
@@ -595,8 +597,7 @@ impl Modules {
                             // initModules reports the name mismatch once; the
                             // per-unit completion must not report it again.
                             if self.in_init_modules.get()
-                                && ctx.sym(sym).name.to_java_string()
-                                    != name.to_java_string()
+                                && ctx.sym(sym).name.to_java_string() != name.to_java_string()
                             {
                                 let pos = match &ctx.tree(decl).kind {
                                     TreeKind::ModuleDecl { qual_id, .. } => {
@@ -606,7 +607,10 @@ impl Modules {
                                 };
                                 self.log.error_at(
                                     pos,
-                                    JCDiagnosticError::from(errors::module_name_mismatch(ctx.sym(sym).name.clone(), name.clone())),
+                                    JCDiagnosticError::from(errors::module_name_mismatch(
+                                        ctx.sym(sym).name.clone(),
+                                        name.clone(),
+                                    )),
                                 );
                             }
                             sym
@@ -701,9 +705,7 @@ impl Modules {
                     } else {
                         self.log.error_at(
                             ctx.tree(*tree).pos,
-                            JCDiagnosticError::from(
-                                errors::not_in_module_on_module_source_path(),
-                            ),
+                            JCDiagnosticError::from(errors::not_in_module_on_module_source_path()),
                         );
                     }
                     set_compilation_unit_module(ctx, *tree, syms.err_module);
@@ -715,8 +717,7 @@ impl Modules {
             }
             let unnamed = syms.unnamed_module;
             if module_source_location(ctx, unnamed).is_none() {
-                ctx.sym_mut(unnamed).completer =
-                    Some(self.get_unnamed_module_completer(ctx, syms));
+                ctx.sym_mut(unnamed).completer = Some(self.get_unnamed_module_completer(ctx, syms));
                 set_module_source_location(
                     ctx,
                     unnamed,
@@ -736,18 +737,11 @@ impl Modules {
             let module_override = self.single_module_override(ctx, trees);
             match root_modules.len() {
                 0 => {
-                    let default = match self
-                        .module_finder.find_single_module(ctx, syms)
-                    {
+                    let default = match self.module_finder.find_single_module(ctx, syms) {
                         Ok(default) => default,
                         Err(failure) => {
                             let chk = Rc::clone(&self.chk);
-                            chk.completion_error(
-                                ctx,
-                                crate::util::position::NOPOS,
-                                &failure,
-                                syms,
-                            );
+                            chk.completion_error(ctx, crate::util::position::NOPOS, &failure, syms);
                             syms.unnamed_module
                         }
                     };
@@ -757,7 +751,9 @@ impl Modules {
                             let default = self.module_finder.find_module_by_name(
                                 ctx,
                                 syms,
-                                &self.names.from_string(&JavaString::from(module_override.as_str())),
+                                &self
+                                    .names
+                                    .from_string(&JavaString::from(module_override.as_str())),
                             );
                             set_module_patch_output_location(
                                 ctx,
@@ -895,7 +891,12 @@ impl Modules {
         let source = compilation_unit_sourcefile(ctx, tree).expect("sourcefile");
         let contains = |loc: Option<LocationRef>| -> bool {
             let Some(loc) = loc else { return false };
-            self.file_manager.contains(&*loc, &(Rc::clone(&source) as javac_tools::tools::java_file_manager::FileObjectRef)).unwrap_or(false)
+            self.file_manager
+                .contains(
+                    &*loc,
+                    &(Rc::clone(&source) as javac_tools::tools::java_file_manager::FileObjectRef),
+                )
+                .unwrap_or(false)
         };
         if contains(module_source_location(ctx, msym)) {
             return;
@@ -923,7 +924,11 @@ impl Modules {
 
     /// Java: private String singleModuleOverride(List<JCCompilationUnit> trees)
     /// (Modules.java:566-594).
-    fn single_module_override(&self, ctx: &mut CompilerContext, trees: &[TreeId]) -> Option<String> {
+    fn single_module_override(
+        &self,
+        ctx: &mut CompilerContext,
+        trees: &[TreeId],
+    ) -> Option<String> {
         if !self
             .file_manager
             .has_location(&StandardLocation::PATCH_MODULE_PATH)
@@ -933,10 +938,10 @@ impl Modules {
         let mut overrides: Vec<String> = Vec::new();
         for tree in trees {
             let source = compilation_unit_sourcefile(ctx, *tree).expect("sourcefile");
-            if let Ok(loc) = self.file_manager.get_location_for_module_of_file(
-                &StandardLocation::PATCH_MODULE_PATH,
-                &source,
-            ) {
+            if let Ok(loc) = self
+                .file_manager
+                .get_location_for_module_of_file(&StandardLocation::PATCH_MODULE_PATH, &source)
+            {
                 let name = self.module_name(ctx, &loc).to_string_lossy();
                 if !overrides.iter().any(|o| o == &name) {
                     overrides.push(name);
@@ -947,14 +952,13 @@ impl Modules {
             0 => None,
             1 => Some(overrides[0].clone()),
             _ => {
-                self.log.error_key(JCDiagnosticError::from(
-                    errors::too_many_patched_modules(
+                self.log
+                    .error_key(JCDiagnosticError::from(errors::too_many_patched_modules(
                         overrides
                             .iter()
                             .map(|s| JavaString::from(s.as_str()))
                             .collect(),
-                    ),
-                ));
+                    )));
                 None
             }
         }
@@ -989,15 +993,22 @@ impl Modules {
         if let Some(add_mods) = &self.add_mods_opt
             && add_mods.split(',').any(|s| s == ALL_MODULE_PATH)
         {
-            self.log
-                .error_key(JCDiagnosticError::from(errors::addmods_all_module_path_invalid()));
+            self.log.error_key(JCDiagnosticError::from(
+                errors::addmods_all_module_path_invalid(),
+            ));
         }
     }
 
     /// Java: private void setupAllModules() (Modules.java:1220-1360).
     fn setup_all_modules(&self, ctx: &mut CompilerContext, syms: &Symtab) {
-        assert!(self.root_modules.borrow().is_some(), "AssertionError: rootModules");
-        assert!(self.all_modules.borrow().is_none(), "AssertionError: allModules");
+        assert!(
+            self.root_modules.borrow().is_some(),
+            "AssertionError: rootModules"
+        );
+        assert!(
+            self.all_modules.borrow().is_none(),
+            "AssertionError: allModules"
+        );
         let roots = self.root_modules.borrow().clone().expect("rootModules");
         let mut observable: Option<Vec<SymbolId>> = None;
         let limit_mods_opt = &self.limit_mods_opt;
@@ -1033,14 +1044,16 @@ impl Modules {
             if self.lint_options {
                 for msym in &limit_mods {
                     if !observable.as_ref().unwrap().contains(msym) {
-                        let warning = JCDiagnosticWarning::from(warnings::module_for_option_not_found(
-                            crate::resources::diagnostic_contract::OptionArg::placeholder("--limit-modules"),
-                            SymbolArg::placeholder(
-                                ctx.sym(*msym).name.to_java_string().to_string_lossy(),
-                            ),
-                        ));
-                        self.log
-                            .warning_lint_key(LintCategory::OPTIONS, warning);
+                        let warning =
+                            JCDiagnosticWarning::from(warnings::module_for_option_not_found(
+                                crate::resources::diagnostic_contract::OptionArg::placeholder(
+                                    "--limit-modules",
+                                ),
+                                SymbolArg::placeholder(
+                                    ctx.sym(*msym).name.to_java_string().to_string_lossy(),
+                                ),
+                            ));
+                        self.log.warning_lint_key(LintCategory::OPTIONS, warning);
                     }
                 }
             }
@@ -1053,8 +1066,7 @@ impl Modules {
         if roots.contains(&unnamed) {
             let java_se = syms.get_module(&self.java_se);
             let jdk_module_pred: Box<
-                dyn Fn(&mut CompilerContext, &Symtab, SymbolId)
-                    -> Result<bool, CompletionFailure>,
+                dyn Fn(&mut CompilerContext, &Symtab, SymbolId) -> Result<bool, CompletionFailure>,
             > = if self.target.all_api_modules_are_roots() {
                 Box::new(move |ctx, syms, sym| {
                     ctx.complete_symbol(syms, sym)?;
@@ -1072,16 +1084,15 @@ impl Modules {
                 enabled_root.push(java_se);
                 Box::new(move |ctx, syms, sym| {
                     ctx.complete_symbol(syms, sym)?;
-                    Ok(
-                        !ctx.sym(sym)
-                            .name
-                            .to_java_string()
-                            .to_string_lossy()
-                            .starts_with("java.")
-                            && module_exports(ctx, sym)
-                                .iter()
-                                .any(|d| ctx.directive(d).get_target_modules().is_none()),
-                    )
+                    Ok(!ctx
+                        .sym(sym)
+                        .name
+                        .to_java_string()
+                        .to_string_lossy()
+                        .starts_with("java.")
+                        && module_exports(ctx, sym)
+                            .iter()
+                            .any(|d| ctx.directive(d).get_target_modules().is_none()))
                 })
             } else {
                 Box::new(|_ctx, _syms, _sym| Ok(true))
@@ -1106,8 +1117,7 @@ impl Modules {
                     let observable_ok = if let Some(observable) = &observable {
                         observable.contains(&sym)
                     } else {
-                        let found = self
-                            .module_finder.find_module(ctx, syms, sym);
+                        let found = self.module_finder.find_module(ctx, syms, sym);
                         ctx.sym(found).kind != Kind::ERR
                     };
                     let jdk_ok = jdk_module_pred(ctx, syms, sym)?;
@@ -1119,12 +1129,7 @@ impl Modules {
                     Ok(false) => {}
                     Err(failure) => {
                         let chk = Rc::clone(&self.chk);
-                        chk.completion_error(
-                            ctx,
-                            crate::util::position::NOPOS,
-                            &failure,
-                            syms,
-                        );
+                        chk.completion_error(ctx, crate::util::position::NOPOS, &failure, syms);
                     }
                 }
             }
@@ -1177,7 +1182,8 @@ impl Modules {
                 }
             }
         }
-        let mut result = self.compute_transitive_closure(ctx, syms, &enabled_root, &roots, observable);
+        let mut result =
+            self.compute_transitive_closure(ctx, syms, &enabled_root, &roots, observable);
         if !result.contains(&unnamed) {
             result.push(unnamed);
         }
@@ -1197,8 +1203,7 @@ impl Modules {
         let incubating: Vec<String> = result
             .iter()
             .filter(|m| {
-                module_resolution_flags(ctx, **m)
-                    .contains(&ModuleResolutionFlags::WARN_INCUBATING)
+                module_resolution_flags(ctx, **m).contains(&ModuleResolutionFlags::WARN_INCUBATING)
             })
             .map(|m| ctx.sym(*m).name.to_java_string().to_string_lossy())
             .collect();
@@ -1211,8 +1216,7 @@ impl Modules {
         if let Some(version) = &self.module_version_opt {
             let version_name = self.names.from_string(&JavaString::from(version.as_str()));
             for root in &roots {
-                if let SymbolKind::ModuleSymbol { version, .. } =
-                    &mut ctx.sym_mut(*root).kind_data
+                if let SymbolKind::ModuleSymbol { version, .. } = &mut ctx.sym_mut(*root).kind_data
                 {
                     *version = Some(version_name.clone());
                 }
@@ -1269,11 +1273,12 @@ impl Modules {
                 && (is_primary || base.contains(&current))
                 && self.warned_missing.borrow_mut().insert(current)
             {
-                self.log.error_key(JCDiagnosticError::from(
-                    errors::module_not_found(SymbolArg::placeholder(
-                        ctx.sym(current).name.to_java_string().to_string_lossy(),
-                    )),
-                ));
+                self.log
+                    .error_key(JCDiagnosticError::from(errors::module_not_found(
+                        SymbolArg::placeholder(
+                            ctx.sym(current).name.to_java_string().to_string_lossy(),
+                        ),
+                    )));
             }
             for rd in module_requires(ctx, current).iter() {
                 let module = match ctx.directive(rd).get_dependency() {
@@ -1307,7 +1312,12 @@ impl Modules {
 
     /// Java: public ModuleSymbol getObservableModule(Name name)
     /// (Modules.java:1423-1431).
-    pub fn get_observable_module(&self, _ctx: &mut CompilerContext, syms: &Symtab, name: &Name) -> Option<SymbolId> {
+    pub fn get_observable_module(
+        &self,
+        _ctx: &mut CompilerContext,
+        syms: &Symtab,
+        name: &Name,
+    ) -> Option<SymbolId> {
         let module = syms.get_module(name)?;
         if self.all_modules().contains(&module) {
             Some(module)
@@ -1353,7 +1363,6 @@ impl Modules {
     }
 }
 
-
 impl Modules {
     /// Java: private void initAddExports() (Modules.java:1614-1678).
     fn init_add_exports(&self, ctx: &mut CompilerContext, syms: &Symtab) {
@@ -1370,16 +1379,17 @@ impl Modules {
             if s.is_empty() {
                 continue;
             }
-            let Some((rest, targets)) = s.split_once('=') else { continue };
-            let Some((module_name, package_name)) = rest.split_once('/') else { continue };
+            let Some((rest, targets)) = s.split_once('=') else {
+                continue;
+            };
+            let Some((module_name, package_name)) = rest.split_once('/') else {
+                continue;
+            };
             if !self.is_valid_name(module_name) {
                 continue;
             }
-            let msym = syms.enter_module(
-                ctx,
-                self.names
-                    .from_string(&JavaString::from(module_name)),
-            );
+            let msym =
+                syms.enter_module(ctx, self.names.from_string(&JavaString::from(module_name)));
             if !self.is_known_module(ctx, syms, msym, &mut unknown_modules) {
                 continue;
             }
@@ -1398,8 +1408,7 @@ impl Modules {
             let package = syms.enter_package(
                 ctx,
                 msym,
-                self.names
-                    .from_string(&JavaString::from(package_name)),
+                self.names.from_string(&JavaString::from(package_name)),
             );
             set_package_module(ctx, package, msym);
             let mut target_modules: Vec<SymbolId> = Vec::new();
@@ -1413,11 +1422,8 @@ impl Modules {
                     if !self.is_valid_name(to_module) {
                         continue;
                     }
-                    let target = syms.enter_module(
-                        ctx,
-                        self.names
-                            .from_string(&JavaString::from(to_module)),
-                    );
+                    let target = syms
+                        .enter_module(ctx, self.names.from_string(&JavaString::from(to_module)));
                     if !self.is_known_module(ctx, syms, target, &mut unknown_modules) {
                         continue;
                     }
@@ -1450,12 +1456,9 @@ impl Modules {
             if self.lint_options {
                 let warning = JCDiagnosticWarning::from(warnings::module_for_option_not_found(
                     crate::resources::diagnostic_contract::OptionArg::placeholder("--add-exports"),
-                    SymbolArg::placeholder(
-                        ctx.sym(msym).name.to_java_string().to_string_lossy(),
-                    ),
+                    SymbolArg::placeholder(ctx.sym(msym).name.to_java_string().to_string_lossy()),
                 ));
-                self.log
-                    .warning_lint_key(LintCategory::OPTIONS, warning);
+                self.log.warning_lint_key(LintCategory::OPTIONS, warning);
             }
             unknown_modules.insert(msym);
         }
@@ -1477,25 +1480,25 @@ impl Modules {
             if s.is_empty() {
                 continue;
             }
-            let Some((source_name, targets)) = s.split_once('=') else { continue };
+            let Some((source_name, targets)) = s.split_once('=') else {
+                continue;
+            };
             if !self.is_valid_name(source_name) {
                 continue;
             }
-            let msym = syms.enter_module(
-                ctx,
-                self.names
-                    .from_string(&JavaString::from(source_name)),
-            );
+            let msym =
+                syms.enter_module(ctx, self.names.from_string(&JavaString::from(source_name)));
             if !self.all_modules().contains(&msym) {
                 if self.lint_options {
                     let warning = JCDiagnosticWarning::from(warnings::module_for_option_not_found(
-                        crate::resources::diagnostic_contract::OptionArg::placeholder("--add-reads"),
+                        crate::resources::diagnostic_contract::OptionArg::placeholder(
+                            "--add-reads",
+                        ),
                         SymbolArg::placeholder(
                             ctx.sym(msym).name.to_java_string().to_string_lossy(),
                         ),
                     ));
-                    self.log
-                        .warning_lint_key(LintCategory::OPTIONS, warning);
+                    self.log.warning_lint_key(LintCategory::OPTIONS, warning);
                 }
                 continue;
             }
@@ -1518,26 +1521,20 @@ impl Modules {
                     if !self.is_valid_name(target_name) {
                         continue;
                     }
-                    let target = syms.enter_module(
-                        ctx,
-                        self.names
-                            .from_string(&JavaString::from(target_name)),
-                    );
+                    let target = syms
+                        .enter_module(ctx, self.names.from_string(&JavaString::from(target_name)));
                     if !self.all_modules().contains(&target) {
                         if self.lint_options {
-                            let warning = JCDiagnosticWarning::from(
-                                warnings::module_for_option_not_found(
-                                    crate::resources::diagnostic_contract::OptionArg::placeholder("--add-reads"),
-                                    SymbolArg::placeholder(
-                                        ctx.sym(target)
-                                            .name
-                                            .to_java_string()
-                                            .to_string_lossy(),
+                            let warning =
+                                JCDiagnosticWarning::from(warnings::module_for_option_not_found(
+                                    crate::resources::diagnostic_contract::OptionArg::placeholder(
+                                        "--add-reads",
                                     ),
-                                ),
-                            );
-                            self.log
-                                .warning_lint_key(LintCategory::OPTIONS, warning);
+                                    SymbolArg::placeholder(
+                                        ctx.sym(target).name.to_java_string().to_string_lossy(),
+                                    ),
+                                ));
+                            self.log.warning_lint_key(LintCategory::OPTIONS, warning);
                         }
                         continue;
                     }
@@ -1565,13 +1562,20 @@ impl Modules {
         self.init_add_exports(ctx, syms);
         set_module_visible_packages(ctx, msym, crate::util::fx_hasher::FxNameMap::default());
         set_module_read_modules(ctx, msym, readable.to_vec());
-        let mut seen: crate::util::fx_hasher::FxNameMap<SymbolId> = crate::util::fx_hasher::fx_map_with_capacity(64);
+        let mut seen: crate::util::fx_hasher::FxNameMap<SymbolId> =
+            crate::util::fx_hasher::fx_map_with_capacity(64);
         for rm in readable {
             if *rm == syms.unnamed_module {
                 continue;
             }
             let exports = module_exports(ctx, *rm);
-            self.add_visible_packages(ctx, msym, &mut seen, *rm, &exports.iter().collect::<Vec<_>>());
+            self.add_visible_packages(
+                ctx,
+                msym,
+                &mut seen,
+                *rm,
+                &exports.iter().collect::<Vec<_>>(),
+            );
         }
         let add_exports = self.add_exports.borrow().clone().unwrap_or_default();
         let read_modules = module_read_modules(ctx, msym);
@@ -1593,7 +1597,9 @@ impl Modules {
     ) {
         for d in exports {
             let (package, target_modules) = match ctx.directive(*d) {
-                Directive::Exports { packge, modules, .. } => (*packge, modules.clone()),
+                Directive::Exports {
+                    packge, modules, ..
+                } => (*packge, modules.clone()),
                 _ => continue,
             };
             let Some(package) = package else { continue };
@@ -1622,15 +1628,19 @@ impl Modules {
                     .map(|t| ctx.tree(t).pos)
                     .unwrap_or(crate::util::position::NOPOS);
                 if is_unnamed_module(ctx, msym) {
-                    let error = JCDiagnosticError::from(errors::package_clash_from_requires_in_unnamed(
-                        package_name.clone(),
-                        SymbolArg::placeholder(
-                            ctx.sym(previous).name.to_java_string().to_string_lossy(),
-                        ),
-                        SymbolArg::placeholder(
-                            ctx.sym(exports_from).name.to_java_string().to_string_lossy(),
-                        ),
-                    ));
+                    let error =
+                        JCDiagnosticError::from(errors::package_clash_from_requires_in_unnamed(
+                            package_name.clone(),
+                            SymbolArg::placeholder(
+                                ctx.sym(previous).name.to_java_string().to_string_lossy(),
+                            ),
+                            SymbolArg::placeholder(
+                                ctx.sym(exports_from)
+                                    .name
+                                    .to_java_string()
+                                    .to_string_lossy(),
+                            ),
+                        ));
                     self.log.error_at(pos, error);
                 } else {
                     let error = JCDiagnosticError::from(errors::package_clash_from_requires(
@@ -1642,7 +1652,10 @@ impl Modules {
                             ctx.sym(previous).name.to_java_string().to_string_lossy(),
                         ),
                         SymbolArg::placeholder(
-                            ctx.sym(exports_from).name.to_java_string().to_string_lossy(),
+                            ctx.sym(exports_from)
+                                .name
+                                .to_java_string()
+                                .to_string_lossy(),
                         ),
                     ));
                     self.log.error_at(pos, error);
@@ -1656,7 +1669,7 @@ impl Modules {
             // Java: msym.visiblePackages.put(packageName, package)
             // (Modules.java addVisiblePackages); update in place instead of
             // cloning the whole map, inserting and writing it back.
-            if let crate::code::symbol::SymbolKind::ModuleSymbol {
+            if let SymbolKind::ModuleSymbol {
                 visible_packages, ..
             } = &mut ctx.sym_mut(msym).kind_data
             {
@@ -1730,7 +1743,10 @@ impl Modules {
             && let Some(extra) = add_reads.get(&msym)
         {
             requires = List::from_iterable(
-                requires.iter().chain(extra.iter().copied()).collect::<Vec<_>>(),
+                requires
+                    .iter()
+                    .chain(extra.iter().copied())
+                    .collect::<Vec<_>>(),
             );
         }
         let mut requires_kept: Vec<DirectiveId> = Vec::new();
@@ -1746,11 +1762,10 @@ impl Modules {
                         .as_ref()
                         .map(|s| AbstractLog::use_source(&*self.log, Some(s.clone())));
                     let pos = env.tree.map(|t| ctx.tree(t).pos).unwrap_or(0);
-                    let error = JCDiagnosticError::from(errors::module_not_found(
-                        SymbolArg::placeholder(
+                    let error =
+                        JCDiagnosticError::from(errors::module_not_found(SymbolArg::placeholder(
                             ctx.sym(module).name.to_java_string().to_string_lossy(),
-                        ),
-                    ));
+                        )));
                     self.log.error_at(pos, error);
                     if let Some(prev) = prev {
                         AbstractLog::use_source(&*self.log, prev);
@@ -1764,7 +1779,10 @@ impl Modules {
         let mut readable: Vec<SymbolId> = Vec::new();
         let mut transitive: Vec<SymbolId> = Vec::new();
         for rd in &requires_kept {
-            let module = ctx.directive(*rd).get_dependency().expect("requires module");
+            let module = ctx
+                .directive(*rd)
+                .get_dependency()
+                .expect("requires module");
             let _ = ctx.complete_symbol(syms, module);
             if !readable.contains(&module) {
                 readable.push(module);
@@ -1791,7 +1809,11 @@ impl Modules {
             .insert(msym, transitive);
         self.init_visible_packages(ctx, syms, msym, &readable);
         for d in module_exports(ctx, msym).iter() {
-            if let Directive::Exports { packge: Some(packge), .. } = ctx.directive(d) {
+            if let Directive::Exports {
+                packge: Some(packge),
+                ..
+            } = ctx.directive(d)
+            {
                 set_package_module(ctx, *packge, msym);
             }
         }
@@ -1808,13 +1830,22 @@ impl Modules {
         let mut directives: Vec<DirectiveId> = Vec::new();
         let mut exports: Vec<DirectiveId> = Vec::new();
         let mut seen_packages: HashSet<String> = HashSet::new();
-        let class_location = module_class_location(ctx, msym).expect("automatic module class location");
+        let class_location =
+            module_class_location(ctx, msym).expect("automatic module class location");
         let files = self
             .file_manager
-            .list(&*class_location, &JavaString::from(""), &[FileKind::CLASS], true)
+            .list(
+                &*class_location,
+                &JavaString::from(""),
+                &[FileKind::CLASS],
+                true,
+            )
             .unwrap_or_default();
         for clazz in files {
-            let Some(bin_name) = self.file_manager.infer_binary_name(&*class_location, &clazz) else {
+            let Some(bin_name) = self
+                .file_manager
+                .infer_binary_name(&*class_location, &clazz)
+            else {
                 continue;
             };
             let bin_name = bin_name.to_string_lossy();
@@ -1823,11 +1854,8 @@ impl Modules {
                 None => "",
             };
             if seen_packages.insert(pack.to_string()) {
-                let package = syms.enter_package(
-                    ctx,
-                    msym,
-                    self.names.from_string(&JavaString::from(pack)),
-                );
+                let package =
+                    syms.enter_package(ctx, msym, self.names.from_string(&JavaString::from(pack)));
                 let d = ctx.alloc_directive(Directive::Exports {
                     packge: Some(package),
                     modules: None,
@@ -1847,12 +1875,7 @@ impl Modules {
 
     /// Java: private void completeAutomaticModule(ModuleSymbol msym)
     /// (Modules.java:701-724).
-    fn complete_automatic_module(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        msym: SymbolId,
-    ) {
+    fn complete_automatic_module(&self, ctx: &mut CompilerContext, syms: &Symtab, msym: SymbolId) {
         let mut directives: Vec<DirectiveId> = module_directives(ctx, msym).iter().collect();
         let mut requires: Vec<DirectiveId> = Vec::new();
         for ms in self.all_modules() {
@@ -1883,19 +1906,28 @@ impl Modules {
 
     /// Java: private void checkCyclicDependencies(JCModuleDecl mod)
     /// (Modules.java:1757-1782).
-    fn check_cyclic_dependencies(&self, ctx: &mut CompilerContext, syms: &Symtab, mod_tree: TreeId) {
+    fn check_cyclic_dependencies(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        mod_tree: TreeId,
+    ) {
         let directives = match &ctx.tree(mod_tree).kind {
             TreeKind::ModuleDecl { directives, .. } => directives.clone().unwrap_or_else(List::nil),
             _ => return,
         };
         for d in directives.iter() {
             let requires = match &ctx.tree(d).kind {
-                TreeKind::Requires { directive: Some(rd), module_name, .. } => {
-                    Some((*rd, *module_name))
-                }
+                TreeKind::Requires {
+                    directive: Some(rd),
+                    module_name,
+                    ..
+                } => Some((*rd, *module_name)),
                 _ => None,
             };
-            let Some((rd, module_name)) = requires else { continue };
+            let Some((rd, module_name)) = requires else {
+                continue;
+            };
             let mut non_synthetic: Vec<SymbolId> = Vec::new();
             let start = ctx.directive(rd).get_dependency().expect("requires module");
             let mut queue: Vec<SymbolId> = vec![start];
@@ -1913,9 +1945,7 @@ impl Modules {
                         Directive::Requires { flags, .. } => flags.contains(&RequiresFlag::EXTRA),
                         _ => false,
                     };
-                    if !is_extra
-                        && let Some(module) = ctx.directive(dep).get_dependency()
-                    {
+                    if !is_extra && let Some(module) = ctx.directive(dep).get_dependency() {
                         queue.push(module);
                     }
                 }
@@ -1927,9 +1957,7 @@ impl Modules {
             if non_synthetic.contains(&mod_sym) {
                 let pos = module_name.map(|n| ctx.tree(n).pos).unwrap_or(0);
                 let error = JCDiagnosticError::from(errors::cyclic_requires(
-                    SymbolArg::placeholder(
-                        ctx.sym(start).name.to_java_string().to_string_lossy(),
-                    ),
+                    SymbolArg::placeholder(ctx.sym(start).name.to_java_string().to_string_lossy()),
                 ));
                 self.log.error_at(pos, error);
             }
@@ -1956,7 +1984,6 @@ impl Modules {
             .unwrap_or_else(|_| JavaString::from(""))
     }
 }
-
 
 /// Java: the anonymous mainCompleter (Modules.java:626-672).
 struct MainCompleter {
@@ -1990,12 +2017,10 @@ impl Completer for SourceCompleter {
     ) -> Result<(), CompletionFailure> {
         let modules = Rc::clone(&self.modules);
         let decl = tree_info::get_module(ctx, self.tree).expect("module decl");
-        let prev_source = AbstractLog::use_source(
-            &*modules.log,
-            Some(Rc::clone(&self.sourcefile)),
-        );
+        let prev_source = AbstractLog::use_source(&*modules.log, Some(Rc::clone(&self.sourcefile)));
         let prev_lint = modules
-            .deferred_lint_handler.set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(decl).pos)));
+            .deferred_lint_handler
+            .set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(decl).pos)));
         ctx.sym_mut(sym).flags_field |= flags::UNATTRIBUTED as i64;
         let result = {
             let mut visitor = ModuleVisitor::new(&modules, ctx, syms, sym);
@@ -2005,8 +2030,7 @@ impl Completer for SourceCompleter {
             Ok(())
         };
         ctx.sym_mut(sym).flags_field &= !(flags::UNATTRIBUTED as i64);
-        modules
-            .deferred_lint_handler.set_pos_state(prev_lint);
+        modules.deferred_lint_handler.set_pos_state(prev_lint);
         AbstractLog::use_source(&*modules.log, prev_source);
         result
     }
@@ -2107,7 +2131,8 @@ impl Modules {
         Rc::new(RefCell::new(UsesProvidesCompleter {
             modules: self.self_ref.upgrade().expect("Modules self"),
         }))
-    }}
+    }
+}
 
 /// Java: class ModuleVisitor extends JCTree.Visitor (Modules.java:766-965).
 struct ModuleVisitor<'a> {
@@ -2162,7 +2187,9 @@ impl<'a> ModuleVisitor<'a> {
             set_module_flags(self.ctx, sym, module_flags);
         }
         if let Some(mods) = mods
-            && let TreeKind::Modifiers { flags: mod_flags, .. } = &self.ctx.tree(mods).kind
+            && let TreeKind::Modifiers {
+                flags: mod_flags, ..
+            } = &self.ctx.tree(mods).kind
         {
             self.ctx.sym_mut(sym).flags_field |= mod_flags & (flags::DEPRECATED as i64);
         }
@@ -2211,9 +2238,9 @@ impl<'a> ModuleVisitor<'a> {
         let module_kind = self.ctx.sym(msym).kind;
         if module_kind != Kind::MDL {
             let pos = self.ctx.tree(module_name).pos;
-            let error = JCDiagnosticError::from(errors::module_not_found(
-                SymbolArg::placeholder(self.ctx.sym(msym).name.to_java_string().to_string_lossy()),
-            ));
+            let error = JCDiagnosticError::from(errors::module_not_found(SymbolArg::placeholder(
+                self.ctx.sym(msym).name.to_java_string().to_string_lossy(),
+            )));
             self.modules.log.error_at(pos, error);
             self.modules.warned_missing.borrow_mut().insert(msym);
         } else if self.all_requires.contains(&msym) {
@@ -2227,7 +2254,9 @@ impl<'a> ModuleVisitor<'a> {
             let mut directive_flags: Vec<RequiresFlag> = Vec::new();
             if is_transitive {
                 if msym == self.syms.java_base && self.source_at_least_jdk10() {
-                    let error = JCDiagnosticError::from(errors::modifier_not_allowed_here(self.modules.names.transitive.clone()));
+                    let error = JCDiagnosticError::from(errors::modifier_not_allowed_here(
+                        self.modules.names.transitive.clone(),
+                    ));
                     let pos = self.ctx.tree(tree).pos;
                     self.modules.log.error_at(pos, error);
                 } else {
@@ -2236,7 +2265,9 @@ impl<'a> ModuleVisitor<'a> {
             }
             if is_static_phase {
                 if msym == self.syms.java_base && self.source_at_least_jdk10() {
-                    let error = JCDiagnosticError::from(errors::mod_not_allowed_here(vec![crate::resources::diagnostic_contract::FlagArg::placeholder("static")]));
+                    let error = JCDiagnosticError::from(errors::mod_not_allowed_here(vec![
+                        crate::resources::diagnostic_contract::FlagArg::placeholder("static"),
+                    ]));
                     let pos = self.ctx.tree(tree).pos;
                     self.modules.log.error_at(pos, error);
                 } else {
@@ -2276,11 +2307,7 @@ impl<'a> ModuleVisitor<'a> {
             .attr
             .borrow_mut()
             .set_package_symbols(self.ctx, qualid, package);
-        let exports_for_package = self
-            .all_exports
-            .get(&package)
-            .cloned()
-            .unwrap_or_default();
+        let exports_for_package = self.all_exports.get(&package).cloned().unwrap_or_default();
         for _d in &exports_for_package {
             self.report_exports_conflict(qualid, package);
         }
@@ -2382,9 +2409,13 @@ impl<'a> ModuleVisitor<'a> {
 
     fn report_exports_conflict(&mut self, qualid: TreeId, package: SymbolId) {
         let pos = self.ctx.tree(qualid).pos;
-        let error = JCDiagnosticError::from(errors::conflicting_exports(
-            SymbolArg::placeholder(self.ctx.sym(package).name.to_java_string().to_string_lossy()),
-        ));
+        let error = JCDiagnosticError::from(errors::conflicting_exports(SymbolArg::placeholder(
+            self.ctx
+                .sym(package)
+                .name
+                .to_java_string()
+                .to_string_lossy(),
+        )));
         self.modules.log.error_at(pos, error);
     }
 
@@ -2411,9 +2442,13 @@ impl<'a> ModuleVisitor<'a> {
 
     fn report_opens_conflict(&mut self, qualid: TreeId, package: SymbolId) {
         let pos = self.ctx.tree(qualid).pos;
-        let error = JCDiagnosticError::from(errors::conflicting_opens(
-            SymbolArg::placeholder(self.ctx.sym(package).name.to_java_string().to_string_lossy()),
-        ));
+        let error = JCDiagnosticError::from(errors::conflicting_opens(SymbolArg::placeholder(
+            self.ctx
+                .sym(package)
+                .name
+                .to_java_string()
+                .to_string_lossy(),
+        )));
         self.modules.log.error_at(pos, error);
     }
 
@@ -2437,8 +2472,7 @@ impl<'a> ModuleVisitor<'a> {
 
     fn ensure_java_base(&mut self) {
         let sym = self.sym.expect("module sym");
-        if self.ctx.sym(sym).name.to_java_string()
-            == self.modules.names.java_base.to_java_string()
+        if self.ctx.sym(sym).name.to_java_string() == self.modules.names.java_base.to_java_string()
         {
             return;
         }
@@ -2466,7 +2500,8 @@ impl<'a> ModuleVisitor<'a> {
         let name = tree_info::full_name(self.ctx, module_name).expect("module name");
         let msym = self
             .modules
-            .module_finder.find_module_by_name(self.ctx, self.syms, &name);
+            .module_finder
+            .find_module_by_name(self.ctx, self.syms, &name);
         tree_info::set_symbol(self.ctx, module_name, msym);
         msym
     }
@@ -2491,14 +2526,20 @@ fn module_info_symbol(ctx: &CompilerContext, msym: SymbolId) -> SymbolId {
     module_info_symbol_opt(ctx, msym).expect("module-info symbol")
 }
 
-fn module_info_sourcefile(ctx: &CompilerContext, module_info: SymbolId) -> Option<JavaFileObjectRef> {
+fn module_info_sourcefile(
+    ctx: &CompilerContext,
+    module_info: SymbolId,
+) -> Option<JavaFileObjectRef> {
     match &ctx.sym(module_info).kind_data {
         SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile.clone(),
         _ => None,
     }
 }
 
-fn module_info_classfile(ctx: &CompilerContext, module_info: SymbolId) -> Option<JavaFileObjectRef> {
+fn module_info_classfile(
+    ctx: &CompilerContext,
+    module_info: SymbolId,
+) -> Option<JavaFileObjectRef> {
     match &ctx.sym(module_info).kind_data {
         SymbolKind::ClassSymbol { classfile, .. } => classfile.clone(),
         _ => None,
@@ -2511,14 +2552,19 @@ fn set_module_info_sourcefile(
     sourcefile: Option<JavaFileObjectRef>,
 ) {
     let module_info = module_info_symbol(ctx, msym);
-    if let SymbolKind::ClassSymbol { sourcefile: slot, .. } = &mut ctx.sym_mut(module_info).kind_data {
+    if let SymbolKind::ClassSymbol {
+        sourcefile: slot, ..
+    } = &mut ctx.sym_mut(module_info).kind_data
+    {
         *slot = sourcefile;
     }
 }
 
 fn same_file(a: Option<JavaFileObjectRef>, b: &JavaFileObjectRef) -> bool {
     match a {
-        Some(a) => Rc::ptr_eq(&a, b) || a.get_name().to_string_lossy() == b.get_name().to_string_lossy(),
+        Some(a) => {
+            Rc::ptr_eq(&a, b) || a.get_name().to_string_lossy() == b.get_name().to_string_lossy()
+        }
         None => false,
     }
 }
@@ -2565,7 +2611,9 @@ where
 
 fn module_source_location(ctx: &CompilerContext, msym: SymbolId) -> Option<LocationRef> {
     match &ctx.sym(msym).kind_data {
-        SymbolKind::ModuleSymbol { source_location, .. } => source_location.clone(),
+        SymbolKind::ModuleSymbol {
+            source_location, ..
+        } => source_location.clone(),
         _ => None,
     }
 }
@@ -2586,24 +2634,42 @@ fn module_patch_location(ctx: &CompilerContext, msym: SymbolId) -> Option<Locati
 
 fn module_patch_output_location(ctx: &CompilerContext, msym: SymbolId) -> Option<LocationRef> {
     match &ctx.sym(msym).kind_data {
-        SymbolKind::ModuleSymbol { patch_output_location, .. } => patch_output_location.clone(),
+        SymbolKind::ModuleSymbol {
+            patch_output_location,
+            ..
+        } => patch_output_location.clone(),
         _ => None,
     }
 }
 
-fn set_module_source_location(ctx: &mut CompilerContext, msym: SymbolId, location: Option<LocationRef>) {
-    if let SymbolKind::ModuleSymbol { source_location, .. } = &mut ctx.sym_mut(msym).kind_data {
+fn set_module_source_location(
+    ctx: &mut CompilerContext,
+    msym: SymbolId,
+    location: Option<LocationRef>,
+) {
+    if let SymbolKind::ModuleSymbol {
+        source_location, ..
+    } = &mut ctx.sym_mut(msym).kind_data
+    {
         *source_location = location;
     }
 }
 
-fn set_module_class_location(ctx: &mut CompilerContext, msym: SymbolId, location: Option<LocationRef>) {
+fn set_module_class_location(
+    ctx: &mut CompilerContext,
+    msym: SymbolId,
+    location: Option<LocationRef>,
+) {
     if let SymbolKind::ModuleSymbol { class_location, .. } = &mut ctx.sym_mut(msym).kind_data {
         *class_location = location;
     }
 }
 
-fn set_module_patch_location(ctx: &mut CompilerContext, msym: SymbolId, location: Option<LocationRef>) {
+fn set_module_patch_location(
+    ctx: &mut CompilerContext,
+    msym: SymbolId,
+    location: Option<LocationRef>,
+) {
     if let SymbolKind::ModuleSymbol { patch_location, .. } = &mut ctx.sym_mut(msym).kind_data {
         *patch_location = location;
     }
@@ -2614,14 +2680,21 @@ fn set_module_patch_output_location(
     msym: SymbolId,
     location: Option<LocationRef>,
 ) {
-    if let SymbolKind::ModuleSymbol { patch_output_location, .. } = &mut ctx.sym_mut(msym).kind_data {
+    if let SymbolKind::ModuleSymbol {
+        patch_output_location,
+        ..
+    } = &mut ctx.sym_mut(msym).kind_data
+    {
         *patch_output_location = location;
     }
 }
 
 fn module_source_location_is_source_path(ctx: &CompilerContext, msym: SymbolId) -> bool {
     module_source_location(ctx, msym)
-        .map(|loc| loc.get_name().to_string_lossy() == StandardLocation::SOURCE_PATH.get_name().to_string_lossy())
+        .map(|loc| {
+            loc.get_name().to_string_lossy()
+                == StandardLocation::SOURCE_PATH.get_name().to_string_lossy()
+        })
         .unwrap_or(false)
 }
 
@@ -2716,9 +2789,14 @@ fn set_module_flags(ctx: &mut CompilerContext, msym: SymbolId, flags: Vec<Module
     }
 }
 
-fn module_visible_packages(ctx: &CompilerContext, msym: SymbolId) -> crate::util::fx_hasher::FxNameMap<SymbolId> {
+fn module_visible_packages(
+    ctx: &CompilerContext,
+    msym: SymbolId,
+) -> crate::util::fx_hasher::FxNameMap<SymbolId> {
     match &ctx.sym(msym).kind_data {
-        SymbolKind::ModuleSymbol { visible_packages, .. } => visible_packages.clone(),
+        SymbolKind::ModuleSymbol {
+            visible_packages, ..
+        } => visible_packages.clone(),
         _ => crate::util::fx_hasher::FxNameMap::default(),
     }
 }
@@ -2728,7 +2806,10 @@ fn set_module_visible_packages(
     msym: SymbolId,
     packages: crate::util::fx_hasher::FxNameMap<SymbolId>,
 ) {
-    if let SymbolKind::ModuleSymbol { visible_packages, .. } = &mut ctx.sym_mut(msym).kind_data {
+    if let SymbolKind::ModuleSymbol {
+        visible_packages, ..
+    } = &mut ctx.sym_mut(msym).kind_data
+    {
         *visible_packages = packages;
     }
 }
@@ -2748,7 +2829,9 @@ fn set_module_read_modules(ctx: &mut CompilerContext, msym: SymbolId, modules: V
 
 fn module_resolution_flags(ctx: &CompilerContext, msym: SymbolId) -> Vec<ModuleResolutionFlags> {
     match &ctx.sym(msym).kind_data {
-        SymbolKind::ModuleSymbol { resolution_flags, .. } => resolution_flags.clone(),
+        SymbolKind::ModuleSymbol {
+            resolution_flags, ..
+        } => resolution_flags.clone(),
         _ => Vec::new(),
     }
 }
@@ -2757,7 +2840,11 @@ fn set_module_kind(ctx: &mut CompilerContext, msym: SymbolId, kind: Kind) {
     ctx.sym_mut(msym).kind = kind;
 }
 
-fn set_module_completer(ctx: &mut CompilerContext, msym: SymbolId, completer: Option<CompleterRef>) {
+fn set_module_completer(
+    ctx: &mut CompilerContext,
+    msym: SymbolId,
+    completer: Option<CompleterRef>,
+) {
     ctx.sym_mut(msym).completer = completer;
 }
 
@@ -2772,7 +2859,6 @@ fn reverse_list(list: &List<DirectiveId>) -> List<DirectiveId> {
     }
     result
 }
-
 
 /// Java: the anonymous usesProvidesCompleter (Modules.java:967-986).
 struct UsesProvidesCompleter {
@@ -2803,7 +2889,8 @@ impl Modules {
         attr: &mut Attr,
     ) -> Result<(), CompletionFailure> {
         let env = self
-            .type_envs.get(msym)
+            .type_envs
+            .get(msym)
             .expect("AssertionError: typeEnvs entry for module");
         let toplevel = env.toplevel.expect("AssertionError: module env toplevel");
         let decl = tree_info::get_module(ctx, toplevel).expect("AssertionError: moduleDecl");
@@ -2813,7 +2900,8 @@ impl Modules {
             None => None,
         };
         let prev_lint = self
-            .deferred_lint_handler.set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(decl).pos)));
+            .deferred_lint_handler
+            .set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(decl).pos)));
         let mut visitor = UsesProvidesVisitor::new(self, attr, ctx, syms, msym, env.clone());
         visitor.visit_module_def(decl);
         self.deferred_lint_handler.set_pos_state(prev_lint);
@@ -2944,14 +3032,19 @@ impl<'a> UsesProvidesVisitor<'a> {
 
     fn visit_exports(&mut self, tree: TreeId) {
         let (qualid, directive) = match &self.ctx.tree(tree).kind {
-            TreeKind::Exports { qualid, directive, .. } => (*qualid, *directive),
+            TreeKind::Exports {
+                qualid, directive, ..
+            } => (*qualid, *directive),
             _ => return,
         };
         let (Some(qualid), Some(directive)) = (qualid, directive) else {
             return;
         };
         let packge = match self.ctx.directive(directive) {
-            Directive::Exports { packge: Some(packge), .. } => *packge,
+            Directive::Exports {
+                packge: Some(packge),
+                ..
+            } => *packge,
             _ => return,
         };
         let members = package_members_scope(self.ctx, packge);
@@ -2989,21 +3082,18 @@ impl<'a> UsesProvidesVisitor<'a> {
                 .borrow()
                 .clone()
                 .expect("AssertionError: findPackageInFile");
-            if finder.find_package_name_of(self.ctx, &jfo) == Some(package_fullname(self.ctx, packge)) {
+            if finder.find_package_name_of(self.ctx, &jfo)
+                == Some(package_fullname(self.ctx, packge))
+            {
                 package_not_empty = true;
                 break;
             }
         }
         if !package_not_empty {
             let pos = self.ctx.tree(qualid).pos;
-            let name = self
-                .ctx
-                .sym(packge)
-                .name
-                .to_java_string()
-                .to_string_lossy();
+            let name = self.ctx.sym(packge).name.to_java_string().to_string_lossy();
             let error = JCDiagnosticError::from(
-                crate::resources::compiler_properties::errors::package_empty_or_not_found(
+                errors::package_empty_or_not_found(
                     SymbolArg::placeholder(name),
                 ),
             );
@@ -3015,14 +3105,19 @@ impl<'a> UsesProvidesVisitor<'a> {
 
     fn visit_opens(&mut self, tree: TreeId) {
         let (qualid, directive) = match &self.ctx.tree(tree).kind {
-            TreeKind::Opens { qualid, directive, .. } => (*qualid, *directive),
+            TreeKind::Opens {
+                qualid, directive, ..
+            } => (*qualid, *directive),
             _ => return,
         };
         let (Some(qualid), Some(directive)) = (qualid, directive) else {
             return;
         };
         let packge = match self.ctx.directive(directive) {
-            Directive::Opens { packge: Some(packge), .. } => *packge,
+            Directive::Opens {
+                packge: Some(packge),
+                ..
+            } => *packge,
             _ => return,
         };
         let pos = self.ctx.tree(qualid).pos;
@@ -3043,7 +3138,9 @@ impl<'a> UsesProvidesVisitor<'a> {
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
         );
-        candidates.into_iter().find(|&sym| self.ctx.sym(sym).kind == Kind::MTH && method_params_of(self.ctx, sym).is_empty())
+        candidates.into_iter().find(|&sym| {
+            self.ctx.sym(sym).kind == Kind::MTH && method_params_of(self.ctx, sym).is_empty()
+        })
     }
 
     fn factory_method(&mut self, tsym: SymbolId) -> Option<SymbolId> {
@@ -3055,29 +3152,46 @@ impl<'a> UsesProvidesVisitor<'a> {
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
         );
-        candidates.into_iter().find(|&sym| self.ctx.sym(sym).kind == Kind::MTH
+        candidates.into_iter().find(|&sym| {
+            self.ctx.sym(sym).kind == Kind::MTH
                 && ctx_symbol_is_static(self.ctx, sym)
-                && (self.ctx.sym(sym).flags_field & (crate::code::flags::PUBLIC as i64)) != 0
-                && method_params_of(self.ctx, sym).is_empty())
+                && (self.ctx.sym(sym).flags_field & (flags::PUBLIC as i64)) != 0
+                && method_params_of(self.ctx, sym).is_empty()
+        })
     }
 
     fn visit_provides(&mut self, tree: TreeId) {
         let (service_name, impl_names) = match &self.ctx.tree(tree).kind {
-            TreeKind::Provides { service_name, impl_names } => (*service_name, impl_names.clone()),
+            TreeKind::Provides {
+                service_name,
+                impl_names,
+            } => (*service_name, impl_names.clone()),
             _ => return,
         };
-        let Some(service_name) = service_name else { return };
+        let Some(service_name) = service_name else {
+            return;
+        };
         let st = {
             let syms = self.syms;
-            self.attr
-                .attrib_type_with(self.ctx, syms, service_name, &self.env, Some(syms.object_type))
+            self.attr.attrib_type_with(
+                self.ctx,
+                syms,
+                service_name,
+                &self.env,
+                Some(syms.object_type),
+            )
         };
         let service = self.ctx.typ(st).tsym.expect("AssertionError: service tsym");
         if self.all_provides.contains_key(&service) {
             let pos = self.ctx.tree(service_name).pos;
-            let name = self.ctx.sym(service).name.to_java_string().to_string_lossy();
+            let name = self
+                .ctx
+                .sym(service)
+                .name
+                .to_java_string()
+                .to_string_lossy();
             let error = JCDiagnosticError::from(
-                crate::resources::compiler_properties::errors::repeated_provides_for_service(
+                errors::repeated_provides_for_service(
                     SymbolArg::placeholder(name),
                 ),
             );
@@ -3106,7 +3220,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                 result
             };
             let impl_sym = self.ctx.typ(it).tsym.expect("AssertionError: impl tsym");
-            if (self.ctx.sym(impl_sym).flags_field & (crate::code::flags::PUBLIC as i64)) == 0 {
+            if (self.ctx.sym(impl_sym).flags_field & (flags::PUBLIC as i64)) == 0 {
                 let pos = self.ctx.tree(impl_name).pos;
                 let name = self
                     .ctx
@@ -3114,11 +3228,13 @@ impl<'a> UsesProvidesVisitor<'a> {
                     .name
                     .to_java_string()
                     .to_string_lossy();
-                let location = self.ctx.sym(impl_sym).location().map(|loc| {
-                    self.ctx.sym(loc).name.to_java_string().to_string_lossy()
-                });
+                let location = self
+                    .ctx
+                    .sym(impl_sym)
+                    .location()
+                    .map(|loc| self.ctx.sym(loc).name.to_java_string().to_string_lossy());
                 let error = JCDiagnosticError::from(
-                    crate::resources::compiler_properties::errors::not_def_public(
+                    errors::not_def_public(
                         SymbolArg::placeholder(name),
                         SymbolArg::placeholder(location.unwrap_or_default()),
                     ),
@@ -3130,11 +3246,14 @@ impl<'a> UsesProvidesVisitor<'a> {
                 let factory_ty = self.ctx.sym(factory).ty.expect("factory type");
                 let return_type = self.ctx.typ(factory_ty).get_return_type(self.ctx);
                 if let Some(return_type) = return_type
-                    && !self.modules.types.is_subtype(self.ctx, self.syms, return_type, st)
+                    && !self
+                        .modules
+                        .types
+                        .is_subtype(self.ctx, self.syms, return_type, st)
                 {
                     let pos = self.ctx.tree(impl_name).pos;
                     let error = JCDiagnosticError::from(
-                        crate::resources::compiler_properties::errors::
+                        errors::
                             service_implementation_provider_return_must_be_subtype_of_service_interface(
                             ),
                     );
@@ -3143,11 +3262,13 @@ impl<'a> UsesProvidesVisitor<'a> {
             } else if !self.modules.types.is_subtype(self.ctx, self.syms, it, st) {
                 let pos = self.ctx.tree(impl_name).pos;
                 let error = JCDiagnosticError::from(
-                    crate::resources::compiler_properties::errors::
+                    errors::
                         service_implementation_must_be_subtype_of_service_interface(),
                 );
                 self.modules.log.error_at(pos, error);
-            } else if (self.ctx.sym(impl_sym).flags_field & (crate::code::flags::ABSTRACT as i64)) != 0 {
+            } else if (self.ctx.sym(impl_sym).flags_field & (flags::ABSTRACT as i64))
+                != 0
+            {
                 let pos = self.ctx.tree(impl_name).pos;
                 let name = self
                     .ctx
@@ -3156,28 +3277,37 @@ impl<'a> UsesProvidesVisitor<'a> {
                     .to_java_string()
                     .to_string_lossy();
                 let error = JCDiagnosticError::from(
-                    crate::resources::compiler_properties::errors::service_implementation_is_abstract(
+                    errors::service_implementation_is_abstract(
                         SymbolArg::placeholder(name),
                     ),
                 );
                 self.modules.log.error_at(pos, error);
             } else if is_inner_symbol(self.ctx, impl_sym) {
                 let pos = self.ctx.tree(impl_name).pos;
-                let mut name = self.ctx.sym(impl_sym).name.to_java_string().to_string_lossy();
+                let mut name = self
+                    .ctx
+                    .sym(impl_sym)
+                    .name
+                    .to_java_string()
+                    .to_string_lossy();
                 let mut owner = self.ctx.sym(impl_sym).owner;
                 while let Some(owner_sym) = owner {
-                    if self.ctx.sym(owner_sym).kind != crate::code::kinds::Kind::TYP {
+                    if self.ctx.sym(owner_sym).kind != Kind::TYP {
                         break;
                     }
                     name = format!(
                         "{}.{}",
-                        self.ctx.sym(owner_sym).name.to_java_string().to_string_lossy(),
+                        self.ctx
+                            .sym(owner_sym)
+                            .name
+                            .to_java_string()
+                            .to_string_lossy(),
                         name
                     );
                     owner = self.ctx.sym(owner_sym).owner;
                 }
                 let error = JCDiagnosticError::from(
-                    crate::resources::compiler_properties::errors::service_implementation_is_inner(
+                    errors::service_implementation_is_inner(
                         SymbolArg::placeholder(name),
                     ),
                 );
@@ -3194,7 +3324,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                             .to_java_string()
                             .to_string_lossy();
                         let error = JCDiagnosticError::from(
-                            crate::resources::compiler_properties::errors::
+                            errors::
                                 service_implementation_doesnt_have_a_no_args_constructor(
                                     SymbolArg::placeholder(name),
                                 ),
@@ -3203,7 +3333,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                     }
                     Some(constructor) => {
                         if (self.ctx.sym(constructor).flags_field
-                            & (crate::code::flags::PUBLIC as i64))
+                            & (flags::PUBLIC as i64))
                             == 0
                         {
                             let pos = self.ctx.tree(impl_name).pos;
@@ -3214,7 +3344,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                                 .to_java_string()
                                 .to_string_lossy();
                             let error = JCDiagnosticError::from(
-                                crate::resources::compiler_properties::errors::
+                                errors::
                                     service_implementation_no_args_constructor_not_public(
                                         SymbolArg::placeholder(name),
                                     ),
@@ -3225,10 +3355,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                 }
             }
             if self.ctx.typ(it).has_tag(TypeTag::CLASS) {
-                let set = self
-                    .all_provides
-                    .entry(service)
-                    .or_default();
+                let set = self.all_provides.entry(service).or_default();
                 if set.insert(impl_sym) {
                     impls.push(impl_sym);
                 } else {
@@ -3246,7 +3373,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                         .to_java_string()
                         .to_string_lossy();
                     let error = JCDiagnosticError::from(
-                        crate::resources::compiler_properties::errors::duplicate_provides(
+                        errors::duplicate_provides(
                             SymbolArg::placeholder(service_name),
                             SymbolArg::placeholder(impl_name),
                         ),
@@ -3306,11 +3433,11 @@ impl<'a> UsesProvidesVisitor<'a> {
                 .attrib_type_with(self.ctx, syms, qualid, &self.env, Some(syms.object_type))
         };
         let sym = tree_info::symbol(self.ctx, qualid).expect("AssertionError: uses symbol");
-        if (self.ctx.sym(sym).flags_field & (crate::code::flags::ENUM as i64)) != 0 {
+        if (self.ctx.sym(sym).flags_field & (flags::ENUM as i64)) != 0 {
             let pos = self.ctx.tree(qualid).pos;
             let name = self.ctx.sym(sym).name.to_java_string().to_string_lossy();
             let error = JCDiagnosticError::from(
-                crate::resources::compiler_properties::errors::service_definition_is_enum(
+                errors::service_definition_is_enum(
                     SymbolArg::placeholder(name),
                 ),
             );
@@ -3334,7 +3461,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                     .to_java_string()
                     .to_string_lossy();
                 let error = JCDiagnosticError::from(
-                    crate::resources::compiler_properties::errors::duplicate_uses(
+                    errors::duplicate_uses(
                         SymbolArg::placeholder(name),
                     ),
                 );
@@ -3369,16 +3496,10 @@ impl<'a> UsesProvidesVisitor<'a> {
                 if impl_module != Some(self.msym) {
                     let pos = self.ctx.tree(tree).pos;
                     let name = impl_module
-                        .map(|m| {
-                            self.ctx
-                                .sym(m)
-                                .name
-                                .to_java_string()
-                                .to_string_lossy()
-                        })
+                        .map(|m| self.ctx.sym(m).name.to_java_string().to_string_lossy())
                         .unwrap_or_default();
                     let error = JCDiagnosticError::from(
-                        crate::resources::compiler_properties::errors::
+                        errors::
                             service_implementation_not_in_right_module(
                                 SymbolArg::placeholder(name),
                             ),
@@ -3401,8 +3522,10 @@ impl<'a> UsesProvidesVisitor<'a> {
                 }
                 let mut warn = true;
                 for export in module_exports(self.ctx, self.msym).iter() {
-                    if let Directive::Exports { packge: Some(packge), .. } =
-                        self.ctx.directive(export)
+                    if let Directive::Exports {
+                        packge: Some(packge),
+                        ..
+                    } = self.ctx.directive(export)
                         && *packge == interface_package
                     {
                         warn = false;
@@ -3411,8 +3534,10 @@ impl<'a> UsesProvidesVisitor<'a> {
                 }
                 if warn {
                     for uses in module_uses(self.ctx, self.msym).iter() {
-                        if let Directive::Uses { service: Some(used), .. } =
-                            self.ctx.directive(uses)
+                        if let Directive::Uses {
+                            service: Some(used),
+                            ..
+                        } = self.ctx.directive(uses)
                             && *used == service
                         {
                             warn = false;
@@ -3429,15 +3554,14 @@ impl<'a> UsesProvidesVisitor<'a> {
                         .to_java_string()
                         .to_string_lossy();
                     let warning = JCDiagnosticWarning::from(
-                        crate::resources::compiler_properties::warnings::
+                        warnings::
                             service_provided_but_not_exported_or_used(
                                 SymbolArg::placeholder(name),
                             ),
                     );
-                    self.modules.log.warning_pos(
-                        Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
-                        warning,
-                    );
+                    self.modules
+                        .log
+                        .warning_pos(Some(Rc::new(SimpleDiagnosticPosition::new(pos))), warning);
                 }
             }
         }

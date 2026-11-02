@@ -75,7 +75,6 @@ use crate::ids::{DirectiveId, ScopeId, SymbolId, TreeId, TypeId};
 use crate::util::list::List;
 use crate::util::name::Name;
 
-
 /// A class representing Java symbols.
 ///
 /// the shared fields of the upstream Symbol class plus the
@@ -103,7 +102,7 @@ pub struct Symbol {
     /// id to create the SymbolMetadata back-reference). The field is filled by the
     /// unique allocation entry point CompilerContext::alloc_symbol; Clone does not
     /// copy it (a clone is only usable after it enters an arena).
-    pub id: std::cell::Cell<Option<crate::ids::SymbolId>>,
+    pub id: std::cell::Cell<Option<SymbolId>>,
     /// Java: the anonymous MethodSymbol baseSymbol() override used by the
     /// polymorphic-signature instance symbols (Resolve.java:2800-2810); Porting rules:
     /// the override is stored as a field and honored by base_symbol.
@@ -161,9 +160,6 @@ impl Symbol {
         }
     }
 
-
-
-
     /// Java: public List<Attribute.Compound> getRawAttributes()
     pub fn get_raw_attributes(&self) -> List<crate::ids::AttributeId> {
         match &self.metadata {
@@ -183,7 +179,7 @@ impl Symbol {
     /// Java: public Attribute.Compound attribute(Symbol anno)
     pub fn attribute(
         &self,
-        ctx: &crate::compiler_context::CompilerContext,
+        ctx: &CompilerContext,
         anno: SymbolId,
     ) -> Option<crate::ids::AttributeId> {
         let attributes = self.get_raw_attributes();
@@ -217,14 +213,16 @@ impl Symbol {
     /// Java: public void appendClassInitTypeAttributes(List<Attribute.TypeCompound> l)
     pub fn append_class_init_type_attributes(&mut self, attributes: List<crate::ids::AttributeId>) {
         if !attributes.is_empty() {
-            self.inited_metadata().append_class_init_type_attributes(attributes);
+            self.inited_metadata()
+                .append_class_init_type_attributes(attributes);
         }
     }
 
     /// Java: public void appendInitTypeAttributes(List<Attribute.TypeCompound> l)
     pub fn append_init_type_attributes(&mut self, attributes: List<crate::ids::AttributeId>) {
         if !attributes.is_empty() {
-            self.inited_metadata().append_init_type_attributes(attributes);
+            self.inited_metadata()
+                .append_init_type_attributes(attributes);
         }
     }
 
@@ -263,7 +261,8 @@ impl Symbol {
 
     /// Java: public void setClassInitTypeAttributes(List<Attribute.TypeCompound> l)
     pub fn set_class_init_type_attributes(&mut self, attributes: List<crate::ids::AttributeId>) {
-        self.inited_metadata().set_class_init_type_attributes(attributes);
+        self.inited_metadata()
+            .set_class_init_type_attributes(attributes);
     }
 
     /// Java: public List<Attribute.Compound> getDeclarationAttributes()
@@ -299,7 +298,8 @@ impl Symbol {
 
     /// Java: public void setDeclarationAttributes(List<Attribute.Compound> a)
     pub fn set_declaration_attributes(&mut self, attributes: List<crate::ids::AttributeId>) {
-        self.inited_metadata().set_declaration_attributes(attributes);
+        self.inited_metadata()
+            .set_declaration_attributes(attributes);
     }
 
     /// Java: public void resetAnnotations()
@@ -310,7 +310,7 @@ impl Symbol {
     /// Java: public void setAttributes(Symbol other)
     pub fn set_attributes(
         &mut self,
-        ctx: &crate::compiler_context::CompilerContext,
+        ctx: &CompilerContext,
         other: &Symbol,
     ) {
         match &other.metadata {
@@ -355,7 +355,7 @@ impl Symbol {
         } = &mut self.kind_data
         {
             self.metadata = None;
-            *annotation_type_metadata = std::rc::Rc::new(
+            *annotation_type_metadata = Rc::new(
                 crate::comp::annotate::AnnotationTypeMetadata::not_an_annotation_type(),
             );
         }
@@ -596,10 +596,7 @@ impl Symbol {
         if (self.flags() & flags::STATIC as i64) != 0 {
             return true;
         }
-        let owner_flags = self
-            .owner
-            .map(|owner| ctx.sym(owner).flags())
-            .unwrap_or(0);
+        let owner_flags = self.owner.map(|owner| ctx.sym(owner).flags()).unwrap_or(0);
         let owner_is_interface = (owner_flags & flags::INTERFACE as i64) != 0;
         let is_this_name =
             self.name.to_java_string() == self.name.table.names()._this.to_java_string();
@@ -933,8 +930,7 @@ pub enum SymbolKind {
         /// Java: private AnnotationTypeMetadata annotationTypeMetadata
         /// (Symbol.java:1290; the not-an-annotation default). The object is
         /// shared through the ClassSymbol (upstream single-object semantics).
-        annotation_type_metadata:
-            std::rc::Rc<crate::comp::annotate::AnnotationTypeMetadata>,
+        annotation_type_metadata: Rc<crate::comp::annotate::AnnotationTypeMetadata>,
     },
     /// Java: Symbol.BindingSymbol (Symbol.java:1861-1902) — a VarSymbol
     /// subclass introduced by a pattern match binding. The VarSymbol payload is
@@ -1113,7 +1109,6 @@ pub enum SymbolKind {
     },
 }
 
-
 /// Java: Symbol.Completer reference (the upstream interface is shared by the
 /// ClassFinder instance; the shared, mutable reference is kept in Symbol.completer).
 pub type CompleterRef = Rc<std::cell::RefCell<dyn Completer>>;
@@ -1133,7 +1128,7 @@ pub trait Completer {
     /// Java: void complete(Symbol sym) throws CompletionFailure
     fn complete(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
+        ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
     ) -> Result<(), CompletionFailure>;
@@ -1143,7 +1138,7 @@ pub trait Completer {
     /// default ignores the reference and delegates to complete()).
     fn complete_with_attr(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
+        ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
         _attr: &mut crate::comp::attr::Attr,
@@ -1168,7 +1163,7 @@ pub struct NullCompleter;
 impl Completer for NullCompleter {
     fn complete(
         &mut self,
-        _ctx: &mut crate::compiler_context::CompilerContext,
+        _ctx: &mut CompilerContext,
         _syms: &crate::code::symtab::Symtab,
         _sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
@@ -1187,7 +1182,9 @@ impl Completer for NullCompleter {
 /// evaluated lazily (RefCell cache like the upstream lazy diag field).
 pub struct CompletionFailure {
     /// Java: public final transient DeferredCompletionFailureHandler dcfh
-    pub dcfh: Option<Rc<crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler>>,
+    pub dcfh: Option<
+        Rc<crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler>,
+    >,
     /// Java: the ClassFinder.BadClassFile subtype marker (ClassFinder.fillIn only
     /// purges partially initialized symbols for BadClassFile; registered adapter
     /// because the Rust error value has no subtype information).
@@ -1210,7 +1207,9 @@ impl CompletionFailure {
     pub fn new(
         sym: Option<SymbolId>,
         diag_supplier: Box<dyn Fn() -> crate::util::jc_diagnostic::JCDiagnostic>,
-        dcfh: Option<Rc<crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler>>,
+        dcfh: Option<
+            Rc<crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler>,
+        >,
     ) -> CompletionFailure {
         CompletionFailure {
             dcfh,
@@ -1225,7 +1224,9 @@ impl CompletionFailure {
     pub fn get_diagnostic(&self) -> Option<crate::util::jc_diagnostic::JCDiagnostic> {
         {
             let mut cache = self.diag.borrow_mut();
-            if cache.is_none() && let Some(supplier) = &self.diag_supplier {
+            if cache.is_none()
+                && let Some(supplier) = &self.diag_supplier
+            {
                 *cache = Some(Box::new(supplier()));
             }
         }
@@ -1263,7 +1264,11 @@ impl std::fmt::Display for CompletionFailure {
 
 impl std::fmt::Debug for CompletionFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "CompletionFailure: {}", self.get_message().to_string_lossy())
+        write!(
+            f,
+            "CompletionFailure: {}",
+            self.get_message().to_string_lossy()
+        )
     }
 }
 
@@ -1306,7 +1311,6 @@ pub fn catch_completion_failure<R>(body: impl FnOnce() -> R) -> Result<R, Comple
         }
     }
 }
-
 
 // ----------------------------------------------------------------------
 // Symbol subclass constructors (P2 ClassReader). The ClassSymbol
@@ -1351,12 +1355,7 @@ impl Symbol {
     }
 
     /// Java: public TypeVariableSymbol(long flags, Name name, Type type, Symbol owner)
-    pub fn new_type_variable_symbol(
-        flags: i64,
-        name: Name,
-        ty: TypeId,
-        owner: SymbolId,
-    ) -> Symbol {
+    pub fn new_type_variable_symbol(flags: i64, name: Name, ty: TypeId, owner: SymbolId) -> Symbol {
         Symbol::new(
             Kind::TYP,
             flags,
@@ -1367,7 +1366,6 @@ impl Symbol {
         )
     }
 }
-
 
 // ----------------------------------------------------------------------
 // Java: Symbol accessor methods needed by the ClassReader.
@@ -1387,7 +1385,7 @@ impl Symbol {
     ///
     /// # Panics
     ///   - none.
-    pub fn is_inner(&self, ctx: &crate::compiler_context::CompilerContext) -> bool {
+    pub fn is_inner(&self, ctx: &CompilerContext) -> bool {
         if let SymbolKind::DelegatedSymbol { other: Some(other) } = &self.kind_data {
             return ctx.sym(*other).is_inner(ctx);
         }
@@ -1414,17 +1412,22 @@ impl Symbol {
     ///
     /// # Panics
     ///   - none.
-    pub fn has_outer_instance(&self, ctx: &crate::compiler_context::CompilerContext) -> bool {
+    pub fn has_outer_instance(&self, ctx: &CompilerContext) -> bool {
         if let SymbolKind::DelegatedSymbol { other: Some(other) } = &self.kind_data {
             return ctx.sym(*other).has_outer_instance(ctx);
         }
         let enclosing_is_class = self
             .ty
             .and_then(|ty| ctx.typ(ty).get_enclosing_type())
-            .is_some_and(|outer| ctx.typ(outer).has_tag(crate::code::type_tag::TypeTag::CLASS));
+            .is_some_and(|outer| {
+                ctx.typ(outer)
+                    .has_tag(crate::code::type_tag::TypeTag::CLASS)
+            });
         let flags = self.flags_field;
         enclosing_is_class
-            && (flags & (crate::code::flags::INTERFACE as i64 | crate::code::flags::NOOUTERTHIS as i64)) == 0
+            && (flags
+                & (flags::INTERFACE as i64 | flags::NOOUTERTHIS as i64))
+                == 0
     }
 
     /// Java: public boolean isConstructor() { return name == name.table.names.init; }
@@ -1434,7 +1437,7 @@ impl Symbol {
 
     /// Java: public boolean isRecord() { return (flags_field & RECORD) != 0; }
     pub fn is_record(&self) -> bool {
-        (self.flags_field & crate::code::flags::RECORD) != 0
+        (self.flags_field & flags::RECORD) != 0
     }
 
     /// Java: public T getUnderlyingSymbol() (Symbol.java:790-792).
@@ -1467,7 +1470,7 @@ impl Symbol {
     pub fn new_param_symbol(
         flags: i64,
         name: Name,
-        ty: crate::ids::TypeId,
+        ty: TypeId,
         owner: SymbolId,
     ) -> Symbol {
         Symbol::new(
@@ -1496,14 +1499,10 @@ impl Symbol {
 // ----------------------------------------------------------------------
 impl Symbol {
     /// Java: public RecordComponent(Name name, Type type, Symbol owner)
-    pub fn new_record_component(
-        name: Name,
-        ty: crate::ids::TypeId,
-        owner: SymbolId,
-    ) -> Symbol {
+    pub fn new_record_component(name: Name, ty: TypeId, owner: SymbolId) -> Symbol {
         Symbol::new(
             Kind::VAR,
-            crate::code::flags::PUBLIC as i64,
+            flags::PUBLIC as i64,
             name,
             Some(ty),
             Some(owner),
@@ -1691,16 +1690,15 @@ pub fn symbol_is_directly_or_indirectly_local(ctx: &CompilerContext, symbol: Sym
 pub fn symbol_is_static_or_instance_init(ctx: &CompilerContext, symbol: SymbolId) -> bool {
     matches!(
         ctx.sym(symbol).get_kind(ctx),
-        javac_tools::lang::model::element::element_kind::ElementKind::STATIC_INIT
-            | javac_tools::lang::model::element::element_kind::ElementKind::INSTANCE_INIT
+        ElementKind::STATIC_INIT
+            | ElementKind::INSTANCE_INIT
     )
 }
-
 
 /// Java: creates a resolution-error symbol (Resolve.ResolveError)
 pub fn symbol_new_resolve_error(
     ctx: &mut CompilerContext,
-    kind: crate::code::kinds::Kind,
+    kind: Kind,
     name: Name,
     debug_name: &str,
     data: ResolveErrorData,
@@ -1720,7 +1718,10 @@ pub fn symbol_new_resolve_error(
 }
 
 /// The ResolveError payload of a symbol, if any.
-pub fn symbol_resolve_error_data(ctx: &CompilerContext, symbol: SymbolId) -> Option<&ResolveErrorData> {
+pub fn symbol_resolve_error_data(
+    ctx: &CompilerContext,
+    symbol: SymbolId,
+) -> Option<&ResolveErrorData> {
     match &ctx.sym(symbol).kind_data {
         SymbolKind::ResolveError { data, .. } => Some(data),
         _ => None,
@@ -1733,8 +1734,7 @@ pub fn symbol_exists(ctx: &CompilerContext, symbol: SymbolId) -> bool {
     match &ctx.sym(symbol).kind_data {
         SymbolKind::ResolveError { data, .. } => matches!(
             **data,
-                | ResolveErrorData::Invisible { .. }
-                | ResolveErrorData::Static { .. }
+            |ResolveErrorData::Invisible { .. }| ResolveErrorData::Static { .. }
                 | ResolveErrorData::Ambiguity { .. }
                 | ResolveErrorData::BadMethodReference { .. }
                 | ResolveErrorData::BadConstructorReference { .. }
@@ -1744,9 +1744,9 @@ pub fn symbol_exists(ctx: &CompilerContext, symbol: SymbolId) -> bool {
         // with the EXISTS flag (a package "exists" only once a type/package
         // within it has been seen; Symbol.java:1208-1213).
         SymbolKind::PackageSymbol { .. } | SymbolKind::RootPackageSymbol { .. } => {
-            ctx.sym(symbol).flags_field & crate::code::flags::EXISTS as i64 != 0
+            ctx.sym(symbol).flags_field & flags::EXISTS as i64 != 0
         }
-        _ => ctx.sym(symbol).kind != crate::code::kinds::Kind::ERR,
+        _ => ctx.sym(symbol).kind != Kind::ERR,
     }
 }
 
@@ -1754,7 +1754,7 @@ pub fn symbol_exists(ctx: &CompilerContext, symbol: SymbolId) -> bool {
 pub fn symbol_outermost_class(ctx: &CompilerContext, symbol: SymbolId) -> Option<SymbolId> {
     let mut sym = symbol;
     let mut previous: Option<SymbolId> = None;
-    while ctx.sym(sym).kind != crate::code::kinds::Kind::PCK {
+    while ctx.sym(sym).kind != Kind::PCK {
         previous = Some(sym);
         match ctx.sym(sym).owner {
             Some(owner) => sym = owner,
@@ -1767,7 +1767,7 @@ pub fn symbol_outermost_class(ctx: &CompilerContext, symbol: SymbolId) -> Option
 /// Java: public boolean isEnclosedBy(ClassSymbol clazz) (Symbol.java:559)
 pub fn symbol_is_enclosed_by(ctx: &CompilerContext, symbol: SymbolId, clazz: SymbolId) -> bool {
     let mut sym = symbol;
-    while ctx.sym(sym).kind != crate::code::kinds::Kind::PCK {
+    while ctx.sym(sym).kind != Kind::PCK {
         if sym == clazz {
             return true;
         }
@@ -1789,14 +1789,13 @@ pub fn symbol_is_sub_class(
     symbol: SymbolId,
     base: SymbolId,
 ) -> bool {
-    if ctx.sym(symbol).kind != crate::code::kinds::Kind::TYP {
+    if ctx.sym(symbol).kind != Kind::TYP {
         panic!("AssertionError: isSubClass");
     }
     if symbol == base {
         return true;
     }
-    let base_interface =
-        (ctx.sym(base).flags_field & crate::code::flags::INTERFACE as i64) != 0;
+    let base_interface = (ctx.sym(base).flags_field & flags::INTERFACE as i64) != 0;
     let self_ty = ctx.sym(symbol).ty.expect("class symbol type");
     if base_interface {
         let mut t = self_ty;
@@ -1839,7 +1838,7 @@ pub fn symbol_is_accessible_in(
     symbol: SymbolId,
     clazz: SymbolId,
 ) -> bool {
-    let access = ctx.sym(symbol).flags_field & crate::code::flags::AccessFlags as i64;
+    let access = ctx.sym(symbol).flags_field & flags::AccessFlags as i64;
     use crate::code::flags;
     if access == flags::PUBLIC as i64 {
         return true;
@@ -1863,7 +1862,10 @@ pub fn symbol_is_accessible_in(
         // while (sup.type.hasTag(TYPEVAR)) sup = sup.type.getUpperBound().tsym;
         loop {
             let current_ty = ctx.sym(current).ty.expect("super type");
-            if !ctx.typ(current_ty).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
+            if !ctx
+                .typ(current_ty)
+                .has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
+            {
                 break;
             }
             let bound = match &ctx.typ(current_ty).kind {
@@ -1874,7 +1876,10 @@ pub fn symbol_is_accessible_in(
             current = ctx.typ(bound).tsym.expect("type variable bound symbol");
         }
         let current_ty = ctx.sym(current).ty.expect("super type");
-        if ctx.typ(current_ty).has_tag(crate::code::type_tag::TypeTag::ERROR) {
+        if ctx
+            .typ(current_ty)
+            .has_tag(crate::code::type_tag::TypeTag::ERROR)
+        {
             return true; // error recovery
         }
         if (ctx.sym(current).flags_field & flags::COMPOUND as i64) != 0 {
@@ -1939,8 +1944,8 @@ fn symbol_hidden_in_internal(
         );
         for candidate in symbols {
             if ctx.sym(candidate).kind == kind
-                && (kind != crate::code::kinds::Kind::MTH
-                    || ((ctx.sym(candidate).flags_field & crate::code::flags::STATIC as i64) != 0
+                && (kind != Kind::MTH
+                    || ((ctx.sym(candidate).flags_field & flags::STATIC as i64) != 0
                         && types.is_sub_signature(
                             ctx,
                             syms,
@@ -1957,16 +1962,19 @@ fn symbol_hidden_in_internal(
     let supers = types.interfaces(ctx, syms, current_ty).prepend(supertype);
     let mut hidden_sym: Option<SymbolId> = None;
     for st in &supers {
-    let tsym = match (ctx.typ(st).has_tag(crate::code::type_tag::TypeTag::CLASS), ctx.typ(st).tsym) {
-        (true, Some(tsym)) => tsym,
-        _ => continue,
-    };
-    let result = symbol_hidden_in_internal(ctx, types, syms, symbol, tsym);
-    if result == Some(symbol) {
-        return Some(symbol);
-    } else if let Some(other) = result {
-        hidden_sym = Some(other);
-    }
+        let tsym = match (
+            ctx.typ(st).has_tag(crate::code::type_tag::TypeTag::CLASS),
+            ctx.typ(st).tsym,
+        ) {
+            (true, Some(tsym)) => tsym,
+            _ => continue,
+        };
+        let result = symbol_hidden_in_internal(ctx, types, syms, symbol, tsym);
+        if result == Some(symbol) {
+            return Some(symbol);
+        } else if let Some(other) = result {
+            hidden_sym = Some(other);
+        }
     }
     hidden_sym
 }
@@ -2005,7 +2013,10 @@ pub fn symbol_location_site(
     let Some(owner_ty) = ctx.sym(owner).ty else {
         return Some(owner);
     };
-    if !ctx.typ(owner_ty).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+    if !ctx
+        .typ(owner_ty)
+        .has_tag(crate::code::type_tag::TypeTag::CLASS)
+    {
         return Some(owner);
     }
     let Some(ownertype) = types.as_outer_super(ctx, syms, site, owner) else {
@@ -2017,9 +2028,8 @@ pub fn symbol_location_site(
     }
 }
 
-
 /// Java: PackageSymbol.fullname (Symbol.java PackageSymbol field)
-pub fn package_fullname(ctx: &CompilerContext, pkg: SymbolId) -> Option<crate::util::name::Name> {
+pub fn package_fullname(ctx: &CompilerContext, pkg: SymbolId) -> Option<Name> {
     match &ctx.sym(pkg).kind_data {
         SymbolKind::PackageSymbol { fullname, .. }
         | SymbolKind::RootPackageSymbol { fullname, .. } => Some(fullname.clone()),
@@ -2030,12 +2040,12 @@ pub fn package_fullname(ctx: &CompilerContext, pkg: SymbolId) -> Option<crate::u
 /// Java: PackageSymbol.modle (Symbol.java PackageSymbol field)
 pub fn package_module(ctx: &CompilerContext, pkg: SymbolId) -> Option<SymbolId> {
     match &ctx.sym(pkg).kind_data {
-        SymbolKind::PackageSymbol { modle, .. }
-        | SymbolKind::RootPackageSymbol { modle, .. } => *modle,
+        SymbolKind::PackageSymbol { modle, .. } | SymbolKind::RootPackageSymbol { modle, .. } => {
+            *modle
+        }
         _ => None,
     }
 }
-
 
 /// Java: public ClassSymbol enclClass() (Symbol.java:512-519): the closest
 /// enclosing class of this symbol's declaration; returns the receiver itself
@@ -2051,7 +2061,7 @@ pub fn encl_class(ctx: &CompilerContext, sym: SymbolId) -> Option<SymbolId> {
     let mut current = Some(sym);
     while let Some(candidate) = current {
         let symbol = ctx.sym(candidate);
-        if symbol.kind == crate::code::kinds::Kind::TYP
+        if symbol.kind == Kind::TYP
             && symbol
                 .ty
                 .map(|ty| ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::CLASS))
@@ -2094,7 +2104,7 @@ pub fn new_binding_symbol(
 ) -> Symbol {
     Symbol::new(
         Kind::VAR,
-        flags | crate::code::flags::HASINIT as i64 | crate::code::flags::MATCH_BINDING,
+        flags | flags::HASINIT as i64 | flags::MATCH_BINDING,
         name,
         ty,
         owner,
@@ -2111,10 +2121,7 @@ pub fn new_binding_symbol(
 
 /// Java: BindingSymbol.aliases() — empty aliases field means List.of(this)
 /// (Symbol.java:1880-1883).
-pub fn binding_symbol_aliases(
-    ctx: &CompilerContext,
-    sym: SymbolId,
-) -> List<SymbolId> {
+pub fn binding_symbol_aliases(ctx: &CompilerContext, sym: SymbolId) -> List<SymbolId> {
     match &ctx.sym(sym).kind_data {
         SymbolKind::BindingSymbol { aliases, .. } if !aliases.is_empty() => aliases.clone(),
         _ => List::of(sym),
@@ -2122,11 +2129,7 @@ pub fn binding_symbol_aliases(
 }
 
 /// Java: BindingSymbol.isAliasFor(BindingSymbol b) (Symbol.java:1878-1880).
-pub fn binding_symbol_is_alias_for(
-    ctx: &CompilerContext,
-    sym: SymbolId,
-    other: SymbolId,
-) -> bool {
+pub fn binding_symbol_is_alias_for(ctx: &CompilerContext, sym: SymbolId, other: SymbolId) -> bool {
     let aliases = binding_symbol_aliases(ctx, sym);
     let mut current = binding_symbol_aliases(ctx, other);
     while current.non_empty() {
@@ -2140,22 +2143,20 @@ pub fn binding_symbol_is_alias_for(
 
 /// Java: BindingSymbol.preserveBinding() (Symbol.java:1885-1887).
 pub fn binding_symbol_preserve(ctx: &mut CompilerContext, sym: SymbolId) {
-    ctx.sym_mut(sym).flags_field |= crate::code::flags::MATCH_BINDING_TO_OUTER;
+    ctx.sym_mut(sym).flags_field |= flags::MATCH_BINDING_TO_OUTER;
 }
 
 /// Java: BindingSymbol.isPreserved() (Symbol.java:1889-1891).
 pub fn binding_symbol_is_preserved(ctx: &CompilerContext, sym: SymbolId) -> bool {
-    (ctx.sym(sym).flags_field & crate::code::flags::MATCH_BINDING_TO_OUTER) != 0
+    (ctx.sym(sym).flags_field & flags::MATCH_BINDING_TO_OUTER) != 0
 }
-
-
 
 impl Symbol {
     /// Java: public AnnotationTypeMetadata getAnnotationTypeMetadata()
     /// (Symbol.java:867/1614; the base Symbol asserts, only ClassSymbol has it).
     pub fn get_annotation_type_metadata(
         &self,
-    ) -> Option<&std::rc::Rc<crate::comp::annotate::AnnotationTypeMetadata>> {
+    ) -> Option<&Rc<crate::comp::annotate::AnnotationTypeMetadata>> {
         match &self.kind_data {
             SymbolKind::ClassSymbol {
                 annotation_type_metadata,
@@ -2169,7 +2170,7 @@ impl Symbol {
     /// the upstream ClassSymbol constructor installs the metadata).
     pub fn set_annotation_type_metadata(
         &mut self,
-        metadata: std::rc::Rc<crate::comp::annotate::AnnotationTypeMetadata>,
+        metadata: Rc<crate::comp::annotate::AnnotationTypeMetadata>,
     ) {
         if let SymbolKind::ClassSymbol {
             annotation_type_metadata,
@@ -2182,7 +2183,7 @@ impl Symbol {
 
     /// Java: ClassSymbol.isAnnotationType() (Symbol.java:1618-1620).
     pub fn is_annotation_type(&self) -> bool {
-        (self.flags_field & crate::code::flags::ANNOTATION as i64) != 0
+        (self.flags_field & flags::ANNOTATION as i64) != 0
     }
 }
 
@@ -2197,7 +2198,7 @@ impl Symbol {
 /// Java: public Symbol baseSymbol() (Symbol.java:341-343). The upstream override
 /// is materialized by Symbol.clone() subclasses; the port has no clone, so a
 /// symbol is its own base symbol (registered Porting rules).
-pub fn base_symbol(ctx: &crate::compiler_context::CompilerContext, sym: SymbolId) -> SymbolId {
+pub fn base_symbol(ctx: &CompilerContext, sym: SymbolId) -> SymbolId {
     if let Some(over) = ctx.sym(sym).base_symbol_override {
         return over;
     }
@@ -2208,7 +2209,7 @@ pub fn base_symbol(ctx: &crate::compiler_context::CompilerContext, sym: SymbolId
 /// Java: public boolean isSubClass(Symbol base, Types types) —
 /// ClassSymbol.isSubClass (Symbol.java:1389-1406).
 pub fn is_sub_class(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
@@ -2221,8 +2222,7 @@ pub fn is_sub_class(
     if sym == base {
         return true;
     }
-    let base_is_interface =
-        (ctx.sym(base).flags_field & crate::code::flags::INTERFACE as i64) != 0;
+    let base_is_interface = (ctx.sym(base).flags_field & flags::INTERFACE as i64) != 0;
     let sym_ty = ctx.sym(sym).ty.expect("class type");
     let class_tag = crate::code::type_tag::TypeTag::CLASS;
     if base_is_interface {
@@ -2256,17 +2256,17 @@ pub fn is_sub_class(
 /// Java: public final boolean isAccessibleIn(Symbol clazz, Types types)
 /// (Symbol.java:620-655).
 pub fn is_accessible_in(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
     clazz: SymbolId,
 ) -> bool {
     let flags_field = ctx.sym(sym).flags_field;
-    let access = flags_field & crate::code::flags::AccessFlags as i64;
-    let public_flag = crate::code::flags::PUBLIC as i64;
-    let private_flag = crate::code::flags::PRIVATE as i64;
-    let protected_flag = crate::code::flags::PROTECTED as i64;
+    let access = flags_field & flags::AccessFlags as i64;
+    let public_flag = flags::PUBLIC as i64;
+    let private_flag = flags::PRIVATE as i64;
+    let protected_flag = flags::PROTECTED as i64;
     if access == public_flag {
         return true;
     }
@@ -2274,7 +2274,7 @@ pub fn is_accessible_in(
         return ctx.sym(sym).owner == Some(clazz);
     }
     if access == protected_flag {
-        return (ctx.sym(clazz).flags_field & crate::code::flags::INTERFACE as i64) == 0;
+        return (ctx.sym(clazz).flags_field & flags::INTERFACE as i64) == 0;
     }
     if access == 0 {
         let this_package = packge(ctx, sym);
@@ -2290,9 +2290,10 @@ pub fn is_accessible_in(
                 .typ(sup_ty)
                 .has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
             {
-                let upper = ctx.upper_bound_of(sup_ty)
-                    .expect("type var upper bound");
-                let Some(tsym) = ctx.typ(upper).tsym else { break };
+                let upper = ctx.upper_bound_of(sup_ty).expect("type var upper bound");
+                let Some(tsym) = ctx.typ(upper).tsym else {
+                    break;
+                };
                 sup = Some(tsym);
                 sup_ty = tsym_type(ctx, tsym);
             }
@@ -2301,7 +2302,7 @@ pub fn is_accessible_in(
             if types.is_erroneous(ctx, syms, sup_type) {
                 return true;
             }
-            if (ctx.sym(sup_sym).flags_field & crate::code::flags::COMPOUND as i64) != 0 {
+            if (ctx.sym(sup_sym).flags_field & flags::COMPOUND as i64) != 0 {
                 sup = ctx.sym(sup_sym).owner;
                 continue;
             }
@@ -2311,21 +2312,18 @@ pub fn is_accessible_in(
             let super_type = types.supertype(ctx, syms, sup_type, None);
             sup = ctx.typ(super_type).tsym;
         }
-        return (ctx.sym(clazz).flags_field & crate::code::flags::INTERFACE as i64) == 0;
+        return (ctx.sym(clazz).flags_field & flags::INTERFACE as i64) == 0;
     }
     true
 }
 
-fn tsym_type(
-    ctx: &crate::compiler_context::CompilerContext,
-    tsym: SymbolId,
-) -> crate::ids::TypeId {
+fn tsym_type(ctx: &CompilerContext, tsym: SymbolId) -> TypeId {
     ctx.sym(tsym).ty.expect("symbol type")
 }
 
 /// Java: private PackageSymbol packge() / Symbol.packge (Symbol.java:305-320).
 pub(crate) fn packge(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
 ) -> Option<SymbolId> {
     let mut current = Some(sym);
@@ -2341,7 +2339,7 @@ pub(crate) fn packge(
 /// Java: public boolean isInheritedIn(Symbol clazz, Types types)
 /// (Symbol.java:666-668 default; MethodSymbol override 2160-2167).
 pub fn is_inherited_in(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
@@ -2349,16 +2347,18 @@ pub fn is_inherited_in(
 ) -> bool {
     if ctx.sym(sym).kind == Kind::MTH {
         let flags_field = ctx.sym(sym).flags_field;
-        let access = flags_field & crate::code::flags::AccessFlags as i64;
-        if access == crate::code::flags::PUBLIC as i64 {
+        let access = flags_field & flags::AccessFlags as i64;
+        if access == flags::PUBLIC as i64 {
             let owner_is_interface = ctx
                 .sym(sym)
                 .owner
-                .map(|owner| (ctx.sym(owner).flags_field & crate::code::flags::INTERFACE as i64) != 0)
+                .map(|owner| {
+                    (ctx.sym(owner).flags_field & flags::INTERFACE as i64) != 0
+                })
                 .unwrap_or(false);
             return !owner_is_interface
                 || clazz == ctx.sym(sym).owner.unwrap_or(sym)
-                || (flags_field & crate::code::flags::STATIC as i64) == 0;
+                || (flags_field & flags::STATIC as i64) == 0;
         }
     }
     is_accessible_in(ctx, syms, types, sym, clazz)
@@ -2367,7 +2367,7 @@ pub fn is_inherited_in(
 /// Java: private boolean hiddenIn(ClassSymbol clazz, Types types)
 /// (Symbol.java:573-581).
 fn hidden_in(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
@@ -2381,7 +2381,7 @@ fn hidden_in(
 /// Java: private Symbol hiddenInInternal(ClassSymbol currentClass, Types types)
 /// (Symbol.java:588-608).
 fn hidden_in_internal(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
@@ -2406,7 +2406,7 @@ fn hidden_in_internal(
             let candidate_kind = ctx.sym(candidate).kind;
             if candidate_kind == ctx.sym(sym).kind
                 && (candidate_kind != Kind::MTH
-                    || ((ctx.sym(candidate).flags_field & crate::code::flags::STATIC as i64) != 0
+                    || ((ctx.sym(candidate).flags_field & flags::STATIC as i64) != 0
                         && {
                             let candidate_ty = ctx.sym(candidate).ty.expect("candidate type");
                             let sym_ty = ctx.sym(sym).ty.expect("symbol type");
@@ -2418,26 +2418,22 @@ fn hidden_in_internal(
         }
     }
     let current_ty = ctx.sym(current_class).ty.expect("class type");
-    let supertypes =
-        types
-            .interfaces(ctx, syms, current_ty)
-            .prepend(types.supertype(ctx, syms, current_ty, None));
+    let supertypes = types
+        .interfaces(ctx, syms, current_ty)
+        .prepend(types.supertype(ctx, syms, current_ty, None));
     let mut hidden_sym: Option<SymbolId> = None;
     for st in &supertypes {
-    if !ctx
-        .typ(st)
-        .has_tag(crate::code::type_tag::TypeTag::CLASS)
-    {
-        continue;
-    }
-    let tsym = ctx.typ(st).tsym.expect("class symbol");
-    let found = hidden_in_internal(ctx, syms, types, sym, tsym);
-    if found == Some(sym) {
-        return Some(sym);
-    }
-    if found.is_some() {
-        hidden_sym = found;
-    }
+        if !ctx.typ(st).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+            continue;
+        }
+        let tsym = ctx.typ(st).tsym.expect("class symbol");
+        let found = hidden_in_internal(ctx, syms, types, sym, tsym);
+        if found == Some(sym) {
+            return Some(sym);
+        }
+        if found.is_some() {
+            hidden_sym = found;
+        }
     }
     hidden_sym
 }
@@ -2445,7 +2441,7 @@ fn hidden_in_internal(
 /// Java: public boolean isMemberOf(TypeSymbol clazz, Types types)
 /// (Symbol.java:558-563).
 pub fn is_member_of(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
@@ -2462,7 +2458,7 @@ pub fn is_member_of(
 
 /// Java: public boolean isEnclosedBy(ClassSymbol clazz) (Symbol.java:568-573)
 pub fn is_enclosed_by(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
     clazz: SymbolId,
 ) -> bool {
@@ -2479,32 +2475,31 @@ pub fn is_enclosed_by(
     false
 }
 
-
 /// Java: MethodSymbol.isOverridableIn(TypeSymbol origin) (Symbol.java:2143-2158)
 fn is_overridable_in(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
     origin: SymbolId,
 ) -> bool {
     let flags_field = ctx.sym(sym).flags_field;
-    let access = flags_field & crate::code::flags::AccessFlags as i64;
-    if access == crate::code::flags::PRIVATE as i64 {
+    let access = flags_field & flags::AccessFlags as i64;
+    if access == flags::PRIVATE as i64 {
         return false;
     }
-    if access == crate::code::flags::PUBLIC as i64 {
+    if access == flags::PUBLIC as i64 {
         let owner_is_interface = ctx
             .sym(sym)
             .owner
-            .map(|owner| (ctx.sym(owner).flags_field & crate::code::flags::INTERFACE as i64) != 0)
+            .map(|owner| (ctx.sym(owner).flags_field & flags::INTERFACE as i64) != 0)
             .unwrap_or(false);
-        return !owner_is_interface || (flags_field & crate::code::flags::STATIC as i64) == 0;
+        return !owner_is_interface || (flags_field & flags::STATIC as i64) == 0;
     }
-    if access == crate::code::flags::PROTECTED as i64 {
-        return (ctx.sym(origin).flags_field & crate::code::flags::INTERFACE as i64) == 0;
+    if access == flags::PROTECTED as i64 {
+        return (ctx.sym(origin).flags_field & flags::INTERFACE as i64) == 0;
     }
     if access == 0 {
         return packge(ctx, sym) == packge(ctx, origin)
-            && (ctx.sym(origin).flags_field & crate::code::flags::INTERFACE as i64) == 0;
+            && (ctx.sym(origin).flags_field & flags::INTERFACE as i64) == 0;
     }
     false
 }
@@ -2513,7 +2508,7 @@ fn is_overridable_in(
 /// boolean checkResult) (Symbol.java:672-674 base false; MethodSymbol
 /// 2068-2072/2085-2141)
 pub fn overrides(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
@@ -2528,7 +2523,7 @@ pub fn overrides(
 /// (Symbol.java:2085-2141)
 #[allow(clippy::too_many_arguments)]
 pub fn overrides_full(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
@@ -2553,15 +2548,12 @@ pub fn overrides_full(
     let other_owner = ctx.sym(other).owner.expect("method owner");
     let sym_flags = ctx.sym(sym).flags_field;
     let other_flags = ctx.sym(other).flags_field;
-    let abstract_flag = crate::code::flags::ABSTRACT as i64;
-    let default_flag = crate::code::flags::DEFAULT;
+    let abstract_flag = flags::ABSTRACT as i64;
+    let default_flag = flags::DEFAULT;
     // check for a direct implementation
     if is_overridable_in(ctx, other, sym_owner) {
         let owner_ty = ctx.sym(sym_owner).ty.expect("owner type");
-        if types
-            .as_super(ctx, syms, owner_ty, other_owner)
-            .is_some()
-        {
+        if types.as_super(ctx, syms, owner_ty, other_owner).is_some() {
             let mt = types.member_type(ctx, syms, owner_ty, sym);
             let ot = types.member_type(ctx, syms, owner_ty, other);
             if types.is_sub_signature(ctx, syms, mt, ot) {
@@ -2598,7 +2590,7 @@ pub fn overrides_full(
 /// Java: public boolean binaryOverrides(Symbol _other, TypeSymbol origin,
 /// Types types) (Symbol.java:2020-2035)
 pub fn binary_overrides(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
@@ -2630,7 +2622,7 @@ pub fn binary_overrides(
         }
     }
     let sym_flags = ctx.sym(sym).flags_field;
-    let abstract_flag = crate::code::flags::ABSTRACT as i64;
+    let abstract_flag = flags::ABSTRACT as i64;
     if (sym_flags & abstract_flag) != 0
         || !is_overridable_in(ctx, other, origin)
         || !is_member_of(ctx, syms, types, sym, origin)
@@ -2646,7 +2638,7 @@ pub fn binary_overrides(
 /// Java: public MethodSymbol binaryImplementation(ClassSymbol origin, Types types)
 /// (Symbol.java:2042-2056)
 pub fn binary_implementation(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
@@ -2685,7 +2677,7 @@ pub fn binary_implementation(
 /// boolean checkResult) / implementation(..., Predicate<Symbol>)
 /// (Symbol.java:2168-2187)
 pub fn implementation(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
@@ -2704,7 +2696,7 @@ pub fn implementation(
         return result;
     }
     let origin_ty = ctx.sym(origin).ty.expect("origin type");
-    let is_interface = (ctx.sym(origin).flags_field & crate::code::flags::INTERFACE as i64) != 0;
+    let is_interface = (ctx.sym(origin).flags_field & flags::INTERFACE as i64) != 0;
     if types.is_derived_raw(ctx, syms, origin_ty) && !is_interface {
         let super_type = types.supertype(ctx, syms, origin_ty, None);
         let super_tsym = ctx.typ(super_type).tsym.expect("supertype symbol");
@@ -2712,7 +2704,6 @@ pub fn implementation(
     }
     None
 }
-
 
 impl Symbol {
     /// Java: public Object getConstValue() (Symbol.java:1759-1775) — the stored
@@ -2736,12 +2727,14 @@ impl Symbol {
     /// Upstream: Symbol.java:1759-1775.
     pub fn get_const_value(&self) -> Option<crate::code::attribute::ConstValue> {
         let kind_data = match &self.kind_data {
-            SymbolKind::VarSymbol { data_kind, data, .. } => (data_kind, data),
+            SymbolKind::VarSymbol {
+                data_kind, data, ..
+            } => (data_kind, data),
             _ => return None,
         };
         let (data_kind, data) = kind_data;
-        if *data_kind == Some(crate::code::symbol::ElementKind::EXCEPTION_PARAMETER)
-            || *data_kind == Some(crate::code::symbol::ElementKind::RESOURCE_VARIABLE)
+        if *data_kind == Some(ElementKind::EXCEPTION_PARAMETER)
+            || *data_kind == Some(ElementKind::RESOURCE_VARIABLE)
         {
             return None;
         }
@@ -2750,7 +2743,6 @@ impl Symbol {
         data.clone()
     }
 }
-
 
 impl Symbol {
     /// Java: public boolean isDirectlyOrIndirectlyLocal() (Symbol.java:438-446).
@@ -2772,16 +2764,17 @@ impl Symbol {
             return false;
         };
         let owner_kind = ctx.sym(owner).kind;
-        if owner_kind == crate::code::kinds::Kind::VAR || owner_kind == crate::code::kinds::Kind::MTH {
+        if owner_kind == Kind::VAR
+            || owner_kind == Kind::MTH
+        {
             return true;
         }
-        if owner_kind == crate::code::kinds::Kind::TYP {
+        if owner_kind == Kind::TYP {
             return Symbol::is_directly_or_indirectly_local(ctx, owner);
         }
         false
     }
 }
-
 
 impl Symbol {
     /// Java: boolean isPermittedExplicit / permitted (ClassSymbol fields,
@@ -2820,7 +2813,10 @@ impl Symbol {
     /// Upstream: Symbol.java:1660-1680.
     pub fn is_permitted_explicit(ctx: &CompilerContext, sym: SymbolId) -> bool {
         match &ctx.sym(sym).kind_data {
-            SymbolKind::ClassSymbol { is_permitted_explicit, .. } => *is_permitted_explicit,
+            SymbolKind::ClassSymbol {
+                is_permitted_explicit,
+                ..
+            } => *is_permitted_explicit,
             _ => false,
         }
     }
@@ -2863,7 +2859,7 @@ impl Symbol {
     ///
     /// Upstream: Symbol.java:1568-1582.
     pub fn mark_abstract_if_needed(
-        ctx: &mut crate::compiler_context::CompilerContext,
+        ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         envs: &crate::comp::type_envs::TypeEnvs,
@@ -2878,7 +2874,7 @@ impl Symbol {
             return;
         }
         let flags_value = ctx.sym(sym).flags_field;
-        if (flags_value & (crate::code::flags::ENUM as i64)) == 0 {
+        if (flags_value & (flags::ENUM as i64)) == 0 {
             return;
         }
         let supertype = types.supertype(ctx, syms, c_ty, None);
@@ -2886,14 +2882,17 @@ impl Symbol {
         if super_tsym != Some(syms.enum_sym) {
             return;
         }
-        if (flags_value & ((crate::code::flags::FINAL as i64) | (crate::code::flags::ABSTRACT as i64))) != 0 {
+        if (flags_value
+            & ((flags::FINAL as i64) | (flags::ABSTRACT as i64)))
+            != 0
+        {
             return;
         }
         if types
             .first_unimplemented_abstract(ctx, syms, envs, allow_default_methods, sym)
             .is_some()
         {
-            ctx.sym_mut(sym).flags_field |= crate::code::flags::ABSTRACT as i64;
+            ctx.sym_mut(sym).flags_field |= flags::ABSTRACT as i64;
         }
     }
 }
@@ -2926,17 +2925,17 @@ pub enum AccessCode {
 }
 
 impl AccessCode {
-/// Return the numeric access code assigned to this enum constant.
-///
-/// dereference is 0, assignment is 2, pre/post increment/decrement occupy the
-/// even numbers 4..=10 and FIRSTASGOP starts the compound-assignment range at 12.
-///
-/// # Returns
-///   - the upstream access code.
-///
-/// # Panics
-///   - none.
-///
+    /// Return the numeric access code assigned to this enum constant.
+    ///
+    /// dereference is 0, assignment is 2, pre/post increment/decrement occupy the
+    /// even numbers 4..=10 and FIRSTASGOP starts the compound-assignment range at 12.
+    ///
+    /// # Returns
+    ///   - the upstream access code.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
     pub fn code(self) -> i32 {
         match self {
             AccessCode::UNKNOWN => -1,
@@ -2950,16 +2949,16 @@ impl AccessCode {
         }
     }
 
-/// Return the operator tag associated with this access code.
-///
-/// the assignment and increment/decrement access codes map to their own tags.
-///
-/// # Returns
-///   - the associated tree tag.
-///
-/// # Panics
-///   - none.
-///
+    /// Return the operator tag associated with this access code.
+    ///
+    /// the assignment and increment/decrement access codes map to their own tags.
+    ///
+    /// # Returns
+    ///   - the associated tree tag.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
     pub fn tag(self) -> crate::tree::jc_tree::Tag {
         match self {
             AccessCode::UNKNOWN | AccessCode::DEREF | AccessCode::FIRSTASGOP => {
@@ -2973,17 +2972,17 @@ impl AccessCode {
         }
     }
 
-/// Return the number of access-code slots used by the backend tables.
-///
-/// the bytecode ranges exactly as upstream: binary operators, string_add, and the
-/// shift-with-long-count opcodes each contribute two access codes.
-///
-/// # Returns
-///   - the number of access-code slots.
-///
-/// # Panics
-///   - none.
-///
+    /// Return the number of access-code slots used by the backend tables.
+    ///
+    /// the bytecode ranges exactly as upstream: binary operators, string_add, and the
+    /// shift-with-long-count opcodes each contribute two access codes.
+    ///
+    /// # Returns
+    ///   - the number of access-code slots.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
     pub fn number_of_access_codes() -> i32 {
         (crate::jvm::byte_codes::LUSHRL - crate::jvm::byte_codes::ISHLL
             + crate::jvm::byte_codes::LXOR
@@ -2994,20 +2993,20 @@ impl AccessCode {
             + 2
     }
 
-/// Map a numeric access code back to its enum constant.
-///
-/// fixed enum values and returns UNKNOWN when the code does not correspond to a
-/// declared constant, mirroring the upstream fallback.
-///
-/// # Arguments
-///   - code: the numeric access code.
-///
-/// # Returns
-///   - the matching access code or UNKNOWN.
-///
-/// # Panics
-///   - none.
-///
+    /// Map a numeric access code back to its enum constant.
+    ///
+    /// fixed enum values and returns UNKNOWN when the code does not correspond to a
+    /// declared constant, mirroring the upstream fallback.
+    ///
+    /// # Arguments
+    ///   - code: the numeric access code.
+    ///
+    /// # Returns
+    ///   - the matching access code or UNKNOWN.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
     pub fn get_from_code(code: i32) -> AccessCode {
         for a_code in [
             AccessCode::UNKNOWN,
@@ -3026,22 +3025,22 @@ impl AccessCode {
         AccessCode::UNKNOWN
     }
 
-/// Compute the access code for an operator tag and bytecode opcode.
-///
-/// their fixed codes; binary operators map to `(opcode - iadd) * 2 + FIRSTASGOP`;
-/// string addition and the shift-with-long-count range use the corresponding
-/// upstream offsets; any other opcode yields -1.
-///
-/// # Arguments
-///   - tag: the operator tree tag;
-///   - opcode: the backend bytecode opcode.
-///
-/// # Returns
-///   - the derived access code, or -1 when the opcode is not an access operator.
-///
-/// # Panics
-///   - none.
-///
+    /// Compute the access code for an operator tag and bytecode opcode.
+    ///
+    /// their fixed codes; binary operators map to `(opcode - iadd) * 2 + FIRSTASGOP`;
+    /// string addition and the shift-with-long-count range use the corresponding
+    /// upstream offsets; any other opcode yields -1.
+    ///
+    /// # Arguments
+    ///   - tag: the operator tree tag;
+    ///   - opcode: the backend bytecode opcode.
+    ///
+    /// # Returns
+    ///   - the derived access code, or -1 when the opcode is not an access operator.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
     pub fn from(tag: crate::tree::jc_tree::Tag, opcode: i32) -> i32 {
         match tag {
             crate::tree::jc_tree::Tag::PREINC => return AccessCode::PREINC.code(),
@@ -3063,21 +3062,21 @@ impl AccessCode {
 }
 
 impl Symbol {
-/// Return the (cached) access code of this operator symbol for a tree tag.
-///
-/// AccessCode.from(tag, opcode) and caches it on the OperatorSymbol; cached values
-/// are reused unless the tag is an increment/decrement unary operator, which must
-/// recompute because its direction is encoded in the tag.
-///
-/// # Arguments
-///   - tag: the operator tree tag.
-///
-/// # Returns
-///   - the cached or newly derived access code.
-///
-/// # Panics
-///   - the symbol is not an OperatorSymbol.
-///
+    /// Return the (cached) access code of this operator symbol for a tree tag.
+    ///
+    /// AccessCode.from(tag, opcode) and caches it on the OperatorSymbol; cached values
+    /// are reused unless the tag is an increment/decrement unary operator, which must
+    /// recompute because its direction is encoded in the tag.
+    ///
+    /// # Arguments
+    ///   - tag: the operator tree tag.
+    ///
+    /// # Returns
+    ///   - the cached or newly derived access code.
+    ///
+    /// # Panics
+    ///   - the symbol is not an OperatorSymbol.
+    ///
     pub fn get_access_code(&mut self, tag: crate::tree::jc_tree::Tag) -> i32 {
         let (opcode, access_code) = match &self.kind_data {
             SymbolKind::OperatorSymbol {
@@ -3117,12 +3116,12 @@ impl Symbol {
 /// # Panics
 ///   - the symbol or its owner has no type.
 pub fn external_type(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     types: &crate::code::types::Types,
     syms: &crate::code::symtab::Symtab,
     names: &crate::util::names::Names,
     sym: SymbolId,
-) -> crate::ids::TypeId {
+) -> TypeId {
     // Java: Symbol.externalType calls erasure(types), which returns the
     // symbol's cached erasure_field (Symbol.java:347-357). Enum and anonymous
     // constructors rewrite erasure_field with their synthetic parameters
@@ -3143,18 +3142,14 @@ pub fn external_type(
             .expect("enclosing type");
         let outer_this_type = types.erasure(ctx, syms, enclosing);
         let mut method_ty = ctx.typ(erased).clone();
-        if let crate::code::type_::TypeKindData::MethodType { argtypes, .. } =
-            &mut method_ty.kind
-        {
+        if let crate::code::type_::TypeKindData::MethodType { argtypes, .. } = &mut method_ty.kind {
             *argtypes = argtypes.prepend(outer_this_type);
         }
         ctx.alloc_type(method_ty)
     } else {
         erased
     }
-
 }
-
 
 /// Build a method-handle symbol for an accessed symbol.
 ///
@@ -3173,7 +3168,7 @@ pub fn external_type(
 /// # Panics
 ///   - the referenced symbol has no type.
 pub fn as_method_handle(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     sym: SymbolId,
     getter: bool,
 ) -> SymbolId {
@@ -3212,11 +3207,11 @@ pub fn as_method_handle(
 /// # Panics
 ///   - none.
 pub fn new_dynamic_method_symbol(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     name: Name,
     owner: SymbolId,
     bsm: SymbolId,
-    ty: crate::ids::TypeId,
+    ty: TypeId,
     static_args: Vec<crate::jvm::pool_constant::LoadableConstantRef>,
 ) -> SymbolId {
     let symbol = Symbol::new(
@@ -3230,10 +3225,9 @@ pub fn new_dynamic_method_symbol(
     ctx.alloc_symbol(symbol)
 }
 
-
 /// Return whether a symbol carries type annotations.
 pub fn symbol_has_type_annotations(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
 ) -> bool {
     ctx.sym(sym).has_type_annotations()
@@ -3241,7 +3235,7 @@ pub fn symbol_has_type_annotations(
 
 /// Return the raw type attributes of a symbol.
 pub fn symbol_raw_type_attributes(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
 ) -> List<crate::ids::AttributeId> {
     ctx.sym(sym).get_raw_type_attributes()
@@ -3249,7 +3243,7 @@ pub fn symbol_raw_type_attributes(
 
 /// Return whether a variable symbol is an exception parameter.
 pub fn symbol_is_exception_parameter(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
 ) -> bool {
     matches!(
@@ -3263,7 +3257,7 @@ pub fn symbol_is_exception_parameter(
 
 /// Return whether a variable symbol is a resource variable.
 pub fn symbol_is_resource_variable(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
 ) -> bool {
     matches!(
@@ -3290,11 +3284,11 @@ pub fn symbol_is_resource_variable(
 /// # Panics
 ///   - none.
 pub fn new_dynamic_var_symbol(
-    ctx: &mut crate::compiler_context::CompilerContext,
+    ctx: &mut CompilerContext,
     name: Name,
     owner: SymbolId,
     bsm: SymbolId,
-    ty: crate::ids::TypeId,
+    ty: TypeId,
     static_args: Vec<crate::jvm::pool_constant::LoadableConstantRef>,
 ) -> SymbolId {
     let symbol = Symbol::new(
@@ -3328,7 +3322,7 @@ pub fn new_dynamic_var_symbol(
 ///
 /// # Panics
 ///   - none.
-pub fn symbol_is_dynamic(ctx: &crate::compiler_context::CompilerContext, sym: SymbolId) -> bool {
+pub fn symbol_is_dynamic(ctx: &CompilerContext, sym: SymbolId) -> bool {
     matches!(
         ctx.sym(sym).kind_data,
         SymbolKind::DynamicMethodSymbol { .. } | SymbolKind::DynamicVarSymbol { .. }
@@ -3347,7 +3341,7 @@ pub fn symbol_is_dynamic(ctx: &crate::compiler_context::CompilerContext, sym: Sy
 /// # Panics
 ///   - none.
 pub fn dynamic_static_args(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
 ) -> Option<Vec<crate::jvm::pool_constant::LoadableConstantRef>> {
     match &ctx.sym(sym).kind_data {
@@ -3369,12 +3363,13 @@ pub fn dynamic_static_args(
 /// # Panics
 ///   - none.
 pub fn dynamic_bootstrap_method(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
 ) -> Option<SymbolId> {
     match &ctx.sym(sym).kind_data {
-        SymbolKind::DynamicMethodSymbol { bsm, .. }
-        | SymbolKind::DynamicVarSymbol { bsm, .. } => Some(*bsm),
+        SymbolKind::DynamicMethodSymbol { bsm, .. } | SymbolKind::DynamicVarSymbol { bsm, .. } => {
+            Some(*bsm)
+        }
         _ => None,
     }
 }
@@ -3391,7 +3386,7 @@ pub fn dynamic_bootstrap_method(
 /// # Panics
 ///   - none.
 pub fn method_handle_base_symbol(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
 ) -> Option<SymbolId> {
     match &ctx.sym(sym).kind_data {
@@ -3412,7 +3407,7 @@ pub fn method_handle_base_symbol(
 /// # Panics
 ///   - none.
 pub fn method_handle_reference_kind(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
 ) -> Option<i32> {
     let (ref_sym, getter) = match &ctx.sym(sym).kind_data {
@@ -3452,7 +3447,7 @@ pub fn method_handle_reference_kind(
 /// The check needs the name table; it is kept local to the helper because the
 /// method-handle reference kind needs it for the invoked-special case.
 fn referenced_is_constructor(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
 ) -> bool {
     let name = &ctx.sym(sym).name;
@@ -3470,7 +3465,7 @@ fn referenced_is_constructor(
 ///
 /// # Panics
 ///   - the symbol kind has no valid pool entry.
-pub fn symbol_pool_tag(ctx: &crate::compiler_context::CompilerContext, sym: SymbolId) -> i32 {
+pub fn symbol_pool_tag(ctx: &CompilerContext, sym: SymbolId) -> i32 {
     let symbol = ctx.sym(sym);
     match &symbol.kind_data {
         SymbolKind::MethodHandleSymbol { .. } => crate::jvm::class_file::CONSTANT_METHODHANDLE,
@@ -3508,7 +3503,7 @@ pub fn symbol_pool_tag(ctx: &crate::compiler_context::CompilerContext, sym: Symb
 /// # Panics
 ///   - none.
 pub fn symbol_pool_key(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
 ) -> crate::jvm::pool_constant::PoolKey {
     use crate::jvm::pool_constant::PoolKey;
@@ -3561,10 +3556,7 @@ pub fn symbol_pool_key(
 ///
 /// # Panics
 ///   - a method symbol has no owner (upstream invariant).
-pub fn symbol_to_string(
-    ctx: &crate::compiler_context::CompilerContext,
-    sym: SymbolId,
-) -> String {
+pub fn symbol_to_string(ctx: &CompilerContext, sym: SymbolId) -> String {
     let symbol = ctx.sym(sym);
     // Java: the anonymous toString overrides of Symtab's unnamed module/package
     // (Symtab.java:415-418/802-807).
@@ -3573,18 +3565,18 @@ pub fn symbol_to_string(
             crate::util::javac_messages::DEFAULT_BUNDLE_NAME,
         );
         return match display_override {
-            SymbolDisplayOverride::UnnamedModule => messages.get_localized_string(
-                "compiler.misc.unnamed.module",
-                &[],
-            ),
-            SymbolDisplayOverride::UnnamedPackage => messages.get_localized_string(
-                "compiler.misc.unnamed.package",
-                &[],
-            ),
+            SymbolDisplayOverride::UnnamedModule => {
+                messages.get_localized_string("compiler.misc.unnamed.module", &[])
+            }
+            SymbolDisplayOverride::UnnamedPackage => {
+                messages.get_localized_string("compiler.misc.unnamed.package", &[])
+            }
         };
     }
     match &symbol.kind_data {
-        SymbolKind::ClassSymbol { fullname, flatname, .. } => {
+        SymbolKind::ClassSymbol {
+            fullname, flatname, ..
+        } => {
             if symbol.name.is_empty() {
                 // Java: ClassSymbol.className (Symbol.java:1360-1366):
                 // Log.getLocalizedString("anonymous.class", flatname).
@@ -3622,12 +3614,12 @@ pub fn symbol_to_string(
 
 /// Java: MethodSymbol.toString (Symbol.java:1952-1966).
 fn method_symbol_to_string(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
 ) -> String {
     let method = ctx.sym(sym);
     let flags = method.flags_field;
-    if (flags & i64::from(crate::code::flags::BLOCK)) != 0 {
+    if (flags & i64::from(flags::BLOCK)) != 0 {
         return method
             .owner
             .map(|owner| {
@@ -3639,7 +3631,10 @@ fn method_symbol_to_string(
             })
             .expect("method owner");
     }
-    let mut result = if method.name.content_equals(&javac_strings::JavaString::from("<init>")) {
+    let mut result = if method
+        .name
+        .content_equals(&javac_strings::JavaString::from("<init>"))
+    {
         method
             .owner
             .map(|owner| {
@@ -3655,18 +3650,19 @@ fn method_symbol_to_string(
     };
     if let Some(method_ty) = method.ty {
         // Java: if (type.hasTag(FORALL)) s = "<" + getTypeArguments() + ">" + s.
-        if ctx.typ(method_ty).has_tag(crate::code::type_tag::TypeTag::FORALL)
-            && let crate::code::type_::TypeKindData::ForAll { tvars, .. } =
-                &ctx.typ(method_ty).kind
-            {
-                result = format!(
-                    "<{}>{}",
-                    crate::code::type_::type_list_to_string(ctx, tvars),
-                    result
-                );
-            }
+        if ctx
+            .typ(method_ty)
+            .has_tag(crate::code::type_tag::TypeTag::FORALL)
+            && let crate::code::type_::TypeKindData::ForAll { tvars, .. } = &ctx.typ(method_ty).kind
+        {
+            result = format!(
+                "<{}>{}",
+                crate::code::type_::type_list_to_string(ctx, tvars),
+                result
+            );
+        }
         if let Some(params) = method_type_params(ctx, method_ty) {
-            let varargs = (flags & crate::code::flags::VARARGS) != 0;
+            let varargs = (flags & flags::VARARGS) != 0;
             result.push('(');
             result.push_str(&argtypes_to_string(ctx, &params, varargs));
             result.push(')');
@@ -3676,21 +3672,21 @@ fn method_symbol_to_string(
 }
 
 fn method_type_params(
-    ctx: &crate::compiler_context::CompilerContext,
-    ty: crate::ids::TypeId,
-) -> Option<crate::util::list::List<crate::ids::TypeId>> {
+    ctx: &CompilerContext,
+    ty: TypeId,
+) -> Option<List<TypeId>> {
     match &ctx.typ(ty).kind {
         crate::code::type_::TypeKindData::MethodType { argtypes, .. } => Some(argtypes.clone()),
-        crate::code::type_::TypeKindData::ForAll { qtype: Some(qtype), .. } => {
-            method_type_params(ctx, *qtype)
-        }
+        crate::code::type_::TypeKindData::ForAll {
+            qtype: Some(qtype), ..
+        } => method_type_params(ctx, *qtype),
         _ => None,
     }
 }
 
 fn argtypes_to_string(
-    ctx: &crate::compiler_context::CompilerContext,
-    params: &crate::util::list::List<crate::ids::TypeId>,
+    ctx: &CompilerContext,
+    params: &List<TypeId>,
     varargs: bool,
 ) -> String {
     if !varargs {
@@ -3706,8 +3702,10 @@ fn argtypes_to_string(
     if current.non_empty() {
         let last = *current.head();
         if ctx.typ(last).has_tag(crate::code::type_tag::TypeTag::ARRAY) {
-            if let crate::code::type_::TypeKindData::ArrayType { elemtype: Some(elemtype), .. } =
-                &ctx.typ(last).kind
+            if let crate::code::type_::TypeKindData::ArrayType {
+                elemtype: Some(elemtype),
+                ..
+            } = &ctx.typ(last).kind
             {
                 result.push_str(&crate::code::type_::type_to_string(ctx, *elemtype));
                 // Java: argtypes(varargs) appends the array type's annotations
@@ -3721,8 +3719,6 @@ fn argtypes_to_string(
     }
     result
 }
-
-
 
 impl Symbol {
     /// Java: public NestingKind getNestingKind() (Symbol.java:1548-1560).
@@ -3739,11 +3735,11 @@ impl Symbol {
         let Some(owner) = self.owner else {
             return crate::code::kinds::NestingKind::TopLevel;
         };
-        if ctx.sym(owner).kind == crate::code::kinds::Kind::PCK {
+        if ctx.sym(owner).kind == Kind::PCK {
             crate::code::kinds::NestingKind::TopLevel
         } else if self.name.is_empty() {
             crate::code::kinds::NestingKind::Anonymous
-        } else if ctx.sym(owner).kind == crate::code::kinds::Kind::MTH {
+        } else if ctx.sym(owner).kind == Kind::MTH {
             crate::code::kinds::NestingKind::Local
         } else {
             crate::code::kinds::NestingKind::Member
@@ -3762,12 +3758,8 @@ impl Symbol {
     ///
     /// # Panics
     ///   - none.
-    pub fn get_record_component(
-        &self,
-        ctx: &CompilerContext,
-        field: SymbolId,
-    ) -> Option<SymbolId> {
-        let crate::code::symbol::SymbolKind::ClassSymbol {
+    pub fn get_record_component(&self, ctx: &CompilerContext, field: SymbolId) -> Option<SymbolId> {
+        let SymbolKind::ClassSymbol {
             record_components, ..
         } = &self.kind_data
         else {
@@ -3776,9 +3768,9 @@ impl Symbol {
         let field_name = ctx.sym(field).name.clone();
         let current = record_components.clone();
         for rc in &current {
-        if ctx.sym(rc).name == field_name {
-            return Some(rc);
-        }
+            if ctx.sym(rc).name == field_name {
+                return Some(rc);
+            }
         }
         None
     }
@@ -3800,7 +3792,7 @@ impl Symbol {
         ctx: &CompilerContext,
         var: TreeId,
     ) -> Option<SymbolId> {
-        let crate::code::symbol::SymbolKind::ClassSymbol {
+        let SymbolKind::ClassSymbol {
             record_components, ..
         } = &self.kind_data
         else {
@@ -3815,15 +3807,15 @@ impl Symbol {
         let mut to_remove: Option<SymbolId> = None;
         let current = record_components.clone();
         for rc in &current {
-        let (rc_pos, _rc_varargs) = match &ctx.sym(rc).kind_data {
-            crate::code::symbol::SymbolKind::RecordComponent { pos, is_varargs, .. } => {
-                (*pos, *is_varargs)
+            let (rc_pos, _rc_varargs) = match &ctx.sym(rc).kind_data {
+                SymbolKind::RecordComponent {
+                    pos, is_varargs, ..
+                } => (*pos, *is_varargs),
+                _ => (crate::util::position::NOPOS, false),
+            };
+            if ctx.sym(rc).name == name && pos == rc_pos {
+                to_remove = Some(rc);
             }
-            _ => (crate::util::position::NOPOS, false),
-        };
-        if ctx.sym(rc).name == name && pos == rc_pos {
-            to_remove = Some(rc);
-        }
         }
         to_remove
     }
@@ -3839,7 +3831,9 @@ mod tests {
         let mut ctx = crate::util::context::Context::new();
         let messages = crate::util::javac_messages::JavacMessages::instance(&mut ctx);
         let factory = crate::util::jc_diagnostic::Factory::new(messages, "compiler");
-        factory.fragment(crate::resources::compiler_properties::fragments::illegal_start_of_class_file().into())
+        factory.fragment(
+            crate::resources::compiler_properties::fragments::illegal_start_of_class_file().into(),
+        )
     }
 
     #[test]
@@ -3859,7 +3853,11 @@ mod tests {
         assert!(first.is_some());
         assert_eq!(calls.get(), 1);
         let _second = failure.get_diagnostic();
-        assert_eq!(calls.get(), 1, "the diagnostic is cached like the Java field");
+        assert_eq!(
+            calls.get(),
+            1,
+            "the diagnostic is cached like the Java field"
+        );
         assert!(!failure.get_message().is_empty());
     }
 
@@ -4013,7 +4011,7 @@ mod tests {
             ..
         } = &mut ctx.sym_mut(class).kind_data
         {
-            *annotation_type_metadata = std::rc::Rc::new(
+            *annotation_type_metadata = Rc::new(
                 crate::comp::annotate::AnnotationTypeMetadata::new(class, None),
             );
         }
@@ -4060,12 +4058,7 @@ mod tests {
         use crate::jvm::target::Target;
         let mut ctx = CompilerContext::new();
         let names = Rc::new(crate::util::names::Names::new(false));
-        let syms = Symtab::new(
-            &mut ctx,
-            Rc::clone(&names),
-            Target::JDK1_17,
-            Source::JDK17,
-        );
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, Source::JDK17);
         let package = ctx.alloc_symbol(Symbol::new(
             Kind::PCK,
             0,
@@ -4127,7 +4120,7 @@ mod tests {
             record_components: List::nil(),
             permitted: List::nil(),
             is_permitted_explicit: false,
-                annotation_type_metadata: Default::default(),
+            annotation_type_metadata: Default::default(),
         }
     }
 
@@ -4154,86 +4147,240 @@ mod tests {
     #[test]
     fn get_kind_maps_class_like_symbols() {
         let mut ctx = CompilerContext::new();
-        let class = ctx.alloc_symbol(Symbol::new(Kind::TYP, 0, name(&[0x43]), None, None, class_kind_data()));
+        let class = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            0,
+            name(&[0x43]),
+            None,
+            None,
+            class_kind_data(),
+        ));
         assert_eq!(ctx.sym(class).get_kind(&ctx), ElementKind::CLASS);
-        let interface = ctx.alloc_symbol(Symbol::new(Kind::TYP, flags::INTERFACE as i64, name(&[0x49]), None, None, class_kind_data()));
+        let interface = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            flags::INTERFACE as i64,
+            name(&[0x49]),
+            None,
+            None,
+            class_kind_data(),
+        ));
         assert_eq!(ctx.sym(interface).get_kind(&ctx), ElementKind::INTERFACE);
-        let enum_symbol = ctx.alloc_symbol(Symbol::new(Kind::TYP, flags::ENUM as i64, name(&[0x45]), None, None, class_kind_data()));
+        let enum_symbol = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            flags::ENUM as i64,
+            name(&[0x45]),
+            None,
+            None,
+            class_kind_data(),
+        ));
         assert_eq!(ctx.sym(enum_symbol).get_kind(&ctx), ElementKind::ENUM);
-        let annotation = ctx.alloc_symbol(Symbol::new(Kind::TYP, flags::ANNOTATION as i64, name(&[0x41]), None, None, class_kind_data()));
-        assert_eq!(ctx.sym(annotation).get_kind(&ctx), ElementKind::ANNOTATION_TYPE);
-        let record = ctx.alloc_symbol(Symbol::new(Kind::TYP, flags::RECORD, name(&[0x52]), None, None, class_kind_data()));
+        let annotation = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            flags::ANNOTATION as i64,
+            name(&[0x41]),
+            None,
+            None,
+            class_kind_data(),
+        ));
+        assert_eq!(
+            ctx.sym(annotation).get_kind(&ctx),
+            ElementKind::ANNOTATION_TYPE
+        );
+        let record = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            flags::RECORD,
+            name(&[0x52]),
+            None,
+            None,
+            class_kind_data(),
+        ));
         assert_eq!(ctx.sym(record).get_kind(&ctx), ElementKind::RECORD);
     }
 
     #[test]
     fn get_kind_maps_variable_symbols() {
         let mut ctx = CompilerContext::new();
-        let owner_class = ctx.alloc_symbol(Symbol::new(Kind::TYP, 0, name(&[0x43]), None, None, class_kind_data()));
-        let owner_method = ctx.alloc_symbol(Symbol::new(Kind::MTH, 0, name(&[0x4D]), None, None, method_kind_data()));
-        let field = ctx.alloc_symbol(Symbol::new(Kind::VAR, 0, name(&[0x46]), None, Some(owner_class), var_kind_data(None)));
+        let owner_class = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            0,
+            name(&[0x43]),
+            None,
+            None,
+            class_kind_data(),
+        ));
+        let owner_method = ctx.alloc_symbol(Symbol::new(
+            Kind::MTH,
+            0,
+            name(&[0x4D]),
+            None,
+            None,
+            method_kind_data(),
+        ));
+        let field = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
+            0,
+            name(&[0x46]),
+            None,
+            Some(owner_class),
+            var_kind_data(None),
+        ));
         assert_eq!(ctx.sym(field).get_kind(&ctx), ElementKind::FIELD);
-        let local = ctx.alloc_symbol(Symbol::new(Kind::VAR, 0, name(&[0x4C]), None, Some(owner_method), var_kind_data(None)));
+        let local = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
+            0,
+            name(&[0x4C]),
+            None,
+            Some(owner_method),
+            var_kind_data(None),
+        ));
         assert_eq!(ctx.sym(local).get_kind(&ctx), ElementKind::LOCAL_VARIABLE);
-        let parameter = ctx.alloc_symbol(Symbol::new(Kind::VAR, flags::PARAMETER, name(&[0x50]), None, Some(owner_method), var_kind_data(None)));
+        let parameter = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
+            flags::PARAMETER,
+            name(&[0x50]),
+            None,
+            Some(owner_method),
+            var_kind_data(None),
+        ));
         assert_eq!(ctx.sym(parameter).get_kind(&ctx), ElementKind::PARAMETER);
-        let exception = ctx.alloc_symbol(Symbol::new(Kind::VAR, flags::PARAMETER, name(&[0x45]), None, Some(owner_method), var_kind_data(Some(ElementKind::EXCEPTION_PARAMETER))));
-        assert_eq!(ctx.sym(exception).get_kind(&ctx), ElementKind::EXCEPTION_PARAMETER);
-        let enum_constant = ctx.alloc_symbol(Symbol::new(Kind::VAR, flags::ENUM as i64, name(&[0x45]), None, None, var_kind_data(None)));
-        assert_eq!(ctx.sym(enum_constant).get_kind(&ctx), ElementKind::ENUM_CONSTANT);
-        let binding = ctx.alloc_symbol(Symbol::new(Kind::VAR, flags::MATCH_BINDING, name(&[0x42]), None, Some(owner_method), var_kind_data(None)));
-        assert_eq!(ctx.sym(binding).get_kind(&ctx), ElementKind::BINDING_VARIABLE);
+        let exception = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
+            flags::PARAMETER,
+            name(&[0x45]),
+            None,
+            Some(owner_method),
+            var_kind_data(Some(ElementKind::EXCEPTION_PARAMETER)),
+        ));
+        assert_eq!(
+            ctx.sym(exception).get_kind(&ctx),
+            ElementKind::EXCEPTION_PARAMETER
+        );
+        let enum_constant = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
+            flags::ENUM as i64,
+            name(&[0x45]),
+            None,
+            None,
+            var_kind_data(None),
+        ));
+        assert_eq!(
+            ctx.sym(enum_constant).get_kind(&ctx),
+            ElementKind::ENUM_CONSTANT
+        );
+        let binding = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
+            flags::MATCH_BINDING,
+            name(&[0x42]),
+            None,
+            Some(owner_method),
+            var_kind_data(None),
+        ));
+        assert_eq!(
+            ctx.sym(binding).get_kind(&ctx),
+            ElementKind::BINDING_VARIABLE
+        );
     }
 
     #[test]
     fn get_kind_maps_methods_packages_modules_and_type_parameters() {
         let mut ctx = CompilerContext::new();
         let (_names, method_name) = name_with_names("method");
-        let method = ctx.alloc_symbol(Symbol::new(Kind::MTH, 0, method_name, None, None, method_kind_data()));
+        let method = ctx.alloc_symbol(Symbol::new(
+            Kind::MTH,
+            0,
+            method_name,
+            None,
+            None,
+            method_kind_data(),
+        ));
         assert_eq!(ctx.sym(method).get_kind(&ctx), ElementKind::METHOD);
         let (_names2, instance_name) = name_with_names("instance");
-        let instance_init = ctx.alloc_symbol(Symbol::new(Kind::MTH, flags::BLOCK as i64, instance_name, None, None, method_kind_data()));
-        assert_eq!(ctx.sym(instance_init).get_kind(&ctx), ElementKind::INSTANCE_INIT);
-        let package = ctx.alloc_symbol(Symbol::new(Kind::PCK, 0, name(&[0x50]), None, None, SymbolKind::PackageSymbol {
-            members_field: None,
-            fullname: name(&[0x50]),
-            package_info: None,
-            modle: None,
-            sourcefile: None,
-        }));
+        let instance_init = ctx.alloc_symbol(Symbol::new(
+            Kind::MTH,
+            flags::BLOCK as i64,
+            instance_name,
+            None,
+            None,
+            method_kind_data(),
+        ));
+        assert_eq!(
+            ctx.sym(instance_init).get_kind(&ctx),
+            ElementKind::INSTANCE_INIT
+        );
+        let package = ctx.alloc_symbol(Symbol::new(
+            Kind::PCK,
+            0,
+            name(&[0x50]),
+            None,
+            None,
+            SymbolKind::PackageSymbol {
+                members_field: None,
+                fullname: name(&[0x50]),
+                package_info: None,
+                modle: None,
+                sourcefile: None,
+            },
+        ));
         assert_eq!(ctx.sym(package).get_kind(&ctx), ElementKind::PACKAGE);
-        let module = ctx.alloc_symbol(Symbol::new(Kind::MDL, 0, name(&[0x4D]), None, None, SymbolKind::ModuleSymbol {
-            version: None,
-            source_location: None,
-            class_location: None,
-            patch_location: None,
-            patch_output_location: None,
-            directives: List::nil(),
-            requires: List::nil(),
-            exports: List::nil(),
-            opens: List::nil(),
-            provides: List::nil(),
-            uses: List::nil(),
-            module_info: None,
-            unnamed_package: None,
-            visible_packages: crate::util::fx_hasher::FxNameMap::default(),
-            read_modules: Vec::new(),
-            enclosed_packages: List::nil(),
-            flags: Vec::new(),
-            resolution_flags: Vec::new(),
-            uses_provides_completer: None,
-        }));
+        let module = ctx.alloc_symbol(Symbol::new(
+            Kind::MDL,
+            0,
+            name(&[0x4D]),
+            None,
+            None,
+            SymbolKind::ModuleSymbol {
+                version: None,
+                source_location: None,
+                class_location: None,
+                patch_location: None,
+                patch_output_location: None,
+                directives: List::nil(),
+                requires: List::nil(),
+                exports: List::nil(),
+                opens: List::nil(),
+                provides: List::nil(),
+                uses: List::nil(),
+                module_info: None,
+                unnamed_package: None,
+                visible_packages: crate::util::fx_hasher::FxNameMap::default(),
+                read_modules: Vec::new(),
+                enclosed_packages: List::nil(),
+                flags: Vec::new(),
+                resolution_flags: Vec::new(),
+                uses_provides_completer: None,
+            },
+        ));
         assert_eq!(ctx.sym(module).get_kind(&ctx), ElementKind::MODULE);
-        let type_parameter = ctx.alloc_symbol(Symbol::new(Kind::TYP, 0, name(&[0x54]), None, None, SymbolKind::TypeVariableSymbol));
-        assert_eq!(ctx.sym(type_parameter).get_kind(&ctx), ElementKind::TYPE_PARAMETER);
-        let record_component = ctx.alloc_symbol(Symbol::new(Kind::VAR, flags::RECORD, name(&[0x52]), None, None, SymbolKind::RecordComponent {
-            accessor: None,
-            accessor_meth: None,
-            original_annos: List::nil(),
-            pos: 0,
-            is_varargs: false,
-        }));
-        assert_eq!(ctx.sym(record_component).get_kind(&ctx), ElementKind::RECORD_COMPONENT);
+        let type_parameter = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            0,
+            name(&[0x54]),
+            None,
+            None,
+            SymbolKind::TypeVariableSymbol,
+        ));
+        assert_eq!(
+            ctx.sym(type_parameter).get_kind(&ctx),
+            ElementKind::TYPE_PARAMETER
+        );
+        let record_component = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
+            flags::RECORD,
+            name(&[0x52]),
+            None,
+            None,
+            SymbolKind::RecordComponent {
+                accessor: None,
+                accessor_meth: None,
+                original_annos: List::nil(),
+                pos: 0,
+                is_varargs: false,
+            },
+        ));
+        assert_eq!(
+            ctx.sym(record_component).get_kind(&ctx),
+            ElementKind::RECORD_COMPONENT
+        );
     }
     use crate::util::name::NameTableHandle;
     use javac_source::tree::member_reference_tree::ReferenceMode;

@@ -26,22 +26,21 @@ use javac_tools::lang::model::element::name::Name;
 use javac_tools::lang::model::element::nesting_kind::NestingKind;
 use javac_tools::lang::model::element::package_element::PackageElement;
 use javac_tools::lang::model::element::qualified_nameable::QualifiedNameable;
-use javac_tools::lang::model::element::type_element::TypeElement;
 use javac_tools::lang::model::element::record_component_element::RecordComponentElement;
+use javac_tools::lang::model::element::type_element::TypeElement;
 use javac_tools::lang::model::element::variable_element::{ConstantValue, VariableElement};
 use javac_tools::lang::model::type_::array_type::ArrayType;
 use javac_tools::lang::model::type_::declared_type::DeclaredType;
 use javac_tools::lang::model::type_::executable_type::ExecutableType;
-use javac_tools::lang::model::type_::type_variable::TypeVariable;
 use javac_tools::lang::model::type_::no_type::NoType;
 use javac_tools::lang::model::type_::primitive_type::PrimitiveType;
 use javac_tools::lang::model::type_::reference_type::ReferenceType;
 use javac_tools::lang::model::type_::type_kind::TypeKind;
 use javac_tools::lang::model::type_::type_mirror::TypeMirror;
+use javac_tools::lang::model::type_::type_variable::TypeVariable;
 use javac_tools::lang::model::type_::type_visitor::TypeVisitor;
 
 use crate::code::attribute::AttributeKind;
-use crate::util::list::List;
 use crate::code::flags;
 use crate::code::kinds::Kind;
 use crate::code::symbol::SymbolKind;
@@ -49,6 +48,7 @@ use crate::code::symtab::Symtab;
 use crate::code::type_tag::TypeTag;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{AttributeId, SymbolId, TypeId};
+use crate::util::list::List;
 
 /// Java: javax.lang.model.element.Name snapshot.
 #[derive(Clone)]
@@ -162,16 +162,16 @@ thread_local! {
 }
 
 fn annotations_in_progress() -> bool {
-    ANNOTATIONS_IN_PROGRESS.with(|flag| flag.get())
+    ANNOTATIONS_IN_PROGRESS.get()
 }
 
 fn with_annotation_build_guard<R>(build: impl FnOnce() -> R) -> R {
     if annotations_in_progress() {
         return build();
     }
-    ANNOTATIONS_IN_PROGRESS.with(|flag| flag.set(true));
+    ANNOTATIONS_IN_PROGRESS.set(true);
     let result = build();
-    ANNOTATIONS_IN_PROGRESS.with(|flag| flag.set(false));
+    ANNOTATIONS_IN_PROGRESS.set(false);
     result
 }
 
@@ -285,7 +285,8 @@ impl QualifiedNameable for JavacTypeElement {
 impl javac_tools::lang::model::element::parameterizable::Parameterizable for JavacTypeElement {
     fn get_type_parameters(
         &self,
-    ) -> Vec<Rc<dyn javac_tools::lang::model::element::type_parameter_element::TypeParameterElement>> {
+    ) -> Vec<Rc<dyn javac_tools::lang::model::element::type_parameter_element::TypeParameterElement>>
+    {
         Vec::new()
     }
 }
@@ -308,7 +309,9 @@ impl TypeElement for JavacTypeElement {
 
     fn get_record_components(
         &self,
-    ) -> Vec<Rc<dyn javac_tools::lang::model::element::record_component_element::RecordComponentElement>> {
+    ) -> Vec<
+        Rc<dyn RecordComponentElement>,
+    > {
         self.data.record_components.clone()
     }
 
@@ -322,14 +325,20 @@ pub struct JavacExecutableElement {
     data: Rc<ElementData>,
 }
 
-element_impl!(JavacExecutableElement, visit_executable, as_executable_element, ExecutableElement);
+element_impl!(
+    JavacExecutableElement,
+    visit_executable,
+    as_executable_element,
+    ExecutableElement
+);
 
 impl javac_tools::lang::model::element::parameterizable::Parameterizable
     for JavacExecutableElement
 {
     fn get_type_parameters(
         &self,
-    ) -> Vec<Rc<dyn javac_tools::lang::model::element::type_parameter_element::TypeParameterElement>> {
+    ) -> Vec<Rc<dyn javac_tools::lang::model::element::type_parameter_element::TypeParameterElement>>
+    {
         Vec::new()
     }
 }
@@ -396,7 +405,12 @@ pub struct JavacVariableElement {
     data: Rc<ElementData>,
 }
 
-element_impl!(JavacVariableElement, visit_variable, as_variable_element, VariableElement);
+element_impl!(
+    JavacVariableElement,
+    visit_variable,
+    as_variable_element,
+    VariableElement
+);
 
 impl VariableElement for JavacVariableElement {
     fn get_constant_value(&self) -> Option<ConstantValue> {
@@ -413,7 +427,12 @@ pub struct JavacPackageElement {
     unnamed: bool,
 }
 
-element_impl!(JavacPackageElement, visit_package, as_package_element, PackageElement);
+element_impl!(
+    JavacPackageElement,
+    visit_package,
+    as_package_element,
+    PackageElement
+);
 
 impl PackageElement for JavacPackageElement {
     fn is_unnamed(&self) -> bool {
@@ -831,17 +850,17 @@ fn type_annotation_mirrors(
         return Vec::new();
     }
     with_annotation_build_guard(|| {
-    let attributes = ctx.typ(ty).get_annotation_mirrors();
-    let mut result = Vec::new();
-    for attribute in attributes.iter() {
-        if matches!(
-            ctx.attr(attribute).kind,
-            AttributeKind::Compound { .. } | AttributeKind::TypeCompound { .. }
-        ) {
-            result.push(build_annotation_mirror(ctx, syms, attribute));
+        let attributes = ctx.typ(ty).get_annotation_mirrors();
+        let mut result = Vec::new();
+        for attribute in attributes.iter() {
+            if matches!(
+                ctx.attr(attribute).kind,
+                AttributeKind::Compound { .. } | AttributeKind::TypeCompound { .. }
+            ) {
+                result.push(build_annotation_mirror(ctx, syms, attribute));
+            }
         }
-    }
-    result
+        result
     })
 }
 
@@ -885,14 +904,12 @@ pub(crate) fn element_for_symbol(
     symbol: SymbolId,
 ) -> Rc<dyn Element> {
     match ctx.sym(symbol).kind {
-        crate::code::kinds::Kind::TYP => type_element(ctx, syms, symbol, 0) as Rc<dyn Element>,
-        crate::code::kinds::Kind::MTH => {
+        Kind::TYP => type_element(ctx, syms, symbol, 0) as Rc<dyn Element>,
+        Kind::MTH => {
             executable_element(ctx, syms, symbol, 0) as Rc<dyn Element>
         }
-        crate::code::kinds::Kind::VAR => {
-            variable_element(ctx, syms, symbol, 0) as Rc<dyn Element>
-        }
-        crate::code::kinds::Kind::PCK => package_element(ctx, syms, symbol) as Rc<dyn Element>,
+        Kind::VAR => variable_element(ctx, syms, symbol, 0) as Rc<dyn Element>,
+        Kind::PCK => package_element(ctx, syms, symbol) as Rc<dyn Element>,
         kind => panic!("AssertionError: unsupported kind for mirror element: {kind:?}"),
     }
 }
@@ -979,7 +996,10 @@ fn nesting_kind(ctx: &CompilerContext, symbol: SymbolId) -> NestingKind {
 }
 
 fn qualified_name(ctx: &CompilerContext, symbol: SymbolId) -> String {
-    ctx.sym(symbol).get_qualified_name().to_java_string().to_string()
+    ctx.sym(symbol)
+        .get_qualified_name()
+        .to_java_string()
+        .to_string()
 }
 
 fn modifiers(ctx: &CompilerContext, symbol: SymbolId) -> Vec<Modifier> {
@@ -1035,15 +1055,11 @@ fn type_element(
             &|_| true,
         ) {
             if ctx.sym(member).kind == Kind::MTH {
-                enclosed.push(
-                    executable_element(ctx, syms, member, depth + 1) as Rc<dyn Element>
-                );
+                enclosed.push(executable_element(ctx, syms, member, depth + 1) as Rc<dyn Element>);
             } else if ctx.sym(member).kind == Kind::VAR
                 && (ctx.sym(member).flags_field & flags::ENUM as i64) != 0
             {
-                enclosed.push(
-                    variable_element(ctx, syms, member, depth + 1) as Rc<dyn Element>
-                );
+                enclosed.push(variable_element(ctx, syms, member, depth + 1) as Rc<dyn Element>);
             }
         }
     }
@@ -1055,9 +1071,8 @@ fn type_element(
         }
     });
     let display = qualified_name(ctx, symbol);
-    let (superclass, interfaces, permitted, record_components) = type_element_relations(
-        ctx, syms, symbol, depth,
-    );
+    let (superclass, interfaces, permitted, record_components) =
+        type_element_relations(ctx, syms, symbol, depth);
     Rc::new(JavacTypeElement {
         data: Rc::new(ElementData {
             kind,
@@ -1235,15 +1250,15 @@ fn variable_constant_value(kind_data: &SymbolKind) -> Option<ConstantValue> {
     Some(match data {
         crate::util::constants::ConstantValue::Boolean(value) => ConstantValue::Boolean(*value),
         crate::util::constants::ConstantValue::Byte(value) => ConstantValue::Byte(*value),
-        crate::util::constants::ConstantValue::Character(value) => {
-            ConstantValue::Character(*value)
-        }
+        crate::util::constants::ConstantValue::Character(value) => ConstantValue::Character(*value),
         crate::util::constants::ConstantValue::Short(value) => ConstantValue::Short(*value),
         crate::util::constants::ConstantValue::Integer(value) => ConstantValue::Integer(*value),
         crate::util::constants::ConstantValue::Long(value) => ConstantValue::Long(*value),
         crate::util::constants::ConstantValue::Float(value) => ConstantValue::Float(*value),
         crate::util::constants::ConstantValue::Double(value) => ConstantValue::Double(*value),
-        crate::util::constants::ConstantValue::String(value) => ConstantValue::String(value.clone()),
+        crate::util::constants::ConstantValue::String(value) => {
+            ConstantValue::String(value.clone())
+        }
     })
 }
 
@@ -1353,7 +1368,7 @@ fn executable_element(
                 parameters,
                 return_type,
                 receiver_type,
-                varargs: (flags_field & crate::code::flags::VARARGS) != 0,
+                varargs: (flags_field & flags::VARARGS) != 0,
                 is_default: default_value.is_some(),
                 thrown: thrown_types,
                 default_value,
@@ -1498,7 +1513,13 @@ fn annotation_value(
         AttributeKind::Constant { value } => {
             let value = constant_value(value);
             let display = value_display(&value);
-            (Rc::new(JavacAnnotationValue { value, display: display.clone() }), display)
+            (
+                Rc::new(JavacAnnotationValue {
+                    value,
+                    display: display.clone(),
+                }),
+                display,
+            )
         }
         AttributeKind::Class { class_type } => {
             let value = Value::Type(
@@ -1507,7 +1528,13 @@ fn annotation_value(
                     .unwrap_or_else(|| Rc::new(JavacNoType)),
             );
             let display = value_display(&value);
-            (Rc::new(JavacAnnotationValue { value, display: display.clone() }), display)
+            (
+                Rc::new(JavacAnnotationValue {
+                    value,
+                    display: display.clone(),
+                }),
+                display,
+            )
         }
         AttributeKind::Array { values } => {
             let values = values.clone();
@@ -1518,33 +1545,62 @@ fn annotation_value(
             }
             let value = Value::Array(proxies);
             let display = value_display(&value);
-            (Rc::new(JavacAnnotationValue { value, display: display.clone() }), display)
+            (
+                Rc::new(JavacAnnotationValue {
+                    value,
+                    display: display.clone(),
+                }),
+                display,
+            )
         }
         AttributeKind::Enum { value } => {
             let constant = value
-                .map(|value| variable_element(ctx, syms, value, depth + 1) as Rc<dyn VariableElement>)
+                .map(|value| {
+                    variable_element(ctx, syms, value, depth + 1) as Rc<dyn VariableElement>
+                })
                 .expect("Attribute.Enum.getValue: VarSymbol");
             let value = Value::EnumConstant(constant);
             let display = value_display(&value);
-            (Rc::new(JavacAnnotationValue { value, display: display.clone() }), display)
+            (
+                Rc::new(JavacAnnotationValue {
+                    value,
+                    display: display.clone(),
+                }),
+                display,
+            )
         }
         AttributeKind::Compound { .. } | AttributeKind::TypeCompound { .. } => {
             let (display, mirror) = build_annotation_mirror_parts(ctx, syms, attribute);
             let value = Value::Annotation(mirror);
             (
-                Rc::new(JavacAnnotationValue { value, display: display.clone() }),
+                Rc::new(JavacAnnotationValue {
+                    value,
+                    display: display.clone(),
+                }),
                 display,
             )
         }
         AttributeKind::Error => {
             let value = Value::String(JavaString::from("<error>"));
             let display = value_display(&value);
-            (Rc::new(JavacAnnotationValue { value, display: display.clone() }), display)
+            (
+                Rc::new(JavacAnnotationValue {
+                    value,
+                    display: display.clone(),
+                }),
+                display,
+            )
         }
         AttributeKind::UnresolvedClass { .. } => {
             let value = Value::String(JavaString::from("<error>"));
             let display = value_display(&value);
-            (Rc::new(JavacAnnotationValue { value, display: display.clone() }), display)
+            (
+                Rc::new(JavacAnnotationValue {
+                    value,
+                    display: display.clone(),
+                }),
+                display,
+            )
         }
     }
 }

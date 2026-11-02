@@ -263,7 +263,9 @@ mod tests {
     #[test]
     fn display_is_java_name() {
         assert_eq!(TypeTag::INT.to_string(), "INT");
-        assert_eq!(TypeTag::UNINITIALIZED_OBJECT.to_string(), "UNINITIALIZED_OBJECT");
+        assert_eq!(
+            TypeTag::UNINITIALIZED_OBJECT.to_string(),
+            "UNINITIALIZED_OBJECT"
+        );
     }
 }
-

@@ -1,3 +1,4 @@
+use super::expression_tree::ExpressionTree;
 /// A tree node for compound assignment operator.
 /// Use {@link #getKind getKind} to determine the kind of operator.
 ///
@@ -12,7 +13,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
 
 pub trait CompoundAssignmentTree: ExpressionTree {
     /// Returns the variable on the left hand side of the compound assignment.
@@ -22,5 +22,4 @@ pub trait CompoundAssignmentTree: ExpressionTree {
     /// Returns the expression on the right hand side of the compound assignment.
     /// @return the expression
     fn get_expression(&self) -> Rc<dyn ExpressionTree>;
-
 }

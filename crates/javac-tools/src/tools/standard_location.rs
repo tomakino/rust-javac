@@ -285,7 +285,10 @@ mod tests {
         assert!(!out.is_module_oriented_location());
         let module = StandardLocation::location_for(&js("MODULE"));
         assert!(module.is_module_oriented_location());
-        assert!(Rc::ptr_eq(&module, &StandardLocation::location_for(&js("MODULE"))));
+        assert!(Rc::ptr_eq(
+            &module,
+            &StandardLocation::location_for(&js("MODULE"))
+        ));
     }
 
     #[test]
@@ -293,6 +296,9 @@ mod tests {
         let a = StandardLocation::location_for(&js("CLASS_OUTPUT"));
         assert!(a.is_output_location());
         assert_eq!(a.get_name(), StandardLocation::CLASS_OUTPUT.name());
-        assert!(Rc::ptr_eq(&a, &StandardLocation::location_for(&js("CLASS_OUTPUT"))));
+        assert!(Rc::ptr_eq(
+            &a,
+            &StandardLocation::location_for(&js("CLASS_OUTPUT"))
+        ));
     }
 }

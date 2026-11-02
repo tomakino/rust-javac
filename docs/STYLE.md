@@ -104,13 +104,13 @@ note next to the code and keep the full record in `docs/PORTING_NOTES.md`:
 
 `scripts/gate.py` selects the minimal suite from the current diff.
 
-| Level | Commands | When |
-|---|---|---|
-| none | nothing | docs/scripts/comment-only changes |
-| L0 | `cargo test -p javac-core --lib` | any code change |
-| L1 | L0 + `check_repros.py` + `check_gson.py` | parser, diagnostics, CLI |
-| L2 | L1 + `check_guava.py` + `check_okhttp.py` | types, inference, Attr, Lower, codegen |
-| L3 | full suite | merge points, daily, large refactors |
+| Level | Commands                                  | When                                   |
+|-------|-------------------------------------------|----------------------------------------|
+| none  | nothing                                   | docs/scripts/comment-only changes      |
+| L0    | `cargo test -p javac-core --lib`          | any code change                        |
+| L1    | L0 + `check_repros.py` + `check_gson.py`  | parser, diagnostics, CLI               |
+| L2    | L1 + `check_guava.py` + `check_okhttp.py` | types, inference, Attr, Lower, codegen |
+| L3    | full suite                                | merge points, daily, large refactors   |
 
 Run the level declared by the diff; do not escalate on failure. Full L3 is
 reserved for merge points and refactor boundaries.

@@ -1,3 +1,5 @@
+use super::expression_tree::ExpressionTree;
+use super::tree::Tree;
 /// A tree node for a method invocation expression.
 ///
 /// For example:
@@ -13,8 +15,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
-use super::tree::Tree;
 
 pub trait MethodInvocationTree: ExpressionTree {
     /// Returns the type arguments for this method invocation.
@@ -28,5 +28,4 @@ pub trait MethodInvocationTree: ExpressionTree {
     /// Returns the arguments for the method invocation.
     /// @return the arguments
     fn get_arguments(&self) -> Vec<Rc<dyn ExpressionTree>>;
-
 }

@@ -60,13 +60,17 @@ impl JavaString {
 
 impl From<&str> for JavaString {
     fn from(s: &str) -> Self {
-        JavaString { units: s.encode_utf16().collect() }
+        JavaString {
+            units: s.encode_utf16().collect(),
+        }
     }
 }
 
 impl From<&[u16]> for JavaString {
     fn from(units: &[u16]) -> Self {
-        JavaString { units: units.to_vec() }
+        JavaString {
+            units: units.to_vec(),
+        }
     }
 }
 
@@ -143,7 +147,10 @@ impl JavaString {
 
     /// Java: public String substring(int beginIndex, int endIndex)
     pub fn substring(&self, start: usize, end: usize) -> JavaString {
-        assert!(start <= end, "StringIndexOutOfBoundsException: begin {start}, end {end}");
+        assert!(
+            start <= end,
+            "StringIndexOutOfBoundsException: begin {start}, end {end}"
+        );
         assert!(
             end <= self.units.len(),
             "StringIndexOutOfBoundsException: end {end}, length {}",

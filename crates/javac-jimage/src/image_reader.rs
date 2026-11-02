@@ -11,10 +11,10 @@ use std::fs::File;
 use std::io;
 use std::path::Path;
 
-use crate::image_header::{ImageHeader, HEADER_SIZE, MAGIC, MAJOR_VERSION, MINOR_VERSION};
-use crate::image_location::{self, Attributes, ImageLocation, ATTRIBUTE_MODULE};
-use crate::image_strings;
 use crate::Error;
+use crate::image_header::{HEADER_SIZE, ImageHeader, MAGIC, MAJOR_VERSION, MINOR_VERSION};
+use crate::image_location::{self, ATTRIBUTE_MODULE, Attributes, ImageLocation};
+use crate::image_strings;
 
 /// Java: public class BasicImageReader
 #[derive(Debug)]
@@ -89,8 +89,10 @@ impl ImageIndex {
         let strings_offset = usize::try_from(header.get_strings_offset())
             .map_err(|_| Error::Corrupted("bad strings offset".to_string()))?;
 
-        let redirect = read_i32_table(&index_bytes[redirect_offset..redirect_offset + table_length * 4]);
-        let offsets = read_i32_table(&index_bytes[offsets_offset..offsets_offset + table_length * 4]);
+        let redirect =
+            read_i32_table(&index_bytes[redirect_offset..redirect_offset + table_length * 4]);
+        let offsets =
+            read_i32_table(&index_bytes[offsets_offset..offsets_offset + table_length * 4]);
         let locations = index_bytes[locations_offset..locations_offset + locations_size].to_vec();
         let strings = index_bytes[strings_offset..strings_offset + strings_size].to_vec();
 
@@ -363,7 +365,9 @@ impl ImageIndex {
 /// Java: IntBuffer.get(int index) over a little-endian int table.
 fn read_i32_table(bytes: &[u8]) -> Vec<i32> {
     bytes
-        .as_chunks::<4>().0.iter()
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|chunk| i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
         .collect()
 }

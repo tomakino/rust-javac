@@ -1,3 +1,4 @@
+use super::statement_tree::StatementTree;
 /// A tree node for a labeled statement.
 ///
 /// For example:
@@ -12,7 +13,6 @@
 /// @since 1.6
 use javac_tools::lang::model::element::Name;
 use std::rc::Rc;
-use super::statement_tree::StatementTree;
 
 pub trait LabeledStatementTree: StatementTree {
     /// Returns the label.
@@ -22,5 +22,4 @@ pub trait LabeledStatementTree: StatementTree {
     /// Returns the statement that is labeled.
     /// @return the statement
     fn get_statement(&self) -> Rc<dyn StatementTree>;
-
 }

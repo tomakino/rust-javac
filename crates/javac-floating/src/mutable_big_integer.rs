@@ -131,7 +131,8 @@ impl MutableBigInteger {
         }
         let d = self.value[self.offset as usize] as i64 & crate::big_integer::LONG_MASK;
         if self.int_len == 2 {
-            (d << 32) | (self.value[self.offset as usize + 1] as i64 & crate::big_integer::LONG_MASK)
+            (d << 32)
+                | (self.value[self.offset as usize + 1] as i64 & crate::big_integer::LONG_MASK)
         } else {
             d
         }
@@ -413,7 +414,6 @@ impl MutableBigInteger {
         self.value[self.offset as usize] != 0
     }
 
-
     /// Java: public String toString().
     pub(crate) fn to_debug_string(&mut self) -> String {
         let b = self.to_big_integer_sign(1);
@@ -591,8 +591,7 @@ impl MutableBigInteger {
         while i < m {
             let b = c;
             c = self.value[(i + 1) as usize];
-            self.value[i as usize] =
-                (b.wrapping_shl(n as u32)) | ((c as u32 >> n2) as i32);
+            self.value[i as usize] = (b.wrapping_shl(n as u32)) | ((c as u32 >> n2) as i32);
             i += 1;
         }
         let last = (self.offset + self.int_len - 1) as usize;
@@ -607,9 +606,7 @@ impl MutableBigInteger {
             return self.clone().to_big_integer_sign(1);
         }
         let mut len = n;
-        while len > 0
-            && self.value[(self.offset + self.int_len - len) as usize] == 0
-        {
+        while len > 0 && self.value[(self.offset + self.int_len - len) as usize] == 0 {
             len -= 1;
         }
         let sign = if len > 0 { 1 } else { 0 };
@@ -781,10 +778,7 @@ impl MutableBigInteger {
             .copy_from_slice(&self.value[start..start + x as usize]);
         y -= x;
         rstart -= x as isize;
-        let len = std::cmp::min(
-            y,
-            addend.value.len() as i32 - addend.offset,
-        );
+        let len = std::cmp::min(y, addend.value.len() as i32 - addend.offset);
         let copy_start = (rstart + 1 - y as isize) as usize;
         let astart = addend.offset as usize;
         result[copy_start..copy_start + len as usize]
@@ -829,18 +823,15 @@ impl MutableBigInteger {
         while y > 0 {
             x -= 1;
             y -= 1;
-            diff = (big.value[(x + big.offset) as usize] as i64
-                & crate::big_integer::LONG_MASK)
-                - (small.value[(y + small.offset) as usize] as i64
-                    & crate::big_integer::LONG_MASK)
+            diff = (big.value[(x + big.offset) as usize] as i64 & crate::big_integer::LONG_MASK)
+                - (small.value[(y + small.offset) as usize] as i64 & crate::big_integer::LONG_MASK)
                 - ((-(diff >> 32)) as i32 as i64);
             result[rstart as usize] = diff as i32;
             rstart -= 1;
         }
         while x > 0 {
             x -= 1;
-            diff = (big.value[(x + big.offset) as usize] as i64
-                & crate::big_integer::LONG_MASK)
+            diff = (big.value[(x + big.offset) as usize] as i64 & crate::big_integer::LONG_MASK)
                 - ((-(diff >> 32)) as i32 as i64);
             result[rstart as usize] = diff as i32;
             rstart -= 1;
@@ -873,17 +864,14 @@ impl MutableBigInteger {
         while y > 0 {
             x -= 1;
             y -= 1;
-            diff = (big.value[(x + big.offset) as usize] as i64
-                & crate::big_integer::LONG_MASK)
-                - (small.value[(y + small.offset) as usize] as i64
-                    & crate::big_integer::LONG_MASK)
+            diff = (big.value[(x + big.offset) as usize] as i64 & crate::big_integer::LONG_MASK)
+                - (small.value[(y + small.offset) as usize] as i64 & crate::big_integer::LONG_MASK)
                 - ((-(diff >> 32)) as i32 as i64);
             self.value[(x + self.offset) as usize] = diff as i32;
         }
         while x > 0 {
             x -= 1;
-            diff = (big.value[(x + big.offset) as usize] as i64
-                & crate::big_integer::LONG_MASK)
+            diff = (big.value[(x + big.offset) as usize] as i64 & crate::big_integer::LONG_MASK)
                 - ((-(diff >> 32)) as i32 as i64);
             self.value[(x + self.offset) as usize] = diff as i32;
         }
@@ -900,17 +888,14 @@ impl MutableBigInteger {
         while y > 0 {
             x -= 1;
             y -= 1;
-            diff = (big.value[(x + big.offset) as usize] as i64
-                & crate::big_integer::LONG_MASK)
-                - (small.value[(y + small.offset) as usize] as i64
-                    & crate::big_integer::LONG_MASK)
+            diff = (big.value[(x + big.offset) as usize] as i64 & crate::big_integer::LONG_MASK)
+                - (small.value[(y + small.offset) as usize] as i64 & crate::big_integer::LONG_MASK)
                 - ((-(diff >> 32)) as i32 as i64);
             self.value[(x + self.offset) as usize] = diff as i32;
         }
         while x > 0 {
             x -= 1;
-            diff = (big.value[(x + big.offset) as usize] as i64
-                & crate::big_integer::LONG_MASK)
+            diff = (big.value[(x + big.offset) as usize] as i64 & crate::big_integer::LONG_MASK)
                 - ((-(diff >> 32)) as i32 as i64);
             self.value[(x + self.offset) as usize] = diff as i32;
         }
@@ -932,8 +917,7 @@ impl MutableBigInteger {
         let mut j = y_len - 1;
         let mut k = y_len + x_len - 1;
         while j >= 0 {
-            let product = (y.value[(j + y.offset) as usize] as i64
-                & crate::big_integer::LONG_MASK)
+            let product = (y.value[(j + y.offset) as usize] as i64 & crate::big_integer::LONG_MASK)
                 * (self.value[(x_len - 1 + self.offset) as usize] as i64
                     & crate::big_integer::LONG_MASK)
                 + carry;
@@ -986,8 +970,7 @@ impl MutableBigInteger {
         let mut i = self.int_len - 1;
         while i >= 0 {
             let product = y_long
-                * (self.value[(i + self.offset) as usize] as i64
-                    & crate::big_integer::LONG_MASK)
+                * (self.value[(i + self.offset) as usize] as i64 & crate::big_integer::LONG_MASK)
                 + carry;
             zval[(i + 1) as usize] = product as i32;
             carry = ((product as u64) >> 32) as i64;
@@ -1008,8 +991,8 @@ impl MutableBigInteger {
     pub(crate) fn divide_one_word(&self, divisor: i32, quotient: &mut MutableBigInteger) -> i32 {
         let divisor_long = divisor as i64 & crate::big_integer::LONG_MASK;
         if self.int_len == 1 {
-            let dividend_value = self.value[self.offset as usize] as i64
-                & crate::big_integer::LONG_MASK;
+            let dividend_value =
+                self.value[self.offset as usize] as i64 & crate::big_integer::LONG_MASK;
             let q = (dividend_value / divisor_long) as i32;
             let r = (dividend_value - q as i64 * divisor_long) as i32;
             quotient.value[0] = q;
@@ -1044,8 +1027,7 @@ impl MutableBigInteger {
             let q;
             if dividend_estimate >= 0 {
                 q = (dividend_estimate / divisor_long) as i32;
-                rem = dividend_estimate
-                .wrapping_sub((q as i64).wrapping_mul(divisor_long)) as i32;
+                rem = dividend_estimate.wrapping_sub((q as i64).wrapping_mul(divisor_long)) as i32;
             } else {
                 let tmp = MutableBigInteger::div_word(dividend_estimate, divisor);
                 q = (tmp & crate::big_integer::LONG_MASK) as i32;
@@ -1055,11 +1037,7 @@ impl MutableBigInteger {
             rem_long = rem as i64 & crate::big_integer::LONG_MASK;
         }
         quotient.normalize();
-        if shift > 0 {
-            rem % divisor
-        } else {
-            rem
-        }
+        if shift > 0 { rem % divisor } else { rem }
     }
 
     /// Java: MutableBigInteger divide(MutableBigInteger b, MutableBigInteger quotient).
@@ -1157,7 +1135,9 @@ impl MutableBigInteger {
                 let mut b_shifted = MutableBigInteger::new_from_mutable(b);
                 a.right_shift(trailing_zero_bits);
                 b_shifted.right_shift(trailing_zero_bits);
-                let mut r = a.divide_knuth(&b_shifted, quotient, true).expect("remainder");
+                let mut r = a
+                    .divide_knuth(&b_shifted, quotient, true)
+                    .expect("remainder");
                 r.left_shift(trailing_zero_bits);
                 return Some(r);
             }
@@ -1179,8 +1159,7 @@ impl MutableBigInteger {
         if r < s {
             return MutableBigInteger::new_from_mutable(self);
         }
-        let m = 1i32
-            << (32 - (s / BigInteger::BURNIKEL_ZIEGLER_THRESHOLD).leading_zeros()) as i32;
+        let m = 1i32 << (32 - (s / BigInteger::BURNIKEL_ZIEGLER_THRESHOLD).leading_zeros()) as i32;
         let j = (s + m - 1) / m;
         let n = j * m;
         let n32 = 32i64 * n as i64;
@@ -1297,16 +1276,11 @@ impl MutableBigInteger {
         if self.int_len == 0 {
             return 0;
         }
-        self.int_len as i64 * 32
-            - (self.value[self.offset as usize] as u32).leading_zeros() as i64
+        self.int_len as i64 * 32 - (self.value[self.offset as usize] as u32).leading_zeros() as i64
     }
 
     /// Java: long divide(long v, MutableBigInteger quotient).
-    pub(crate) fn divide_long_value(
-        &self,
-        v: i64,
-        quotient: &mut MutableBigInteger,
-    ) -> i64 {
+    pub(crate) fn divide_long_value(&self, v: i64, quotient: &mut MutableBigInteger) -> i64 {
         if v == 0 {
             panic!("ArithmeticException: BigInteger divide by zero");
         }
@@ -1406,8 +1380,9 @@ impl MutableBigInteger {
         } else {
             divisor = div.value[div.offset as usize..(div.offset + div.int_len) as usize].to_vec();
             rem = MutableBigInteger::new_from_vec(vec![0; self.int_len as usize + 1]);
-            rem.value[1..1 + self.int_len as usize]
-                .copy_from_slice(&self.value[self.offset as usize..(self.offset + self.int_len) as usize]);
+            rem.value[1..1 + self.int_len as usize].copy_from_slice(
+                &self.value[self.offset as usize..(self.offset + self.int_len) as usize],
+            );
             rem.int_len = self.int_len;
             rem.offset = 1;
         }
@@ -1437,14 +1412,12 @@ impl MutableBigInteger {
             if nh == dh {
                 qhat = !0;
                 qrem = nh.wrapping_add(nm);
-                skip_correction =
-                    qrem.wrapping_add(0x80000000u32 as i32) < nh2;
+                skip_correction = qrem.wrapping_add(0x80000000u32 as i32) < nh2;
             } else {
                 let n_chunk = ((nh as i64) << 32) | (nm as i64 & crate::big_integer::LONG_MASK);
                 if n_chunk >= 0 {
                     qhat = (n_chunk / dh_long) as i32;
-                    qrem = n_chunk
-                        .wrapping_sub((qhat as i64).wrapping_mul(dh_long)) as i32;
+                    qrem = n_chunk.wrapping_sub((qhat as i64).wrapping_mul(dh_long)) as i32;
                 } else {
                     let tmp = MutableBigInteger::div_word(n_chunk, dh);
                     qhat = (tmp & crate::big_integer::LONG_MASK) as i32;
@@ -1456,17 +1429,17 @@ impl MutableBigInteger {
                 continue;
             }
             if !skip_correction {
-                let nl = rem.value[(j + 2 + rem.offset) as usize] as i64
-                    & crate::big_integer::LONG_MASK;
+                let nl =
+                    rem.value[(j + 2 + rem.offset) as usize] as i64 & crate::big_integer::LONG_MASK;
                 let mut rs = ((qrem as i64 & crate::big_integer::LONG_MASK) << 32) | nl;
-                let mut est_product =
-                    (dl as i64 & crate::big_integer::LONG_MASK)
+                let mut est_product = (dl as i64 & crate::big_integer::LONG_MASK)
                     .wrapping_mul(qhat as i64 & crate::big_integer::LONG_MASK);
                 if Self::unsigned_long_compare(est_product, rs) {
                     qhat -= 1;
                     qrem = ((qrem as i64 & crate::big_integer::LONG_MASK) + dh_long) as i32;
                     if qrem as i64 & crate::big_integer::LONG_MASK >= dh_long {
-                        est_product = est_product.wrapping_sub(dl as i64 & crate::big_integer::LONG_MASK);
+                        est_product =
+                            est_product.wrapping_sub(dl as i64 & crate::big_integer::LONG_MASK);
                         rs = ((qrem as i64 & crate::big_integer::LONG_MASK) << 32) | nl;
                         if Self::unsigned_long_compare(est_product, rs) {
                             qhat -= 1;
@@ -1475,19 +1448,10 @@ impl MutableBigInteger {
                 }
             }
             rem.value[(j + rem.offset) as usize] = 0;
-            let borrow = MutableBigInteger::mulsub(
-                &mut rem.value,
-                &divisor,
-                qhat,
-                dlen,
-                j + rem.offset,
-            );
+            let borrow =
+                MutableBigInteger::mulsub(&mut rem.value, &divisor, qhat, dlen, j + rem.offset);
             if borrow.wrapping_add(0x80000000u32 as i32) > nh2 {
-                MutableBigInteger::divadd(
-                    &divisor,
-                    &mut rem.value,
-                    (j + 1 + rem.offset) as usize,
-                );
+                MutableBigInteger::divadd(&divisor, &mut rem.value, (j + 1 + rem.offset) as usize);
                 qhat -= 1;
             }
             quotient.value[j as usize] = qhat;
@@ -1507,8 +1471,7 @@ impl MutableBigInteger {
             let n_chunk = ((nh as i64) << 32) | (nm as i64 & crate::big_integer::LONG_MASK);
             if n_chunk >= 0 {
                 qhat = (n_chunk / dh_long) as i32;
-                qrem = n_chunk
-                        .wrapping_sub((qhat as i64).wrapping_mul(dh_long)) as i32;
+                qrem = n_chunk.wrapping_sub((qhat as i64).wrapping_mul(dh_long)) as i32;
             } else {
                 let tmp = MutableBigInteger::div_word(n_chunk, dh);
                 qhat = (tmp & crate::big_integer::LONG_MASK) as i32;
@@ -1520,14 +1483,14 @@ impl MutableBigInteger {
                 let nl = rem.value[(limit + 1 + rem.offset) as usize] as i64
                     & crate::big_integer::LONG_MASK;
                 let mut rs = ((qrem as i64 & crate::big_integer::LONG_MASK) << 32) | nl;
-                let mut est_product =
-                    (dl as i64 & crate::big_integer::LONG_MASK)
+                let mut est_product = (dl as i64 & crate::big_integer::LONG_MASK)
                     .wrapping_mul(qhat as i64 & crate::big_integer::LONG_MASK);
                 if Self::unsigned_long_compare(est_product, rs) {
                     qhat -= 1;
                     qrem = ((qrem as i64 & crate::big_integer::LONG_MASK) + dh_long) as i32;
                     if qrem as i64 & crate::big_integer::LONG_MASK >= dh_long {
-                        est_product = est_product.wrapping_sub(dl as i64 & crate::big_integer::LONG_MASK);
+                        est_product =
+                            est_product.wrapping_sub(dl as i64 & crate::big_integer::LONG_MASK);
                         rs = ((qrem as i64 & crate::big_integer::LONG_MASK) << 32) | nl;
                         if Self::unsigned_long_compare(est_product, rs) {
                             qhat -= 1;
@@ -1583,8 +1546,9 @@ impl MutableBigInteger {
         quotient: &mut MutableBigInteger,
     ) -> MutableBigInteger {
         let mut rem = MutableBigInteger::new_from_vec(vec![0; self.int_len as usize + 1]);
-        rem.value[1..1 + self.int_len as usize]
-            .copy_from_slice(&self.value[self.offset as usize..(self.offset + self.int_len) as usize]);
+        rem.value[1..1 + self.int_len as usize].copy_from_slice(
+            &self.value[self.offset as usize..(self.offset + self.int_len) as usize],
+        );
         rem.int_len = self.int_len;
         rem.offset = 1;
         let nlen = rem.int_len;
@@ -1624,8 +1588,7 @@ impl MutableBigInteger {
                 let n_chunk = ((nh as i64) << 32) | (nm as i64 & crate::big_integer::LONG_MASK);
                 if n_chunk >= 0 {
                     qhat = (n_chunk / dh_long) as i32;
-                    qrem = n_chunk
-                        .wrapping_sub((qhat as i64).wrapping_mul(dh_long)) as i32;
+                    qrem = n_chunk.wrapping_sub((qhat as i64).wrapping_mul(dh_long)) as i32;
                 } else {
                     let tmp = MutableBigInteger::div_word(n_chunk, dh);
                     qhat = (tmp & crate::big_integer::LONG_MASK) as i32;
@@ -1637,17 +1600,17 @@ impl MutableBigInteger {
                 continue;
             }
             if !skip_correction {
-                let nl = rem.value[(j + 2 + rem.offset) as usize] as i64
-                    & crate::big_integer::LONG_MASK;
+                let nl =
+                    rem.value[(j + 2 + rem.offset) as usize] as i64 & crate::big_integer::LONG_MASK;
                 let mut rs = ((qrem as i64 & crate::big_integer::LONG_MASK) << 32) | nl;
-                let mut est_product =
-                    (dl as i64 & crate::big_integer::LONG_MASK)
+                let mut est_product = (dl as i64 & crate::big_integer::LONG_MASK)
                     .wrapping_mul(qhat as i64 & crate::big_integer::LONG_MASK);
                 if Self::unsigned_long_compare(est_product, rs) {
                     qhat -= 1;
                     qrem = ((qrem as i64 & crate::big_integer::LONG_MASK) + dh_long) as i32;
                     if qrem as i64 & crate::big_integer::LONG_MASK >= dh_long {
-                        est_product = est_product.wrapping_sub(dl as i64 & crate::big_integer::LONG_MASK);
+                        est_product =
+                            est_product.wrapping_sub(dl as i64 & crate::big_integer::LONG_MASK);
                         rs = ((qrem as i64 & crate::big_integer::LONG_MASK) << 32) | nl;
                         if Self::unsigned_long_compare(est_product, rs) {
                             qhat -= 1;
@@ -1656,15 +1619,15 @@ impl MutableBigInteger {
                 }
             }
             rem.value[(j + rem.offset) as usize] = 0;
-            let borrow = MutableBigInteger::mulsub_long(
-                &mut rem.value,
-                dh,
-                dl,
-                qhat,
-                j + rem.offset,
-            );
+            let borrow =
+                MutableBigInteger::mulsub_long(&mut rem.value, dh, dl, qhat, j + rem.offset);
             if borrow.wrapping_add(0x80000000u32 as i32) > nh2 {
-                MutableBigInteger::divadd_long(dh, dl, &mut rem.value, (j + 1 + rem.offset) as usize);
+                MutableBigInteger::divadd_long(
+                    dh,
+                    dl,
+                    &mut rem.value,
+                    (j + 1 + rem.offset) as usize,
+                );
                 qhat -= 1;
             }
             quotient.value[j as usize] = qhat;
@@ -1696,8 +1659,7 @@ impl MutableBigInteger {
     fn mulsub_long(q: &mut [i32], dh: i32, dl: i32, x: i32, offset: i32) -> i32 {
         let x_long = x as i64 & crate::big_integer::LONG_MASK;
         let mut offset = offset as usize + 2;
-        let mut product = (dl as i64 & crate::big_integer::LONG_MASK)
-            .wrapping_mul(x_long);
+        let mut product = (dl as i64 & crate::big_integer::LONG_MASK).wrapping_mul(x_long);
         let mut difference = (q[offset] as i64) - product;
         q[offset] = difference as i32;
         offset -= 1;
@@ -1757,7 +1719,9 @@ impl MutableBigInteger {
     pub(crate) fn sqrt_public(&mut self) -> MutableBigInteger {
         if self.is_zero() {
             return MutableBigInteger::new_int(0);
-        } else if self.value.len() == 1 && (self.value[0] as i64 & crate::big_integer::LONG_MASK) < 4 {
+        } else if self.value.len() == 1
+            && (self.value[0] as i64 & crate::big_integer::LONG_MASK) < 4
+        {
             return one();
         }
         if self.bit_length() <= 63 {
@@ -2171,5 +2135,4 @@ impl MutableBigInteger {
     pub(crate) fn multiply_public(&self, y: &MutableBigInteger, z: &mut MutableBigInteger) {
         self.multiply(y, z)
     }
-
 }

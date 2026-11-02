@@ -15,7 +15,7 @@ use std::rc::Rc;
 
 use crate::parser::java_tokenizer::Tokenizer;
 use crate::parser::lexer::Lexer;
-use crate::parser::tokens::{dummy_token, Token, Tokens};
+use crate::parser::tokens::{Token, Tokens, dummy_token};
 use crate::util::position::LineMapImpl;
 
 /// The lexical analyzer (Java: public class Scanner implements Lexer).

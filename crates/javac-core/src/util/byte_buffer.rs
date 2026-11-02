@@ -62,7 +62,8 @@ impl ByteBuffer {
     /// Java: public void appendByte(int b)
     pub fn append_byte(&mut self, b: i32) {
         // Java: elems = ArrayUtils.ensureCapacity(elems, length);
-        self.elems = array_utils::ensure_capacity_bytes(std::mem::take(&mut self.elems), self.length);
+        self.elems =
+            array_utils::ensure_capacity_bytes(std::mem::take(&mut self.elems), self.length);
         // Java: elems[length++] = (byte)b;
         self.elems[self.length as usize] = b as u8;
         self.length += 1;
@@ -175,8 +176,7 @@ impl ByteBuffer {
         let mut bp = start;
         loop {
             // Java: elems = ArrayUtils.ensureCapacity(elems, bp);
-            self.elems =
-                array_utils::ensure_capacity_bytes(std::mem::take(&mut self.elems), bp);
+            self.elems = array_utils::ensure_capacity_bytes(std::mem::take(&mut self.elems), bp);
             // Java: r = is.read(elems, bp, elems.length - bp);
             let n = is.read(&mut self.elems[bp as usize..])?;
             // std::io::Read reports end-of-stream as 0, java.io.InputStream as -1.

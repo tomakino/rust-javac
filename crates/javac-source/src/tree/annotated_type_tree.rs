@@ -1,3 +1,5 @@
+use super::annotation_tree::AnnotationTree;
+use super::expression_tree::ExpressionTree;
 /// A tree node for an annotated type.
 ///
 /// For example:
@@ -11,8 +13,6 @@
 /// @author Mahmood Ali
 /// @since 1.8
 use std::rc::Rc;
-use super::annotation_tree::AnnotationTree;
-use super::expression_tree::ExpressionTree;
 
 pub trait AnnotatedTypeTree: ExpressionTree {
     /// Returns the annotations associated with this type expression.
@@ -22,5 +22,4 @@ pub trait AnnotatedTypeTree: ExpressionTree {
     /// Returns the underlying type with which the annotations are associated.
     /// @return the underlying type
     fn get_underlying_type(&self) -> Rc<dyn ExpressionTree>;
-
 }

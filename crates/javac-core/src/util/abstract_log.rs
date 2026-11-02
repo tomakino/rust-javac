@@ -53,15 +53,8 @@ pub trait AbstractLog {
     /// Java: protected Map<JavaFileObject, DiagnosticSource> sourceMap.
     /// The two operations are separate so implementations only borrow their
     /// own source-map field for the duration of the lookup/insert.
-    fn source_map_find(
-        &self,
-        file: &Rc<dyn JavaFileObject>,
-    ) -> Option<Rc<DiagnosticSource>>;
-    fn source_map_push(
-        &self,
-        file: Rc<dyn JavaFileObject>,
-        source: Rc<DiagnosticSource>,
-    );
+    fn source_map_find(&self, file: &Rc<dyn JavaFileObject>) -> Option<Rc<DiagnosticSource>>;
+    fn source_map_push(&self, file: Rc<dyn JavaFileObject>, source: Rc<DiagnosticSource>);
 
     /// Java: protected abstract void report(JCDiagnostic diagnostic)
     fn report(&self, diagnostic: JCDiagnostic);
@@ -126,11 +119,7 @@ pub trait AbstractLog {
     }
 
     /// Java: public void error(DiagnosticPosition pos, JCDiagnostic.Error errorKey)
-    fn error_pos(
-        &self,
-        pos: Option<Rc<dyn DiagnosticPosition>>,
-        error_key: JCDiagnosticError,
-    ) {
+    fn error_pos(&self, pos: Option<Rc<dyn DiagnosticPosition>>, error_key: JCDiagnosticError) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
             let source = self.source();
@@ -207,11 +196,7 @@ pub trait AbstractLog {
 
     /// Java: public void warning(DiagnosticPosition pos,
     /// JCDiagnostic.Warning warningKey)
-    fn warning_pos(
-        &self,
-        pos: Option<Rc<dyn DiagnosticPosition>>,
-        warning_key: Warning,
-    ) {
+    fn warning_pos(&self, pos: Option<Rc<dyn DiagnosticPosition>>, warning_key: Warning) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
             let source = self.source();
@@ -248,11 +233,7 @@ pub trait AbstractLog {
 
     /// Java: public void mandatoryWarning(DiagnosticPosition pos,
     /// JCDiagnostic.Warning warningKey)
-    fn mandatory_warning_pos(
-        &self,
-        pos: Option<Rc<dyn DiagnosticPosition>>,
-        warning_key: Warning,
-    ) {
+    fn mandatory_warning_pos(&self, pos: Option<Rc<dyn DiagnosticPosition>>, warning_key: Warning) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
             let source = self.source();
@@ -288,11 +269,7 @@ pub trait AbstractLog {
     }
 
     /// Java: public void note(DiagnosticPosition pos, JCDiagnostic.Note noteKey)
-    fn note_pos(
-        &self,
-        pos: Option<Rc<dyn DiagnosticPosition>>,
-        note_key: Note,
-    ) {
+    fn note_pos(&self, pos: Option<Rc<dyn DiagnosticPosition>>, note_key: Note) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
             let source = self.source();
@@ -312,11 +289,7 @@ pub trait AbstractLog {
     }
 
     /// Java: public void note(JavaFileObject file, JCDiagnostic.Note noteKey)
-    fn note_file(
-        &self,
-        file: Option<Rc<dyn JavaFileObject>>,
-        note_key: Note,
-    ) {
+    fn note_file(&self, file: Option<Rc<dyn JavaFileObject>>, note_key: Note) {
         // Java: report(diags.note(getSource(file), null, noteKey));
         let diagnostic = {
             let diags = Rc::clone(self.diags());
@@ -328,11 +301,7 @@ pub trait AbstractLog {
 
     /// Java: public void mandatoryNote(final JavaFileObject file,
     /// JCDiagnostic.Note noteKey)
-    fn mandatory_note_file(
-        &self,
-        file: Option<Rc<dyn JavaFileObject>>,
-        note_key: Note,
-    ) {
+    fn mandatory_note_file(&self, file: Option<Rc<dyn JavaFileObject>>, note_key: Note) {
         // Java: report(diags.mandatoryNote(getSource(file), noteKey));
         let diagnostic = {
             let diags = Rc::clone(self.diags());
@@ -358,13 +327,13 @@ pub trait AbstractLog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
-    use crate::util::jc_diagnostic::{DiagnosticType, Factory};
     use crate::util::javac_messages::JavacMessages;
+    use crate::util::jc_diagnostic::{DiagnosticType, Factory};
     use javac_tools::error::Error;
     use javac_tools::tools::file_object::FileObject;
     use javac_tools::tools::java_file_object::{JavaFileObject, Kind};
     use javac_tools::uri::URI;
+    use std::cell::RefCell;
     use std::io::{Read, Write};
 
     struct TestFileObject;
@@ -386,18 +355,18 @@ mod tests {
             Err(Error::UnsupportedOperationException)
         }
 
-        fn get_char_content(
-            &self,
-            _ignore_encoding_errors: bool,
-        ) -> Result<Option<crate::util::java_string::JavaString>, Error> {
-            Ok(None)
-        }
-
         fn open_reader(
             &self,
             _ignore_encoding_errors: bool,
         ) -> Result<Box<dyn javac_tools::java_io::Reader>, Error> {
             Err(Error::UnsupportedOperationException)
+        }
+
+        fn get_char_content(
+            &self,
+            _ignore_encoding_errors: bool,
+        ) -> Result<Option<crate::util::java_string::JavaString>, Error> {
+            Ok(None)
         }
 
         fn open_writer(&self) -> Result<Box<dyn javac_tools::java_io::Writer>, Error> {
@@ -418,7 +387,11 @@ mod tests {
             Kind::SOURCE
         }
 
-        fn is_name_compatible(&self, _simple_name: &crate::util::java_string::JavaString, kind: Kind) -> bool {
+        fn is_name_compatible(
+            &self,
+            _simple_name: &crate::util::java_string::JavaString,
+            kind: Kind,
+        ) -> bool {
             kind == Kind::SOURCE
         }
 
@@ -462,7 +435,9 @@ mod tests {
             self.reported.borrow()
         }
 
-        fn source_map(&self) -> std::cell::Ref<'_, Vec<(Rc<dyn JavaFileObject>, Rc<DiagnosticSource>)>> {
+        fn source_map(
+            &self,
+        ) -> std::cell::Ref<'_, Vec<(Rc<dyn JavaFileObject>, Rc<DiagnosticSource>)>> {
             self.source_map.borrow()
         }
     }
@@ -480,10 +455,7 @@ mod tests {
             *self.source.borrow_mut() = source;
         }
 
-        fn source_map_find(
-            &self,
-            file: &Rc<dyn JavaFileObject>,
-        ) -> Option<Rc<DiagnosticSource>> {
+        fn source_map_find(&self, file: &Rc<dyn JavaFileObject>) -> Option<Rc<DiagnosticSource>> {
             self.source_map
                 .borrow()
                 .iter()
@@ -491,11 +463,7 @@ mod tests {
                 .map(|(_, source)| Rc::clone(source))
         }
 
-        fn source_map_push(
-            &self,
-            file: Rc<dyn JavaFileObject>,
-            source: Rc<DiagnosticSource>,
-        ) {
+        fn source_map_push(&self, file: Rc<dyn JavaFileObject>, source: Rc<DiagnosticSource>) {
             self.source_map.borrow_mut().push((file, source));
         }
 
@@ -536,10 +504,16 @@ mod tests {
         let mut log = TestLog::new();
         let file = Rc::new(TestFileObject) as Rc<dyn JavaFileObject>;
         log.use_source(Some(file));
-        log.error_key_args("test.error", vec![Rc::new(crate::util::java_string::JavaString::from("a"))]);
+        log.error_key_args(
+            "test.error",
+            vec![Rc::new(crate::util::java_string::JavaString::from("a"))],
+        );
         assert_eq!(log.reported().len(), 1);
         assert_eq!(log.reported()[0].get_type(), DiagnosticType::ERROR);
-        assert_eq!(log.reported()[0].get_code_string(), "compiler.err.test.error");
+        assert_eq!(
+            log.reported()[0].get_code_string(),
+            "compiler.err.test.error"
+        );
         assert!(log.reported()[0].is_mandatory());
 
         log.error_at(5, log.diags.error_key("test.error2", Vec::new()));
@@ -613,7 +587,10 @@ mod tests {
         log.note_at(7, log.diags.note_key("test.note3", Vec::new()));
         assert_eq!(log.reported()[2].get_int_position(), 7);
 
-        log.mandatory_note_file(Some(Rc::clone(&file)), log.diags.note_key("test.note4", Vec::new()));
+        log.mandatory_note_file(
+            Some(Rc::clone(&file)),
+            log.diags.note_key("test.note4", Vec::new()),
+        );
         assert!(log.reported()[3].is_mandatory());
         // The source was cached for the file.
         assert_eq!(log.source_map().len(), 1);

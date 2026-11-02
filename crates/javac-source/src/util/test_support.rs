@@ -146,11 +146,7 @@ impl DocCommentTree for DocCommentLeaf {
 pub struct NoPositions;
 
 impl crate::util::source_positions::SourcePositions for NoPositions {
-    fn get_start_position(
-        &self,
-        _file: &dyn CompilationUnitTree,
-        _tree: &dyn Tree,
-    ) -> i64 {
+    fn get_start_position(&self, _file: &dyn CompilationUnitTree, _tree: &dyn Tree) -> i64 {
         -1
     }
     fn get_end_position(&self, _file: &dyn CompilationUnitTree, _tree: &dyn Tree) -> i64 {
@@ -162,11 +158,7 @@ impl crate::util::source_positions::SourcePositions for NoPositions {
 pub struct DocNoPositions;
 
 impl crate::util::source_positions::SourcePositions for DocNoPositions {
-    fn get_start_position(
-        &self,
-        _file: &dyn CompilationUnitTree,
-        _tree: &dyn Tree,
-    ) -> i64 {
+    fn get_start_position(&self, _file: &dyn CompilationUnitTree, _tree: &dyn Tree) -> i64 {
         -1
     }
     fn get_end_position(&self, _file: &dyn CompilationUnitTree, _tree: &dyn Tree) -> i64 {
@@ -221,7 +213,9 @@ impl javac_tools::tools::file_object::FileObject for TestJavaFileObject {
     ) -> Result<Option<JavaString>, javac_tools::error::Error> {
         Ok(None)
     }
-    fn open_writer(&self) -> Result<Box<dyn javac_tools::java_io::Writer>, javac_tools::error::Error> {
+    fn open_writer(
+        &self,
+    ) -> Result<Box<dyn javac_tools::java_io::Writer>, javac_tools::error::Error> {
         panic!("UnsupportedOperationException: open_writer: test fixture")
     }
     fn get_last_modified(&self) -> i64 {
@@ -329,16 +323,16 @@ impl CompilationUnitTree for UnitTreeWithDecls {
 
 /// A DocCommentTree fixture with explicit body children (for DocTreePath tests).
 pub struct DocCommentWithBody {
-    pub body: Vec<Rc<dyn crate::doctree::doc_tree::DocTree>>,
+    pub body: Vec<Rc<dyn DocTree>>,
 }
 
-impl crate::doctree::doc_tree::DocTree for DocCommentWithBody {
+impl DocTree for DocCommentWithBody {
     fn get_kind(&self) -> crate::doctree::doc_tree::Kind {
         crate::doctree::doc_tree::Kind::DOC_COMMENT
     }
     fn accept<R, D>(
         &self,
-        _visitor: &mut dyn crate::doctree::doc_tree_visitor::DocTreeVisitor<R, D>,
+        _visitor: &mut dyn DocTreeVisitor<R, D>,
         _data: D,
     ) -> R {
         panic!("UnsupportedOperationException: accept: test fixture accept")
@@ -349,13 +343,13 @@ impl crate::doctree::doc_tree::DocTree for DocCommentWithBody {
 }
 
 impl DocCommentTree for DocCommentWithBody {
-    fn get_first_sentence(&self) -> Vec<Rc<dyn crate::doctree::doc_tree::DocTree>> {
+    fn get_first_sentence(&self) -> Vec<Rc<dyn DocTree>> {
         Vec::new()
     }
-    fn get_body(&self) -> Vec<Rc<dyn crate::doctree::doc_tree::DocTree>> {
+    fn get_body(&self) -> Vec<Rc<dyn DocTree>> {
         self.body.clone()
     }
-    fn get_block_tags(&self) -> Vec<Rc<dyn crate::doctree::doc_tree::DocTree>> {
+    fn get_block_tags(&self) -> Vec<Rc<dyn DocTree>> {
         Vec::new()
     }
 }

@@ -195,9 +195,7 @@ mod tests {
         let mut it = create_compound_iterator(inputs, |v: Vec<i32>| v.into_iter());
         assert_eq!(it.next(), Some(1));
         // Java: next() after the current iterator is exhausted throws NoSuchElementException.
-        assert!(
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| it.next())).is_err()
-        );
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| it.next())).is_err());
     }
 
     #[test]
@@ -205,9 +203,7 @@ mod tests {
         let inputs: std::vec::IntoIter<Vec<i32>> = Vec::new().into_iter();
         let mut it = create_compound_iterator(inputs, |v: Vec<i32>| v.into_iter());
         assert!(!it.has_next());
-        assert!(
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| it.next())).is_err()
-        );
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| it.next())).is_err());
     }
 
     #[test]

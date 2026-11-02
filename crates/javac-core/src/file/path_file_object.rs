@@ -462,7 +462,11 @@ impl FileObject for PathFileObject {
                 let jar_uri = user_jar_path.to_uri().expect("jar file uri");
                 let jar_uri = normalize_uri(&jar_uri);
                 let entry_name = jar_entry_string(&self.path);
-                let separator = if entry_name.starts_with('/') { "!" } else { "!/" };
+                let separator = if entry_name.starts_with('/') {
+                    "!"
+                } else {
+                    "!/"
+                };
                 let text = format!("jar:{jar_uri}{separator}{entry_name}");
                 URI::create(&jstr(&text))
             }
@@ -485,11 +489,6 @@ impl FileObject for PathFileObject {
 
     fn get_name(&self) -> JavaString {
         PathFileObject::get_name(self)
-    }
-
-    /// The ported JRTFileObject construction marker (see JRTIndex.is_in_jrt).
-    fn is_in_jrt(&self) -> bool {
-        self.is_jrt()
     }
 
     /// Java: public InputStream openInputStream() throws IOException.
@@ -620,6 +619,11 @@ impl FileObject for PathFileObject {
         };
         result.is_ok()
     }
+
+    /// The ported JRTFileObject construction marker (see JRTIndex.is_in_jrt).
+    fn is_in_jrt(&self) -> bool {
+        self.is_jrt()
+    }
 }
 
 impl JavaFileObject for PathFileObject {
@@ -670,7 +674,12 @@ fn jar_entry_string(path: &FsPath) -> String {
         if index > 0 {
             result.push('/');
         }
-        result.push_str(&path.subpath(index, index + 1).expect("subpath").to_java_string());
+        result.push_str(
+            &path
+                .subpath(index, index + 1)
+                .expect("subpath")
+                .to_java_string(),
+        );
     }
     result
 }
@@ -753,7 +762,6 @@ fn normalize_uri(uri: &str) -> String {
     result
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::{PathFileObject, get_kind_from_path};
@@ -762,11 +770,9 @@ mod tests {
     use javac_fs::Path as FsPath;
     use javac_strings::JavaString;
     use javac_tools::tools::file_object::FileObject;
-    use javac_tools::tools::java_file_object::{JavaFileObject, Kind};
+    use javac_tools::tools::java_file_object::Kind;
     use std::cell::Cell;
     use std::io::Read;
-    use std::io::Write;
-    use std::panic::AssertUnwindSafe;
     use std::rc::Rc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -829,12 +835,12 @@ mod tests {
 
         fn make_byte_buffer(
             &self,
-            input: &mut dyn std::io::Read,
+            input: &mut dyn Read,
         ) -> Result<Vec<u8>, javac_tools::error::Error> {
             let mut bytes = Vec::new();
-            input
-                .read_to_end(&mut bytes)
-                .map_err(|error| javac_tools::error::Error::io(JavaString::from(error.to_string().as_str())))?;
+            input.read_to_end(&mut bytes).map_err(|error| {
+                javac_tools::error::Error::io(JavaString::from(error.to_string().as_str()))
+            })?;
             Ok(bytes)
         }
 
@@ -848,21 +854,20 @@ mod tests {
         fn use_source(
             &self,
             _file: &PathFileObject,
-        ) -> std::option::Option<
-            std::rc::Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>,
+        ) -> Option<
+            Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>,
         > {
             None
         }
 
         fn restore_source(
             &self,
-            _previous: std::option::Option<
-                std::rc::Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>,
+            _previous: Option<
+                Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>,
             >,
         ) {
         }
     }
-
 
     fn manager() -> Rc<dyn BaseFileManagerApi> {
         StubManager::new()

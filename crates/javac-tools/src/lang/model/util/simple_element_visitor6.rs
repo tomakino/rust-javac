@@ -142,7 +142,10 @@ mod tests {
     fn visit_calls_default_action() {
         let mut v = DefaultVisitor { value: 7 };
         let package = Fixture::new(ElementKind::PACKAGE, "p");
-        assert_eq!(SimpleElementVisitor6::visit_package(&mut v, &package, ()), 7);
+        assert_eq!(
+            SimpleElementVisitor6::visit_package(&mut v, &package, ()),
+            7
+        );
         let type_ = Fixture::new(ElementKind::CLASS, "C");
         assert_eq!(SimpleElementVisitor6::visit_type(&mut v, &type_, ()), 7);
     }

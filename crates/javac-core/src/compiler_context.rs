@@ -21,8 +21,7 @@
 use crate::code::attribute::Attribute;
 use crate::code::directive::Directive;
 use crate::code::kinds;
-use crate::code::scope::{probe_index, EntryId, LookupKind, Scope, ScopeData, TableSlot};
-use std::rc::Rc;
+use crate::code::scope::{EntryId, LookupKind, Scope, ScopeData, TableSlot, probe_index};
 use crate::code::symbol::Symbol;
 use crate::code::type_::Type;
 use crate::ids::{AttributeId, DirectiveId, ScopeId, SymbolId, TreeId, TypeId};
@@ -30,6 +29,7 @@ use crate::tree::jc_tree::JCTree;
 use crate::util::arena::Arena;
 use crate::util::list::List;
 use crate::util::name::Name;
+use std::rc::Rc;
 
 /// The compilation context: the owner of the six arena containers (ADR 0001).
 #[derive(Default)]
@@ -43,7 +43,7 @@ pub struct CompilerContext {
     /// The canonical Type.noType singleton (Java: Type.noType). The port keeps
     /// one JCNoType instance per compiler context so identity comparisons of
     /// enclosing types match the upstream singleton (registered adapter).
-    no_type: Option<crate::ids::TypeId>,
+    no_type: Option<TypeId>,
 }
 
 impl CompilerContext {
@@ -124,7 +124,7 @@ impl CompilerContext {
     pub fn annotated_type_id(
         &mut self,
         ty: TypeId,
-        annos: &crate::util::list::List<crate::ids::AttributeId>,
+        annos: &List<AttributeId>,
     ) -> TypeId {
         let entry = crate::code::type_metadata::Entry::Annotations(
             crate::code::type_metadata::Annotations::new(annos.clone()),
@@ -231,7 +231,7 @@ impl CompilerContext {
     }
 
     /// The symbol arena (immutable view for the recursive Scope queries).
-    pub fn symbols_arena(&self) -> &Arena<crate::code::symbol::Symbol> {
+    pub fn symbols_arena(&self) -> &Arena<Symbol> {
         &self.symbols
     }
 
@@ -249,10 +249,11 @@ impl CompilerContext {
     /// the symbol arena id (the local Symbol does not carry its own id).
     pub fn symbol_inited_metadata(
         &mut self,
-        symbol: crate::ids::SymbolId,
+        symbol: SymbolId,
     ) -> &mut crate::code::symbol_metadata::SymbolMetadata {
         if self.sym(symbol).metadata.is_none() {
-            self.sym_mut(symbol).metadata = Some(crate::code::symbol_metadata::SymbolMetadata::new(symbol));
+            self.sym_mut(symbol).metadata =
+                Some(crate::code::symbol_metadata::SymbolMetadata::new(symbol));
         }
         self.sym_mut(symbol).metadata.as_mut().expect("metadata")
     }
@@ -260,17 +261,17 @@ impl CompilerContext {
     /// Java: Symbol.getRawAttributes() through the arena id.
     pub fn symbol_get_raw_attributes(
         &self,
-        symbol: crate::ids::SymbolId,
-    ) -> crate::util::list::List<crate::ids::AttributeId> {
+        symbol: SymbolId,
+    ) -> List<AttributeId> {
         self.sym(symbol).get_raw_attributes()
     }
 
     /// Java: Type.constType(Object constValue) — allocates the constant type.
     pub fn type_const_type(
         &mut self,
-        t: crate::ids::TypeId,
+        t: TypeId,
         value: crate::util::constants::ConstantValue,
-    ) -> crate::ids::TypeId {
+    ) -> TypeId {
         let constant = self.typ(t).const_type(value);
         self.alloc_type(constant)
     }
@@ -278,19 +279,17 @@ impl CompilerContext {
     /// Java: Type.constValue().
     pub fn type_const_value(
         &self,
-        t: crate::ids::TypeId,
+        t: TypeId,
     ) -> Option<&crate::util::constants::ConstantValue> {
         self.typ(t).const_value()
     }
 
     /// Java: Type.baseType() — a constant type returns its tsym.type, every
     /// other type returns itself.
-    pub fn type_base_type(&self, t: crate::ids::TypeId) -> crate::ids::TypeId {
+    pub fn type_base_type(&self, t: TypeId) -> TypeId {
         let ty = self.typ(t);
         if ty.const_value().is_some() {
-            ty.tsym
-                .and_then(|tsym| self.sym(tsym).ty)
-                .unwrap_or(t)
+            ty.tsym.and_then(|tsym| self.sym(tsym).ty).unwrap_or(t)
         } else {
             t
         }
@@ -360,8 +359,7 @@ impl CompilerContext {
         name: &Name,
         filter: &dyn Fn(SymbolId) -> bool,
     ) -> Option<SymbolId> {
-        self.scope(scope)
-            .find_first(name, filter, &self.symbols)
+        self.scope(scope).find_first(name, filter, &self.symbols)
     }
 
     /// Java: Scope.WriteableScope.includes(Symbol)
@@ -542,10 +540,10 @@ impl CompilerContext {
     /// Java: CompoundScope.getMark()
     pub fn scope_get_mark(&self, scope: ScopeId) -> i32 {
         match &self.scope(scope).data {
-            crate::code::scope::ScopeData::CompoundScope { mark, .. }
-            | crate::code::scope::ScopeData::ImportScope { mark, .. }
-            | crate::code::scope::ScopeData::NamedImportScope { mark, .. }
-            | crate::code::scope::ScopeData::StarImportScope { mark, .. } => *mark,
+            ScopeData::CompoundScope { mark, .. }
+            | ScopeData::ImportScope { mark, .. }
+            | ScopeData::NamedImportScope { mark, .. }
+            | ScopeData::StarImportScope { mark, .. } => *mark,
             _ => panic!("ClassCastException: not a CompoundScope"),
         }
     }
@@ -553,10 +551,10 @@ impl CompilerContext {
     /// Java: StarImportScope.isFilled() (subScopes.nonEmpty())
     pub fn scope_is_filled(&self, scope: ScopeId) -> bool {
         match &self.scope(scope).data {
-            crate::code::scope::ScopeData::CompoundScope { sub_scopes, .. }
-            | crate::code::scope::ScopeData::ImportScope { sub_scopes, .. }
-            | crate::code::scope::ScopeData::NamedImportScope { sub_scopes, .. }
-            | crate::code::scope::ScopeData::StarImportScope { sub_scopes, .. } => {
+            ScopeData::CompoundScope { sub_scopes, .. }
+            | ScopeData::ImportScope { sub_scopes, .. }
+            | ScopeData::NamedImportScope { sub_scopes, .. }
+            | ScopeData::StarImportScope { sub_scopes, .. } => {
                 !sub_scopes.is_empty()
             }
             _ => panic!("ClassCastException: not a CompoundScope"),
@@ -573,7 +571,7 @@ impl CompilerContext {
     ) -> ScopeId {
         let name = self.sym(sym).name.clone();
         let owner = self.scope(delegate).owner;
-        let new_scope = self.alloc_scope(crate::code::scope::Scope::new_single_entry_scope(
+        let new_scope = self.alloc_scope(Scope::new_single_entry_scope(
             owner,
             Some(sym),
             Some(origin),
@@ -598,31 +596,26 @@ impl CompilerContext {
         types: Rc<crate::code::types::Types>,
     ) -> ScopeId {
         let owner = self.scope(origin).owner;
-        let new_scope = self.alloc_scope(
-            crate::code::scope::Scope::new_filter_import_scope(
-                owner,
-                origin,
-                Some(name.clone()),
-                filter,
-                imp,
-                static_import,
-                cf_handler,
-                types,
-            ),
-        );
+        let new_scope = self.alloc_scope(Scope::new_filter_import_scope(
+            owner,
+            origin,
+            Some(name.clone()),
+            filter,
+            imp,
+            static_import,
+            cf_handler,
+            types,
+        ));
         self.named_import_append(named_scope, new_scope, name);
         new_scope
     }
 
     fn named_import_append(&mut self, named_scope: ScopeId, new_scope: ScopeId, name: Name) {
         self.scope_append_sub_scope(named_scope, new_scope);
-        if let crate::code::scope::ScopeData::NamedImportScope { name2_scopes, .. } =
+        if let ScopeData::NamedImportScope { name2_scopes, .. } =
             &mut self.scope_mut(named_scope).data
         {
-            name2_scopes
-                .entry(name)
-                .or_default()
-                .push(new_scope);
+            name2_scopes.entry(name).or_default().push(new_scope);
         }
     }
 
@@ -641,15 +634,13 @@ impl CompilerContext {
     ) {
         // avoid entering the same scope twice
         let duplicates = match &self.scope(star_scope).data {
-            crate::code::scope::ScopeData::StarImportScope { sub_scopes, .. } => {
-                sub_scopes.clone()
-            }
+            ScopeData::StarImportScope { sub_scopes, .. } => sub_scopes.clone(),
             _ => panic!("ClassCastException: not a StarImportScope"),
         };
         let mut current = duplicates;
         while current.non_empty() {
             let existing = *current.head();
-            if let crate::code::scope::ScopeData::FilterImportScope {
+            if let ScopeData::FilterImportScope {
                 origin: existing_origin,
                 filter: existing_filter,
                 static_import: existing_static,
@@ -668,18 +659,16 @@ impl CompilerContext {
             current = current.tail();
         }
         let owner = self.scope(origin).owner;
-        let new_scope = self.alloc_scope(
-            crate::code::scope::Scope::new_filter_import_scope(
-                owner,
-                origin,
-                None,
-                filter,
-                imp,
-                static_import,
-                cf_handler,
-                types,
-            ),
-        );
+        let new_scope = self.alloc_scope(Scope::new_filter_import_scope(
+            owner,
+            origin,
+            None,
+            filter,
+            imp,
+            static_import,
+            cf_handler,
+            types,
+        ));
         self.scope_prepend_sub_scope(star_scope, new_scope);
     }
 
@@ -707,15 +696,15 @@ impl CompilerContext {
         mut attr: Option<&mut crate::comp::attr::Attr>,
     ) {
         let (sub_scopes, name2_scopes) = match &self.scope(scope).data {
-            crate::code::scope::ScopeData::ImportScope { sub_scopes, .. } => {
+            ScopeData::ImportScope { sub_scopes, .. } => {
                 (sub_scopes.clone(), None)
             }
-            crate::code::scope::ScopeData::NamedImportScope {
+            ScopeData::NamedImportScope {
                 sub_scopes,
                 name2_scopes,
                 ..
             } => (sub_scopes.clone(), Some(name2_scopes.clone())),
-            crate::code::scope::ScopeData::StarImportScope { sub_scopes, .. } => {
+            ScopeData::StarImportScope { sub_scopes, .. } => {
                 (sub_scopes.clone(), None)
             }
             _ => return,
@@ -751,10 +740,10 @@ impl CompilerContext {
             None => None,
         };
         match &mut self.scope_mut(scope).data {
-            crate::code::scope::ScopeData::ImportScope { sub_scopes, .. } => {
+            ScopeData::ImportScope { sub_scopes, .. } => {
                 *sub_scopes = new_sub_scopes;
             }
-            crate::code::scope::ScopeData::NamedImportScope {
+            ScopeData::NamedImportScope {
                 sub_scopes,
                 name2_scopes,
                 ..
@@ -762,7 +751,7 @@ impl CompilerContext {
                 *sub_scopes = new_sub_scopes;
                 *name2_scopes = named_updated.expect("NamedImportScope name index");
             }
-            crate::code::scope::ScopeData::StarImportScope { sub_scopes, .. } => {
+            ScopeData::StarImportScope { sub_scopes, .. } => {
                 *sub_scopes = new_sub_scopes;
             }
             _ => {}
@@ -792,9 +781,9 @@ impl CompilerContext {
         attr: Option<&mut crate::comp::attr::Attr>,
     ) -> ScopeId {
         let (owner, statically_imported) = match &self.scope(scope).data {
-            crate::code::scope::ScopeData::FilterImportScope {
-                static_import, ..
-            } => (self.scope(scope).owner, *static_import),
+            ScopeData::FilterImportScope { static_import, .. } => {
+                (self.scope(scope).owner, *static_import)
+            }
             _ => return scope,
         };
         if !statically_imported {
@@ -803,13 +792,13 @@ impl CompilerContext {
         let Some(owner) = owner else {
             return scope;
         };
-        if self.sym(owner).kind != crate::code::kinds::Kind::TYP {
+        if self.sym(owner).kind != kinds::Kind::TYP {
             return scope;
         }
         let snapshot = self.scope(scope).clone();
         let symbols = snapshot.get_symbols_full(
             scope,
-            crate::code::scope::LookupKind::NON_RECURSIVE,
+            LookupKind::NON_RECURSIVE,
             &|_| true,
             types,
             syms,
@@ -912,8 +901,8 @@ impl CompilerContext {
                     dcfh.class_symbol_complete_failed(self, symbol, orig);
                 }
                 // quiet error recovery
-                self.sym_mut(symbol).flags_field |= (crate::code::flags::PUBLIC
-                    | crate::code::flags::STATIC) as i64;
+                self.sym_mut(symbol).flags_field |=
+                    (crate::code::flags::PUBLIC | crate::code::flags::STATIC) as i64;
                 self.sym_mut(symbol).ty =
                     Some(crate::code::symtab::new_error_type_for_class(self, symbol));
                 Err(failure)
@@ -938,8 +927,8 @@ impl CompilerContext {
                     dcfh.class_symbol_complete_failed(self, symbol, orig);
                 }
                 // quiet error recovery
-                self.sym_mut(symbol).flags_field |= (crate::code::flags::PUBLIC
-                    | crate::code::flags::STATIC) as i64;
+                self.sym_mut(symbol).flags_field |=
+                    (crate::code::flags::PUBLIC | crate::code::flags::STATIC) as i64;
                 self.sym_mut(symbol).ty =
                     Some(crate::code::symtab::new_error_type_for_class(self, symbol));
                 Err(failure)
@@ -1028,8 +1017,7 @@ impl CompilerContext {
             let merged = if self.sym(package).metadata.is_none() {
                 let other = self.sym(package_info).metadata.as_ref();
                 other.map(|other| {
-                    let mut metadata =
-                        crate::code::symbol_metadata::SymbolMetadata::new(package);
+                    let mut metadata = crate::code::symbol_metadata::SymbolMetadata::new(package);
                     metadata.set_attributes(self, other);
                     metadata
                 })
@@ -1090,10 +1078,7 @@ impl CompilerContext {
 
     /// Java: scope.dup(newOwner) — shares the hash table with the given scope.
     pub fn scope_dup(&mut self, scope: ScopeId, new_owner: Option<SymbolId>) -> ScopeId {
-        let new_scope = self
-            .scopes
-            .get_mut(scope.index())
-            .dup(scope, new_owner);
+        let new_scope = self.scopes.get_mut(scope.index()).dup(scope, new_owner);
         ScopeId::new(self.scopes.push(new_scope))
     }
 
@@ -1116,8 +1101,14 @@ impl CompilerContext {
         // handles first; borrow rules: no RefCell borrow across members).
         let (next_id, table, entries, elems, nelems, has_symbols) = {
             let leaving = self.scopes.get(scope.index());
-            let ScopeData::ScopeImpl { next, table, entries, elems, nelems, .. } =
-                &leaving.data
+            let ScopeData::ScopeImpl {
+                next,
+                table,
+                entries,
+                elems,
+                nelems,
+                ..
+            } = &leaving.data
             else {
                 panic!("ClassCastException: not a ScopeImpl");
             };
@@ -1134,7 +1125,9 @@ impl CompilerContext {
         let same_table = {
             let next_scope = self.scopes.get(next_id.index());
             match &next_scope.data {
-                ScopeData::ScopeImpl { table: next_table, .. } => Rc::ptr_eq(&table, next_table),
+                ScopeData::ScopeImpl {
+                    table: next_table, ..
+                } => Rc::ptr_eq(&table, next_table),
                 _ => false,
             }
         };
@@ -1176,18 +1169,17 @@ impl CompilerContext {
         next_id
     }
 
-
     /// Java: new TypeVar(Name name, Symbol owner, Type lower) — creates the
     /// TypeVariableSymbol whose type is the new TypeVar (tsym back-pointer).
     pub fn new_type_var_with_owner(
         &mut self,
         names: &crate::util::names::Names,
-        name: crate::util::name::Name,
+        name: Name,
         owner: SymbolId,
         lower: TypeId,
     ) -> TypeId {
         let _ = names;
-        let ty = self.alloc_type(crate::code::type_::Type::new(
+        let ty = self.alloc_type(Type::new(
             crate::code::type_tag::TypeTag::TYPEVAR,
             None,
             crate::code::type_::TypeKindData::TypeVar {
@@ -1195,11 +1187,8 @@ impl CompilerContext {
                 lower: Some(lower),
             },
         ));
-        let sym = self.alloc_symbol(crate::code::symbol::Symbol::new_type_variable_symbol(
-            0,
-            name,
-            ty,
-            owner,
+        let sym = self.alloc_symbol(Symbol::new_type_variable_symbol(
+            0, name, ty, owner,
         ));
         if let crate::code::type_::TypeKindData::TypeVar { .. } = &mut self.typ_mut(ty).kind {
             self.typ_mut(ty).tsym = Some(sym);
@@ -1218,8 +1207,8 @@ impl CompilerContext {
         intersection: TypeId,
         erasure: TypeId,
     ) -> SymbolId {
-        let sym = self.alloc_symbol(crate::code::symbol::Symbol::new(
-            crate::code::kinds::Kind::TYP,
+        let sym = self.alloc_symbol(Symbol::new(
+            kinds::Kind::TYP,
             flags,
             names.empty.clone(),
             Some(intersection),
@@ -1253,19 +1242,24 @@ impl CompilerContext {
 
 /// Java: CompoundScope.subScopes/mark field access (the compound scope family).
 fn sub_scope_fields_mut(
-    scope: &mut crate::code::scope::Scope,
-) -> Option<(&mut crate::util::list::List<crate::ids::ScopeId>, &mut i32)> {
+    scope: &mut Scope,
+) -> Option<(&mut List<ScopeId>, &mut i32)> {
     match &mut scope.data {
-        crate::code::scope::ScopeData::CompoundScope { sub_scopes, mark, .. }
-        | crate::code::scope::ScopeData::ImportScope { sub_scopes, mark, .. }
-        | crate::code::scope::ScopeData::NamedImportScope { sub_scopes, mark, .. }
-        | crate::code::scope::ScopeData::StarImportScope { sub_scopes, mark, .. } => {
-            Some((sub_scopes, mark))
+        ScopeData::CompoundScope {
+            sub_scopes, mark, ..
         }
+        | ScopeData::ImportScope {
+            sub_scopes, mark, ..
+        }
+        | ScopeData::NamedImportScope {
+            sub_scopes, mark, ..
+        }
+        | ScopeData::StarImportScope {
+            sub_scopes, mark, ..
+        } => Some((sub_scopes, mark)),
         _ => None,
     }
 }
-
 
 impl CompilerContext {
     /// Java: ClassSymbol.createRecordComponent(RecordComponent existing,
@@ -1310,7 +1304,7 @@ impl CompilerContext {
             _ => crate::util::position::NOPOS,
         };
         let rc = self.alloc_symbol(Symbol::new(
-            crate::code::kinds::Kind::VAR,
+            kinds::Kind::VAR,
             crate::code::flags::PUBLIC as i64,
             var_name,
             Some(var_ty),
@@ -1331,9 +1325,9 @@ impl CompilerContext {
                     let mut filtered: List<SymbolId> = List::nil();
                     let current = record_components.clone();
                     for component in &current {
-                    if component != existing {
-                        filtered = filtered.append(component);
-                    }
+                        if component != existing {
+                            filtered = filtered.append(component);
+                        }
                     }
                     *record_components = filtered.append(rc);
                 }
@@ -1353,13 +1347,12 @@ impl CompilerContext {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::code::kinds::Kind;
     use crate::code::scope::Scope;
-    use crate::code::symbol::{Symbol, SymbolKind};
+    use crate::code::symbol::Symbol;
     use crate::util::name::NameTableHandle;
     use std::rc::Rc;
 
@@ -1374,10 +1367,10 @@ mod tests {
             crate::code::source::Source::JDK17,
         );
         let types = crate::code::types::Types::with_names(Rc::clone(&names));
-        let scope = ctx.alloc_scope(crate::code::scope::Scope::new_scope_impl(None));
+        let scope = ctx.alloc_scope(Scope::new_scope_impl(None));
         let name_a = names.from_utf(b"a");
-        let sym_a = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
-            crate::code::kinds::Kind::VAR,
+        let sym_a = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
             0,
             name_a.clone(),
             None,
@@ -1390,8 +1383,8 @@ mod tests {
                 data: None,
             },
         ));
-        let sym_b = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
-            crate::code::kinds::Kind::VAR,
+        let sym_b = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
             0,
             name_a.clone(),
             None,
@@ -1413,7 +1406,7 @@ mod tests {
         *ctx.scope_mut(scope) = scope_snapshot;
         let all = ctx.scope_get_symbols_ctx(
             scope,
-            crate::code::scope::LookupKind::NON_RECURSIVE,
+            LookupKind::NON_RECURSIVE,
             &|_| true,
             &types,
             &syms,
@@ -1423,7 +1416,7 @@ mod tests {
         let by_name = ctx.scope_get_symbols_by_name_ctx(
             scope,
             &name_a,
-            crate::code::scope::LookupKind::NON_RECURSIVE,
+            LookupKind::NON_RECURSIVE,
             &|_| true,
             &types,
             &syms,
@@ -1478,14 +1471,10 @@ mod tests {
             Rc::new(std::cell::RefCell::new(FlagCompleter));
         ctx.sym_mut(id).completer = Some(completer);
         assert!(ctx.api_complete_symbol(&syms, id).is_ok());
-        assert!(
-            (ctx.sym(id).flags_field & crate::code::flags::DEPRECATED as i64) != 0,
-            "apiComplete runs Symbol.complete() like Symbol.java:686-692"
-        );
+        assert_ne!((ctx.sym(id).flags_field & crate::code::flags::DEPRECATED as i64), 0, "apiComplete runs Symbol.complete() like Symbol.java:686-692");
         assert!(ctx.sym(id).completer.is_none());
         assert!(ctx.api_complete_symbol(&syms, id).is_ok());
     }
-
 
     fn name_table() -> Rc<NameTableHandle> {
         NameTableHandle::unshared()
@@ -1555,18 +1544,32 @@ mod tests {
             ));
             ctx.scope_enter(scope, sym);
         }
-        assert_eq!(ctx.scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true).len(), 3);
+        assert_eq!(
+            ctx.scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true)
+                .len(),
+            3
+        );
         // The iteration order is the upstream elems chain order (LIFO).
         let symbols = ctx.scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true);
         assert_eq!(symbols[0], SymbolId::new(2));
         assert_eq!(symbols[2], SymbolId::new(0));
         let a = name(&table, "a");
-        assert_eq!(ctx.scope_find_first(scope, &a, &|_| true), Some(SymbolId::new(0)));
+        assert_eq!(
+            ctx.scope_find_first(scope, &a, &|_| true),
+            Some(SymbolId::new(0))
+        );
         assert!(ctx.scope_includes(scope, SymbolId::new(1)));
-        assert_eq!(ctx.scope_get_symbols_by_name(scope, &a, LookupKind::NON_RECURSIVE, &|_| true), vec![SymbolId::new(0)]);
+        assert_eq!(
+            ctx.scope_get_symbols_by_name(scope, &a, LookupKind::NON_RECURSIVE, &|_| true),
+            vec![SymbolId::new(0)]
+        );
         ctx.scope_remove(scope, SymbolId::new(0));
         assert!(!ctx.scope_includes(scope, SymbolId::new(0)));
-        assert_eq!(ctx.scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true).len(), 2);
+        assert_eq!(
+            ctx.scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true)
+                .len(),
+            2
+        );
         assert!(!ctx.scope_is_empty(scope));
         assert!(ctx.scope_any_match(scope, &|_| true));
     }

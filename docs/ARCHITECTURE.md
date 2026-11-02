@@ -35,6 +35,6 @@ flowchart LR
   language bundles, embedded at build time (no runtime file I/O).
 - `compiler_zh_CN.properties` carries 24 local patches that bring the
   Chinese coverage to 936/936.
-- `cargo xtask gen-resources` regenerates the typed accessors
-  (`compiler_accessors.rs`), the accessor metadata (`compiler_metadata.rs`),
+- `cargo xtask gen-resources` regenerates the typed accessors (`compiler_accessors.rs`), the accessor metadata
+  (`compiler_metadata.rs`),
   and the compatibility re-exports (`compiler_properties.rs`).

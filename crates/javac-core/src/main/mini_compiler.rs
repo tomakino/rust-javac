@@ -18,37 +18,37 @@ use crate::code::deferred_completion_failure_handler::DeferredCompletionFailureH
 use crate::code::deferred_lint_handler::DeferredLintHandler;
 use crate::code::dependencies::DummyDependencies;
 use crate::code::lint::Lint;
+use crate::code::module_finder::ModuleFinder;
 use crate::code::preview::Preview;
 use crate::code::source::Source;
+use crate::code::symbol::CompleterFactory;
 use crate::code::symtab::Symtab;
+use crate::code::type_annotations::TypeAnnotations;
 use crate::code::types::Types;
 use crate::comp::annotate::Annotate;
 use crate::comp::attr::Attr;
+use crate::comp::attr_context::AttrContext;
 use crate::comp::check::Check;
 use crate::comp::const_fold::ConstFold;
 use crate::comp::enter::Enter;
+use crate::comp::env::Env;
 use crate::comp::flow::Flow;
 use crate::comp::infer::Infer;
+use crate::comp::lambda_to_method::LambdaToMethod;
 use crate::comp::lower::Lower;
 use crate::comp::member_enter::MemberEnter;
 use crate::comp::modules::Modules;
-use crate::tree::tree_maker::TreeFactory;
 use crate::comp::operators::Operators;
 use crate::comp::resolve::Resolve;
 use crate::comp::todo::Todo;
-use crate::comp::lambda_to_method::LambdaToMethod;
 use crate::comp::trans_patterns::TransPatterns;
 use crate::comp::trans_types::TransTypes;
-use crate::code::type_annotations::TypeAnnotations;
-use crate::code::module_finder::ModuleFinder;
-use crate::code::symbol::CompleterFactory;
 use crate::comp::type_enter::TypeEnter;
-use crate::comp::attr_context::AttrContext;
-use crate::comp::env::Env;
 use crate::comp::type_envs::TypeEnvs;
 use crate::compiler_context::CompilerContext;
 use crate::file::cache_fs_info::CacheFSInfo;
 use crate::file::javac_file_manager::JavacFileManager;
+use crate::ids::{SymbolId, TreeId};
 use crate::jvm::class_reader::ClassReader;
 use crate::jvm::class_writer::ClassWriter;
 use crate::jvm::codegen::Gen;
@@ -56,16 +56,16 @@ use crate::jvm::jni_writer::JNIWriter;
 use crate::jvm::pool_writer::PoolWriter;
 use crate::jvm::profile::Profile;
 use crate::jvm::target::Target;
-use crate::ids::{SymbolId, TreeId};
 use crate::parser::parser::Parser;
+use crate::resources::compiler_properties::fragments;
 use crate::tree::jc_tree::TreeKind;
-use crate::util::abstract_log::AbstractLog;
-use crate::util::list::List;
+use crate::tree::tree_maker::TreeFactory;
 use crate::tree::tree_maker::TreeMaker;
+use crate::util::abstract_log::AbstractLog;
 use crate::util::context::Context as UtilContext;
 use crate::util::javac_messages::JavacMessages;
-use crate::resources::compiler_properties::fragments;
 use crate::util::jc_diagnostic::{Factory, Fragment};
+use crate::util::list::List;
 use crate::util::log::Log;
 use crate::util::names::Names;
 use crate::util::options::Options;
@@ -78,7 +78,6 @@ pub struct CompiledClass {
     /// The generated class file bytes.
     pub bytes: Vec<u8>,
 }
-
 
 /// The minimal compiler wiring over the ported compilation phases.
 pub struct MiniCompiler {
@@ -218,9 +217,7 @@ impl crate::code::class_finder::SourceFileReader for SourceFileCompleter {
         let Some(filename) = filename else {
             return Ok(());
         };
-        let prev = self
-            .log
-            .use_source(Some(Rc::clone(&filename)));
+        let prev = self.log.use_source(Some(Rc::clone(&filename)));
         // Java: try { tree = parse(filename, filename.getCharContent(false)); }
         // catch (IOException e) { log.error(Errors.ErrorReadingFile(...));
         //     tree = make.TopLevel(List.nil()); }
@@ -241,8 +238,9 @@ impl crate::code::class_finder::SourceFileReader for SourceFileCompleter {
                 );
                 let tree = parser.parse_compilation_unit(ctx);
                 // Java: tree.sourcefile = filename (JavaCompiler.parse).
-                if let TreeKind::CompilationUnit { sourcefile: slot, .. } =
-                    &mut ctx.tree_mut(tree).kind
+                if let TreeKind::CompilationUnit {
+                    sourcefile: slot, ..
+                } = &mut ctx.tree_mut(tree).kind
                 {
                     *slot = Some(Rc::clone(&filename));
                 }
@@ -362,10 +360,7 @@ impl MiniCompiler {
     ///
     /// # Panics
     ///   - a service invariant is violated.
-    pub fn new_with_options(
-        out_dir: &Path,
-        configure: impl FnOnce(&Options),
-    ) -> MiniCompiler {
+    pub fn new_with_options(out_dir: &Path, configure: impl FnOnce(&Options)) -> MiniCompiler {
         let mut util_context = UtilContext::new();
         let messages = JavacMessages::instance(&mut util_context);
         let diags = Rc::new(Factory::new(messages, "compiler"));
@@ -381,23 +376,27 @@ impl MiniCompiler {
         if let Some(path) = options.get("-Xstdout")
             && let Ok(file) = std::fs::File::create(&path)
         {
-            let writer: crate::util::log::WriterHandle = Rc::new(RefCell::new(
-                Box::new(crate::util::log::LineSeparatorWriter::new(file))
-                    as Box<dyn std::io::Write>,
-            ));
+            let writer: crate::util::log::WriterHandle = Rc::new(RefCell::new(Box::new(
+                crate::util::log::LineSeparatorWriter::new(file),
+            )
+                as Box<dyn std::io::Write>));
             log.set_writers(writer);
         }
         let lint = Lint::instance(&mut util_context);
         let preview = Preview::instance(&mut util_context);
         // JavaCompiler: Source/Target.instance read --source/--target;
         // --release selects both, and target defaults to source.requiredTarget().
-        let release_source = options.get("--release").and_then(|value| Source::lookup(&value));
+        let release_source = options
+            .get("--release")
+            .and_then(|value| Source::lookup(&value));
         let source = options
             .get("--source")
             .and_then(|value| Source::lookup(&value))
             .or(release_source)
             .unwrap_or(Source::JDK17);
-        let release_target = options.get("--release").and_then(|value| Target::lookup(&value));
+        let release_target = options
+            .get("--release")
+            .and_then(|value| Target::lookup(&value));
         let target = options
             .get("--target")
             .and_then(|value| Target::lookup(&value))
@@ -492,10 +491,8 @@ impl MiniCompiler {
                 // Java: Main.java:265 hands the deferred value composed by
                 // Option.PATCH_MODULE (NUL-separated entries) to the file
                 // manager, which forwards it to Locations.handleOption.
-                file_manager.handle_option_value(
-                    crate::main::option::Option::PATCH_MODULE,
-                    &patch_module,
-                );
+                file_manager
+                    .handle_option_value(crate::main::option::Option::PATCH_MODULE, &patch_module);
             }
         }
         let annotate_cell: Rc<RefCell<Option<Rc<Annotate>>>> = Rc::new(RefCell::new(None));
@@ -545,8 +542,7 @@ impl MiniCompiler {
         crate::comp::check::attach_self(&chk);
         chk.warn_on_any_access_to_members
             .set(options.is_set("warnOnAccessToMembers"));
-        chk
-            .set_file_manager(Rc::clone(&file_manager) as Rc<dyn JavaFileManager>);
+        chk.set_file_manager(Rc::clone(&file_manager) as Rc<dyn JavaFileManager>);
         chk.set_profile(Rc::clone(&profile));
         let type_envs = Rc::new(TypeEnvs::new());
         let enter = Rc::new(Enter::new(
@@ -559,7 +555,7 @@ impl MiniCompiler {
             Rc::clone(&file_manager) as Rc<dyn JavaFileManager>,
             &options,
             Rc::clone(&todo),
-            Rc::clone(&type_envs)
+            Rc::clone(&type_envs),
         ));
         let member_enter = Rc::new(MemberEnter::new(
             Rc::clone(&enter),
@@ -700,7 +696,9 @@ impl MiniCompiler {
             Rc::clone(&annotate),
             Rc::clone(&attr),
             Rc::clone(&resolve),
-            Rc::new(RefCell::new(crate::comp::compile_states::CompileStates::new())),
+            Rc::new(RefCell::new(
+                crate::comp::compile_states::CompileStates::new(),
+            )),
             Rc::clone(&diags),
             Rc::clone(&chk),
             crate::code::source::Feature::GRAPH_INFERENCE.allowed_in_source(source),
@@ -934,16 +932,15 @@ impl MiniCompiler {
         };
         // Java: the JavaCompiler installs readSourceFile as the ClassFinder
         // source completer (ClassFinder.sourceCompleter = this::readSourceFile).
-        *compiler.finder.source_file_reader.borrow_mut() =
-            Some(Rc::new(SourceFileCompleter {
-                log: Rc::clone(&compiler.log),
-                diags: Rc::clone(&compiler.diags),
-                dcfh: Rc::clone(&compiler.dcfh),
-                parser_factory: Rc::clone(&compiler.parser_factory),
-                enter: Rc::clone(&compiler.enter),
-                modules: Rc::clone(&compiler.modules),
-                line_debug_info: compiler.generator.borrow().line_debug_info,
-            }));
+        *compiler.finder.source_file_reader.borrow_mut() = Some(Rc::new(SourceFileCompleter {
+            log: Rc::clone(&compiler.log),
+            diags: Rc::clone(&compiler.diags),
+            dcfh: Rc::clone(&compiler.dcfh),
+            parser_factory: Rc::clone(&compiler.parser_factory),
+            enter: Rc::clone(&compiler.enter),
+            modules: Rc::clone(&compiler.modules),
+            line_debug_info: compiler.generator.borrow().line_debug_info,
+        }));
         compiler.bootstrap_modules();
         compiler
     }
@@ -964,9 +961,8 @@ impl MiniCompiler {
             .get_location_for_module(&*system_modules, &js("java.base"));
 
         if let Ok(module_location) = module_location_result
-            && let crate::code::symbol::SymbolKind::ModuleSymbol {
-                class_location, ..
-            } = &mut self.ctx.sym_mut(java_base).kind_data
+            && let crate::code::symbol::SymbolKind::ModuleSymbol { class_location, .. } =
+                &mut self.ctx.sym_mut(java_base).kind_data
         {
             *class_location = Some(module_location);
         }
@@ -987,26 +983,19 @@ impl MiniCompiler {
         // the java.base packages are entered and mapped (Modules.java:440-500).
         let modules_file = self.java_home.join("lib").join("modules");
         if let Ok(image) = javac_jimage::JImage::open(&modules_file) {
-            let packages_result = image.packages_of_module("java.base");            if let Ok(packages) = packages_result {
+            let packages_result = image.packages_of_module("java.base");
+            if let Ok(packages) = packages_result {
                 for package in packages {
                     let name = self
                         .names
                         .from_string(&javac_strings::JavaString::from(package.as_str()));
-                    let package_symbol = self
-                        .syms
-                        .enter_package(&mut self.ctx, java_base, name);
+                    let package_symbol = self.syms.enter_package(&mut self.ctx, java_base, name);
                     // Java: Modules bootstrap records every module package in the
                     // module's visiblePackages (the module reads its own packages).
-                    self.syms.add_visible_package(
-                        &mut self.ctx,
-                        java_base,
-                        package_symbol,
-                    );
-                    self.syms.add_visible_package(
-                        &mut self.ctx,
-                        unnamed,
-                        package_symbol,
-                    );
+                    self.syms
+                        .add_visible_package(&mut self.ctx, java_base, package_symbol);
+                    self.syms
+                        .add_visible_package(&mut self.ctx, unnamed, package_symbol);
                 }
             }
         }
@@ -1038,8 +1027,7 @@ fn java_home() -> FsPath {
     if let Some(home) = java_home_from_path() {
         return FsPath::from_path_buf(home);
     }
-    let baseline =
-        PathBuf::from(r"C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot");
+    let baseline = PathBuf::from(r"C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot");
     if is_jdk_home(&baseline) {
         return FsPath::from_path_buf(baseline);
     }
@@ -1051,10 +1039,7 @@ fn java_home_from_path() -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     for directory in std::env::split_paths(&path) {
         for launcher in ["javac", "java"] {
-            let candidate = directory.join(format!(
-                "{launcher}{}",
-                std::env::consts::EXE_SUFFIX
-            ));
+            let candidate = directory.join(format!("{launcher}{}", std::env::consts::EXE_SUFFIX));
             if !candidate.is_file() {
                 continue;
             }
@@ -1167,8 +1152,7 @@ impl MiniCompiler {
         {
             let syms_rc = Rc::clone(&self.syms);
             let mut syms = &*syms_rc;
-            self.modules
-                .init_modules(&mut self.ctx, &mut syms, &roots);
+            self.modules.init_modules(&mut self.ctx, &mut syms, &roots);
         }
         // JavaCompiler.compile2: the second stopIfError(ENTER, ...) guards
         // enterTrees.
@@ -1181,10 +1165,7 @@ impl MiniCompiler {
         {
             let syms_rc = Rc::clone(&self.syms);
             let mut syms = &*syms_rc;
-            if let Err(failure) = self
-                .enter
-                .main(&mut self.ctx, &mut syms, root_list.clone())
-            {
+            if let Err(failure) = self.enter.main(&mut self.ctx, &mut syms, root_list.clone()) {
                 self.chk.completion_error(
                     &mut self.ctx,
                     crate::util::position::NOPOS,
@@ -1238,9 +1219,11 @@ impl MiniCompiler {
                 let sf = env
                     .toplevel
                     .and_then(|top| match &self.ctx.tree(top).kind {
-                        crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => sourcefile
-                            .as_ref()
-                            .map(|f| f.get_name().to_string_lossy().to_string()),
+                        TreeKind::CompilationUnit { sourcefile, .. } => {
+                            sourcefile
+                                .as_ref()
+                                .map(|f| f.get_name().to_string_lossy().to_string())
+                        }
                         _ => None,
                     })
                     .unwrap_or_default();
@@ -1267,25 +1250,27 @@ impl MiniCompiler {
         let t_flow = std::time::Instant::now();
         // JavaCompiler.flow(envs)
         for env in &envs {
-                        if std::env::var_os("DSH_DEBUG_ENV").is_some() {
+            if std::env::var_os("DSH_DEBUG_ENV").is_some() {
                 let sf = env
                     .toplevel
                     .and_then(|top| match &self.ctx.tree(top).kind {
-                        crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => sourcefile
-                            .as_ref()
-                            .map(|f| f.get_name().to_string_lossy().to_string()),
+                        TreeKind::CompilationUnit { sourcefile, .. } => {
+                            sourcefile
+                                .as_ref()
+                                .map(|f| f.get_name().to_string_lossy().to_string())
+                        }
                         _ => None,
                     })
                     .unwrap_or_default();
                 eprintln!("[ENV-FLOW] {}", sf);
             }
             // JavaCompiler.flow: JavaFileObject prev = log.useSource(env.toplevel.sourcefile).
-            let sourcefile = env
-                .toplevel
-                .and_then(|toplevel| match &self.ctx.tree(toplevel).kind {
-                    TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
-                    _ => None,
-                });
+            let sourcefile =
+                env.toplevel
+                    .and_then(|toplevel| match &self.ctx.tree(toplevel).kind {
+                        TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
+                        _ => None,
+                    });
             let prev_source = self.log.use_source(sourcefile);
             let make = Rc::clone(&self.make);
             let syms_guard = &*self.syms;
@@ -1319,13 +1304,15 @@ impl MiniCompiler {
         let t_gen_total = std::time::Duration::ZERO;
         for env in envs {
             let t_one = std::time::Instant::now();
-                        if std::env::var_os("DSH_DEBUG_ENV").is_some() {
+            if std::env::var_os("DSH_DEBUG_ENV").is_some() {
                 let sf = env
                     .toplevel
                     .and_then(|top| match &self.ctx.tree(top).kind {
-                        crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => sourcefile
-                            .as_ref()
-                            .map(|f| f.get_name().to_string_lossy().to_string()),
+                        TreeKind::CompilationUnit { sourcefile, .. } => {
+                            sourcefile
+                                .as_ref()
+                                .map(|f| f.get_name().to_string_lossy().to_string())
+                        }
                         _ => None,
                     })
                     .unwrap_or_default();
@@ -1341,8 +1328,14 @@ impl MiniCompiler {
             // directly (JavaCompiler.java:1516-1527); class declarations go
             // through TransTypes first.
             let top_tree = env.tree.expect("env.tree");
-            let top_is_info = self.ctx.tree(top_tree).has_tag(crate::tree::jc_tree::Tag::PACKAGEDEF)
-                || self.ctx.tree(top_tree).has_tag(crate::tree::jc_tree::Tag::MODULEDEF);
+            let top_is_info = self
+                .ctx
+                .tree(top_tree)
+                .has_tag(crate::tree::jc_tree::Tag::PACKAGEDEF)
+                || self
+                    .ctx
+                    .tree(top_tree)
+                    .has_tag(crate::tree::jc_tree::Tag::MODULEDEF);
             let translated = if top_is_info {
                 if self.should_stop(crate::comp::compile_states::CompileState::LOWER) {
                     self.last_compiled_classes = Vec::new();
@@ -1373,36 +1366,39 @@ impl MiniCompiler {
                     translated,
                     Rc::clone(&local_make),
                 );
-                self.trans_types
-                    .borrow()
-                    .compile_states
-                    .borrow_mut()
-                    .put(&env, crate::comp::compile_states::CompileState::TRANSPATTERNS);
+                self.trans_types.borrow().compile_states.borrow_mut().put(
+                    &env,
+                    crate::comp::compile_states::CompileState::TRANSPATTERNS,
+                );
                 // JavaCompiler.desugar: LambdaToMethod runs when the source
                 // allows lambdas and the tree contains a lambda or member
                 // reference (the scanner hasLambdas flag).
-                let translated =
-                    if crate::code::source::Feature::LAMBDA.allowed_in_source(self.source)
-                        && contains_lambda(&mut self.ctx, translated)
-                    {
-                        if self.should_stop(crate::comp::compile_states::CompileState::UNLAMBDA) {
-                            self.last_compiled_classes = Vec::new();
-                            return Ok(Vec::new());
-                        }
-                        let translated = self.lambda_to_method.borrow_mut().translate_top_level_class(
+                let translated = if crate::code::source::Feature::LAMBDA
+                    .allowed_in_source(self.source)
+                    && contains_lambda(&mut self.ctx, translated)
+                {
+                    if self.should_stop(crate::comp::compile_states::CompileState::UNLAMBDA) {
+                        self.last_compiled_classes = Vec::new();
+                        return Ok(Vec::new());
+                    }
+                    let translated = self
+                        .lambda_to_method
+                        .borrow_mut()
+                        .translate_top_level_class(
                             &mut self.ctx,
                             &env,
                             translated,
                             Rc::clone(&local_make),
                         );
-                        self.trans_types.borrow().compile_states.borrow_mut().put(
-                            &env,
-                            crate::comp::compile_states::CompileState::UNLAMBDA,
-                        );
-                        translated
-                    } else {
-                        translated
-                    };
+                    self.trans_types
+                        .borrow()
+                        .compile_states
+                        .borrow_mut()
+                        .put(&env, crate::comp::compile_states::CompileState::UNLAMBDA);
+                    translated
+                } else {
+                    translated
+                };
                 translated
             };
             // JavaCompiler.desugar: if (shouldStop(LOWER)) return.
@@ -1427,7 +1423,7 @@ impl MiniCompiler {
             // JavaCompiler.generate(queue)
             let current = defs;
             for classdef in &current {
-            self.generate_class(&env, classdef)?;
+                self.generate_class(&env, classdef)?;
             }
             let mut generated = self.take_generated_classes()?;
             classes.append(&mut generated);
@@ -1462,8 +1458,10 @@ impl MiniCompiler {
             .map_err(|error| format!("cannot read {}: {error:?}", absolute.display()))?
             .ok_or_else(|| format!("cannot read {}", absolute.display()))?;
         let prev_source = self.log.use_source(Some(Rc::clone(&sourcefile)));
-        let module_info = sourcefile
-            .is_name_compatible(&javac_strings::JavaString::from("module-info"), javac_tools::tools::java_file_object::Kind::SOURCE);
+        let module_info = sourcefile.is_name_compatible(
+            &javac_strings::JavaString::from("module-info"),
+            javac_tools::tools::java_file_object::Kind::SOURCE,
+        );
         let result = {
             // Java: JavaCompiler.java:618-619 passes lineDebugInfo as
             // keepLineMap; the line map is required for LineNumberTable.
@@ -1480,8 +1478,9 @@ impl MiniCompiler {
         };
         self.log.use_source(prev_source);
         // JavaCompiler.parse: tree.sourcefile = filename
-        if let TreeKind::CompilationUnit { sourcefile: slot, .. } =
-            &mut self.ctx.tree_mut(result).kind
+        if let TreeKind::CompilationUnit {
+            sourcefile: slot, ..
+        } = &mut self.ctx.tree_mut(result).kind
         {
             *slot = Some(Rc::clone(&sourcefile));
         }
@@ -1500,16 +1499,21 @@ impl MiniCompiler {
 
     fn check_enum_tree(&mut self, tree: TreeId) {
         let (class_sym, extending, defs, pos) = match &self.ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::ClassDecl {
+            TreeKind::ClassDecl {
                 sym: Some(class_sym),
                 extending,
                 defs,
                 ..
-            } => (*class_sym, *extending, defs.clone(), self.ctx.tree(tree).pos),
-            crate::tree::jc_tree::TreeKind::CompilationUnit { defs, .. } => {
+            } => (
+                *class_sym,
+                *extending,
+                defs.clone(),
+                self.ctx.tree(tree).pos,
+            ),
+            TreeKind::CompilationUnit { defs, .. } => {
                 let current = defs.clone();
                 for def in &current {
-                self.check_enum_tree(def);
+                    self.check_enum_tree(def);
                 }
                 return;
             }
@@ -1534,24 +1538,19 @@ impl MiniCompiler {
                     }
                     _ => None,
                 };
-                let prev_source = crate::util::abstract_log::AbstractLog::use_source(
-                    &*self.log,
-                    sourcefile,
-                );
-                crate::util::abstract_log::AbstractLog::error_at(
+                let prev_source =
+                    AbstractLog::use_source(&*self.log, sourcefile);
+                AbstractLog::error_at(
                     &*self.log,
                     pos,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
-                crate::util::abstract_log::AbstractLog::use_source(
-                    &*self.log,
-                    prev_source,
-                );
+                AbstractLog::use_source(&*self.log, prev_source);
             }
         }
         let current = defs;
         for def in &current {
-        self.check_enum_tree(def);
+            self.check_enum_tree(def);
         }
     }
 
@@ -1559,21 +1558,20 @@ impl MiniCompiler {
         let sourcefile = env
             .encl_class
             .and_then(|encl| match &self.ctx.tree(encl).kind {
-                TreeKind::ClassDecl { sym: Some(sym), .. } => {
-                    match &self.ctx.sym(*sym).kind_data {
-                        crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => {
-                            sourcefile.clone()
-                        }
-                        _ => None,
+                TreeKind::ClassDecl { sym: Some(sym), .. } => match &self.ctx.sym(*sym).kind_data {
+                    crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => {
+                        sourcefile.clone()
                     }
-                }
+                    _ => None,
+                },
                 _ => None,
             })
             .or_else(|| {
-                env.toplevel.and_then(|toplevel| match &self.ctx.tree(toplevel).kind {
-                    TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
-                    _ => None,
-                })
+                env.toplevel
+                    .and_then(|toplevel| match &self.ctx.tree(toplevel).kind {
+                        TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
+                        _ => None,
+                    })
             });
         let prev_source = self.log.use_source(sourcefile);
         let make = Rc::clone(&self.make);
@@ -1583,9 +1581,7 @@ impl MiniCompiler {
         {
             let syms = Rc::clone(&self.syms);
             let mut syms = &*syms;
-            self.attr
-                .borrow_mut()
-                .attrib(&mut self.ctx, &mut syms, env);
+            self.attr.borrow_mut().attrib(&mut self.ctx, &mut syms, env);
         }
         self.log.use_source(prev_source);
         Ok(())
@@ -1604,8 +1600,7 @@ impl MiniCompiler {
         // Java: if (fileManager.hasLocation(NATIVE_HEADER_OUTPUT) &&
         // jniWriter.needsHeader(cdef.sym)) jniWriter.write(cdef.sym)
         // (JavaCompiler.java:1616-1619).
-        let native_header_output =
-            StandardLocation::location_for(&js("NATIVE_HEADER_OUTPUT"));
+        let native_header_output = StandardLocation::location_for(&js("NATIVE_HEADER_OUTPUT"));
         if self.file_manager.has_location(&*native_header_output) {
             let needs_header = {
                 let syms_rc = Rc::clone(&self.syms);
@@ -1648,17 +1643,19 @@ impl MiniCompiler {
                         .to_string_lossy()
                         .to_string()
                 };
-                let detail = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                    crate::resources::compiler_properties::fragments::illegal_signature(
-                        SymbolArg::placeholder(class_display.clone()),
-                        crate::comp::check::type_arg_with_rich_where(&self.ctx, type_),
-                    ),
-                ));
+                let detail = self
+                    .diags
+                    .fragment(Fragment::from(
+                        fragments::illegal_signature(
+                            SymbolArg::placeholder(class_display.clone()),
+                            crate::comp::check::type_arg_with_rich_where(&self.ctx, type_),
+                        ),
+                    ));
                 let info = crate::resources::compiler_properties::errors::cannot_generate_class(
                     SymbolArg::placeholder(class_display),
                     DiagnosticArg::JCDiagnostic(Rc::new(detail)),
                 );
-                crate::util::abstract_log::AbstractLog::error_at(
+                AbstractLog::error_at(
                     &*self.log,
                     crate::util::position::NOPOS,
                     crate::util::jc_diagnostic::Error::from(info),
@@ -1668,10 +1665,11 @@ impl MiniCompiler {
             Err(error) => return Err(format!("class writer error: {error:?}")),
         };
         let sibling = match &self.ctx.sym(c).kind_data {
-            crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile
-                .as_ref()
-                .map(|file| Rc::clone(file)
-                    as javac_tools::tools::java_file_manager::FileObjectRef),
+            crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => {
+                sourcefile.as_ref().map(|file| {
+                    Rc::clone(file) as javac_tools::tools::java_file_manager::FileObjectRef
+                })
+            }
             _ => None,
         };
         let module = env
@@ -1703,16 +1701,11 @@ impl MiniCompiler {
         // original name (a module name may contain dots) while the class name
         // is still resolved as a package path below it.
         let mut output_location: Rc<dyn javac_tools::tools::java_file_manager::Location> =
-            Rc::clone(&class_out) as Rc<dyn javac_tools::tools::java_file_manager::Location>;
+            Rc::clone(&class_out);
         if let Some(module) = module
             && self.modules.multi_module_mode
         {
-            let module_name = self
-                .ctx
-                .sym(module)
-                .name
-                .to_java_string()
-                .to_string_lossy();
+            let module_name = self.ctx.sym(module).name.to_java_string().to_string_lossy();
             if let Ok(location) = self
                 .file_manager
                 .get_location_for_module(&*class_out, &js(&module_name))
@@ -1739,7 +1732,12 @@ impl MiniCompiler {
 
     /// Java: the shouldStopPolicyIfError/shouldStopPolicyIfNoError setup
     /// (JavaCompiler.java:440-448).
-    fn should_stop_policies(&self) -> (crate::comp::compile_states::CompileState, crate::comp::compile_states::CompileState) {
+    fn should_stop_policies(
+        &self,
+    ) -> (
+        crate::comp::compile_states::CompileState,
+        crate::comp::compile_states::CompileState,
+    ) {
         should_stop_policies_from(|key| self.options.get(key))
     }
 
@@ -1787,14 +1785,10 @@ impl MiniCompiler {
     /// Flush the deferred deprecation/removal summaries (Java:
     /// JavaCompiler.reportDeferredDiagnostics for the mandatory handlers).
     pub fn report_deferred_mandatory_diagnostics(&self) {
-        self.chk
-            .deprecation_handler.report_deferred_diagnostic();
-        self.chk
-            .removal_handler.report_deferred_diagnostic();
-        self.chk
-            .unchecked_handler.report_deferred_diagnostic();
-        self.chk
-            .sun_api_handler.report_deferred_diagnostic();
+        self.chk.deprecation_handler.report_deferred_diagnostic();
+        self.chk.removal_handler.report_deferred_diagnostic();
+        self.chk.unchecked_handler.report_deferred_diagnostic();
+        self.chk.sun_api_handler.report_deferred_diagnostic();
     }
 
     /// Return the diagnostic summary of the current compilation.
@@ -1834,20 +1828,29 @@ impl crate::comp::modules::PackageNameFinder for MiniPackageNameFinder {
     fn find_package_name_of(
         &self,
         ctx: &mut CompilerContext,
-        jfo: &javac_tools::tools::java_file_manager::JavaFileObjectRef,
+        jfo: &JavaFileObjectRef,
     ) -> Option<crate::util::name::Name> {
         // Java: DiagnosticHandler dh = new DiscardDiagnosticHandler(log);
         self.log
-            .install_diagnostic_handler(crate::util::log::DiagnosticHandler::Discard { prev: None });
+            .install_diagnostic_handler(crate::util::log::DiagnosticHandler::Discard {
+                prev: None,
+            });
         // Java: JavaFileObject prevSource = log.useSource(fo);
         let prev_source = self.log.use_source(Some(Rc::clone(jfo)));
         let result = (|| {
             let content = jfo.get_char_content(false).ok().flatten()?;
-            let module_info = jfo
-                .is_name_compatible(&javac_strings::JavaString::from("module-info"), javac_tools::tools::java_file_object::Kind::SOURCE);
-            let mut parser =
-                self.parser_factory
-                    .new_parser_full(ctx, &content, false, false, false, module_info);
+            let module_info = jfo.is_name_compatible(
+                &javac_strings::JavaString::from("module-info"),
+                javac_tools::tools::java_file_object::Kind::SOURCE,
+            );
+            let mut parser = self.parser_factory.new_parser_full(
+                ctx,
+                &content,
+                false,
+                false,
+                false,
+                module_info,
+            );
             let tree = parser.parse_compilation_unit(ctx);
             let pd = crate::comp::enter::compilation_unit_package_decl(ctx, tree)?;
             let pid = crate::comp::enter::package_decl_pid(ctx, pd)?;
@@ -1859,7 +1862,6 @@ impl crate::comp::modules::PackageNameFinder for MiniPackageNameFinder {
         result
     }
 }
-
 
 // Whether a tree contains a lambda expression or a member reference: the
 // condition under which the lambda translation pass runs (the hasLambdas flag
@@ -1904,10 +1906,25 @@ mod should_stop_tests {
         assert!(matches!(if_error, CompileState::FLOW));
         assert!(matches!(if_no_error, CompileState::GENERATE));
         // The strict isAfter comparison: FLOW is not after FLOW, TRANSTYPES is.
-        assert!(!should_stop_decision(if_error, if_no_error, true, CompileState::FLOW));
-        assert!(should_stop_decision(if_error, if_no_error, true, CompileState::TRANSTYPES));
+        assert!(!should_stop_decision(
+            if_error,
+            if_no_error,
+            true,
+            CompileState::FLOW
+        ));
+        assert!(should_stop_decision(
+            if_error,
+            if_no_error,
+            true,
+            CompileState::TRANSTYPES
+        ));
         // should-stop.at does not affect the no-error policy.
-        assert!(!should_stop_decision(if_error, if_no_error, false, CompileState::TRANSTYPES));
+        assert!(!should_stop_decision(
+            if_error,
+            if_no_error,
+            false,
+            CompileState::TRANSTYPES
+        ));
     }
 
     #[test]
@@ -1917,10 +1934,30 @@ mod should_stop_tests {
             ("should-stop.ifNoError", "FLOW"),
         ]);
         let (if_error, if_no_error) = should_stop_policies_from(get);
-        assert!(should_stop_decision(if_error, if_no_error, true, CompileState::FLOW));
-        assert!(!should_stop_decision(if_error, if_no_error, true, CompileState::ATTR));
-        assert!(should_stop_decision(if_error, if_no_error, false, CompileState::TRANSTYPES));
-        assert!(!should_stop_decision(if_error, if_no_error, false, CompileState::FLOW));
+        assert!(should_stop_decision(
+            if_error,
+            if_no_error,
+            true,
+            CompileState::FLOW
+        ));
+        assert!(!should_stop_decision(
+            if_error,
+            if_no_error,
+            true,
+            CompileState::ATTR
+        ));
+        assert!(should_stop_decision(
+            if_error,
+            if_no_error,
+            false,
+            CompileState::TRANSTYPES
+        ));
+        assert!(!should_stop_decision(
+            if_error,
+            if_no_error,
+            false,
+            CompileState::FLOW
+        ));
     }
 
     #[test]
@@ -1928,8 +1965,18 @@ mod should_stop_tests {
         let (if_error, if_no_error) = should_stop_policies_from(options_get(&[]));
         assert!(matches!(if_error, CompileState::INIT));
         assert!(matches!(if_no_error, CompileState::GENERATE));
-        assert!(should_stop_decision(if_error, if_no_error, true, CompileState::PARSE));
-        assert!(!should_stop_decision(if_error, if_no_error, false, CompileState::GENERATE));
+        assert!(should_stop_decision(
+            if_error,
+            if_no_error,
+            true,
+            CompileState::PARSE
+        ));
+        assert!(!should_stop_decision(
+            if_error,
+            if_no_error,
+            false,
+            CompileState::GENERATE
+        ));
     }
 
     #[test]

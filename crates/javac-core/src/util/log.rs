@@ -129,7 +129,9 @@ fn write_line(writer: &WriterHandle, text: &str) {
     writer
         .write_all(text.as_bytes())
         .expect("writing to the log stream failed");
-    writer.write_all(b"\n").expect("writing to the log stream failed");
+    writer
+        .write_all(b"\n")
+        .expect("writing to the log stream failed");
 }
 
 /// Write the given text without adding a line separator.
@@ -198,7 +200,9 @@ pub enum DiagnosticHandler {
     /// Java: private class Log.DefaultDiagnosticHandler
     Default,
     /// Java: public static class Log.DiscardDiagnosticHandler
-    Discard { prev: Option<Box<DiagnosticHandler>> },
+    Discard {
+        prev: Option<Box<DiagnosticHandler>>,
+    },
     /// Java: public static class Log.DeferredDiagnosticHandler
     Deferred {
         prev: Option<Box<DiagnosticHandler>>,
@@ -208,7 +212,9 @@ pub enum DiagnosticHandler {
     /// Java: Analyzer.RewritingContext's anonymous DiagnosticHandler: report
     /// only marks the rewriting as erroneous (adapter: the anonymous subclass is
     /// this variant).
-    Analyzer { erroneous: std::rc::Rc<std::cell::Cell<bool>> },
+    Analyzer {
+        erroneous: Rc<Cell<bool>>,
+    },
 }
 
 impl DiagnosticHandler {
@@ -323,11 +329,7 @@ impl Log {
     /// Report an error through the default handler, ignoring a temporarily
     /// installed speculative/deferred handler. Java reports void-argument
     /// errors while the surrounding method call is still being resolved.
-    pub fn error_at_default(
-        &self,
-        pos: i32,
-        error_key: crate::util::jc_diagnostic::Error,
-    ) {
+    pub fn error_at_default(&self, pos: i32, error_key: crate::util::jc_diagnostic::Error) {
         let diagnostic = {
             let source = self.source.borrow().clone();
             let diags = Rc::clone(&self.diags);
@@ -381,7 +383,10 @@ impl Log {
     ///
     /// Java: protected Log(Context context, PrintWriter writer)
     fn new_with_writer(context: &mut Context, writer: WriterHandle) -> Log {
-        Log::new_with_writers(context, Log::init_writers(Some(writer.clone()), Some(writer)))
+        Log::new_with_writers(
+            context,
+            Log::init_writers(Some(writer.clone()), Some(writer)),
+        )
     }
 
     /// Construct a log.
@@ -395,12 +400,16 @@ impl Log {
     ///
     /// Java: private static Map<WriterKind, PrintWriter> initWriters(Context)
     fn init_writers_from_context(context: &mut Context) -> HashMap<WriterKind, WriterHandle> {
-        let out = context.get::<LogOutput>().map(|output| Rc::clone(&output.0));
+        let out = context
+            .get::<LogOutput>()
+            .map(|output| Rc::clone(&output.0));
         let err = context
             .get::<LogErrorOutput>()
             .map(|output| Rc::clone(&output.0));
         match (out, err) {
-            (None, None) => Log::init_writers(Some(Log::stdout_handle()), Some(Log::stderr_handle())),
+            (None, None) => {
+                Log::init_writers(Some(Log::stdout_handle()), Some(Log::stderr_handle()))
+            }
             (Some(out), None) => Log::init_writers(Some(Rc::clone(&out)), Some(out)),
             (None, Some(err)) => Log::init_writers(Some(Rc::clone(&err)), Some(err)),
             (Some(out), Some(err)) => Log::init_writers(Some(out), Some(err)),
@@ -435,7 +444,10 @@ impl Log {
     }
 
     /// Creates a log (the Java private constructor Log(Context, Map)).
-    pub fn new_with_writers(context: &mut Context, writers: HashMap<WriterKind, WriterHandle>) -> Log {
+    pub fn new_with_writers(
+        context: &mut Context,
+        writers: HashMap<WriterKind, WriterHandle>,
+    ) -> Log {
         let diags = Factory::instance(context);
         let diag_listener = context
             .get::<LogDiagnosticListener>()
@@ -477,7 +489,8 @@ impl Log {
     /// Java: private void initOptions(Options options)
     fn init_options(&self, options: &Options) {
         // Java: options.isSet(DOE) / isSet(PROMPT).
-        self.dump_on_error.set(options.is_set_option(MainOption::DOE));
+        self.dump_on_error
+            .set(options.is_set_option(MainOption::DOE));
         self.prompt_on_error
             .set(options.is_set_option(MainOption::PROMPT));
         self.emit_warnings
@@ -532,7 +545,11 @@ impl Log {
     }
 
     /// Java: public void setEndPosTable(JavaFileObject name, EndPosTable t)
-    pub fn set_end_pos_table(&self, name: Rc<dyn JavaFileObject>, end_pos_table: Rc<dyn EndPosTable>) {
+    pub fn set_end_pos_table(
+        &self,
+        name: Rc<dyn JavaFileObject>,
+        end_pos_table: Rc<dyn EndPosTable>,
+    ) {
         let source = self.get_source(Some(name));
         source.set_end_pos_table(end_pos_table);
     }
@@ -558,7 +575,10 @@ impl Log {
     }
 
     /// Set the current diagnostic formatter.
-    pub fn set_diagnostic_formatter(&self, diag_formatter: Rc<dyn DiagnosticFormatter<JCDiagnostic>>) {
+    pub fn set_diagnostic_formatter(
+        &self,
+        diag_formatter: Rc<dyn DiagnosticFormatter<JCDiagnostic>>,
+    ) {
         *self.diag_formatter.borrow_mut() = diag_formatter;
     }
 
@@ -585,9 +605,7 @@ impl Log {
     /// constructors; Rust cannot move self out of a constructor, so the caller
     /// installs the handler explicitly (registered section 9).
     pub fn install_diagnostic_handler(&self, mut handler: DiagnosticHandler) {
-        let prev = self
-            .diagnostic_handler
-            .replace(DiagnosticHandler::Default);
+        let prev = self.diagnostic_handler.replace(DiagnosticHandler::Default);
         handler.set_prev(Some(Box::new(prev)));
         *self.diagnostic_handler.borrow_mut() = handler;
     }
@@ -601,12 +619,11 @@ impl Log {
     /// closed enum is stored by value; the ported method restores the prev
     /// handler and panics if only the default handler is installed (registered).
     pub fn pop_diagnostic_handler(&self) {
-        let mut handler = self
-            .diagnostic_handler
-            .replace(DiagnosticHandler::Default);
+        let mut handler = self.diagnostic_handler.replace(DiagnosticHandler::Default);
         let prev = handler.take_prev();
-        *self.diagnostic_handler.borrow_mut() =
-            prev.map(|handler| *handler).unwrap_or(DiagnosticHandler::Default);
+        *self.diagnostic_handler.borrow_mut() = prev
+            .map(|handler| *handler)
+            .unwrap_or(DiagnosticHandler::Default);
     }
 
     /// Report all deferred diagnostics of the current DeferredDiagnosticHandler
@@ -628,11 +645,11 @@ impl Log {
     ///
     /// Java: DeferredDiagnosticHandler.reportDeferredDiagnostics(Predicate)
     pub fn report_deferred_diagnostics_with(&self, accepter: &dyn Fn(&JCDiagnostic) -> bool) {
-        let handler = self
-            .diagnostic_handler
-            .replace(DiagnosticHandler::Default);
+        let handler = self.diagnostic_handler.replace(DiagnosticHandler::Default);
         match handler {
-            DiagnosticHandler::Deferred { mut prev, deferred, .. } => {
+            DiagnosticHandler::Deferred {
+                mut prev, deferred, ..
+            } => {
                 for diagnostic in deferred {
                     if accepter(&diagnostic)
                         && let Some(prev_handler) = prev.as_mut()
@@ -640,8 +657,9 @@ impl Log {
                         prev_handler.report(self, diagnostic);
                     }
                 }
-                *self.diagnostic_handler.borrow_mut() =
-                    prev.map(|handler| *handler).unwrap_or(DiagnosticHandler::Default);
+                *self.diagnostic_handler.borrow_mut() = prev
+                    .map(|handler| *handler)
+                    .unwrap_or(DiagnosticHandler::Default);
             }
             other => *self.diagnostic_handler.borrow_mut() = other,
         }
@@ -711,13 +729,11 @@ impl Log {
             return true;
         }
         let code = code_of(diag);
-        let should_report = !self
-            .recorded_source_level_errors
-            .borrow()
-            .iter()
-            .any(|(recorded_file, recorded_code)| {
+        let should_report = !self.recorded_source_level_errors.borrow().iter().any(
+            |(recorded_file, recorded_code)| {
                 Rc::ptr_eq(recorded_file, &file) && *recorded_code == code
-            });
+            },
+        );
         if should_report {
             self.recorded_source_level_errors
                 .borrow_mut()
@@ -827,7 +843,13 @@ impl Log {
 
     /// Java: public void printLines(WriterKind wk, PrefixKind pk, String key,
     /// Object... args)
-    pub fn print_lines_kind_prefix(&self, kind: WriterKind, pk: PrefixKind, key: &str, args: Vec<DiagnosticArg>) {
+    pub fn print_lines_kind_prefix(
+        &self,
+        kind: WriterKind,
+        pk: PrefixKind,
+        key: &str,
+        args: Vec<DiagnosticArg>,
+    ) {
         let msg = self.localize_prefix(pk, key, args);
         Log::print_raw_lines_to(&self.get_writer(kind), &msg);
     }
@@ -882,7 +904,12 @@ impl Log {
     ///
     /// Java: public void strictWarning(DiagnosticPosition pos, String key,
     /// Object... args)
-    pub fn strict_warning(&self, pos: Option<Rc<dyn DiagnosticPosition>>, key: &str, args: Vec<DiagnosticArg>) {
+    pub fn strict_warning(
+        &self,
+        pos: Option<Rc<dyn DiagnosticPosition>>,
+        key: &str,
+        args: Vec<DiagnosticArg>,
+    ) {
         let warning_key = self.diags.warning_key(key, args);
         let source = self.source.borrow().clone();
         let diagnostic = self.diags.warning(None, source, pos, warning_key);
@@ -894,9 +921,7 @@ impl Log {
     ///
     /// Java: public void report(JCDiagnostic diagnostic)
     pub fn report(&self, diagnostic: JCDiagnostic) {
-        let mut handler = self
-            .diagnostic_handler
-            .replace(DiagnosticHandler::Default);
+        let mut handler = self.diagnostic_handler.replace(DiagnosticHandler::Default);
         handler.report(self, diagnostic);
         *self.diagnostic_handler.borrow_mut() = handler;
     }
@@ -927,8 +952,7 @@ impl Log {
                         self.write_diagnostic(&diagnostic);
                         self.nwarnings.set(self.nwarnings.get() + 1);
                     } else {
-                        self.nsuppressedwarns
-                            .set(self.nsuppressedwarns.get() + 1);
+                        self.nsuppressedwarns.set(self.nsuppressedwarns.get() + 1);
                     }
                 }
             }
@@ -940,8 +964,7 @@ impl Log {
                         self.write_diagnostic(&diagnostic);
                         self.nerrors.set(self.nerrors.get() + 1);
                     } else {
-                        self.nsuppressederrors
-                            .set(self.nsuppressederrors.get() + 1);
+                        self.nsuppressederrors.set(self.nsuppressederrors.get() + 1);
                     }
                 }
             }
@@ -993,10 +1016,7 @@ impl Log {
     /// Java: public static String getLocalizedString(String key, Object... args)
     pub fn get_localized_string(key: &str, args: &[DiagnosticArg]) -> String {
         let strings = args_to_strings(args);
-        JavacMessages::get_default_localized_string(
-            &PrefixKind::COMPILER_MISC.key(key),
-            &strings,
-        )
+        JavacMessages::get_default_localized_string(&PrefixKind::COMPILER_MISC.key(key), &strings)
     }
 
     /// Java: public String localize(String key, Object... args)
@@ -1013,8 +1033,7 @@ impl Log {
     /// Java: public String localize(PrefixKind pk, String key, Object... args)
     pub fn localize_prefix(&self, pk: PrefixKind, key: &str, args: Vec<DiagnosticArg>) -> String {
         let strings = args_to_strings(&args);
-        self.messages
-            .get_localized_string(&pk.key(key), &strings)
+        self.messages.get_localized_string(&pk.key(key), &strings)
     }
 
     /// print an error or warning message.
@@ -1052,8 +1071,7 @@ impl Log {
             self.prompt();
             self.nerrors.set(self.nerrors.get() + 1);
         } else {
-            self.nsuppressederrors
-                .set(self.nsuppressederrors.get() + 1);
+            self.nsuppressederrors.set(self.nsuppressederrors.get() + 1);
         }
         self.get_writer(WriterKind::ERROR)
             .borrow_mut()
@@ -1070,8 +1088,7 @@ impl Log {
             if self.nwarnings.get() < self.max_warnings.get() {
                 self.print_raw_diag(&writer, "warning: ", pos, msg);
             } else {
-                self.nsuppressedwarns
-                    .set(self.nsuppressedwarns.get() + 1);
+                self.nsuppressedwarns.set(self.nsuppressedwarns.get() + 1);
             }
         }
         self.prompt();
@@ -1147,7 +1164,9 @@ fn java_value_to_string(arg: &DiagnosticArg) -> String {
     if let Some(source) = arg.downcast_ref::<crate::code::source::Source>() {
         return source.name().to_string();
     }
-    if let Some(file_object) = arg.downcast_ref::<Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>>() {
+    if let Some(file_object) =
+        arg.downcast_ref::<Rc<dyn JavaFileObject>>()
+    {
         return file_object.get_name().to_string_lossy();
     }
     if let Some(diagnostic) = arg.downcast_ref::<JCDiagnostic>() {
@@ -1171,10 +1190,7 @@ impl AbstractLog for Log {
         *self.source.borrow_mut() = source;
     }
 
-    fn source_map_find(
-        &self,
-        file: &Rc<dyn JavaFileObject>,
-    ) -> Option<Rc<DiagnosticSource>> {
+    fn source_map_find(&self, file: &Rc<dyn JavaFileObject>) -> Option<Rc<DiagnosticSource>> {
         self.source_map
             .borrow()
             .iter()
@@ -1195,7 +1211,6 @@ impl AbstractLog for Log {
     }
 }
 
-
 impl AbstractLog for Rc<Log> {
     fn diags(&self) -> &Rc<Factory> {
         AbstractLog::diags(&**self)
@@ -1209,10 +1224,7 @@ impl AbstractLog for Rc<Log> {
         AbstractLog::set_source(&**self, source);
     }
 
-    fn source_map_find(
-        &self,
-        file: &Rc<dyn JavaFileObject>,
-    ) -> Option<Rc<DiagnosticSource>> {
+    fn source_map_find(&self, file: &Rc<dyn JavaFileObject>) -> Option<Rc<DiagnosticSource>> {
         AbstractLog::source_map_find(&**self, file)
     }
 
@@ -1279,11 +1291,11 @@ impl MandatoryWarningLog for Log {
 mod tests {
     use super::*;
     use crate::code::source::Source;
+    use crate::util::java_string::JavaString;
     use crate::util::jc_diagnostic::{
         DiagnosticPosition as PositionTrait, SimpleDiagnosticPosition,
     };
     use javac_tools::error::Error;
-    use crate::util::java_string::JavaString;
     use javac_tools::tools::file_object::FileObject;
     use javac_tools::tools::java_file_object::{JavaFileObject as JfoTrait, Kind};
     use javac_tools::uri::URI;
@@ -1311,18 +1323,18 @@ mod tests {
             Err(Error::UnsupportedOperationException)
         }
 
-        fn get_char_content(
-            &self,
-            _ignore_encoding_errors: bool,
-        ) -> Result<Option<JavaString>, Error> {
-            Ok(Some(JavaString::from(self.content)))
-        }
-
         fn open_reader(
             &self,
             _ignore_encoding_errors: bool,
         ) -> Result<Box<dyn javac_tools::java_io::Reader>, Error> {
             Err(Error::UnsupportedOperationException)
+        }
+
+        fn get_char_content(
+            &self,
+            _ignore_encoding_errors: bool,
+        ) -> Result<Option<JavaString>, Error> {
+            Ok(Some(JavaString::from(self.content)))
         }
 
         fn open_writer(&self) -> Result<Box<dyn javac_tools::java_io::Writer>, Error> {
@@ -1367,7 +1379,7 @@ mod tests {
     #[derive(Clone)]
     struct SharedBuffer(Rc<RefCell<Vec<u8>>>);
 
-    impl std::io::Write for SharedBuffer {
+    impl Write for SharedBuffer {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             self.0.borrow_mut().extend_from_slice(buf);
             Ok(buf.len())
@@ -1451,8 +1463,7 @@ mod tests {
         assert_eq!(log.nerrors.get(), 1);
         assert_eq!(log.nsuppressederrors.get(), 1);
         for _ in 0..2 {
-            let warning =
-                factory.warning(None, None, None, factory.warning_key("w", Vec::new()));
+            let warning = factory.warning(None, None, None, factory.warning_key("w", Vec::new()));
             log.report(warning);
         }
         assert_eq!(log.nwarnings.get(), 1);
@@ -1490,11 +1501,10 @@ mod tests {
                     .push(diagnostic.get_code().expect("code").to_string_lossy());
             }
         }
-        sink.context.put::<LogDiagnosticListener>(Rc::new(LogDiagnosticListener(Rc::new(
-            Listener {
+        sink.context
+            .put::<LogDiagnosticListener>(Rc::new(LogDiagnosticListener(Rc::new(Listener {
                 diagnostics: captured,
-            },
-        ))));
+            }))));
         let mut log = sink.log();
         assert!(log.has_diagnostic_listener());
         let error = factory.error(None, None, None, factory.error_key("test", Vec::new()));
@@ -1589,7 +1599,13 @@ mod tests {
         *log.expect_diag_keys.borrow_mut() = Some(HashSet::from(["compiler.err.test".to_string()]));
         let error = factory.error(None, None, None, factory.error_key("test", Vec::new()));
         log.report(error);
-        assert!(log.expect_diag_keys.borrow().as_ref().expect("keys").is_empty());
+        assert!(
+            log.expect_diag_keys
+                .borrow()
+                .as_ref()
+                .expect("keys")
+                .is_empty()
+        );
         log.compressed_output.set(false);
         let error = factory.error(
             Some(DiagnosticFlag::COMPRESSED),

@@ -13,8 +13,8 @@
 
 use super::abstract_type_visitor6::AbstractTypeVisitor6;
 use crate::lang::model::type_::{
-    ArrayType, DeclaredType, ErrorType, ExecutableType, NoType, NullType, PrimitiveType, TypeMirror,
-    TypeVariable, WildcardType,
+    ArrayType, DeclaredType, ErrorType, ExecutableType, NoType, NullType, PrimitiveType,
+    TypeMirror, TypeVariable, WildcardType,
 };
 
 /// A simple visitor of types with default behavior appropriate for the

@@ -102,9 +102,7 @@ impl ParserFactory {
         keep_line_map: bool,
         parse_module_info: bool,
     ) -> JavacParser {
-        let scanner = self
-            .scanner_factory
-            .new_scanner(input, keep_doc_comments);
+        let scanner = self.scanner_factory.new_scanner(input, keep_doc_comments);
         JavacParser::new(
             self,
             ctx,

@@ -122,5 +122,4 @@ mod tests {
         assert!(arena.is_empty());
         assert_eq!(arena.len(), 0);
     }
-
 }

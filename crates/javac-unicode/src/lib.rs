@@ -220,8 +220,7 @@ pub fn high_surrogate(code_point: i32) -> u16 {
     // Java: return (char) ((codePoint >>> 10)
     //     + (MIN_HIGH_SURROGATE - (MIN_SUPPLEMENTARY_CODE_POINT >>> 10)));
     ((code_point as u32 >> 10)
-        + (MIN_HIGH_SURROGATE as u32 - (MIN_SUPPLEMENTARY_CODE_POINT as u32 >> 10)))
-        as u16
+        + (MIN_HIGH_SURROGATE as u32 - (MIN_SUPPLEMENTARY_CODE_POINT as u32 >> 10))) as u16
 }
 
 /// Java: Character.lowSurrogate(int codePoint).
@@ -278,8 +277,8 @@ pub fn to_chars(code_point: i32) -> Vec<u16> {
 mod tests {
     use super::*;
     use crate::generated::{
-        DEFINED, DIGIT, DIGIT_VALUES, IDENTIFIER_IGNORABLE, JAVA_ID_PART, JAVA_ID_START, LOWER_CASE,
-        SPACE_CHAR, UNICODE_ID_PART, UNICODE_ID_START, UPPER_CASE, WHITESPACE,
+        DEFINED, DIGIT, DIGIT_VALUES, IDENTIFIER_IGNORABLE, JAVA_ID_PART, JAVA_ID_START,
+        LOWER_CASE, SPACE_CHAR, UNICODE_ID_PART, UNICODE_ID_START, UPPER_CASE, WHITESPACE,
     };
 
     /// Produced by running the JDK 17 baseline (Temurin 17.0.19+10) over the fixed probe list.
@@ -769,15 +768,40 @@ mod tests {
             match section {
                 "ATTR" => {
                     let cp = f[0] as i32;
-                    assert_eq!(is_java_identifier_start(cp), f[1] == 1, "isJavaIdentifierStart {}", cp);
-                    assert_eq!(is_java_identifier_part(cp), f[2] == 1, "isJavaIdentifierPart {}", cp);
-                    assert_eq!(is_unicode_identifier_start(cp), f[3] == 1, "isUnicodeIdentifierStart {}", cp);
-                    assert_eq!(is_unicode_identifier_part(cp), f[4] == 1, "isUnicodeIdentifierPart {}", cp);
+                    assert_eq!(
+                        is_java_identifier_start(cp),
+                        f[1] == 1,
+                        "isJavaIdentifierStart {}",
+                        cp
+                    );
+                    assert_eq!(
+                        is_java_identifier_part(cp),
+                        f[2] == 1,
+                        "isJavaIdentifierPart {}",
+                        cp
+                    );
+                    assert_eq!(
+                        is_unicode_identifier_start(cp),
+                        f[3] == 1,
+                        "isUnicodeIdentifierStart {}",
+                        cp
+                    );
+                    assert_eq!(
+                        is_unicode_identifier_part(cp),
+                        f[4] == 1,
+                        "isUnicodeIdentifierPart {}",
+                        cp
+                    );
                     assert_eq!(is_whitespace(cp), f[5] == 1, "isWhitespace {}", cp);
                     assert_eq!(is_space_char(cp), f[6] == 1, "isSpaceChar {}", cp);
                     assert_eq!(is_defined(cp), f[7] == 1, "isDefined {}", cp);
                     assert_eq!(is_digit(cp), f[8] == 1, "isDigit {}", cp);
-                    assert_eq!(is_identifier_ignorable(cp), f[9] == 1, "isIdentifierIgnorable {}", cp);
+                    assert_eq!(
+                        is_identifier_ignorable(cp),
+                        f[9] == 1,
+                        "isIdentifierIgnorable {}",
+                        cp
+                    );
                     assert_eq!(is_iso_control(cp), f[10] == 1, "isISOControl {}", cp);
                     assert_eq!(char_count(cp) as i64, f[11], "charCount {}", cp);
                     assert_eq!(digit(cp, 10) as i64, f[12], "digit({}, 10)", cp);
@@ -802,7 +826,13 @@ mod tests {
                 }
                 "TOCODEPOINT" => {
                     let (high, low, expected) = (f[0] as u16, f[1] as u16, f[2] as i32);
-                    assert_eq!(to_code_point(high, low), expected, "toCodePoint({}, {})", high, low);
+                    assert_eq!(
+                        to_code_point(high, low),
+                        expected,
+                        "toCodePoint({}, {})",
+                        high,
+                        low
+                    );
                 }
                 "SURFLAG" => {
                     let (ch, high, low) = (f[0] as u16, f[1] == 1, f[2] == 1);
@@ -852,8 +882,16 @@ mod tests {
             }
         }
         assert!(!in_ranges(table, -1), "{} must not contain -1", name);
-        assert!(!in_ranges(table, MAX_CODE_POINT + 1), "{} must not contain 0x110000", name);
-        assert!(!in_ranges(table, i32::MIN), "{} must not contain i32::MIN", name);
+        assert!(
+            !in_ranges(table, MAX_CODE_POINT + 1),
+            "{} must not contain 0x110000",
+            name
+        );
+        assert!(
+            !in_ranges(table, i32::MIN),
+            "{} must not contain i32::MIN",
+            name
+        );
     }
 
     #[test]
@@ -879,7 +917,12 @@ mod tests {
                 assert_eq!(digit(cp, radix), expected, "digit({}, {})", cp, radix);
             }
             assert_eq!(digit(cp, 1), -1, "radix below MIN_RADIX for {}", cp);
-            assert_eq!(digit(cp, MAX_RADIX + 1), -1, "radix above MAX_RADIX for {}", cp);
+            assert_eq!(
+                digit(cp, MAX_RADIX + 1),
+                -1,
+                "radix above MAX_RADIX for {}",
+                cp
+            );
         }
         assert_eq!(digit(-1, 36), -1);
         assert_eq!(digit(MAX_CODE_POINT + 1, 36), -1);
@@ -902,11 +945,21 @@ mod tests {
     #[test]
     fn case_maps_are_consistent() {
         for &(from, to) in LOWER_CASE {
-            assert_eq!(to_lower_case(from as i32), to as i32, "toLowerCase {}", from);
+            assert_eq!(
+                to_lower_case(from as i32),
+                to as i32,
+                "toLowerCase {}",
+                from
+            );
             assert_ne!(from, to);
         }
         for &(from, to) in UPPER_CASE {
-            assert_eq!(to_upper_case(from as i32), to as i32, "toUpperCase {}", from);
+            assert_eq!(
+                to_upper_case(from as i32),
+                to as i32,
+                "toUpperCase {}",
+                from
+            );
             assert_ne!(from, to);
         }
         // code points without a mapping (and invalid ones) are returned unchanged

@@ -2583,7 +2583,7 @@ mod tests {
         let string_literal = make(
             &mut ctx,
             TypeTag::CLASS,
-            LiteralValue::String(crate::util::java_string::JavaString::from("s")),
+            LiteralValue::String(JavaString::from("s")),
         );
         assert_eq!(print_tree(&mut ctx, string_literal), "\"s\"");
         let char_literal = make(&mut ctx, TypeTag::CHAR, LiteralValue::Character('a' as u16));

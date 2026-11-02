@@ -1,3 +1,6 @@
+use super::expression_statement_tree::ExpressionStatementTree;
+use super::expression_tree::ExpressionTree;
+use super::statement_tree::StatementTree;
 /// A tree node for a basic {@code for} loop statement.
 ///
 /// For example:
@@ -12,9 +15,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_statement_tree::ExpressionStatementTree;
-use super::expression_tree::ExpressionTree;
-use super::statement_tree::StatementTree;
 
 pub trait ForLoopTree: StatementTree {
     /// Returns any initializers of the {@code for} statement.
@@ -35,5 +35,4 @@ pub trait ForLoopTree: StatementTree {
     /// Returns the body of the {@code for} statement.
     /// @return the body
     fn get_statement(&self) -> Rc<dyn StatementTree>;
-
 }

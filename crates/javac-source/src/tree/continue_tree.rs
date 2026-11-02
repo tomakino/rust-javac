@@ -1,3 +1,4 @@
+use super::statement_tree::StatementTree;
 /// A tree node for a {@code continue} statement.
 ///
 /// For example:
@@ -13,11 +14,9 @@
 /// @since 1.6
 use javac_tools::lang::model::element::Name;
 use std::rc::Rc;
-use super::statement_tree::StatementTree;
 
 pub trait ContinueTree: StatementTree {
     /// Returns the label for this {@code continue} statement.
     /// @return the label
     fn get_label(&self) -> Rc<dyn Name>;
-
 }

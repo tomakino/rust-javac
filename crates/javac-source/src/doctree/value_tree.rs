@@ -1,3 +1,5 @@
+use super::inline_tag_tree::InlineTagTree;
+use super::reference_tree::ReferenceTree;
 /// A tree node for an {@code @value} inline tag.
 ///
 /// <pre>
@@ -6,12 +8,9 @@
 ///
 /// @since 1.8
 use std::rc::Rc;
-use super::inline_tag_tree::InlineTagTree;
-use super::reference_tree::ReferenceTree;
 
 pub trait ValueTree: InlineTagTree {
     /// Returns the reference to the value.
     /// @return the reference
     fn get_reference(&self) -> Rc<dyn ReferenceTree>;
-
 }

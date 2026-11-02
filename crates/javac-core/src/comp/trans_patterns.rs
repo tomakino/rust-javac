@@ -30,11 +30,11 @@ use crate::util::list::List;
 use crate::util::names::Names;
 use javac_source::tree::case_tree::CaseKind;
 
-    /// This pass translates pattern-matching constructs, such as instanceof <pattern>.
-    ///
-    /// The Rust port keeps the upstream visitor shape: a TreeVisitor whose default
-    /// navigation descends into every child and whose pattern-specific visitors
-    /// replace the pattern trees with desugared statements.
+/// This pass translates pattern-matching constructs, such as instanceof <pattern>.
+///
+/// The Rust port keeps the upstream visitor shape: a TreeVisitor whose default
+/// navigation descends into every child and whose pattern-specific visitors
+/// replace the pattern trees with desugared statements.
 pub struct TransPatterns {
     pub syms: Rc<Symtab>,
     pub attr: Rc<RefCell<Attr>>,
@@ -56,10 +56,10 @@ pub struct TransPatterns {
     pub base: TreeTranslator,
 }
 
-    /// The binding context of one desugared pattern (upstream BindingContext).
-    ///
-    /// # Arguments
-    /// - `kind` — the Default/Basic/Fence kind discriminator
+/// The binding context of one desugared pattern (upstream BindingContext).
+///
+/// # Arguments
+/// - `kind` — the Default/Basic/Fence kind discriminator
 pub struct BindingContext {
     kind: BindingContextKind,
     hoisted_var_map: Vec<(SymbolId, SymbolId)>,
@@ -122,10 +122,9 @@ impl BindingContext {
         match self.kind {
             BindingContextKind::Default | BindingContextKind::Fence => None,
             BindingContextKind::Basic => {
-                let parent_result = self
-                    .parent
-                    .as_mut()
-                    .and_then(|parent| parent.binding_declared(ctx, var_symbol, current_method_sym));
+                let parent_result = self.parent.as_mut().and_then(|parent| {
+                    parent.binding_declared(ctx, var_symbol, current_method_sym)
+                });
                 if let Some(res) = parent_result {
                     return Some(res);
                 }
@@ -139,7 +138,7 @@ impl BindingContext {
                     name,
                     Some(ty),
                     owner,
-                    crate::code::symbol::SymbolKind::VarSymbol {
+                    SymbolKind::VarSymbol {
                         lazy_const_value: None,
                         pos: 0,
                         adr: 0,
@@ -303,7 +302,11 @@ impl TransPatterns {
     ///
     /// # Returns
     /// The translated variable declarations
-    pub fn translate_var_defs(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_var_defs(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
 
@@ -315,7 +318,11 @@ impl TransPatterns {
     ///
     /// # Returns
     /// The translated type parameters
-    pub fn translate_type_params(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_type_params(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
 
@@ -327,7 +334,11 @@ impl TransPatterns {
     ///
     /// # Returns
     /// The translated case clauses
-    pub fn translate_cases(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_cases(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
 
@@ -339,7 +350,11 @@ impl TransPatterns {
     ///
     /// # Returns
     /// The translated catch clauses
-    pub fn translate_catchers(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_catchers(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
 
@@ -351,7 +366,11 @@ impl TransPatterns {
     ///
     /// # Returns
     /// The translated annotations
-    pub fn translate_annotations(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_annotations(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
     fn default_visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -371,13 +390,6 @@ impl TransPatterns {
         }
         self.result = Some(tree);
     }
-
-
-
-
-
-
-
 
     fn default_visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
@@ -400,7 +412,6 @@ impl TransPatterns {
         self.result = Some(tree);
     }
 
-
     fn default_visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
             TreeKind::SwitchExpression {
@@ -422,7 +433,6 @@ impl TransPatterns {
         self.result = Some(tree);
     }
 
-
     fn default_visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
             TreeKind::Binary { lhs, rhs, .. } => (*lhs, *rhs),
@@ -436,7 +446,6 @@ impl TransPatterns {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
@@ -465,7 +474,6 @@ impl TransPatterns {
         self.result = Some(tree);
     }
 
-
     fn default_visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, thenpart, elsepart) = match &ctx.tree(tree).kind {
             TreeKind::If {
@@ -490,7 +498,6 @@ impl TransPatterns {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_for_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (init, cond, step, body) = match &ctx.tree(tree).kind {
@@ -521,7 +528,6 @@ impl TransPatterns {
         self.result = Some(tree);
     }
 
-
     fn default_visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, body) = match &ctx.tree(tree).kind {
             TreeKind::WhileLoop { cond, body } => (*cond, *body),
@@ -536,7 +542,6 @@ impl TransPatterns {
         self.result = Some(tree);
     }
 
-
     fn default_visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (body, cond) = match &ctx.tree(tree).kind {
             TreeKind::DoWhileLoop { body, cond } => (*body, *cond),
@@ -550,7 +555,6 @@ impl TransPatterns {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, restype, typarams, recvparam, params, thrown, body) = match &ctx.tree(tree).kind
@@ -604,13 +608,9 @@ impl TransPatterns {
         self.result = Some(tree);
     }
 
-
     fn default_visit_ident(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
-
-
 
     fn default_visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (params, body) = match &ctx.tree(tree).kind {
@@ -628,7 +628,6 @@ impl TransPatterns {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, typarams, extending, implementing, defs) = match &ctx.tree(tree).kind {
@@ -671,8 +670,6 @@ impl TransPatterns {
         self.result = Some(tree);
     }
 
-
-
     /// Adapter: take the current binding context (std::mem::take on the Java
     /// assignment `bindingContext = new BasicBindingContext()` pattern).
     fn take_binding_context(&mut self) -> BindingContext {
@@ -682,7 +679,9 @@ impl TransPatterns {
     fn decorate_statement(&mut self, ctx: &mut CompilerContext, stat: TreeId) -> TreeId {
         let pos = ctx.tree(stat).pos;
         let make = Rc::clone(&self.make);
-        let stats = self.binding_context.binding_vars(ctx, &&*self.syms, &make, pos);
+        let stats = self
+            .binding_context
+            .binding_vars(ctx, &&*self.syms, &make, pos);
         if stats.is_empty() {
             stat
         } else {
@@ -740,7 +739,10 @@ impl TransPatterns {
                 TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
                 _ => None,
             };
-            assert!(self.preview.is_enabled(), "AssertionError: preview is not enabled");
+            assert!(
+                self.preview.is_enabled(),
+                "AssertionError: preview is not enabled"
+            );
             if let Some(sourcefile) = sourcefile {
                 assert!(
                     self.preview.uses_preview(&sourcefile),
@@ -750,7 +752,10 @@ impl TransPatterns {
         }
         let seltype = {
             let selector_ty = ctx.tree(selector).ty.expect("switch selector type");
-            if ctx.typ(selector_ty).has_tag(crate::code::type_tag::TypeTag::BOT) {
+            if ctx
+                .typ(selector_ty)
+                .has_tag(crate::code::type_tag::TypeTag::BOT)
+            {
                 self.syms.object_type
             } else {
                 selector_ty
@@ -759,14 +764,14 @@ impl TransPatterns {
         let mut merged: Vec<TreeId> = Vec::new();
         let current = cases.clone();
         for head in &current {
-        if case_stats(ctx, head).is_empty() && current.non_empty() {
-            let next = *current.head();
-            let head_labels = case_labels(ctx, head);
-            let next_labels = case_labels(ctx, next);
-            set_case_labels(ctx, next, head_labels.append_list(&next_labels));
-        } else {
-            merged.push(head);
-        }
+            if case_stats(ctx, head).is_empty() && current.non_empty() {
+                let next = *current.head();
+                let head_labels = case_labels(ctx, head);
+                let next_labels = case_labels(ctx, next);
+                set_case_labels(ctx, next, head_labels.append_list(&next_labels));
+            } else {
+                merged.push(head);
+            }
         }
         let cases = List::from_iterable(merged);
         let (
@@ -820,14 +825,22 @@ impl TransPatterns {
                 has_null_case = true;
             }
         }
-        let selector = self.translate(ctx, Some(selector)).expect("translated selector");
+        let selector = self
+            .translate(ctx, Some(selector))
+            .expect("translated selector");
         let mut statements: Vec<TreeId> = Vec::new();
         let pos = ctx.tree(tree).pos;
         let synthetic = self.target.synthetic_name_char();
         let temp_name = self.names.from_string(&javac_strings::JavaString::from(
             format!("selector{}{}temp", pos, synthetic).as_str(),
         ));
-        let temp = new_var_symbol(ctx, flags::SYNTHETIC as i64, temp_name, seltype, self.current_method_sym);
+        let temp = new_var_symbol(
+            ctx,
+            flags::SYNTHETIC as i64,
+            temp_name,
+            seltype,
+            self.current_method_sym,
+        );
         let mut temp_init = selector;
         if !has_null_case {
             let attr_rc = Rc::clone(&self.attr);
@@ -845,7 +858,13 @@ impl TransPatterns {
         let index_name = self.names.from_string(&javac_strings::JavaString::from(
             format!("{}{}index", pos, synthetic).as_str(),
         ));
-        let index = new_var_symbol(ctx, flags::SYNTHETIC as i64, index_name, int_type, self.current_method_sym);
+        let index = new_var_symbol(
+            ctx,
+            flags::SYNTHETIC as i64,
+            index_name,
+            int_type,
+            self.current_method_sym,
+        );
         let zero = self.make_lit(
             ctx,
             int_type,
@@ -895,7 +914,7 @@ impl TransPatterns {
         let enum_selector = ctx
             .typ(seltype)
             .tsym
-            .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::ENUM as i64) != 0)
+            .map(|tsym| (ctx.sym(tsym).flags_field & flags::ENUM as i64) != 0)
             .unwrap_or(false);
         let bootstrap_name = if enum_selector {
             self.names.enumSwitch.clone()
@@ -911,7 +930,9 @@ impl TransPatterns {
             let chk_borrow = chk;
             let syms = &*self.syms;
             let diag_pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> =
-                Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos)));
+                Some(Rc::new(
+                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                ));
             let rs = &*self.rs;
             rs.resolve_internal_method(
                 ctx,
@@ -969,7 +990,12 @@ impl TransPatterns {
         let selector_expr = {
             let make = &*self.make;
             make.at(pos);
-            make.apply(ctx, List::nil(), qualifier, List::from_iterable(vec![temp_ident, index_ident]))
+            make.apply(
+                ctx,
+                List::nil(),
+                qualifier,
+                List::from_iterable(vec![temp_ident, index_ident]),
+            )
         };
         ctx.tree_mut(selector_expr).ty = Some(int_type);
         let mut i: i32 = 0;
@@ -996,7 +1022,9 @@ impl TransPatterns {
                 self.binding_context = BindingContext::new_basic(self.take_binding_context());
                 let prev_current_value = self.current_value;
                 self.current_value = Some(temp);
-                let test = self.translate(ctx, Some(pattern)).expect("translated pattern");
+                let test = self
+                    .translate(ctx, Some(pattern))
+                    .expect("translated pattern");
                 let stats = {
                     let old_stats = case_stats(ctx, case);
                     self.translate_list(ctx, &old_stats)
@@ -1006,7 +1034,9 @@ impl TransPatterns {
                     make.at(case_pos);
                     make.continue_(ctx, None)
                 };
-                if let TreeKind::Continue { target: slot, .. } = &mut ctx.tree_mut(continue_switch).kind {
+                if let TreeKind::Continue { target: slot, .. } =
+                    &mut ctx.tree_mut(continue_switch).kind
+                {
                     *slot = Some(tree);
                 }
                 let next_index = i + 1;
@@ -1029,7 +1059,11 @@ impl TransPatterns {
                 let block = {
                     let make = &*self.make;
                     make.at(pos);
-                    make.block(ctx, 0, List::from_iterable(vec![exec_index, continue_switch]))
+                    make.block(
+                        ctx,
+                        0,
+                        List::from_iterable(vec![exec_index, continue_switch]),
+                    )
                 };
                 let not_test = self.make_unary(ctx, Tag::NOT, test);
                 let if_tree = {
@@ -1040,7 +1074,8 @@ impl TransPatterns {
                 let binding_stats = {
                     let make = Rc::clone(&self.make);
                     let syms = &*self.syms;
-                    self.binding_context.binding_vars(ctx, &syms, &make, case_pos)
+                    self.binding_context
+                        .binding_vars(ctx, &syms, &make, case_pos)
                 };
                 let new_stats = binding_stats.append_list(&stats.prepend(if_tree));
                 set_case_stats(ctx, case, new_stats);
@@ -1059,7 +1094,11 @@ impl TransPatterns {
                 if ctx.tree(label).has_tag(Tag::DEFAULTCASELABEL) {
                     translated_labels.push(label);
                     has_default = true;
-                } else if has_total_pattern && !has_default && case == last_case && is_pattern_label(ctx, label) {
+                } else if has_total_pattern
+                    && !has_default
+                    && case == last_case
+                    && is_pattern_label(ctx, label)
+                {
                     let default_label = {
                         let make = &*self.make;
                         make.at(pos);
@@ -1087,7 +1126,9 @@ impl TransPatterns {
                 previous_completes_normally = case_completes_normally(ctx, case);
             } else {
                 previous_completes_normally = false;
-                let last_stat = case_stats(ctx, case).last().expect("case without statements");
+                let last_stat = case_stats(ctx, case)
+                    .last()
+                    .expect("case without statements");
                 let last_pos = ctx.tree(last_stat).pos;
                 let brk = {
                     let make = &*self.make;
@@ -1102,8 +1143,11 @@ impl TransPatterns {
             }
         }
         if ctx.tree(tree).has_tag(Tag::SWITCH) {
-            if let TreeKind::Switch { selector: selector_slot, cases: cases_slot, .. } =
-                &mut ctx.tree_mut(tree).kind
+            if let TreeKind::Switch {
+                selector: selector_slot,
+                cases: cases_slot,
+                ..
+            } = &mut ctx.tree_mut(tree).kind
             {
                 *selector_slot = Some(selector_expr);
                 *cases_slot = cases;
@@ -1117,8 +1161,11 @@ impl TransPatterns {
             self.result = Some(block);
         } else {
             let tree_ty = ctx.tree(tree).ty;
-            if let TreeKind::SwitchExpression { selector: selector_slot, cases: cases_slot, .. } =
-                &mut ctx.tree_mut(tree).kind
+            if let TreeKind::SwitchExpression {
+                selector: selector_slot,
+                cases: cases_slot,
+                ..
+            } = &mut ctx.tree_mut(tree).kind
             {
                 *selector_slot = Some(selector_expr);
                 *cases_slot = cases;
@@ -1128,7 +1175,10 @@ impl TransPatterns {
                 make.at(pos);
                 make.let_expr(ctx, List::from_iterable(statements), tree)
             };
-            if let TreeKind::LetExpr { needs_cond: slot, .. } = &mut ctx.tree_mut(result).kind {
+            if let TreeKind::LetExpr {
+                needs_cond: slot, ..
+            } = &mut ctx.tree_mut(result).kind
+            {
                 *slot = true;
             }
             ctx.tree_mut(result).ty = tree_ty;
@@ -1136,8 +1186,12 @@ impl TransPatterns {
         }
     }
 
-
-    fn make_lit(&mut self, ctx: &mut CompilerContext, ty: TypeId, value: Option<crate::tree::jc_tree::LiteralValue>) -> TreeId {
+    fn make_lit(
+        &mut self,
+        ctx: &mut CompilerContext,
+        ty: TypeId,
+        value: Option<crate::tree::jc_tree::LiteralValue>,
+    ) -> TreeId {
         let tag = ctx.typ(ty).get_tag();
         let tree = {
             let make = &*self.make;
@@ -1181,7 +1235,10 @@ impl TransPatterns {
                     name.to_java_string(),
                 )));
             }
-            let value = ctx.typ(label_ty).const_value().expect("case constant value");
+            let value = ctx
+                .typ(label_ty)
+                .const_value()
+                .expect("case constant value");
             let basic = match ctx.typ(label_ty).get_tag() {
                 crate::code::type_tag::TypeTag::BYTE
                 | crate::code::type_tag::TypeTag::CHAR
@@ -1191,7 +1248,9 @@ impl TransPatterns {
                         crate::util::constants::ConstantValue::Integer(value) => *value,
                         crate::util::constants::ConstantValue::Byte(value) => i32::from(*value),
                         crate::util::constants::ConstantValue::Short(value) => i32::from(*value),
-                        crate::util::constants::ConstantValue::Character(value) => i32::from(*value),
+                        crate::util::constants::ConstantValue::Character(value) => {
+                            i32::from(*value)
+                        }
                         _ => panic!("unexpected case constant value"),
                     };
                     BasicConstant::int(int_value)
@@ -1290,12 +1349,7 @@ impl TransPatterns {
         tree
     }
 
-    fn make_unary(
-        &mut self,
-        ctx: &mut CompilerContext,
-        optag: Tag,
-        arg: TreeId,
-    ) -> TreeId {
+    fn make_unary(&mut self, ctx: &mut CompilerContext, optag: Tag, arg: TreeId) -> TreeId {
         let tree = {
             let make = &*self.make;
             make.unary(ctx, optag, arg)
@@ -1303,14 +1357,8 @@ impl TransPatterns {
         let arg_ty = ctx.tree(arg).ty.expect("arg type");
         let operator = {
             let syms = &*self.syms;
-            self.operators.resolve_unary(
-                ctx,
-                &syms,
-                &self.types,
-                ctx.tree(tree).pos,
-                optag,
-                arg_ty,
-            )
+            self.operators
+                .resolve_unary(ctx, &syms, &self.types, ctx.tree(tree).pos, optag, arg_ty)
         };
         if let TreeKind::Unary { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = Some(operator);
@@ -1321,12 +1369,7 @@ impl TransPatterns {
         tree
     }
 
-    fn convert(
-        &mut self,
-        ctx: &mut CompilerContext,
-        expr: TreeId,
-        target: TypeId,
-    ) -> TreeId {
+    fn convert(&mut self, ctx: &mut CompilerContext, expr: TreeId, target: TypeId) -> TreeId {
         let pos = ctx.tree(expr).pos;
         let type_tree = {
             let syms = &*self.syms;
@@ -1374,7 +1417,12 @@ fn make_hoisted_var_decl(
     make_ref.var_def_symbol(ctx, syms, var_symbol, None)
 }
 
-impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+impl TreeVisitor for TransPatterns {
+    fn visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
+        panic!("AssertionError: visitTree {:?}", tree);
+    }
+
+    fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let defs = match &ctx.tree(tree).kind {
             TreeKind::CompilationUnit { defs, .. } => defs.clone(),
             _ => panic!("expected a compilation unit"),
@@ -1418,7 +1466,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         }
         self.result = Some(tree);
     }
-
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let class_sym = match &ctx.tree(tree).kind {
             TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
@@ -1444,7 +1491,12 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
     }
     fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, vartype, init, flags_value) = match &ctx.tree(tree).kind {
-            TreeKind::VariableDecl { mods, vartype, init, .. } => {
+            TreeKind::VariableDecl {
+                mods,
+                vartype,
+                init,
+                ..
+            } => {
                 let flags_value = match mods {
                     Some(mods) => match &ctx.tree(*mods).kind {
                         TreeKind::Modifiers { flags, .. } => *flags,
@@ -1479,8 +1531,12 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
             self.current_method_sym = Some(method);
         }
         let translated_init = self.translate(ctx, init);
-        if let TreeKind::VariableDecl { mods: m, vartype: vt, init: i, .. } =
-            &mut ctx.tree_mut(tree).kind
+        if let TreeKind::VariableDecl {
+            mods: m,
+            vartype: vt,
+            init: i,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
         {
             *m = translated_mods;
             *vt = translated_vartype;
@@ -1489,10 +1545,10 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.result = Some(tree);
         self.current_method_sym = prev_method_sym;
     }
+
     fn visit_skip(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
     fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let stats = match &ctx.tree(tree).kind {
             TreeKind::Block { stats, .. } => stats.clone(),
@@ -1526,7 +1582,9 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
             self.current_method_sym = Some(method);
         }
         for stat in stats.iter() {
-            let translated = self.translate(ctx, Some(stat)).expect("translated block statement");
+            let translated = self
+                .translate(ctx, Some(stat))
+                .expect("translated block statement");
             statements.borrow_mut().push(translated);
         }
         let new_stats = List::from_iterable(statements.borrow().clone());
@@ -1565,6 +1623,7 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         let popped = self.take_binding_context().pop();
         self.binding_context = popped;
     }
+
     fn visit_foreach_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (var, expr, body) = match &ctx.tree(tree).kind {
             TreeKind::EnhancedForLoop { var, expr, body } => (*var, *expr, *body),
@@ -1600,24 +1659,29 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
 
     fn visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases, has_total_pattern, pattern_switch) = match &ctx.tree(tree).kind {
-            TreeKind::Switch { selector: Some(selector), cases, has_total_pattern, pattern_switch, .. } => (
-                *selector, cases.clone(), *has_total_pattern, *pattern_switch,
+            TreeKind::Switch {
+                selector: Some(selector),
+                cases,
+                has_total_pattern,
+                pattern_switch,
+                ..
+            } => (
+                *selector,
+                cases.clone(),
+                *has_total_pattern,
+                *pattern_switch,
             ),
             _ => panic!("ClassCastException: JCSwitch expected"),
         };
-        self.handle_switch(ctx, tree, selector, cases, has_total_pattern, pattern_switch);
+        self.handle_switch(
+            ctx,
+            tree,
+            selector,
+            cases,
+            has_total_pattern,
+            pattern_switch,
+        );
     }
-
-    fn visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (selector, cases, has_total_pattern, pattern_switch) = match &ctx.tree(tree).kind {
-            TreeKind::SwitchExpression { selector: Some(selector), cases, has_total_pattern, pattern_switch, .. } => (
-                *selector, cases.clone(), *has_total_pattern, *pattern_switch,
-            ),
-            _ => panic!("ClassCastException: JCSwitchExpression expected"),
-        };
-        self.handle_switch(ctx, tree, selector, cases, has_total_pattern, pattern_switch);
-    }
-
 
     fn visit_case(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (labels, stats) = match &ctx.tree(tree).kind {
@@ -1638,7 +1702,31 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.result = Some(tree);
     }
 
-
+    fn visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (selector, cases, has_total_pattern, pattern_switch) = match &ctx.tree(tree).kind {
+            TreeKind::SwitchExpression {
+                selector: Some(selector),
+                cases,
+                has_total_pattern,
+                pattern_switch,
+                ..
+            } => (
+                *selector,
+                cases.clone(),
+                *has_total_pattern,
+                *pattern_switch,
+            ),
+            _ => panic!("ClassCastException: JCSwitchExpression expected"),
+        };
+        self.handle_switch(
+            ctx,
+            tree,
+            selector,
+            cases,
+            has_total_pattern,
+            pattern_switch,
+        );
+    }
 
     fn visit_synchronized(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lock, body) = match &ctx.tree(tree).kind {
@@ -1698,7 +1786,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         }
         self.result = Some(tree);
     }
-
     fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.binding_context = BindingContext::new_basic(self.take_binding_context());
         self.default_visit_conditional(ctx, tree);
@@ -1717,6 +1804,7 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         let popped = self.take_binding_context().pop();
         self.binding_context = popped;
     }
+
     fn visit_exec(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::ExpressionStatement { expr } => *expr,
@@ -1878,7 +1966,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         }
         self.result = Some(tree);
     }
-
     fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let prev_context = self.take_binding_context();
         self.binding_context =
@@ -1887,6 +1974,7 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         let popped = self.take_binding_context().pop();
         self.binding_context = popped;
     }
+
     fn visit_parens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Parens { expr } => *expr,
@@ -1938,7 +2026,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         }
         self.result = Some(tree);
     }
-
     fn visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.binding_context = BindingContext::new_basic(self.take_binding_context());
         self.default_visit_binary(ctx, tree);
@@ -1948,6 +2035,7 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         let popped = self.take_binding_context().pop();
         self.binding_context = popped;
     }
+
     fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, expr) = match &ctx.tree(tree).kind {
             TreeKind::TypeCast { clazz, expr } => (*clazz, *expr),
@@ -1961,10 +2049,12 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         }
         self.result = Some(tree);
     }
-
     fn visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, pattern) = match &ctx.tree(tree).kind {
-            TreeKind::InstanceOf { expr: Some(expr), pattern: Some(pattern) } => (*expr, *pattern),
+            TreeKind::InstanceOf {
+                expr: Some(expr),
+                pattern: Some(pattern),
+            } => (*expr, *pattern),
             _ => panic!("JCInstanceOf without expr/pattern"),
         };
         let is_pattern = matches!(
@@ -1976,7 +2066,10 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
             return;
         }
         let expr_ty = ctx.tree(expr).ty.expect("instanceof expr type");
-        let temp_type = if ctx.typ(expr_ty).has_tag(crate::code::type_tag::TypeTag::BOT) {
+        let temp_type = if ctx
+            .typ(expr_ty)
+            .has_tag(crate::code::type_tag::TypeTag::BOT)
+        {
             let syms = &*self.syms;
             syms.object_type
         } else {
@@ -1984,7 +2077,9 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         };
         let prev_current_value = self.current_value;
         self.binding_context = BindingContext::new_basic(self.take_binding_context());
-        let translated_expr = self.translate(ctx, Some(expr)).expect("translated instanceof expr");
+        let translated_expr = self
+            .translate(ctx, Some(expr))
+            .expect("translated instanceof expr");
         let expr_sym = tree_info::symbol(ctx, translated_expr);
         let is_var_owner_val_mth = expr_sym
             .map(|sym| {
@@ -2011,7 +2106,9 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
                 pos,
                 char::from_u32(u32::from(synthetic)).unwrap_or('$')
             );
-            let name = self.names.from_string(&javac_strings::JavaString::from(name.as_str()));
+            let name = self
+                .names
+                .from_string(&javac_strings::JavaString::from(name.as_str()));
             Some(ctx.alloc_symbol(Symbol::new(
                 crate::code::kinds::Kind::VAR,
                 (flags::FINAL | flags::SYNTHETIC) as i64,
@@ -2041,7 +2138,9 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
             make.ident_symbol(ctx, current_value)
         };
         let test = self.make_type_test(ctx, current_ident, type_tree);
-        let translated_pattern = self.translate(ctx, Some(pattern)).expect("translated pattern");
+        let translated_pattern = self
+            .translate(ctx, Some(pattern))
+            .expect("translated pattern");
         let mut result_expression = self.make_binary(ctx, Tag::AND, test, translated_pattern);
         if Some(current_value) != expr_sym {
             let var_def = {
@@ -2055,7 +2154,10 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
                 make.at(ctx.tree(tree).pos);
                 make.let_expr(ctx, List::of(var_def), result_expression)
             };
-            if let TreeKind::LetExpr { needs_cond: slot, .. } = &mut ctx.tree_mut(result_expression).kind {
+            if let TreeKind::LetExpr {
+                needs_cond: slot, ..
+            } = &mut ctx.tree_mut(result_expression).kind
+            {
                 *slot = true;
             }
             let syms = &*self.syms;
@@ -2077,9 +2179,9 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
             _ => panic!("binding pattern variable symbol"),
         };
         let cast_target_type = self.principal_type(ctx, tree);
-        let binding_var = self
-            .binding_context
-            .binding_declared(ctx, binding, self.current_method_sym);
+        let binding_var =
+            self.binding_context
+                .binding_declared(ctx, binding, self.current_method_sym);
         let result = if let Some(binding_var) = binding_var {
             let pos = ctx.tree(tree).pos;
             let current_value = self.current_value.expect("current value");
@@ -2118,7 +2220,10 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
                 make.at(pos);
                 make.let_expr(ctx, List::of(exec), literal_true)
             };
-            if let TreeKind::LetExpr { needs_cond: slot, .. } = &mut ctx.tree_mut(nested).kind {
+            if let TreeKind::LetExpr {
+                needs_cond: slot, ..
+            } = &mut ctx.tree_mut(nested).kind
+            {
                 *slot = true;
             }
             let syms = &*self.syms;
@@ -2130,27 +2235,35 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         };
         self.result = Some(result);
     }
+
     fn visit_default_case_label(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
     fn visit_parenthesized_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let pattern = match &ctx.tree(tree).kind {
-            TreeKind::ParenthesizedPattern { pattern: Some(pattern) } => *pattern,
+            TreeKind::ParenthesizedPattern {
+                pattern: Some(pattern),
+            } => *pattern,
             _ => panic!("ClassCastException: JCParenthesizedPattern expected"),
         };
         self.result = self.translate(ctx, Some(pattern));
     }
     fn visit_guard_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (patt, expr) = match &ctx.tree(tree).kind {
-            TreeKind::GuardPattern { patt: Some(patt), expr: Some(expr) } => (*patt, *expr),
+            TreeKind::GuardPattern {
+                patt: Some(patt),
+                expr: Some(expr),
+            } => (*patt, *expr),
             _ => panic!("ClassCastException: JCGuardPattern expected"),
         };
-        let pattern = self.translate(ctx, Some(patt)).expect("translated guard pattern");
+        let pattern = self
+            .translate(ctx, Some(patt))
+            .expect("translated guard pattern");
         let guard = self.translate(ctx, Some(expr)).expect("translated guard");
         let result = self.make_binary(ctx, Tag::AND, pattern, guard);
         self.result = Some(result);
     }
+
     fn visit_indexed(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (indexed, index) = match &ctx.tree(tree).kind {
             TreeKind::ArrayAccess { indexed, index } => (*indexed, *index),
@@ -2192,7 +2305,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         }
         self.result = Some(tree);
     }
-
     fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let sym = match &ctx.tree(tree).kind {
             TreeKind::Ident { sym: Some(sym), .. } => *sym,
@@ -2216,6 +2328,7 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
             self.default_visit_ident(ctx, tree);
         }
     }
+
     fn visit_literal(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
@@ -2319,21 +2432,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.result = Some(tree);
     }
 
-    fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let annotations = match &ctx.tree(tree).kind {
-            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
-            _ => panic!("expected modifiers"),
-        };
-        let annotations = self.translate_annotations(ctx, &annotations);
-        if let TreeKind::Modifiers {
-            annotations: slot, ..
-        } = &mut ctx.tree_mut(tree).kind
-        {
-            *slot = annotations;
-        }
-        self.result = Some(tree);
-    }
-
     fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotation_type, args) = match &ctx.tree(tree).kind {
             TreeKind::Annotation {
@@ -2353,6 +2451,21 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         {
             *a = annotation_type;
             *ar = args;
+        }
+        self.result = Some(tree);
+    }
+
+    fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let annotations = match &ctx.tree(tree).kind {
+            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+            _ => panic!("expected modifiers"),
+        };
+        let annotations = self.translate_annotations(ctx, &annotations);
+        if let TreeKind::Modifiers {
+            annotations: slot, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
+            *slot = annotations;
         }
         self.result = Some(tree);
     }
@@ -2379,23 +2492,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
     }
 
     fn visit_erroneous(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        self.result = Some(tree);
-    }
-
-    fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (defs, expr) = match &ctx.tree(tree).kind {
-            TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
-            _ => panic!("expected a let expression"),
-        };
-        let defs = self.translate_list(ctx, &defs);
-        let expr = self.translate(ctx, expr);
-        if let TreeKind::LetExpr {
-            defs: d, expr: e, ..
-        } = &mut ctx.tree_mut(tree).kind
-        {
-            *d = defs;
-            *e = expr;
-        }
         self.result = Some(tree);
     }
 
@@ -2522,8 +2618,21 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.result = Some(tree);
     }
 
-    fn visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        panic!("AssertionError: visitTree {:?}", tree);
+    fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (defs, expr) = match &ctx.tree(tree).kind {
+            TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
+            _ => panic!("expected a let expression"),
+        };
+        let defs = self.translate_list(ctx, &defs);
+        let expr = self.translate(ctx, expr);
+        if let TreeKind::LetExpr {
+            defs: d, expr: e, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
+            *d = defs;
+            *e = expr;
+        }
+        self.result = Some(tree);
     }
 }
 
@@ -2585,7 +2694,9 @@ fn case_kind(ctx: &CompilerContext, case: TreeId) -> CaseKind {
 
 fn case_completes_normally(ctx: &CompilerContext, case: TreeId) -> bool {
     match &ctx.tree(case).kind {
-        TreeKind::Case { completes_normally, .. } => *completes_normally,
+        TreeKind::Case {
+            completes_normally, ..
+        } => *completes_normally,
         _ => panic!("ClassCastException: JCCase expected"),
     }
 }
@@ -2605,7 +2716,9 @@ fn is_null_pattern(ctx: &CompilerContext, label: TreeId) -> bool {
     is_expression_label(ctx, label) && tree_info::is_null(ctx, label)
 }
 
-fn literal_value_constant(value: &crate::tree::jc_tree::LiteralValue) -> crate::util::constants::ConstantValue {
+fn literal_value_constant(
+    value: &crate::tree::jc_tree::LiteralValue,
+) -> crate::util::constants::ConstantValue {
     use crate::tree::jc_tree::LiteralValue;
     use crate::util::constants::ConstantValue;
     match value {

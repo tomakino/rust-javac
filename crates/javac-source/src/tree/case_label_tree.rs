@@ -3,5 +3,4 @@
 /// @since 17
 use super::tree::Tree;
 
-pub trait CaseLabelTree: Tree {
-}
+pub trait CaseLabelTree: Tree {}

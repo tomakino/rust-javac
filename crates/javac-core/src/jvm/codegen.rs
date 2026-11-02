@@ -11,8 +11,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::code::symtab::Symtab;
-use crate::code::type_tag::TypeTag;
 use crate::code::type_::{Type, TypeKindData};
+use crate::code::type_tag::TypeTag;
 use crate::code::types::Types;
 use crate::comp::annotate::Annotate;
 use crate::comp::attr::Attr;
@@ -27,21 +27,21 @@ use crate::jvm::byte_codes::*;
 use crate::jvm::class_file;
 use crate::jvm::code::{Chain, Code};
 use crate::jvm::cr_table::CRTable;
-use crate::jvm::crt_flags::*;
 use crate::jvm::cr_table::CrtKey;
+use crate::jvm::crt_flags::*;
 use crate::jvm::items::{ImmediateValue, Item, Items};
 use crate::jvm::pool_constant::LoadableConstantRef;
 use crate::jvm::pool_writer::PoolWriter;
 use crate::jvm::stack_map::StackMapFormat;
 use crate::jvm::string_concat::StringConcat;
 use crate::jvm::target::Target;
-use crate::util::options::Options;
 use crate::resources::compiler_properties::errors;
 use crate::tree::end_pos_table::EndPosTable;
 use crate::tree::jc_tree::{Tag, TreeKind, TreeVisitor};
 use crate::tree::tree_info::{self, PosKind};
-use crate::tree::tree_scanner::TreeScannerVisitor;
 use crate::tree::tree_maker::{TreeFactory, TreeMaker};
+use crate::tree::tree_scanner::TreeScannerVisitor;
+use crate::util::options::Options;
 
 use crate::util::jc_diagnostic::{DiagnosticPosition, Error};
 use crate::util::list::List;
@@ -64,8 +64,7 @@ pub trait GenFinalizer {
     }
 
     /// Invoked after the try body has been visited.
-    fn after_body(&mut self) {
-    }
+    fn after_body(&mut self) {}
 }
 
 /// A code generation context.
@@ -247,10 +246,7 @@ impl Gen {
         // ("-g:"), not the enum constant name.
         let g_custom_key = crate::main::option::Option::G_CUSTOM.primary_name();
         let line_debug_info = options.is_unset(g_custom_key)
-            || options.is_set_choice(
-                crate::main::option::Option::G_CUSTOM,
-                "lines",
-            );
+            || options.is_set_choice(crate::main::option::Option::G_CUSTOM, "lines");
         let var_debug_info = if options.is_unset(g_custom_key) {
             options.is_set_option(crate::main::option::Option::G)
         } else {
@@ -258,8 +254,7 @@ impl Gen {
         };
         let gen_crt = options.is_set("Xjcov");
         let debug_code = options.is_set("debug.code");
-        let disable_virtualized_private_invoke =
-            options.is_set("disableVirtualizedPrivateInvoke");
+        let disable_virtualized_private_invoke = options.is_set("disableVirtualizedPrivateInvoke");
         // Java: concat = StringConcat.instance(context) (Gen constructor initialization)
         let concat = Some(crate::jvm::string_concat::make_concat(
             Rc::clone(&syms),
@@ -373,11 +368,8 @@ impl Gen {
     fn emit_minus_one(&mut self, ctx: &mut CompilerContext, tc: i32) {
         if tc == LONG_CODE {
             let items = self.get_items();
-            let item = items.make_immediate_item(
-                ctx,
-                self.syms.long_type,
-                ImmediateValue::Long(-1),
-            );
+            let item =
+                items.make_immediate_item(ctx, self.syms.long_type, ImmediateValue::Long(-1));
             items.load(ctx, &item);
         } else {
             self.get_code().borrow_mut().emitop0(ctx, ICONST_M1);
@@ -437,7 +429,10 @@ impl Gen {
         }
         let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
         let owner = ctx.sym(sym).owner;
-        let object_tsym = ctx.typ(self.syms.object_type).tsym.expect("object type symbol");
+        let object_tsym = ctx
+            .typ(self.syms.object_type)
+            .tsym
+            .expect("object type symbol");
         let flags = ctx.sym(sym).flags_field;
         let is_static_synthetic = (flags
             & (crate::code::flags::STATIC as i64 | crate::code::flags::SYNTHETIC as i64))
@@ -454,12 +449,7 @@ impl Gen {
 
     /// Insert a reference to the given type in the constant pool and return its
     /// index.
-    pub fn make_ref(
-        &mut self,
-        ctx: &mut CompilerContext,
-        pos: i32,
-        ty: TypeId,
-    ) -> i32 {
+    pub fn make_ref(&mut self, ctx: &mut CompilerContext, pos: i32, ty: TypeId) -> i32 {
         let checked = self.check_dimension(ctx, pos, ty);
         let syms = Rc::clone(&self.syms);
         let mut pool = self.pool_writer.borrow_mut();
@@ -467,23 +457,13 @@ impl Gen {
     }
 
     /// Check whether the given type is an array with too many dimensions.
-    fn check_dimension(
-        &mut self,
-        ctx: &mut CompilerContext,
-        pos: i32,
-        t: TypeId,
-    ) -> TypeId {
+    fn check_dimension(&mut self, ctx: &mut CompilerContext, pos: i32, t: TypeId) -> TypeId {
         self.check_dimension_internal(ctx, pos, t);
         t
     }
 
     /// Check the given type for invalid array dimensions.
-    fn check_dimension_internal(
-        &mut self,
-        ctx: &mut CompilerContext,
-        pos: i32,
-        t: TypeId,
-    ) {
+    fn check_dimension_internal(&mut self, ctx: &mut CompilerContext, pos: i32, t: TypeId) {
         match ctx.typ(t).get_tag() {
             TypeTag::METHOD => {
                 let ret = ctx.typ(t).get_return_type(ctx);
@@ -493,7 +473,7 @@ impl Gen {
                 let params = ctx.typ(t).get_parameter_types(ctx);
                 let rest = params;
                 for head in &rest {
-                self.check_dimension_internal(ctx, pos, head);
+                    self.check_dimension_internal(ctx, pos, head);
                 }
             }
             TypeTag::ARRAY => {
@@ -604,8 +584,7 @@ impl Gen {
             },
             None => 0,
         };
-        (flags & crate::code::flags::SYNTHETIC as i64) != 0
-            && self.is_odd_access_name(ctx, &name)
+        (flags & crate::code::flags::SYNTHETIC as i64) != 0 && self.is_odd_access_name(ctx, &name)
     }
 
     /// Return whether the given name starts with "access$" and ends in an odd
@@ -616,8 +595,7 @@ impl Gen {
         if len <= 0 {
             return false;
         }
-        name.starts_with(&self.access_dollar)
-            && (name.get_byte_at(len - 1) & 1) == 1
+        name.starts_with(&self.access_dollar) && (name.get_byte_at(len - 1) & 1) == 1
     }
 
     /// Generate code to invoke the finalizer associated with the given
@@ -678,7 +656,12 @@ impl Gen {
 
     /// Return whether any structure aborted by a non-local exit has a finalizer
     /// requiring an empty stack.
-    fn has_finally(&self, ctx: &CompilerContext, target: TreeId, env: &Rc<Env<GenContext>>) -> bool {
+    fn has_finally(
+        &self,
+        ctx: &CompilerContext,
+        target: TreeId,
+        env: &Rc<Env<GenContext>>,
+    ) -> bool {
         let mut env1 = Rc::clone(env);
         while env1.tree != Some(target) {
             let tree = env1.tree.expect("generation environment tree");
@@ -704,7 +687,7 @@ fn array_types_equal(ctx: &CompilerContext, a: TypeId, b: TypeId) -> bool {
         return true;
     }
     let elem = |t: TypeId| match &ctx.typ(t).kind {
-        crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => *elemtype,
+        TypeKindData::ArrayType { elemtype, .. } => *elemtype,
         _ => None,
     };
     match (elem(a), elem(b)) {
@@ -714,11 +697,7 @@ fn array_types_equal(ctx: &CompilerContext, a: TypeId, b: TypeId) -> bool {
 }
 
 /// Clone a symbol with the given owner.
-fn clone_symbol_with_owner(
-    ctx: &mut CompilerContext,
-    sym: SymbolId,
-    owner: SymbolId,
-) -> SymbolId {
+fn clone_symbol_with_owner(ctx: &mut CompilerContext, sym: SymbolId, owner: SymbolId) -> SymbolId {
     let mut cloned = ctx.sym(sym).clone();
     cloned.owner = Some(owner);
     // Java: Symbol.clone(Symbol) overrides baseSymbol() (Symbol.java:
@@ -734,11 +713,7 @@ fn clone_symbol_with_owner(
 impl Gen {
     /// Return a duplicated generation environment whose next link is the
     /// current environment.
-    fn dup_env(
-        &self,
-        tree: Option<TreeId>,
-        info: GenContext,
-    ) -> Rc<Env<GenContext>> {
+    fn dup_env(&self, tree: Option<TreeId>, info: GenContext) -> Rc<Env<GenContext>> {
         let base = self.env.clone().expect("generation environment");
         Env::dupto(
             &base,
@@ -785,14 +760,8 @@ impl Gen {
         items.invoke(ctx, item)
     }
 
-
     /// Coerce an item to a type.
-    fn item_coerce_type(
-        &mut self,
-        ctx: &mut CompilerContext,
-        item: &Item,
-        ty: TypeId,
-    ) -> Item {
+    fn item_coerce_type(&mut self, ctx: &mut CompilerContext, item: &Item, ty: TypeId) -> Item {
         let items = self.get_items();
         items.coerce_type(ctx, item, ty)
     }
@@ -814,75 +783,79 @@ impl Gen {
         let mut method_defs: Vec<TreeId> = Vec::new();
         let l = defs;
         for def in &l {
-        match &ctx.tree(def).kind {
-            TreeKind::Block { flags, .. } => {
-                if (flags & crate::code::flags::STATIC as i64) != 0 {
-                    clinit_code.push(def);
-                } else if (flags & crate::code::flags::SYNTHETIC as i64) == 0 {
-                    init_code.push(def);
+            match &ctx.tree(def).kind {
+                TreeKind::Block { flags, .. } => {
+                    if (flags & crate::code::flags::STATIC as i64) != 0 {
+                        clinit_code.push(def);
+                    } else if (flags & crate::code::flags::SYNTHETIC as i64) == 0 {
+                        init_code.push(def);
+                    }
                 }
-            }
-            TreeKind::MethodDecl { .. } => {
-                method_defs.push(def);
-            }
-            TreeKind::VariableDecl {
-                sym: Some(sym),
-                init: Some(init),
-                ..
-            } => {
-                let sym = *sym;
-                let init = *init;
-                let pos = ctx.tree(def).pos;
-                let sym_ty = ctx.sym(sym).ty.expect("variable type");
-                self.check_dimension(ctx, pos, sym_ty);
-                let flags = ctx.sym(sym).flags_field;
-                let is_static = (flags & crate::code::flags::STATIC as i64) != 0;
-                if !is_static {
-                    // Always initialize instance variables.
-                    let make = Rc::clone(&self.make);
-                    let stmt = make.at(pos).assignment(ctx, sym, init);
-                    init_code.push(stmt);
-                    self.end_pos_table_replaced(ctx, def, stmt);
-                    let tas = self.get_and_remove_non_field_tas(ctx, sym);
-                    init_tas.extend(tas);
-                } else {
-                    let const_value = ctx.sym(sym).get_const_value();
-                    match const_value {
-                        None => {
-                            let make = Rc::clone(&self.make);
-                            // Java: Gen.normalizeDefs positions the
-                            // initializer at vdef.pos() (the field
-                            // declaration position).
-                            let stmt = make.at(pos).assignment(ctx, sym, init);
-                            clinit_code.push(stmt);
-                            self.end_pos_table_replaced(ctx, def, stmt);
-                            let tas = self.get_and_remove_non_field_tas(ctx, sym);
-                            clinit_tas.extend(tas);
-                        }
-                        Some(value) => {
-                            let init_pos = ctx.tree(init).pos;
-                            self.check_string_constant(ctx, init_pos, Some(&value));
-                            // If the init references an external class, add
-                            // it to the constant pool.
-                            self.class_reference_scan(ctx, init);
+                TreeKind::MethodDecl { .. } => {
+                    method_defs.push(def);
+                }
+                TreeKind::VariableDecl {
+                    sym: Some(sym),
+                    init: Some(init),
+                    ..
+                } => {
+                    let sym = *sym;
+                    let init = *init;
+                    let pos = ctx.tree(def).pos;
+                    let sym_ty = ctx.sym(sym).ty.expect("variable type");
+                    self.check_dimension(ctx, pos, sym_ty);
+                    let flags = ctx.sym(sym).flags_field;
+                    let is_static = (flags & crate::code::flags::STATIC as i64) != 0;
+                    if !is_static {
+                        // Always initialize instance variables.
+                        let make = Rc::clone(&self.make);
+                        let stmt = make.at(pos).assignment(ctx, sym, init);
+                        init_code.push(stmt);
+                        self.end_pos_table_replaced(ctx, def, stmt);
+                        let tas = self.get_and_remove_non_field_tas(ctx, sym);
+                        init_tas.extend(tas);
+                    } else {
+                        let const_value = ctx.sym(sym).get_const_value();
+                        match const_value {
+                            None => {
+                                let make = Rc::clone(&self.make);
+                                // Java: Gen.normalizeDefs positions the
+                                // initializer at vdef.pos() (the field
+                                // declaration position).
+                                let stmt = make.at(pos).assignment(ctx, sym, init);
+                                clinit_code.push(stmt);
+                                self.end_pos_table_replaced(ctx, def, stmt);
+                                let tas = self.get_and_remove_non_field_tas(ctx, sym);
+                                clinit_tas.extend(tas);
+                            }
+                            Some(value) => {
+                                let init_pos = ctx.tree(init).pos;
+                                self.check_string_constant(ctx, init_pos, Some(&value));
+                                // If the init references an external class, add
+                                // it to the constant pool.
+                                self.class_reference_scan(ctx, init);
+                            }
                         }
                     }
                 }
+                TreeKind::VariableDecl {
+                    sym: Some(sym),
+                    init: None,
+                    ..
+                } => {
+                    let pos = ctx.tree(def).pos;
+                    let sym_ty = ctx.sym(*sym).ty.expect("variable type");
+                    self.check_dimension(ctx, pos, sym_ty);
+                }
+                // Upstream Gen.normalizeDefs (JDK17 Gen.java:421-476) partitions
+                // the class defs into BLOCK/METHODDEF/VARDEF only and asserts on any
+                // other tag, so a nested JCClassDecl never reaches the genClass defs
+                // loop (Gen.java:2419-2421); each nested class is generated by its
+                // own genClass invocation. Keep that invariant: ignore nested class
+                // declarations here, and keep panicking on any other unexpected tag.
+                TreeKind::ClassDecl { .. } => {}
+                _ => panic!("AssertionError: unexpected class member"),
             }
-            TreeKind::VariableDecl { sym: Some(sym), init: None, .. } => {
-                let pos = ctx.tree(def).pos;
-                let sym_ty = ctx.sym(*sym).ty.expect("variable type");
-                self.check_dimension(ctx, pos, sym_ty);
-            }
-            // Upstream Gen.normalizeDefs (JDK17 Gen.java:421-476) partitions
-            // the class defs into BLOCK/METHODDEF/VARDEF only and asserts on any
-            // other tag, so a nested JCClassDecl never reaches the genClass defs
-            // loop (Gen.java:2419-2421); each nested class is generated by its
-            // own genClass invocation. Keep that invariant: ignore nested class
-            // declarations here, and keep panicking on any other unexpected tag.
-            TreeKind::ClassDecl { .. } => {}
-            _ => panic!("AssertionError: unexpected class member"),
-        }
         }
         // Insert any instance initializers into all constructors.
         if !init_code.is_empty() {
@@ -913,8 +886,8 @@ impl Gen {
                 },
             ));
             let c_flags = ctx.sym(c).flags_field;
-            let flags = crate::code::flags::STATIC as i64
-                | (c_flags & crate::code::flags::STRICTFP as i64);
+            let flags =
+                crate::code::flags::STATIC as i64 | (c_flags & crate::code::flags::STRICTFP as i64);
             let names = Rc::clone(&self.names);
             let clinit = ctx.alloc_symbol(crate::code::symbol::Symbol::new_method_symbol(
                 flags,
@@ -953,9 +926,7 @@ impl Gen {
                     Some(block),
                     None,
                 );
-                if let TreeKind::MethodDecl { sym: slot, .. } =
-                    &mut ctx.tree_mut(method).kind
-                {
+                if let TreeKind::MethodDecl { sym: slot, .. } = &mut ctx.tree_mut(method).kind {
                     *slot = Some(clinit);
                 }
                 method
@@ -1025,19 +996,16 @@ impl Gen {
         let mut nonfield_tas: Vec<crate::ids::AttributeId> = Vec::new();
         let current = tas;
         for ta in &current {
-        let pos = ctx
-            .attr(ta)
-            .get_position(ctx)
-            .expect("AssertionError: type attribute position");
-        assert!(
-            pos.type_ != crate::code::target_type::TargetType::UNKNOWN,
-            "AssertionError: unknown type attribute position"
-        );
-        if pos.type_ == crate::code::target_type::TargetType::FIELD {
-            field_tas.push(ta);
-        } else {
-            nonfield_tas.push(ta);
-        }
+            let pos = ctx
+                .attr(ta)
+                .get_position(ctx)
+                .expect("AssertionError: type attribute position");
+            assert_ne!(pos.type_, crate::code::target_type::TargetType::UNKNOWN, "AssertionError: unknown type attribute position");
+            if pos.type_ == crate::code::target_type::TargetType::FIELD {
+                field_tas.push(ta);
+            } else {
+                nonfield_tas.push(ta);
+            }
         }
         let mut symbol = ctx.sym(sym).clone();
         // The arena port: a clone does not copy the symbol id, which
@@ -1107,9 +1075,7 @@ impl Gen {
         if stats.non_empty() {
             // Copy initializers of synthetic variables generated in the
             // translation of inner classes.
-            while stats.non_empty()
-                && tree_info::is_synthetic_init(ctx, *stats.head())
-            {
+            while stats.non_empty() && tree_info::is_synthetic_init(ctx, *stats.head()) {
                 newstats.push(*stats.head());
                 stats = stats.tail();
             }
@@ -1117,9 +1083,7 @@ impl Gen {
             newstats.push(*stats.head());
             stats = stats.tail();
             // Copy the remaining synthetic initializers.
-            while stats.non_empty()
-                && tree_info::is_synthetic_init(ctx, *stats.head())
-            {
+            while stats.non_empty() && tree_info::is_synthetic_init(ctx, *stats.head()) {
                 newstats.push(*stats.head());
                 stats = stats.tail();
             }
@@ -1156,10 +1120,8 @@ impl Gen {
 
     /// Scan a tree for class references to be added to the constant pool.
     fn class_reference_scan(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let mut visitor = ClassReferenceVisitor::new(
-            Rc::clone(&self.pool_writer),
-            Rc::clone(&self.syms),
-        );
+        let mut visitor =
+            ClassReferenceVisitor::new(Rc::clone(&self.pool_writer), Rc::clone(&self.syms));
         crate::tree::jc_tree::accept(ctx, tree, &mut visitor);
     }
 }
@@ -1210,12 +1172,7 @@ impl Gen {
     }
 
     /// Generate code for a statement list with character range table flags.
-    fn gen_stats_crt(
-        &mut self,
-        ctx: &mut CompilerContext,
-        trees: List<TreeId>,
-        crt_flags: i32,
-    ) {
+    fn gen_stats_crt(&mut self, ctx: &mut CompilerContext, trees: List<TreeId>, crt_flags: i32) {
         if !self.gen_crt {
             self.gen_stats(ctx, trees);
             return;
@@ -1228,7 +1185,12 @@ impl Gen {
             self.gen_stats(ctx, trees);
             let end_pc = self.get_code().borrow_mut().cur_cp(ctx);
             if let Some(crt) = &mut self.get_code().borrow_mut().crt {
-                crt.put(CrtKey::List(trees_for_crt.iter().collect()), crt_flags, start_pc, end_pc);
+                crt.put(
+                    CrtKey::List(trees_for_crt.iter().collect()),
+                    crt_flags,
+                    start_pc,
+                    end_pc,
+                );
             }
         }
     }
@@ -1237,7 +1199,7 @@ impl Gen {
     fn gen_stats(&mut self, ctx: &mut CompilerContext, trees: List<TreeId>) {
         let l = trees;
         for head in &l {
-        self.gen_stat_crt(ctx, head, CRT_STATEMENT);
+            self.gen_stat_crt(ctx, head, CRT_STATEMENT);
         }
     }
 
@@ -1279,7 +1241,9 @@ impl Gen {
             let cond_is_false = items.cond_is_false(&cond_item);
             if cond_is_true {
                 let jumps = items.cond_true_jumps(&cond_item);
-                self.get_code().borrow_mut().resolve_pending_chain(ctx, jumps);
+                self.get_code()
+                    .borrow_mut()
+                    .resolve_pending_chain(ctx, jumps);
                 let mut result = self.gen_cond_crt(ctx, truepart, CRT_FLOW_TARGET);
                 if mark_branches {
                     items.set_cond_tree(&mut result, truepart);
@@ -1288,7 +1252,9 @@ impl Gen {
             }
             if cond_is_false {
                 let jumps = items.cond_false_jumps(&cond_item);
-                self.get_code().borrow_mut().resolve_pending_chain(ctx, jumps);
+                self.get_code()
+                    .borrow_mut()
+                    .resolve_pending_chain(ctx, jumps);
                 let mut result = self.gen_cond_crt(ctx, falsepart, CRT_FLOW_TARGET);
                 if mark_branches {
                     items.set_cond_tree(&mut result, falsepart);
@@ -1297,16 +1263,22 @@ impl Gen {
             }
             let second_jumps = items.jump_false(ctx, &cond_item);
             let true_jumps = items.cond_true_jumps(&cond_item);
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, true_jumps);
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, true_jumps);
             let mut first = self.gen_cond_crt(ctx, truepart, CRT_FLOW_TARGET);
             if mark_branches {
                 items.set_cond_tree(&mut first, truepart);
             }
             let false_jumps = items.jump_false(ctx, &first);
             let first_true = items.cond_true_jumps(&first);
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, first_true);
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, first_true);
             let true_jumps_chain = self.get_code().borrow_mut().branch(ctx, GOTO);
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, second_jumps);
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, second_jumps);
             let second = self.gen_cond_crt(ctx, falsepart, CRT_FLOW_TARGET);
             let second_opcode = items.cond_opcode(&second);
             let second_true = items.cond_true_jumps(&second);
@@ -1354,12 +1326,18 @@ impl Gen {
                 let limit = self.get_code().borrow().nextreg;
                 let prev_start = {
                     let stacksize = self.get_code().borrow().state.stacksize;
-                    self.get_code().borrow_mut().set_let_expr_stack_pos(stacksize)
+                    self.get_code()
+                        .borrow_mut()
+                        .set_let_expr_stack_pos(stacksize)
                 };
                 self.gen_stats(ctx, defs);
-                self.get_code().borrow_mut().set_let_expr_stack_pos(prev_start);
+                self.get_code()
+                    .borrow_mut()
+                    .set_let_expr_stack_pos(prev_start);
                 let expr = match &ctx.tree(inner_tree).kind {
-                    TreeKind::LetExpr { expr: Some(expr), .. } => *expr,
+                    TreeKind::LetExpr {
+                        expr: Some(expr), ..
+                    } => *expr,
                     _ => panic!("AssertionError: let expression body"),
                 };
                 let result = self.gen_cond(ctx, expr, mark_branches);
@@ -1384,8 +1362,8 @@ impl Gen {
         let const_value = ctx.typ(tree_ty).const_value().cloned();
         if std::env::var_os("DSH_DEBUG_COND").is_some()
             && const_value.is_some()
-            && (ctx.tree(tree).tag == crate::tree::jc_tree::Tag::EQ
-                || ctx.tree(tree).tag == crate::tree::jc_tree::Tag::NE)
+            && (ctx.tree(tree).tag == Tag::EQ
+                || ctx.tree(tree).tag == Tag::NE)
         {
             eprintln!(
                 "[GENCONST] pos={} tag={:?} ty={} const={:?}",
@@ -1397,10 +1375,8 @@ impl Gen {
         }
         let mut result = if const_value.is_some() {
             // Short circuit any expression that is a constant.
-            let mut visitor = ClassReferenceVisitor::new(
-                Rc::clone(&self.pool_writer),
-                Rc::clone(&self.syms),
-            );
+            let mut visitor =
+                ClassReferenceVisitor::new(Rc::clone(&self.pool_writer), Rc::clone(&self.syms));
             crate::tree::jc_tree::accept(ctx, tree, &mut visitor);
             self.check_string_constant(ctx, ctx.tree(tree).pos, const_value.as_ref());
             let sym = tree_info::symbol(ctx, tree);
@@ -1412,11 +1388,7 @@ impl Gen {
                 _ => {
                     let value = const_value.clone().expect("constant value");
                     let items = self.get_items();
-                    items.make_immediate_item(
-                            ctx,
-                            tree_ty,
-                            immediate_value_from_constant(&value),
-                        )
+                    items.make_immediate_item(ctx, tree_ty, immediate_value_from_constant(&value))
                 }
             }
         } else {
@@ -1443,10 +1415,10 @@ impl Gen {
         let l = trees;
         let mut pts = pts;
         for head in &l {
-        let pt = *pts.head();
-        pts = pts.tail();
-        let item = self.gen_expr(ctx, head, pt);
-        self.item_load(ctx, &item);
+            let pt = *pts.head();
+            pts = pts.tail();
+            let item = self.gen_expr(ctx, head, pt);
+            self.item_load(ctx, &item);
         }
         assert!(pts.is_empty(), "AssertionError: argument lists must match");
     }
@@ -1470,26 +1442,67 @@ impl ClassReferenceVisitor {
     /// Enter a class type into the constant pool.
     fn put_class(&mut self, ctx: &mut CompilerContext, ty: TypeId) {
         let syms = Rc::clone(&self.syms);
-        self.pool_writer
-            .borrow_mut()
-            .put_class(ctx, &*syms, ty);
+        self.pool_writer.borrow_mut().put_class(ctx, &*syms, ty);
     }
 }
 
 impl TreeVisitor for ClassReferenceVisitor {
-    fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+    fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
+
+    fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
+            TreeKind::Conditional {
+                cond,
+                truepart,
+                falsepart,
+                ..
+            } => (
+                cond.expect("conditional cond"),
+                truepart.expect("conditional truepart"),
+                falsepart.expect("conditional falsepart"),
+            ),
+            _ => panic!("AssertionError: conditional expected"),
+        };
+        crate::tree::jc_tree::accept(ctx, cond, self);
+        crate::tree::jc_tree::accept(ctx, truepart, self);
+        crate::tree::jc_tree::accept(ctx, falsepart, self);
+    }
+
+    fn visit_parens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let expr = match &ctx.tree(tree).kind {
+            TreeKind::Parens { expr: Some(expr) } => *expr,
+            _ => return,
+        };
+        crate::tree::jc_tree::accept(ctx, expr, self);
+    }
+
+    fn visit_unary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let arg = match &ctx.tree(tree).kind {
+            TreeKind::Unary { arg: Some(arg), .. } => *arg,
+            _ => return,
+        };
+        crate::tree::jc_tree::accept(ctx, arg, self);
     }
 
     fn visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
-            TreeKind::Binary { lhs, rhs, .. } => (
-                lhs.expect("binary lhs"),
-                rhs.expect("binary rhs"),
-            ),
+            TreeKind::Binary { lhs, rhs, .. } => {
+                (lhs.expect("binary lhs"), rhs.expect("binary rhs"))
+            }
             _ => panic!("AssertionError: binary expected"),
         };
         crate::tree::jc_tree::accept(ctx, lhs, self);
         crate::tree::jc_tree::accept(ctx, rhs, self);
+    }
+
+    fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let expr = match &ctx.tree(tree).kind {
+            TreeKind::TypeCast {
+                expr: Some(expr), ..
+            } => *expr,
+            _ => return,
+        };
+        crate::tree::jc_tree::accept(ctx, expr, self);
     }
 
     fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -1519,55 +1532,10 @@ impl TreeVisitor for ClassReferenceVisitor {
             self.put_class(ctx, owner_ty);
         }
     }
-
-    fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
-            TreeKind::Conditional {
-                cond,
-                truepart,
-                falsepart,
-                ..
-            } => (
-                cond.expect("conditional cond"),
-                truepart.expect("conditional truepart"),
-                falsepart.expect("conditional falsepart"),
-            ),
-            _ => panic!("AssertionError: conditional expected"),
-        };
-        crate::tree::jc_tree::accept(ctx, cond, self);
-        crate::tree::jc_tree::accept(ctx, truepart, self);
-        crate::tree::jc_tree::accept(ctx, falsepart, self);
-    }
-
-    fn visit_unary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let arg = match &ctx.tree(tree).kind {
-            TreeKind::Unary { arg: Some(arg), .. } => *arg,
-            _ => return,
-        };
-        crate::tree::jc_tree::accept(ctx, arg, self);
-    }
-
-    fn visit_parens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let expr = match &ctx.tree(tree).kind {
-            TreeKind::Parens { expr: Some(expr) } => *expr,
-            _ => return,
-        };
-        crate::tree::jc_tree::accept(ctx, expr, self);
-    }
-
-    fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let expr = match &ctx.tree(tree).kind {
-            TreeKind::TypeCast { expr: Some(expr), .. } => *expr,
-            _ => return,
-        };
-        crate::tree::jc_tree::accept(ctx, expr, self);
-    }
 }
 
 /// Convert a constant value to an immediate item value.
-fn immediate_value_from_constant(
-    value: &crate::util::constants::ConstantValue,
-) -> ImmediateValue {
+fn immediate_value_from_constant(value: &crate::util::constants::ConstantValue) -> ImmediateValue {
     use crate::util::constants::ConstantValue;
     match value {
         ConstantValue::Integer(v) => ImmediateValue::Int(*v),
@@ -1589,7 +1557,7 @@ impl Gen {
         // Java: localEnv.enclMethod = tree (Gen.java:924); dupEnv keeps the
         // enclosing method of the previous environment, so the fresh method
         // environment must be rebound to the method being generated.
-        let local_env = Rc::new(crate::comp::env::Env {
+        let local_env = Rc::new(Env {
             next: local_env.next.clone(),
             outer: local_env.outer.clone(),
             tree: Some(tree),
@@ -1600,9 +1568,7 @@ impl Gen {
             base_clause: local_env.base_clause,
         });
         let (sym, erasure) = match &ctx.tree(tree).kind {
-            TreeKind::MethodDecl {
-                sym: Some(sym), ..
-            } => {
+            TreeKind::MethodDecl { sym: Some(sym), .. } => {
                 let sym = *sym;
                 let ty = ctx.sym(sym).ty.expect("method type");
                 let syms = Rc::clone(&self.syms);
@@ -1666,14 +1632,14 @@ impl Gen {
             // (localEnv = env.dup(tree); localEnv.enclMethod = tree) and installs
             // it as Gen.env before genMethod runs.  Unwinding a return/break
             // walks that chain until the method tree (Gen.unwind).
-            let method_env = Rc::new(crate::comp::env::Env {
+            let method_env = Rc::new(Env {
                 next: Some(Rc::clone(env)),
                 outer: env.outer.clone(),
                 tree: Some(tree),
                 toplevel: env.toplevel,
                 encl_class: env.encl_class,
                 encl_method: Some(tree),
-                info: Rc::new(std::cell::RefCell::new(GenContext::new())),
+                info: Rc::new(RefCell::new(GenContext::new())),
                 base_clause: env.base_clause,
             });
             let prev_env = self.env.clone();
@@ -1692,7 +1658,13 @@ impl Gen {
                     Error::from(info),
                 );
                 let cls = crate::code::symbol::symbol_encl_class(ctx, meth)
-                    .map(|c| ctx.sym(c).name.to_java_string().to_string_lossy().to_string())
+                    .map(|c| {
+                        ctx.sym(c)
+                            .name
+                            .to_java_string()
+                            .to_string_lossy()
+                            .to_string()
+                    })
                     .unwrap_or_default();
                 eprintln!(
                     "[STACK] method={} class={} body_pos={} file={}",
@@ -1732,7 +1704,9 @@ impl Gen {
                     let startpc = self.get_code().borrow_mut().entry_point(ctx);
                     let c = self.get_items().make_cond_item_opcode(GOTO);
                     let chain = self.get_items().jump_true(ctx, &c);
-                    self.get_code().borrow_mut().resolve_chain(ctx, chain, startpc);
+                    self.get_code()
+                        .borrow_mut()
+                        .resolve_chain(ctx, chain, startpc);
                 }
             }
             if self.gen_crt {
@@ -1852,17 +1826,17 @@ impl Gen {
             _ => List::nil(),
         };
         let l = params;
-        let mut registered_symbols: Vec<crate::ids::SymbolId> = Vec::new();
+        let mut registered_symbols: Vec<SymbolId> = Vec::new();
         for head in &l {
-        let param_sym = match &ctx.tree(head).kind {
-            TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
-            _ => panic!("AssertionError: parameter symbol"),
-        };
-        let param_ty = ctx.sym(param_sym).ty.expect("parameter type");
-        self.check_dimension(ctx, ctx.tree(head).pos, param_ty);
-        let reg = code.borrow_mut().new_local_symbol(ctx, param_sym);
-        code.borrow_mut().set_defined_at(ctx, reg);
-        registered_symbols.push(param_sym);
+            let param_sym = match &ctx.tree(head).kind {
+                TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
+                _ => panic!("AssertionError: parameter symbol"),
+            };
+            let param_ty = ctx.sym(param_sym).ty.expect("parameter type");
+            self.check_dimension(ctx, ctx.tree(head).pos, param_ty);
+            let reg = code.borrow_mut().new_local_symbol(ctx, param_sym);
+            code.borrow_mut().set_defined_at(ctx, reg);
+            registered_symbols.push(param_sym);
         }
         // Synthetic lambda methods keep their captured parameters in
         // MethodSymbol.extra_params (they have no VariableDecl tree nodes).
@@ -1876,21 +1850,21 @@ impl Gen {
         };
         let extra = extra_params;
         for param_sym in &extra {
-        if registered_symbols.contains(&param_sym) {
-            continue;
-        }
-        registered_symbols.push(param_sym);
-        let reg = code.borrow_mut().new_local_symbol(ctx, param_sym);
-        code.borrow_mut().set_defined_at(ctx, reg);
+            if registered_symbols.contains(&param_sym) {
+                continue;
+            }
+            registered_symbols.push(param_sym);
+            let reg = code.borrow_mut().new_local_symbol(ctx, param_sym);
+            code.borrow_mut().set_defined_at(ctx, reg);
         }
         let captured = captured_locals;
         for param_sym in &captured {
-        if registered_symbols.contains(&param_sym) {
-            continue;
-        }
-        registered_symbols.push(param_sym);
-        let reg = code.borrow_mut().new_local_symbol(ctx, param_sym);
-        code.borrow_mut().set_defined_at(ctx, reg);
+            if registered_symbols.contains(&param_sym) {
+                continue;
+            }
+            registered_symbols.push(param_sym);
+            let reg = code.borrow_mut().new_local_symbol(ctx, param_sym);
+            code.borrow_mut().set_defined_at(ctx, reg);
         }
         let startpc_crt = if self.gen_crt {
             code.borrow_mut().cur_cp(ctx)
@@ -1940,7 +1914,10 @@ impl Gen {
             self.get_code().borrow_mut().new_local_symbol(ctx, sym);
         }
         let var_ty = match &ctx.tree(tree).kind {
-            TreeKind::VariableDecl { vartype: Some(vartype), .. } => ctx.tree(*vartype).ty,
+            TreeKind::VariableDecl {
+                vartype: Some(vartype),
+                ..
+            } => ctx.tree(*vartype).ty,
             TreeKind::VariableDecl { sym: Some(sym), .. } => ctx.sym(*sym).ty,
             _ => None,
         };
@@ -1951,8 +1928,7 @@ impl Gen {
     }
 
     /// Generate code for a skip statement.
-    pub fn gen_skip(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
-    }
+    pub fn gen_skip(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
     /// Generate code for a block.
     pub fn gen_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -1989,8 +1965,7 @@ fn symbol_is_inner(ctx: &CompilerContext, sym: SymbolId) -> bool {
         Some(owner) => owner,
         None => return false,
     };
-    ctx.sym(owner).kind == crate::code::kinds::Kind::TYP
-        && !ctx.sym(owner).is_interface()
+    ctx.sym(owner).kind == crate::code::kinds::Kind::TYP && !ctx.sym(owner).is_interface()
 }
 
 /// Return a printable description of a symbol.
@@ -2030,22 +2005,32 @@ impl Gen {
             };
             let loop_done = self.get_items().jump_false(ctx, &c);
             let true_jumps = self.get_items().cond_true_jumps(&c);
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, true_jumps);
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, true_jumps);
             assert!(
                 self.get_code().borrow().is_statement_start(),
                 "AssertionError: not at statement start"
             );
             self.gen_stat_crt(ctx, body, CRT_STATEMENT | CRT_FLOW_TARGET);
             let cont = loop_env.info.borrow().cont.clone();
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, cont);
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, cont);
             self.gen_stats_crt(ctx, step, 0);
             let branch = self.get_code().borrow_mut().branch(ctx, GOTO);
-            self.get_code().borrow_mut().resolve_chain(ctx, branch, startpc);
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, loop_done);
+            self.get_code()
+                .borrow_mut()
+                .resolve_chain(ctx, branch, startpc);
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, loop_done);
         } else {
             self.gen_stat_crt(ctx, body, CRT_STATEMENT | CRT_FLOW_TARGET);
             let cont = loop_env.info.borrow().cont.clone();
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, cont);
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, cont);
             self.gen_stats_crt(ctx, step, 0);
             if self.get_code().borrow().is_alive() {
                 let c = if let Some(cond) = cond {
@@ -2060,18 +2045,24 @@ impl Gen {
                     self.get_items().make_cond_item_opcode(GOTO)
                 };
                 let true_jumps = self.get_items().jump_true(ctx, &c);
-                self.get_code().borrow_mut().resolve_chain(ctx, true_jumps, startpc);
+                self.get_code()
+                    .borrow_mut()
+                    .resolve_chain(ctx, true_jumps, startpc);
                 assert!(
                     self.get_code().borrow().is_statement_start(),
                     "AssertionError: not at statement start"
                 );
                 let false_jumps = self.get_items().cond_false_jumps(&c);
-                self.get_code().borrow_mut().resolve_pending_chain(ctx, false_jumps);
+                self.get_code()
+                    .borrow_mut()
+                    .resolve_pending_chain(ctx, false_jumps);
             }
         }
         let exit = loop_env.info.borrow().exit.clone();
         if let Some(exit) = exit {
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, Some(exit));
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, Some(exit));
             let nextreg = self.get_code().borrow().nextreg;
             exclude_from(&mut loop_env.info.borrow_mut().exit, nextreg);
         }
@@ -2128,7 +2119,9 @@ impl Gen {
     pub fn gen_labelled(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let local_env = self.dup_env(Some(tree), GenContext::new());
         let body = match &ctx.tree(tree).kind {
-            TreeKind::LabeledStatement { body: Some(body), .. } => *body,
+            TreeKind::LabeledStatement {
+                body: Some(body), ..
+            } => *body,
             _ => panic!("AssertionError: labeled statement expected"),
         };
         let prev_env = self.env.clone();
@@ -2137,7 +2130,9 @@ impl Gen {
         self.env = prev_env;
         let exit = local_env.info.borrow().exit.clone();
         if let Some(exit) = exit {
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, Some(exit));
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, Some(exit));
             let nextreg = self.get_code().borrow().nextreg;
             exclude_from(&mut local_env.info.borrow_mut().exit, nextreg);
         }
@@ -2186,11 +2181,15 @@ impl Gen {
                 let synthetic = self.target.synthetic_name_char();
                 let name_text = format!(
                     "{0}stack{0}{1}{0}{2}",
-                    synthetic, ctx.tree(tree).pos, stacksize
+                    synthetic,
+                    ctx.tree(tree).pos,
+                    stacksize
                 );
-                let name = self.names.from_string(
-                    &crate::util::java_string::JavaString::from(name_text.as_str()),
-                );
+                let name = self
+                    .names
+                    .from_string(&crate::util::java_string::JavaString::from(
+                        name_text.as_str(),
+                    ));
                 let env = self.env.clone().expect("generation environment");
                 let encl_method = env.encl_method.expect("enclosing method");
                 let method_sym = match &ctx.tree(encl_method).kind {
@@ -2218,7 +2217,9 @@ impl Gen {
         self.switch_result = switch_result;
         let prev_let = {
             let stacksize = self.get_code().borrow().state.stacksize;
-            self.get_code().borrow_mut().set_let_expr_stack_pos(stacksize)
+            self.get_code()
+                .borrow_mut()
+                .set_let_expr_stack_pos(stacksize)
         };
         let (selector, cases, pattern_switch) = match &ctx.tree(tree).kind {
             TreeKind::SwitchExpression {
@@ -2230,7 +2231,9 @@ impl Gen {
             _ => panic!("AssertionError: switch expression expected"),
         };
         self.handle_switch(ctx, tree, selector, cases, pattern_switch);
-        self.get_code().borrow_mut().set_let_expr_stack_pos(prev_let);
+        self.get_code()
+            .borrow_mut()
+            .set_let_expr_stack_pos(prev_let);
         self.stack_before_switch_expression = prev_stack;
         self.switch_result = prev_result;
         self.get_code().borrow_mut().end_scopes(ctx, limit);
@@ -2282,7 +2285,12 @@ impl Gen {
                 let inner = tree_info::skip_parens(ctx, selector);
                 let end_pc = self.get_code().borrow_mut().cur_cp(ctx);
                 if let Some(crt) = &mut self.get_code().borrow_mut().crt {
-                    crt.put(CrtKey::Tree(inner), CRT_FLOW_CONTROLLER, startpc_crt, end_pc);
+                    crt.put(
+                        CrtKey::Tree(inner),
+                        CRT_FLOW_CONTROLLER,
+                        startpc_crt,
+                        end_pc,
+                    );
                 }
             }
         } else {
@@ -2291,7 +2299,12 @@ impl Gen {
                 let inner = tree_info::skip_parens(ctx, selector);
                 let end_pc = self.get_code().borrow_mut().cur_cp(ctx);
                 if let Some(crt) = &mut self.get_code().borrow_mut().crt {
-                    crt.put(CrtKey::Tree(inner), CRT_FLOW_CONTROLLER, startpc_crt, end_pc);
+                    crt.put(
+                        CrtKey::Tree(inner),
+                        CRT_FLOW_CONTROLLER,
+                        startpc_crt,
+                        end_pc,
+                    );
                 }
             }
             let switch_env = self.dup_env(Some(swtch), GenContext::new());
@@ -2311,10 +2324,7 @@ impl Gen {
                     _ => panic!("AssertionError: case expected"),
                 };
                 if case_label_is_expression(ctx, *case_labels.head()) {
-                    assert!(
-                        case_labels.length() == 1,
-                        "AssertionError: only one case label expected"
-                    );
+                    assert_eq!(case_labels.length(), 1, "AssertionError: only one case label expected");
                     let label_ty = ctx.tree(*case_labels.head()).ty.expect("label type");
                     let val = match ctx.typ(label_ty).const_value() {
                         Some(crate::util::constants::ConstantValue::Integer(v)) => *v,
@@ -2324,7 +2334,9 @@ impl Gen {
                         Some(crate::util::constants::ConstantValue::Character(c)) => *c as i32,
                         Some(crate::util::constants::ConstantValue::Byte(v)) => *v as i32,
                         Some(crate::util::constants::ConstantValue::Short(v)) => *v as i32,
-                        Some(other) => panic!("AssertionError: integer case label expected: {:?}", other),
+                        Some(other) => {
+                            panic!("AssertionError: integer case label expected: {:?}", other)
+                        }
                         None => panic!("AssertionError: constant case label expected"),
                     };
                     labels[i] = val;
@@ -2336,10 +2348,7 @@ impl Gen {
                     }
                     nlabels += 1;
                 } else {
-                    assert!(
-                        default_index == -1,
-                        "AssertionError: multiple default cases"
-                    );
+                    assert_eq!(default_index, -1, "AssertionError: multiple default cases");
                     default_index = i as i32;
                 }
             }
@@ -2411,11 +2420,15 @@ impl Gen {
             let cont = switch_env.info.borrow().cont.clone();
             if let Some(cont) = cont {
                 assert!(pattern_switch, "AssertionError: pattern switch expected");
-                self.get_code().borrow_mut().resolve_chain(ctx, Some(cont), switch_start);
+                self.get_code()
+                    .borrow_mut()
+                    .resolve_chain(ctx, Some(cont), switch_start);
             }
             let exit = switch_env.info.borrow().exit.clone();
             if let Some(exit) = exit {
-                self.get_code().borrow_mut().resolve_pending_chain(ctx, Some(exit));
+                self.get_code()
+                    .borrow_mut()
+                    .resolve_pending_chain(ctx, Some(exit));
                 let limit_reg = limit;
                 exclude_from(&mut switch_env.info.borrow_mut().exit, limit_reg);
             }
@@ -2511,15 +2524,13 @@ struct TryScanner {
 crate::tree::tree_scanner::tree_scanner_visitor_delegate!(TryScanner);
 
 impl TreeScannerVisitor for TryScanner {
+    fn visit_class_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
+
     fn visit_try(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
         self.has_try = true;
     }
 
-    fn visit_class_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
-    }
-
-    fn visit_lambda(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
-    }
+    fn visit_lambda(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 }
 
 /// The finalizer of a synchronized statement.
@@ -2613,7 +2624,9 @@ impl Gen {
     pub fn gen_synchronized(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let limit = self.get_code().borrow().nextreg;
         let lock = match &ctx.tree(tree).kind {
-            TreeKind::Synchronized { lock: Some(lock), .. } => *lock,
+            TreeKind::Synchronized {
+                lock: Some(lock), ..
+            } => *lock,
             _ => panic!("AssertionError: synchronized statement expected"),
         };
         // Generate code to evaluate the lock and save it in a temp variable.
@@ -2641,7 +2654,9 @@ impl Gen {
         sync_env.info.borrow_mut().finalize = Some(finalizer);
         sync_env.info.borrow_mut().gaps = Vec::new();
         let body = match &ctx.tree(tree).kind {
-            TreeKind::Synchronized { body: Some(body), .. } => *body,
+            TreeKind::Synchronized {
+                body: Some(body), ..
+            } => *body,
             _ => panic!("AssertionError: synchronized body expected"),
         };
         // Java: visitSynchronized generates the body inside syncEnv so that a
@@ -2658,7 +2673,10 @@ impl Gen {
         let try_env = self.dup_env(Some(tree), GenContext::new());
         let old_env = self.env.clone().expect("generation environment");
         let (has_finalizer, body_only_finalize) = match &ctx.tree(tree).kind {
-            TreeKind::Try { finalizer: Some(finalizer), .. } => {
+            TreeKind::Try {
+                finalizer: Some(finalizer),
+                ..
+            } => {
                 let finalizer_flags = match &ctx.tree(*finalizer).kind {
                     TreeKind::Block { flags, .. } => *flags,
                     _ => 0,
@@ -2806,7 +2824,9 @@ impl Gen {
             self.get_code().borrow_mut().mark_dead();
             let cont = env.info.borrow().cont.clone();
             if let Some(cont) = cont {
-                self.get_code().borrow_mut().resolve_pending_chain(ctx, Some(cont));
+                self.get_code()
+                    .borrow_mut()
+                    .resolve_pending_chain(ctx, Some(cont));
                 let first_stat = tree_info::finalizer_pos(ctx, env_tree, PosKind::FIRST_STAT_POS);
                 self.get_code().borrow_mut().stat_begin(first_stat);
                 self.get_code().borrow_mut().mark_stat_begin(ctx);
@@ -2823,7 +2843,9 @@ impl Gen {
             }
         }
         // Resolve all breaks.
-        self.get_code().borrow_mut().resolve_pending_chain(ctx, exit_chain);
+        self.get_code()
+            .borrow_mut()
+            .resolve_pending_chain(ctx, exit_chain);
         self.get_code().borrow_mut().end_scopes(ctx, limit);
     }
 
@@ -2850,7 +2872,14 @@ impl Gen {
                 let subcatch_ty = ctx.tree(*subcatch).ty.expect("catch type");
                 let catch_type_expr = self.make_ref(ctx, ctx.tree(tree).pos, subcatch_ty);
                 let handler_pc = self.get_code().borrow_mut().cur_cp(ctx);
-                self.register_catch(ctx, ctx.tree(tree).pos, startpc, end, handler_pc, catch_type_expr);
+                self.register_catch(
+                    ctx,
+                    ctx.tree(tree).pos,
+                    startpc,
+                    end,
+                    handler_pc,
+                    catch_type_expr,
+                );
                 for ta in tas.iter() {
                     let mut pos = ctx
                         .attr(ta)
@@ -2871,7 +2900,14 @@ impl Gen {
                 let subcatch_ty = ctx.tree(*subcatch).ty.expect("catch type");
                 let catch_type_expr = self.make_ref(ctx, ctx.tree(tree).pos, subcatch_ty);
                 let handler_pc = self.get_code().borrow_mut().cur_cp(ctx);
-                self.register_catch(ctx, ctx.tree(tree).pos, startpc, endpc, handler_pc, catch_type_expr);
+                self.register_catch(
+                    ctx,
+                    ctx.tree(tree).pos,
+                    startpc,
+                    endpc,
+                    handler_pc,
+                    catch_type_expr,
+                );
                 for ta in tas.iter() {
                     let mut pos = ctx
                         .attr(ta)
@@ -2898,7 +2934,9 @@ impl Gen {
         self.get_code().borrow_mut().stat_begin(ctx.tree(tree).pos);
         self.get_code().borrow_mut().mark_stat_begin(ctx);
         let limit = self.get_code().borrow().nextreg;
-        self.get_code().borrow_mut().new_local_symbol(ctx, param_sym);
+        self.get_code()
+            .borrow_mut()
+            .new_local_symbol(ctx, param_sym);
         let items = self.get_items();
         let local = items.make_local_item(ctx, param_sym);
         items.store(ctx, &local);
@@ -2919,8 +2957,7 @@ impl Gen {
     ) -> Vec<(List<crate::ids::AttributeId>, TreeId)> {
         let (param, vartype) = match &ctx.tree(tree).kind {
             TreeKind::Catch {
-                param: Some(param),
-                ..
+                param: Some(param), ..
             } => {
                 let vartype = match &ctx.tree(*param).kind {
                     TreeKind::VariableDecl {
@@ -2971,15 +3008,15 @@ impl Gen {
         res.push((first, head));
         let rest = alts.tail();
         for alt in &rest {
-        if ctx.tree(alt).has_tag(Tag::ANNOTATED_TYPE) {
-            if let TreeKind::AnnotatedType { annotations, .. } = &ctx.tree(alt).kind {
-                let annotations = annotations.clone();
-                let tas = self.annotate.from_annotations(ctx, &annotations);
-                res.push((tas, alt));
+            if ctx.tree(alt).has_tag(Tag::ANNOTATED_TYPE) {
+                if let TreeKind::AnnotatedType { annotations, .. } = &ctx.tree(alt).kind {
+                    let annotations = annotations.clone();
+                    let tas = self.annotate.from_annotations(ctx, &annotations);
+                    res.push((tas, alt));
+                }
+            } else {
+                res.push((List::nil(), alt));
             }
-        } else {
-            res.push((List::nil(), alt));
-        }
         }
         res
     }
@@ -3035,7 +3072,9 @@ fn set_attr_position(
 /// Return the type of a catch parameter.
 fn catch_param_type(ctx: &mut CompilerContext, catch_tree: TreeId) -> TypeId {
     let param = match &ctx.tree(catch_tree).kind {
-        TreeKind::Catch { param: Some(param), .. } => *param,
+        TreeKind::Catch {
+            param: Some(param), ..
+        } => *param,
         _ => panic!("AssertionError: catch clause expected"),
     };
     let sym = match &ctx.tree(param).kind {
@@ -3073,17 +3112,23 @@ impl Gen {
         );
         if !cond_is_false {
             let true_jumps = items.cond_true_jumps(&c);
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, true_jumps);
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, true_jumps);
             self.gen_stat_crt(ctx, thenpart, CRT_STATEMENT | CRT_FLOW_TARGET);
             then_exit = self.get_code().borrow_mut().branch(ctx, GOTO);
         }
         if let Some(else_chain) = else_chain {
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, Some(else_chain));
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, Some(else_chain));
             if let Some(elsepart) = elsepart {
                 self.gen_stat_crt(ctx, elsepart, CRT_STATEMENT | CRT_FLOW_TARGET);
             }
         }
-        self.get_code().borrow_mut().resolve_pending_chain(ctx, then_exit);
+        self.get_code()
+            .borrow_mut()
+            .resolve_pending_chain(ctx, then_exit);
         self.get_code().borrow_mut().end_scopes(ctx, limit);
         assert!(
             self.get_code().borrow().is_statement_start(),
@@ -3124,7 +3169,10 @@ impl Gen {
             "AssertionError: not at statement start"
         );
         let target = match &ctx.tree(tree).kind {
-            TreeKind::Break { target: Some(target), .. } => *target,
+            TreeKind::Break {
+                target: Some(target),
+                ..
+            } => *target,
             _ => panic!("AssertionError: break target expected"),
         };
         let target_env = self.unwind_break(ctx, target);
@@ -3141,25 +3189,34 @@ impl Gen {
             "AssertionError: not at statement start"
         );
         let target = match &ctx.tree(tree).kind {
-            TreeKind::Yield { target: Some(target), .. } => *target,
+            TreeKind::Yield {
+                target: Some(target),
+                ..
+            } => *target,
             _ => panic!("AssertionError: yield target expected"),
         };
         if self.in_cond_switch_expression {
             let value = match &ctx.tree(tree).kind {
-                TreeKind::Yield { value: Some(value), .. } => *value,
+                TreeKind::Yield {
+                    value: Some(value), ..
+                } => *value,
                 _ => panic!("AssertionError: yield value"),
             };
             let value = self.gen_cond_crt(ctx, value, CRT_FLOW_TARGET);
             let items = self.get_items();
             let false_jumps = items.jump_false(ctx, &value);
             let true_jumps = items.cond_true_jumps(&value);
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, true_jumps);
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, true_jumps);
             let local_env = self.unwind_break(ctx, target);
             self.reload_stack_before_switch_expr(ctx);
             let true_chain = self.get_code().borrow_mut().branch(ctx, GOTO);
             let env = self.env.clone().expect("generation environment");
             self.end_finalizer_gaps(ctx, &env, &local_env);
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, false_jumps);
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, false_jumps);
             let target_env = self.unwind_break(ctx, target);
             self.reload_stack_before_switch_expr(ctx);
             let false_chain = self.get_code().borrow_mut().branch(ctx, GOTO);
@@ -3171,7 +3228,9 @@ impl Gen {
         } else {
             let pt = self.pt.expect("expected type");
             let value = match &ctx.tree(tree).kind {
-                TreeKind::Yield { value: Some(value), .. } => *value,
+                TreeKind::Yield {
+                    value: Some(value), ..
+                } => *value,
                 _ => panic!("AssertionError: yield value"),
             };
             let item = self.gen_expr(ctx, value, pt);
@@ -3224,7 +3283,10 @@ impl Gen {
         let tmp_pos = self.get_code().borrow().pending_stat_pos;
         let env = self.env.clone().expect("generation environment");
         let target = match &ctx.tree(tree).kind {
-            TreeKind::Continue { target: Some(target), .. } => *target,
+            TreeKind::Continue {
+                target: Some(target),
+                ..
+            } => *target,
             _ => panic!("AssertionError: continue target expected"),
         };
         let target_env = self.unwind(ctx, target, &env);
@@ -3285,7 +3347,9 @@ impl Gen {
             "AssertionError: not at statement start"
         );
         let expr = match &ctx.tree(tree).kind {
-            TreeKind::Throw { expr: Some(expr), .. } => *expr,
+            TreeKind::Throw {
+                expr: Some(expr), ..
+            } => *expr,
             _ => panic!("AssertionError: throw expression expected"),
         };
         let expr_ty = ctx.tree(expr).ty.expect("throw type");
@@ -3365,13 +3429,17 @@ impl Gen {
         }
         if !cond_is_false {
             let true_jumps = items.cond_true_jumps(&c);
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, true_jumps);
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, true_jumps);
             let startpc = if self.gen_crt {
                 self.get_code().borrow_mut().cur_cp(ctx)
             } else {
                 0
             };
-            self.get_code().borrow_mut().stat_begin(ctx.tree(truepart).pos);
+            self.get_code()
+                .borrow_mut()
+                .stat_begin(ctx.tree(truepart).pos);
             let pt = self.pt.expect("expected type");
             let item = self.gen_expr(ctx, truepart, pt);
             self.item_load(ctx, &item);
@@ -3391,13 +3459,17 @@ impl Gen {
             then_exit = self.get_code().borrow_mut().branch(ctx, GOTO);
         }
         if let Some(else_chain) = else_chain {
-            self.get_code().borrow_mut().resolve_pending_chain(ctx, Some(else_chain));
+            self.get_code()
+                .borrow_mut()
+                .resolve_pending_chain(ctx, Some(else_chain));
             let startpc = if self.gen_crt {
                 self.get_code().borrow_mut().cur_cp(ctx)
             } else {
                 0
             };
-            self.get_code().borrow_mut().stat_begin(ctx.tree(falsepart).pos);
+            self.get_code()
+                .borrow_mut()
+                .stat_begin(ctx.tree(falsepart).pos);
             let pt = self.pt.expect("expected type");
             let item = self.gen_expr(ctx, falsepart, pt);
             self.item_load(ctx, &item);
@@ -3415,7 +3487,9 @@ impl Gen {
                 }
             }
         }
-        self.get_code().borrow_mut().resolve_pending_chain(ctx, then_exit);
+        self.get_code()
+            .borrow_mut()
+            .resolve_pending_chain(ctx, then_exit);
         let pt = self.pt.expect("expected type");
         let items = self.get_items();
         self.result = Some(items.make_stack_item(ctx, pt));
@@ -3489,18 +3563,14 @@ impl Gen {
         }
         let pos = ctx.tree(tree).pos;
         let od = self.make_ref(ctx, pos, tree_ty);
-        self.get_code().borrow_mut().emitop2_type(ctx, NEW, od, tree_ty);
+        self.get_code()
+            .borrow_mut()
+            .emitop2_type(ctx, NEW, od, tree_ty);
         self.get_code().borrow_mut().emitop0(ctx, DUP);
         let external = {
             let syms = Rc::clone(&self.syms);
             let names = Rc::clone(&self.names);
-            crate::code::symbol::external_type(
-                ctx,
-                &self.types,
-                &*syms,
-                &names,
-                constructor,
-            )
+            crate::code::symbol::external_type(ctx, &self.types, &*syms, &names, constructor)
         };
         let params = ctx.typ(external).get_parameter_types(ctx);
         self.gen_args(ctx, args, params);
@@ -3528,14 +3598,14 @@ impl Gen {
                 let mut i = 0;
                 let l = elems;
                 for head in &l {
-                self.item_duplicate(ctx, &arr);
-                self.load_int_const(ctx, i);
-                i += 1;
-                let item = self.gen_expr(ctx, head, elemtype);
-                self.item_load(ctx, &item);
-                let items = self.get_items();
-                let indexed = items.make_indexed_item(ctx, elemtype);
-                items.store(ctx, &indexed);
+                    self.item_duplicate(ctx, &arr);
+                    self.load_int_const(ctx, i);
+                    i += 1;
+                    let item = self.gen_expr(ctx, head, elemtype);
+                    self.item_load(ctx, &item);
+                    let items = self.get_items();
+                    let indexed = items.make_indexed_item(ctx, elemtype);
+                    items.store(ctx, &indexed);
                 }
                 self.result = Some(arr);
             }
@@ -3547,8 +3617,8 @@ impl Gen {
                 let int_type = self.syms.int_type;
                 let l = dims.clone();
                 for head in &l {
-                let item = self.gen_expr(ctx, head, int_type);
-                self.item_load(ctx, &item);
+                    let item = self.gen_expr(ctx, head, int_type);
+                    self.item_load(ctx, &item);
                 }
                 let ndims = dims.length();
                 self.result = Some(self.make_new_array(ctx, ctx.tree(tree).pos, tree_ty, ndims));
@@ -3582,9 +3652,13 @@ impl Gen {
             self.get_code().borrow_mut().emit_anewarray(ctx, od, ty);
         } else if elemcode == 1 {
             let od = self.make_ref(ctx, pos, ty);
-            self.get_code().borrow_mut().emit_multianewarray(ctx, ndims, od, ty);
+            self.get_code()
+                .borrow_mut()
+                .emit_multianewarray(ctx, ndims, od, ty);
         } else {
-            self.get_code().borrow_mut().emit_newarray(ctx, elemcode, ty);
+            self.get_code()
+                .borrow_mut()
+                .emit_newarray(ctx, elemcode, ty);
         }
         let items = self.get_items();
         items.make_stack_item(ctx, ty)
@@ -3604,7 +3678,10 @@ impl Gen {
     /// Generate code for an assignment.
     pub fn gen_assign(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
-            TreeKind::Assign { lhs: Some(lhs), rhs: Some(rhs) } => (*lhs, *rhs),
+            TreeKind::Assign {
+                lhs: Some(lhs),
+                rhs: Some(rhs),
+            } => (*lhs, *rhs),
             _ => panic!("AssertionError: assignment expected"),
         };
         let lhs_ty = ctx.tree(lhs).ty.expect("assignment lhs type");
@@ -3654,9 +3731,7 @@ impl Gen {
             let tag = ctx.tree(tree).tag;
             if (tag == Tag::PLUS_ASG || tag == Tag::MINUS_ASG)
                 && is_local_item(&l)
-                && ctx.typ(lhs_ty)
-                    .get_tag()
-                    .is_sub_range_of(TypeTag::INT)
+                && ctx.typ(lhs_ty).get_tag().is_sub_range_of(TypeTag::INT)
                 && ctx
                     .typ(ctx.tree(rhs).ty.expect("rhs type"))
                     .get_tag()
@@ -3683,10 +3758,7 @@ impl Gen {
             }
             self.item_duplicate(ctx, &l);
             let op_ty = ctx.sym(operator).ty.expect("operator type");
-            let param1 = *ctx
-                .typ(op_ty)
-                .get_parameter_types(ctx)
-                .head();
+            let param1 = *ctx.typ(op_ty).get_parameter_types(ctx).head();
             let coerced = self.item_coerce_type(ctx, &l, param1);
             self.item_load(ctx, &coerced);
             let binop = self.complete_binop(ctx, lhs, rhs, operator);
@@ -3715,10 +3787,7 @@ impl Gen {
             return;
         }
         let op_ty = ctx.sym(operator).ty.expect("operator type");
-        let param1 = *ctx
-            .typ(op_ty)
-            .get_parameter_types(ctx)
-            .head();
+        let param1 = *ctx.typ(op_ty).get_parameter_types(ctx).head();
         let od = self.gen_expr(ctx, arg, param1);
         let opcode = operator_opcode(ctx, operator);
         match tag {
@@ -3748,9 +3817,7 @@ impl Gen {
                     let one = Gen::one(od.typecode);
                     self.get_code().borrow_mut().emitop0(ctx, one);
                     self.get_code().borrow_mut().emitop0(ctx, opcode);
-                    if od.typecode != INT_CODE
-                        && Code::truncate(od.typecode) == INT_CODE
-                    {
+                    if od.typecode != INT_CODE && Code::truncate(od.typecode) == INT_CODE {
                         self.get_code()
                             .borrow_mut()
                             .emitop0(ctx, INT2BYTE + od.typecode - BYTE_CODE);
@@ -3776,9 +3843,7 @@ impl Gen {
                     let one = Gen::one(od.typecode);
                     self.get_code().borrow_mut().emitop0(ctx, one);
                     self.get_code().borrow_mut().emitop0(ctx, opcode);
-                    if od.typecode != INT_CODE
-                        && Code::truncate(od.typecode) == INT_CODE
-                    {
+                    if od.typecode != INT_CODE && Code::truncate(od.typecode) == INT_CODE {
                         self.get_code()
                             .borrow_mut()
                             .emitop0(ctx, INT2BYTE + od.typecode - BYTE_CODE);
@@ -3840,17 +3905,15 @@ impl Gen {
             if !items.cond_is_false(&lcond) {
                 let false_jumps = items.jump_false(ctx, &lcond);
                 let true_jumps = items.cond_true_jumps(&lcond);
-                self.get_code().borrow_mut().resolve_pending_chain(ctx, true_jumps);
+                self.get_code()
+                    .borrow_mut()
+                    .resolve_pending_chain(ctx, true_jumps);
                 let rcond = self.gen_cond_crt(ctx, rhs, CRT_FLOW_TARGET);
                 let rcond_opcode = items.cond_opcode(&rcond);
                 let rcond_true = items.cond_true_jumps(&rcond);
                 let rcond_false = items.cond_false_jumps(&rcond);
                 let merged = Code::merge_chains(false_jumps, rcond_false);
-                self.result = Some(items.make_cond_item(
-                    rcond_opcode,
-                    rcond_true,
-                    merged,
-                ));
+                self.result = Some(items.make_cond_item(rcond_opcode, rcond_true, merged));
             } else {
                 self.result = Some(lcond);
             }
@@ -3860,26 +3923,21 @@ impl Gen {
             if !items.cond_is_true(&lcond) {
                 let true_jumps = items.jump_true(ctx, &lcond);
                 let false_jumps = items.cond_false_jumps(&lcond);
-                self.get_code().borrow_mut().resolve_pending_chain(ctx, false_jumps);
+                self.get_code()
+                    .borrow_mut()
+                    .resolve_pending_chain(ctx, false_jumps);
                 let rcond = self.gen_cond_crt(ctx, rhs, CRT_FLOW_TARGET);
                 let rcond_opcode = items.cond_opcode(&rcond);
                 let rcond_true = items.cond_true_jumps(&rcond);
                 let rcond_false = items.cond_false_jumps(&rcond);
                 let merged = Code::merge_chains(true_jumps, rcond_true);
-                self.result = Some(items.make_cond_item(
-                    rcond_opcode,
-                    merged,
-                    rcond_false,
-                ));
+                self.result = Some(items.make_cond_item(rcond_opcode, merged, rcond_false));
             } else {
                 self.result = Some(lcond);
             }
         } else {
             let op_ty = ctx.sym(operator).ty.expect("operator type");
-            let param1 = *ctx
-                .typ(op_ty)
-                .get_parameter_types(ctx)
-                .head();
+            let param1 = *ctx.typ(op_ty).get_parameter_types(ctx).head();
             let od = self.gen_expr(ctx, lhs, param1);
             self.item_load(ctx, &od);
             self.result = Some(self.complete_binop(ctx, lhs, rhs, operator));
@@ -3908,16 +3966,12 @@ impl Gen {
             && *number == 0
         {
             opcode += IFEQ - IF_ICMPEQ;
-        } else if (IF_ACMPEQ..=IF_ACMPNE).contains(&opcode)
-            && tree_info::is_null(ctx, rhs)
-        {
+        } else if (IF_ACMPEQ..=IF_ACMPNE).contains(&opcode) && tree_info::is_null(ctx, rhs) {
             opcode += IF_ACMP_NULL - IF_ACMPEQ;
         } else {
             // The expected type of the right operand is the second parameter
             // type of the operator, except for shifts with a long count.
-            let mut rtype = *params
-                .tail()
-                .head();
+            let mut rtype = *params.tail().head();
             if (ISHLL..=LUSHRL).contains(&opcode) {
                 opcode += ISHL - ISHLL;
                 rtype = self.syms.int_type;
@@ -3925,7 +3979,9 @@ impl Gen {
             let item = self.gen_expr(ctx, rhs, rtype);
             self.item_load(ctx, &item);
             if opcode >= (1 << PRE_SHIFT) {
-                self.get_code().borrow_mut().emitop0(ctx, opcode >> PRE_SHIFT);
+                self.get_code()
+                    .borrow_mut()
+                    .emitop0(ctx, opcode >> PRE_SHIFT);
                 opcode &= 0xFF;
             }
         }
@@ -3937,7 +3993,10 @@ impl Gen {
             return items.make_cond_item_opcode(opcode);
         }
         self.get_code().borrow_mut().emitop0(ctx, opcode);
-        let restype = ctx.typ(op_erased).get_return_type(ctx).expect("operator return type");
+        let restype = ctx
+            .typ(op_erased)
+            .get_return_type(ctx)
+            .expect("operator return type");
         let items = self.get_items();
         items.make_stack_item(ctx, restype)
     }
@@ -3958,12 +4017,8 @@ impl Gen {
         let expr_ty = ctx.tree(expr).ty.expect("cast expression type");
         let clazz_tsym = ctx.typ(clazz_ty).tsym.expect("cast type symbol");
         let syms = Rc::clone(&self.syms);
-        let same = self
-            .types
-            .is_same_type(ctx, &*syms, expr_ty, clazz_ty);
-        let super_ty = self
-            .types
-            .as_super(ctx, &*syms, expr_ty, clazz_tsym);
+        let same = self.types.is_same_type(ctx, &*syms, expr_ty, clazz_ty);
+        let super_ty = self.types.as_super(ctx, &*syms, expr_ty, clazz_tsym);
         if !ctx.typ(clazz_ty).is_primitive() && !same && super_ty.is_none() {
             let pos = ctx.tree(tree).pos;
             let od = self.make_ref(ctx, pos, clazz_ty);
@@ -4025,7 +4080,10 @@ impl Gen {
     /// Generate code for an identifier.
     pub fn gen_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (name, sym) = match &ctx.tree(tree).kind {
-            TreeKind::Ident { name, sym: Some(sym) } => (name.clone(), *sym),
+            TreeKind::Ident {
+                name,
+                sym: Some(sym),
+            } => (name.clone(), *sym),
             _ => panic!("AssertionError: identifier expected"),
         };
         let names = Rc::clone(&self.names);
@@ -4070,7 +4128,9 @@ impl Gen {
         let encl_class = env.encl_class.expect("enclosing class");
         let encl_class_ty = match &ctx.tree(encl_class).kind {
             TreeKind::ClassDecl { sym: Some(cs), .. } => ctx.sym(*cs).ty.expect("class type"),
-            _ => ctx.typ(self.syms.object_type).tsym
+            _ => ctx
+                .typ(self.syms.object_type)
+                .tsym
                 .map(|_| self.syms.object_type)
                 .expect("class type"),
         };
@@ -4098,8 +4158,8 @@ impl Gen {
 
     /// Return whether to use a non-virtual access for a private member.
     fn non_virtual_for_private_access(&self, ctx: &CompilerContext, sym: SymbolId) -> bool {
-        let use_virtual = self.target.has_virtual_private_invoke()
-            && !self.disable_virtualized_private_invoke;
+        let use_virtual =
+            self.target.has_virtual_private_invoke() && !self.disable_virtualized_private_invoke;
         !use_virtual && (ctx.sym(sym).flags_field & crate::code::flags::PRIVATE as i64) != 0
     }
 
@@ -4151,7 +4211,8 @@ impl Gen {
                 let select_super_base = select_super;
                 if !select_super_base
                     && (ssym.is_none()
-                        || ssym.map(|ssym| ctx.sym(ssym).kind != crate::code::kinds::Kind::TYP)
+                        || ssym
+                            .map(|ssym| ctx.sym(ssym).kind != crate::code::kinds::Kind::TYP)
                             .unwrap_or(true))
                 {
                     base = self.item_load(ctx, &base);
@@ -4183,7 +4244,8 @@ impl Gen {
             let select_super_base = select_super;
             if !select_super_base
                 && (ssym.is_none()
-                    || ssym.map(|ssym| ctx.sym(ssym).kind != crate::code::kinds::Kind::TYP)
+                    || ssym
+                        .map(|ssym| ctx.sym(ssym).kind != crate::code::kinds::Kind::TYP)
                         .unwrap_or(true))
             {
                 base = self.item_load(ctx, &base);
@@ -4199,9 +4261,8 @@ impl Gen {
                 let items = self.get_items();
                 self.result = Some(items.make_stack_item(ctx, int_type));
             } else {
-                let nonvirtual = self.non_virtual_for_private_access(ctx, sym)
-                    || select_super
-                    || access_super;
+                let nonvirtual =
+                    self.non_virtual_for_private_access(ctx, sym) || select_super || access_super;
                 let items = self.get_items();
                 self.result = Some(items.make_member_item(ctx, sym, nonvirtual));
             }
@@ -4231,11 +4292,8 @@ impl Gen {
         } else {
             let value = value.expect("literal value");
             let items = self.get_items();
-            self.result = Some(items.make_immediate_item(
-                ctx,
-                tree_ty,
-                literal_value_to_immediate(&value),
-            ));
+            self.result =
+                Some(items.make_immediate_item(ctx, tree_ty, literal_value_to_immediate(&value)));
         }
     }
 
@@ -4245,16 +4303,22 @@ impl Gen {
         let limit = self.get_code().borrow().nextreg;
         let prev_start = {
             let stacksize = self.get_code().borrow().state.stacksize;
-            self.get_code().borrow_mut().set_let_expr_stack_pos(stacksize)
+            self.get_code()
+                .borrow_mut()
+                .set_let_expr_stack_pos(stacksize)
         };
         let defs = match &ctx.tree(tree).kind {
             TreeKind::LetExpr { defs, .. } => defs.clone(),
             _ => panic!("AssertionError: let expression expected"),
         };
         self.gen_stats(ctx, defs);
-        self.get_code().borrow_mut().set_let_expr_stack_pos(prev_start);
+        self.get_code()
+            .borrow_mut()
+            .set_let_expr_stack_pos(prev_start);
         let expr = match &ctx.tree(tree).kind {
-            TreeKind::LetExpr { expr: Some(expr), .. } => *expr,
+            TreeKind::LetExpr {
+                expr: Some(expr), ..
+            } => *expr,
             _ => panic!("AssertionError: let expression body"),
         };
         let expr_ty = ctx.tree(expr).ty.expect("let expression type");
@@ -4265,7 +4329,11 @@ impl Gen {
 
     /// Enter the class references of the pruned trees of a class into the
     /// constant pool.
-    fn generate_references_to_pruned_tree(&mut self, ctx: &mut CompilerContext, class_symbol: SymbolId) {
+    fn generate_references_to_pruned_tree(
+        &mut self,
+        ctx: &mut CompilerContext,
+        class_symbol: SymbolId,
+    ) {
         let pruned = match &self.lower {
             Some(lower) => lower.borrow().pruned_tree.get(&class_symbol).cloned(),
             None => None,
@@ -4329,7 +4397,7 @@ impl Gen {
         self.env = Some(Rc::clone(&local_env));
         let l = defs;
         for head in &l {
-        self.gen_def(ctx, head);
+            self.gen_def(ctx, head);
         }
         let pool_size = self.pool_writer.borrow().size();
         if pool_size > PoolWriter::MAX_ENTRIES {
@@ -4368,20 +4436,20 @@ fn fix_type_annotations(
 ) {
     let current = attrs;
     for attr in &current {
-    let mut attribute = ctx.attr(attr).clone();
-    if attribute.has_unknown_position() && attribute.try_fix_position(ctx) {
-        *ctx.attr_mut(attr) = attribute;
-    }
-    if let Some(mut pos) = ctx.attr(attr).get_position(ctx)
-        && pos.matches_pos(tree_pos)
-    {
-        pos.update_pos_offset(cp);
-        if let crate::code::attribute::AttributeKind::TypeCompound { position, .. } =
-            &mut ctx.attr_mut(attr).kind
-        {
-            *position = Some(pos);
+        let mut attribute = ctx.attr(attr).clone();
+        if attribute.has_unknown_position() && attribute.try_fix_position(ctx) {
+            *ctx.attr_mut(attr) = attribute;
         }
-    }
+        if let Some(mut pos) = ctx.attr(attr).get_position(ctx)
+            && pos.matches_pos(tree_pos)
+        {
+            pos.update_pos_offset(cp);
+            if let crate::code::attribute::AttributeKind::TypeCompound { position, .. } =
+                &mut ctx.attr_mut(attr).kind
+            {
+                *position = Some(pos);
+            }
+        }
     }
 }
 
@@ -4467,6 +4535,10 @@ impl TreeVisitor for Gen {
         self.gen_try_stmt(ctx, tree);
     }
 
+    fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        self.gen_conditional(ctx, tree);
+    }
+
     fn visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.gen_if(ctx, tree);
     }
@@ -4497,10 +4569,6 @@ impl TreeVisitor for Gen {
 
     fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.gen_apply(ctx, tree);
-    }
-
-    fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        self.gen_conditional(ctx, tree);
     }
 
     fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -4535,10 +4603,6 @@ impl TreeVisitor for Gen {
         self.gen_type_cast(ctx, tree);
     }
 
-    fn visit_wildcard(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        self.gen_wildcard(ctx, tree);
-    }
-
     fn visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.gen_type_test(ctx, tree);
     }
@@ -4547,16 +4611,20 @@ impl TreeVisitor for Gen {
         self.gen_indexed(ctx, tree);
     }
 
-    fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        self.gen_ident(ctx, tree);
-    }
-
     fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.gen_select(ctx, tree);
     }
 
+    fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        self.gen_ident(ctx, tree);
+    }
+
     fn visit_literal(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.gen_literal(ctx, tree);
+    }
+
+    fn visit_wildcard(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        self.gen_wildcard(ctx, tree);
     }
 
     fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -4568,16 +4636,13 @@ impl TreeVisitor for Gen {
 fn case_label_is_expression(ctx: &CompilerContext, label: TreeId) -> bool {
     !matches!(
         ctx.tree(label).get_tag(),
-        Tag::BINDINGPATTERN
-            | Tag::DEFAULTCASELABEL
-            | Tag::GUARDPATTERN
-            | Tag::PARENTHESIZEDPATTERN
+        Tag::BINDINGPATTERN | Tag::DEFAULTCASELABEL | Tag::GUARDPATTERN | Tag::PARENTHESIZEDPATTERN
     )
 }
 
 #[cfg(test)]
 mod byte_short_immediate_tests {
-    use super::{literal_value_to_immediate, ImmediateValue};
+    use super::{ImmediateValue, literal_value_to_immediate};
     use crate::tree::jc_tree::LiteralValue;
 
     #[test]

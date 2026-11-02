@@ -48,14 +48,14 @@ use javac_tools::tools::java_file_manager::{
 use javac_tools::tools::java_file_object::{JavaFileObject, Kind};
 use javac_tools::tools::standard_location::StandardLocation;
 
-use crate::code::dependencies::{CompletionCause, Dependencies};
 use crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler;
-use crate::comp::annotate::Annotate;
+use crate::code::dependencies::{CompletionCause, Dependencies};
 use crate::code::flags;
 use crate::code::kinds::Kind as SymKind;
-use crate::code::symbol::{Completer, CompleterRef, CompletionFailure};
 use crate::code::symbol::SymbolKind as SymData;
+use crate::code::symbol::{Completer, CompleterRef, CompletionFailure};
 use crate::code::symtab::Symtab;
+use crate::comp::annotate::Annotate;
 use crate::compiler_context::CompilerContext;
 use crate::file::jrt_index::JRTIndex;
 use crate::ids::SymbolId;
@@ -170,9 +170,9 @@ impl ClassFinder {
             .unwrap_or(false);
         let user_paths_first = options.is_set("-XXuserPathsFirst");
         let completion_failure_name = if options.is_set("failcomplete") {
-            options.get("failcomplete").map(|value| {
-                names.from_string(&javac_strings::JavaString::from(value.as_str()))
-            })
+            options
+                .get("failcomplete")
+                .map(|value| names.from_string(&javac_strings::JavaString::from(value.as_str())))
         } else {
             None
         };
@@ -226,11 +226,7 @@ impl ClassFinder {
     }
 
     /// Java: long getSupplementaryFlags(ClassSymbol c)
-    pub fn get_supplementary_flags(
-        &self,
-        ctx: &mut CompilerContext,
-        c: SymbolId,
-    ) -> i64 {
+    pub fn get_supplementary_flags(&self, ctx: &mut CompilerContext, c: SymbolId) -> i64 {
         let module_info = self.names.module_info.clone();
         let is_module_info = ctx.sym(c).name.to_java_string() == module_info.to_java_string();
         if self.jrt_index.is_none() || is_module_info {
@@ -256,18 +252,18 @@ impl ClassFinder {
             // Java: Profile minProfile = Profile.DEFAULT; if (ctSym.proprietary)
             // newFlags |= PROPRIETARY; if (ctSym.minProfile != null)
             // minProfile = Profile.lookup(ctSym.minProfile);
-            let mut min_profile = crate::jvm::profile::Profile::DEFAULT;
+            let mut min_profile = Profile::DEFAULT;
             if ct_sym.proprietary {
-                new_flags |= crate::code::flags::PROPRIETARY;
+                new_flags |= flags::PROPRIETARY;
             }
             if let Some(min) = &ct_sym.min_profile {
-                min_profile = crate::jvm::profile::Profile::lookup(&min.to_string_lossy())
-                    .expect("profile");
+                min_profile =
+                    Profile::lookup(&min.to_string_lossy()).expect("profile");
             }
-            if *self.profile != crate::jvm::profile::Profile::DEFAULT
+            if *self.profile != Profile::DEFAULT
                 && min_profile.value() > self.profile.value()
             {
-                new_flags |= crate::code::flags::NOT_IN_PROFILE;
+                new_flags |= flags::NOT_IN_PROFILE;
             }
         }
         self.supplementary_flags
@@ -285,7 +281,8 @@ impl ClassFinder {
     ) -> Result<(), CompletionFailure> {
         if ctx.sym(sym).kind == SymKind::TYP {
             let c = sym;
-            self.dependencies.push(ctx, c, CompletionCause::CLASS_READER);
+            self.dependencies
+                .push(ctx, c, CompletionCause::CLASS_READER);
             if let Some(annotate) = self.annotate.borrow().clone() {
                 annotate.block_annotations();
             }
@@ -304,9 +301,10 @@ impl ClassFinder {
             self.fill_in_package(ctx, syms, p)?;
         }
         if !self.reader.borrow().filling
-            && let Some(annotate) = self.annotate.borrow().clone() {
-                annotate.request_flush()?;
-            }
+            && let Some(annotate) = self.annotate.borrow().clone()
+        {
+            annotate.request_flush()?;
+        }
         Ok(())
     }
 
@@ -331,9 +329,10 @@ impl ClassFinder {
         o: SymbolId,
     ) -> Result<(), CompletionFailure> {
         if ctx.sym(o).kind != SymKind::PCK
-            && let Some(owner) = ctx.sym(o).owner {
-                self.complete_owners(ctx, syms, owner)?;
-            }
+            && let Some(owner) = ctx.sym(o).owner
+        {
+            self.complete_owners(ctx, syms, owner)?;
+        }
         ctx.complete_symbol(syms, o)
     }
 
@@ -384,17 +383,18 @@ impl ClassFinder {
         let fullname = class_fullname(ctx, c);
         let completion_failure_name = self.completion_failure_name.clone();
         if let Some(name) = completion_failure_name
-            && name.to_java_string() == fullname.to_java_string() {
-                let diag = self.diag_factory.fragment(Fragment::from(
-                    fragments::user_selected_completion_failure(),
-                ));
-                let dcfh = Rc::clone(&self.dcfh);
-                return Err(CompletionFailure::new(
-                    Some(c),
-                    Box::new(move || diag.clone()),
-                    Some(dcfh),
-                ));
-            }
+            && name.to_java_string() == fullname.to_java_string()
+        {
+            let diag = self
+                .diag_factory
+                .fragment(Fragment::from(fragments::user_selected_completion_failure()));
+            let dcfh = Rc::clone(&self.dcfh);
+            return Err(CompletionFailure::new(
+                Some(c),
+                Box::new(move || diag.clone()),
+                Some(dcfh),
+            ));
+        }
         self.current_owner.set(Some(c));
         let classfile = class_classfile(ctx, c);
         let Some(classfile) = classfile else {
@@ -413,10 +413,7 @@ impl ClassFinder {
             );
         }
         let result = if classfile.get_kind() == Kind::CLASS {
-            let read = self
-                .reader
-                .borrow_mut()
-                .read_class_file(ctx, syms, c);
+            let read = self.reader.borrow_mut().read_class_file(ctx, syms, c);
             match read {
                 Ok(()) => {
                     let extra = self.get_supplementary_flags(ctx, c);
@@ -603,13 +600,15 @@ impl ClassFinder {
                 .expect("inferBinaryName")
                 .to_string()
         };
-        let last_dot = binary_name.rfind('.').map(|index| index as i32).unwrap_or(-1);
+        let last_dot = binary_name
+            .rfind('.')
+            .map(|index| index as i32)
+            .unwrap_or(-1);
         let class_name_text = &binary_name[(last_dot + 1) as usize..];
         let classname = self
             .names
             .from_string(&javac_strings::JavaString::from(class_name_text));
-        let is_pkg_info =
-            classname.to_java_string() == self.names.package_info.to_java_string();
+        let is_pkg_info = classname.to_java_string() == self.names.package_info.to_java_string();
         let mut c = if is_pkg_info {
             match &ctx.sym(p).kind_data {
                 SymData::PackageSymbol { package_info, .. } => *package_info,
@@ -627,35 +626,37 @@ impl ClassFinder {
             };
             let class = syms.enter_class(ctx, package_module, classname, Some(p));
             if class_classfile(ctx, class).is_none()
-                && let SymData::ClassSymbol { classfile, .. } = &mut ctx.sym_mut(class).kind_data {
-                    *classfile = Some(Rc::clone(file));
-                }
+                && let SymData::ClassSymbol { classfile, .. } = &mut ctx.sym_mut(class).kind_data
+            {
+                *classfile = Some(Rc::clone(file));
+            }
             if is_pkg_info {
                 if let SymData::PackageSymbol { package_info, .. } = &mut ctx.sym_mut(p).kind_data {
                     *package_info = Some(class);
                 }
             } else if ctx.sym(class).owner == Some(p)
-                && let Some(members) = class_members_field(ctx, p) {
-                    ctx.scope_enter(members, class);
-                }
+                && let Some(members) = class_members_field(ctx, p)
+            {
+                ctx.scope_enter(members, class);
+            }
             c = Some(class);
         } else if !self.prefer_current.get() {
-            let Some(existing) = c else { crate::util::assert::error() };
+            let Some(existing) = c else {
+                crate::util::assert::error()
+            };
             let existing_classfile = class_classfile(ctx, existing);
             if let Some(existing_classfile) = existing_classfile
                 && (ctx.sym(existing).flags_field & seen) == 0
-                    && (ctx.sym(existing).flags_field
-                        & (flags::CLASS_SEEN as i64 | flags::SOURCE_SEEN as i64))
-                        != 0
-                    {
-                        let preferred =
-                            self.preferred_file_object(file, &existing_classfile);
-                        if let SymData::ClassSymbol { classfile, .. } =
-                            &mut ctx.sym_mut(existing).kind_data
-                        {
-                            *classfile = Some(preferred);
-                        }
-                    }
+                && (ctx.sym(existing).flags_field
+                    & (flags::CLASS_SEEN as i64 | flags::SOURCE_SEEN as i64))
+                    != 0
+            {
+                let preferred = self.preferred_file_object(file, &existing_classfile);
+                if let SymData::ClassSymbol { classfile, .. } = &mut ctx.sym_mut(existing).kind_data
+                {
+                    *classfile = Some(preferred);
+                }
+            }
         }
         if let Some(c) = c {
             ctx.sym_mut(c).flags_field |= seen;
@@ -708,18 +709,19 @@ impl ClassFinder {
             }
         }
         let module = match &ctx.sym(p).kind_data {
-            SymData::PackageSymbol { modle, .. }
-            | SymData::RootPackageSymbol { modle, .. } => match modle {
-                Some(module) => *module,
-                // Java: Assert.checkNonNull(msym, p::toString)
-                // (ClassFinder.java:540). PackageSymbol.toString is the full
-                // name (Symbol.java:1161-1163); the unnamed package uses the
-                // localized override of Symtab.java:802-807.
-                None => panic!(
-                    "AssertionError: {}",
-                    crate::code::symbol::symbol_to_string(ctx, p)
-                ),
-            },
+            SymData::PackageSymbol { modle, .. } | SymData::RootPackageSymbol { modle, .. } => {
+                match modle {
+                    Some(module) => *module,
+                    // Java: Assert.checkNonNull(msym, p::toString)
+                    // (ClassFinder.java:540). PackageSymbol.toString is the full
+                    // name (Symbol.java:1161-1163); the unnamed package uses the
+                    // localized override of Symtab.java:802-807.
+                    None => panic!(
+                        "AssertionError: {}",
+                        crate::code::symbol::symbol_to_string(ctx, p)
+                    ),
+                }
+            }
             _ => panic!(
                 "package expected: {} kind {:?}",
                 ctx.sym(p).name.to_java_string().to_string_lossy(),
@@ -738,9 +740,14 @@ impl ClassFinder {
                 self.scan_platform_path(ctx, syms, p)?;
                 self.scan_user_paths(ctx, syms, p, true)?;
             }
-        } else if location_is(&module_class_location(ctx, module), StandardLocation::CLASS_PATH) {
-            let include_source_path =
-                location_is(&module_source_location(ctx, module), StandardLocation::SOURCE_PATH);
+        } else if location_is(
+            &module_class_location(ctx, module),
+            StandardLocation::CLASS_PATH,
+        ) {
+            let include_source_path = location_is(
+                &module_source_location(ctx, module),
+                StandardLocation::SOURCE_PATH,
+            );
             self.scan_user_paths(ctx, syms, p, include_source_path)?;
         } else {
             self.scan_module_paths(ctx, syms, p, module)?;
@@ -757,9 +764,17 @@ impl ClassFinder {
         msym: SymbolId,
     ) -> Result<(), CompletionFailure> {
         let kinds = self.get_package_file_kinds();
-        let class_kinds: Vec<Kind> = kinds.iter().copied().filter(|k| *k != Kind::SOURCE).collect();
+        let class_kinds: Vec<Kind> = kinds
+            .iter()
+            .copied()
+            .filter(|k| *k != Kind::SOURCE)
+            .collect();
         let want_class_files = !class_kinds.is_empty();
-        let source_kinds: Vec<Kind> = kinds.iter().copied().filter(|k| *k != Kind::CLASS).collect();
+        let source_kinds: Vec<Kind> = kinds
+            .iter()
+            .copied()
+            .filter(|k| *k != Kind::CLASS)
+            .collect();
         let want_source_files = !source_kinds.is_empty();
         let package_name = package_fullname(ctx, p);
         let class_locn = module_class_location(ctx, msym);
@@ -770,29 +785,27 @@ impl ClassFinder {
         let prev_prefer_current = self.prefer_current.get();
         let result = (|| -> Result<(), CompletionFailure> {
             self.prefer_current.set(false);
-            if want_class_files
-                && let Some(location) = patch_out_locn.clone() {
-                    let files = self.list(ctx, p, &location, &package_name, &class_kinds)?;
-                    self.fill_in_files(ctx, syms, p, &location, files)?;
-                }
+            if want_class_files && let Some(location) = patch_out_locn.clone() {
+                let files = self.list(ctx, p, &location, &package_name, &class_kinds)?;
+                self.fill_in_files(ctx, syms, p, &location, files)?;
+            }
             if (want_class_files || want_source_files)
-                && let Some(location) = patch_locn.clone() {
-                    let mut combined = class_kinds.clone();
-                    combined.extend(source_kinds.iter().copied());
-                    let files = self.list(ctx, p, &location, &package_name, &combined)?;
-                    self.fill_in_files(ctx, syms, p, &location, files)?;
-                }
+                && let Some(location) = patch_locn.clone()
+            {
+                let mut combined = class_kinds.clone();
+                combined.extend(source_kinds.iter().copied());
+                let files = self.list(ctx, p, &location, &package_name, &combined)?;
+                self.fill_in_files(ctx, syms, p, &location, files)?;
+            }
             self.prefer_current.set(true);
-            if want_class_files
-                && let Some(location) = class_locn.clone() {
-                    let files = self.list(ctx, p, &location, &package_name, &class_kinds)?;
-                    self.fill_in_files(ctx, syms, p, &location, files)?;
-                }
-            if want_source_files
-                && let Some(location) = source_locn.clone() {
-                    let files = self.list(ctx, p, &location, &package_name, &source_kinds)?;
-                    self.fill_in_files(ctx, syms, p, &location, files)?;
-                }
+            if want_class_files && let Some(location) = class_locn.clone() {
+                let files = self.list(ctx, p, &location, &package_name, &class_kinds)?;
+                self.fill_in_files(ctx, syms, p, &location, files)?;
+            }
+            if want_source_files && let Some(location) = source_locn.clone() {
+                let files = self.list(ctx, p, &location, &package_name, &source_kinds)?;
+                self.fill_in_files(ctx, syms, p, &location, files)?;
+            }
             Ok(())
         })();
         self.prefer_current.set(prev_prefer_current);
@@ -808,9 +821,17 @@ impl ClassFinder {
         include_source_path: bool,
     ) -> Result<(), CompletionFailure> {
         let kinds = self.get_package_file_kinds();
-        let class_kinds: Vec<Kind> = kinds.iter().copied().filter(|k| *k != Kind::SOURCE).collect();
+        let class_kinds: Vec<Kind> = kinds
+            .iter()
+            .copied()
+            .filter(|k| *k != Kind::SOURCE)
+            .collect();
         let want_class_files = !class_kinds.is_empty();
-        let source_kinds: Vec<Kind> = kinds.iter().copied().filter(|k| *k != Kind::CLASS).collect();
+        let source_kinds: Vec<Kind> = kinds
+            .iter()
+            .copied()
+            .filter(|k| *k != Kind::CLASS)
+            .collect();
         let want_source_files = !source_kinds.is_empty();
         let source_path_location = standard_location(StandardLocation::SOURCE_PATH);
         let have_source_path =
@@ -912,9 +933,7 @@ impl ClassFinder {
             .file_manager
             .list(&**location, &package_name, &all_kinds, false);
         let listed = match listed {
-            Ok(listed) => {
-                listed
-            }
+            Ok(listed) => listed,
             Err(error) => return Err(self.io_failure(ctx, p, error)),
         };
         let mut result = Vec::new();
@@ -942,9 +961,9 @@ impl ClassFinder {
         // java.io.IOException getLocalizedMessage() == getMessage(), i.e. the
         // Java String message of the exception.
         let message = io_failure_message(&error);
-        let diag = self.diag_factory.fragment(Fragment::from(
-            fragments::exception_message(message),
-        ));
+        let diag = self
+            .diag_factory
+            .fragment(Fragment::from(fragments::exception_message(message)));
         let dcfh = Rc::clone(&self.dcfh);
         CompletionFailure::new(Some(p), Box::new(move || diag.clone()), Some(dcfh))
     }
@@ -990,9 +1009,7 @@ fn standard_location(location: StandardLocation) -> LocationRef {
 
 fn location_is(location: &Option<LocationRef>, expected: StandardLocation) -> bool {
     match location {
-        Some(location) => {
-            location.get_name().to_string() == expected.get_name().to_string()
-        }
+        Some(location) => location.get_name().to_string() == expected.get_name().to_string(),
         None => false,
     }
 }
@@ -1004,20 +1021,14 @@ fn class_fullname(ctx: &CompilerContext, c: SymbolId) -> Name {
     }
 }
 
-fn class_classfile(
-    ctx: &CompilerContext,
-    c: SymbolId,
-) -> Option<Rc<dyn JavaFileObject>> {
+fn class_classfile(ctx: &CompilerContext, c: SymbolId) -> Option<Rc<dyn JavaFileObject>> {
     match &ctx.sym(c).kind_data {
         SymData::ClassSymbol { classfile, .. } => classfile.clone(),
         _ => None,
     }
 }
 
-fn class_members_field(
-    ctx: &CompilerContext,
-    c: SymbolId,
-) -> Option<crate::ids::ScopeId> {
+fn class_members_field(ctx: &CompilerContext, c: SymbolId) -> Option<crate::ids::ScopeId> {
     match &ctx.sym(c).kind_data {
         SymData::ClassSymbol { members_field, .. }
         | SymData::PackageSymbol { members_field, .. }
@@ -1028,8 +1039,9 @@ fn class_members_field(
 
 fn package_fullname(ctx: &CompilerContext, p: SymbolId) -> String {
     match &ctx.sym(p).kind_data {
-        SymData::PackageSymbol { fullname, .. }
-        | SymData::RootPackageSymbol { fullname, .. } => fullname.to_java_string().to_string(),
+        SymData::PackageSymbol { fullname, .. } | SymData::RootPackageSymbol { fullname, .. } => {
+            fullname.to_java_string().to_string()
+        }
         _ => ctx.sym(p).name.to_java_string().to_string(),
     }
 }
@@ -1048,8 +1060,9 @@ fn package_of(ctx: &CompilerContext, symbol: SymbolId) -> SymbolId {
 fn symbol_flat_name(ctx: &CompilerContext, symbol: SymbolId) -> Name {
     match &ctx.sym(symbol).kind_data {
         SymData::ClassSymbol { flatname, .. } => flatname.clone(),
-        SymData::PackageSymbol { fullname, .. }
-        | SymData::RootPackageSymbol { fullname, .. } => fullname.clone(),
+        SymData::PackageSymbol { fullname, .. } | SymData::RootPackageSymbol { fullname, .. } => {
+            fullname.clone()
+        }
         _ => ctx.sym(symbol).name.clone(),
     }
 }
@@ -1077,7 +1090,9 @@ fn module_class_location(ctx: &CompilerContext, msym: SymbolId) -> Option<Locati
 
 fn module_source_location(ctx: &CompilerContext, msym: SymbolId) -> Option<LocationRef> {
     match &ctx.sym(msym).kind_data {
-        SymData::ModuleSymbol { source_location, .. } => source_location.clone(),
+        SymData::ModuleSymbol {
+            source_location, ..
+        } => source_location.clone(),
         _ => None,
     }
 }
@@ -1091,7 +1106,10 @@ fn module_patch_location(ctx: &CompilerContext, msym: SymbolId) -> Option<Locati
 
 fn module_patch_output_location(ctx: &CompilerContext, msym: SymbolId) -> Option<LocationRef> {
     match &ctx.sym(msym).kind_data {
-        SymData::ModuleSymbol { patch_output_location, .. } => patch_output_location.clone(),
+        SymData::ModuleSymbol {
+            patch_output_location,
+            ..
+        } => patch_output_location.clone(),
         _ => None,
     }
 }
@@ -1121,11 +1139,7 @@ impl BadClassFile {
         let mut failure = CompletionFailure::new(
             sym,
             Box::new(move || {
-                create_bad_class_file_diagnostic(
-                    &supplier_file,
-                    &supplier_diag,
-                    &supplier_factory,
-                )
+                create_bad_class_file_diagnostic(&supplier_file, &supplier_diag, &supplier_factory)
             }),
             dcfh,
         );
@@ -1189,7 +1203,6 @@ impl std::ops::Deref for BadEnclosingMethodAttr {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1197,24 +1210,26 @@ mod tests {
 
     use javac_tools::error::Error as ToolsError;
     use javac_tools::tools::file_object::FileObject;
-    use javac_tools::tools::java_file_object::{Kind, JavaFileObject};
+    use javac_tools::tools::java_file_manager::{
+        FileObjectRef, JavaFileManager, JavaFileObjectRef,
+    };
+    use javac_tools::tools::java_file_object::{JavaFileObject, Kind};
     use javac_tools::tools::option_checker::OptionChecker;
-    use javac_tools::tools::java_file_manager::{FileObjectRef, JavaFileManager, JavaFileObjectRef};
     use javac_tools::uri::URI;
 
-    use crate::compiler_context::CompilerContext;
     use crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler;
     use crate::code::preview::Preview;
     use crate::code::source::Source;
     use crate::code::symbol::SymbolKind;
-    use crate::jvm::target::Target;
+    use crate::compiler_context::CompilerContext;
     use crate::jvm::class_reader::ClassReader;
+    use crate::jvm::target::Target;
     use crate::util::context::Context;
     use crate::util::javac_messages::JavacMessages;
     use crate::util::jc_diagnostic::Factory;
+    use crate::util::list::List;
     use crate::util::log::Log;
     use crate::util::names::Names;
-    use crate::util::list::List;
     use crate::util::options::Options;
 
     fn baseline_java_home() -> Option<std::path::PathBuf> {
@@ -1503,8 +1518,8 @@ mod tests {
         let java_base = syms.java_base;
         // Test bootstrap: the upstream Modules sets the system module locations;
         // The platform class location is installed by the bootstrap; the
-// The mini compiler calls Modules.initModules (JavaCompiler.initModules
-// equivalent) at the start of every compile, so the
+        // The mini compiler calls Modules.initModules (JavaCompiler.initModules
+        // equivalent) at the start of every compile, so the
         // here (registered adapter, see the registration).
         if let SymbolKind::ModuleSymbol { class_location, .. } =
             &mut ctx.sym_mut(java_base).kind_data
@@ -1521,7 +1536,7 @@ mod tests {
             Rc::clone(&profile),
             &options,
             None,
-            std::rc::Rc::new(std::cell::RefCell::new(None)),
+            Rc::new(RefCell::new(None)),
         );
         let factory = finder.get_completer_factory();
         Symtab::set_initial_completer(&mut syms, &mut ctx, factory);
@@ -1534,7 +1549,11 @@ mod tests {
         })
     }
 
-    fn member_counts(ctx: &mut CompilerContext, _syms: &Symtab, c: SymbolId) -> (usize, usize, usize) {
+    fn member_counts(
+        ctx: &mut CompilerContext,
+        _syms: &Symtab,
+        c: SymbolId,
+    ) -> (usize, usize, usize) {
         let mut fields = 0;
         let mut methods = 0;
         let mut classes = 0;
@@ -1577,23 +1596,45 @@ mod tests {
         let object = load(&mut fixture, "java.lang.Object").expect("load java.lang.Object");
         let (fields, methods, _) = member_counts(&mut fixture.ctx, &fixture.syms, object);
         assert_eq!(fields + methods, 12, "Object members (javap -private: 12)");
-        let object_super = match &fixture.ctx.typ(fixture.ctx.sym(object).ty.expect("type")).kind {
-            crate::code::type_::TypeKindData::ClassType { supertype_field, .. } => *supertype_field,
+        let object_super = match &fixture
+            .ctx
+            .typ(fixture.ctx.sym(object).ty.expect("type"))
+            .kind
+        {
+            crate::code::type_::TypeKindData::ClassType {
+                supertype_field, ..
+            } => *supertype_field,
             _ => panic!("class type"),
         };
         assert!(
             object_super
-                .map(|t| fixture.ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::NONE))
+                .map(|t| fixture
+                    .ctx
+                    .typ(t)
+                    .has_tag(crate::code::type_tag::TypeTag::NONE))
                 .unwrap_or(true),
             "Object has no superclass"
         );
 
         let string = load(&mut fixture, "java.lang.String").expect("load java.lang.String");
         let (fields, methods, classes) = member_counts(&mut fixture.ctx, &fixture.syms, string);
-        assert_eq!(fields + methods, 171, "String fields+methods (javap -private: 171)");
-        assert_eq!(classes, 1, "String inner class member entered by InnerClasses");
-        let string_super = match &fixture.ctx.typ(fixture.ctx.sym(string).ty.expect("type")).kind {
-            crate::code::type_::TypeKindData::ClassType { supertype_field, .. } => *supertype_field,
+        assert_eq!(
+            fields + methods,
+            171,
+            "String fields+methods (javap -private: 171)"
+        );
+        assert_eq!(
+            classes, 1,
+            "String inner class member entered by InnerClasses"
+        );
+        let string_super = match &fixture
+            .ctx
+            .typ(fixture.ctx.sym(string).ty.expect("type"))
+            .kind
+        {
+            crate::code::type_::TypeKindData::ClassType {
+                supertype_field, ..
+            } => *supertype_field,
             _ => panic!("class type"),
         };
         assert_eq!(
@@ -1610,11 +1651,19 @@ mod tests {
 
         let list = load(&mut fixture, "java.util.List").expect("load java.util.List");
         let (fields, methods, _) = member_counts(&mut fixture.ctx, &fixture.syms, list);
-        assert_eq!(fields + methods, 41, "List fields+methods (javap -private: 41)");
-        let interfaces = match &fixture.ctx.typ(fixture.ctx.sym(list).ty.expect("type")).kind {
-            crate::code::type_::TypeKindData::ClassType { interfaces_field, .. } => {
-                interfaces_field.clone().unwrap_or_else(List::nil)
-            }
+        assert_eq!(
+            fields + methods,
+            41,
+            "List fields+methods (javap -private: 41)"
+        );
+        let interfaces = match &fixture
+            .ctx
+            .typ(fixture.ctx.sym(list).ty.expect("type"))
+            .kind
+        {
+            crate::code::type_::TypeKindData::ClassType {
+                interfaces_field, ..
+            } => interfaces_field.clone().unwrap_or_else(List::nil),
             _ => panic!("class type"),
         };
         let mut names = Vec::new();
@@ -1676,7 +1725,10 @@ mod io_failure_tests {
             "disk read failed"
         );
         // The Debug representation must not leak into the diagnostic.
-        assert_ne!(io_failure_message(&error).to_string_lossy(), format!("{error:?}"));
+        assert_ne!(
+            io_failure_message(&error).to_string_lossy(),
+            format!("{error:?}")
+        );
     }
 
     #[test]

@@ -13,8 +13,8 @@ use super::java_file_manager::{JavaFileObjectRef, Location as JavaFileManagerLoc
 use super::option_checker::OptionChecker;
 use super::standard_java_file_manager::StandardJavaFileManager;
 use super::tool::Tool;
-use crate::jdk::Class;
 use crate::java_io::Writer;
+use crate::jdk::Class;
 use javac_strings::JavaString;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -190,7 +190,11 @@ impl Location {
 
     /// Java: enum#values().
     pub fn values() -> [Location; 3] {
-        [Location::DOCUMENTATION_OUTPUT, Location::DOCLET_PATH, Location::TAGLET_PATH]
+        [
+            Location::DOCUMENTATION_OUTPUT,
+            Location::DOCLET_PATH,
+            Location::TAGLET_PATH,
+        ]
     }
 }
 

@@ -42,7 +42,7 @@ pub trait BaseFileManagerApi {
         &self,
         _archive_path: &FsPath,
         _entry_name: &str,
-    ) -> std::option::Option<Vec<u8>> {
+    ) -> Option<Vec<u8>> {
         None
     }
 
@@ -54,10 +54,7 @@ pub trait BaseFileManagerApi {
         &self,
         encoding_name: &javac_strings::JavaString,
         ignore: bool,
-    ) -> Result<
-        javac_charset::CharsetDecoder,
-        crate::util::jc_diagnostic::Error,
-    >;
+    ) -> Result<javac_charset::CharsetDecoder, crate::util::jc_diagnostic::Error>;
 
     /// Java: BaseFileManager.getEncodingName().
     fn get_encoding_name(&self) -> javac_strings::JavaString;
@@ -82,12 +79,12 @@ pub trait BaseFileManagerApi {
     fn use_source(
         &self,
         file: &PathFileObject,
-    ) -> std::option::Option<std::rc::Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>>;
+    ) -> Option<std::rc::Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>>;
 
     /// Java: fileManager.log.useSource(prev).
     fn restore_source(
         &self,
-        previous: std::option::Option<
+        previous: Option<
             std::rc::Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>,
         >,
     );

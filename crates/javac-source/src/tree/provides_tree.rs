@@ -1,3 +1,5 @@
+use super::directive_tree::DirectiveTree;
+use super::expression_tree::ExpressionTree;
 /// A tree node for a 'provides' directive in a module declaration.
 ///
 /// For example:
@@ -7,8 +9,6 @@
 ///
 /// @since 9
 use std::rc::Rc;
-use super::directive_tree::DirectiveTree;
-use super::expression_tree::ExpressionTree;
 
 pub trait ProvidesTree: DirectiveTree {
     /// Returns the name of the service type being provided.
@@ -18,5 +18,4 @@ pub trait ProvidesTree: DirectiveTree {
     /// Returns the names of the implementation types being provided.
     /// @return the names of the implementation types being provided
     fn get_implementation_names(&self) -> Vec<Rc<dyn ExpressionTree>>;
-
 }

@@ -19,8 +19,8 @@
 //! `java.util.stream` based `Random` methods; neither is reachable from the
 //! compiler or from `FDBigInteger`.
 
-use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 use crate::mutable_big_integer::MutableBigInteger;
 use crate::random::Random;
@@ -72,24 +72,24 @@ const MAX_CONSTANT: i32 = 16;
 
 /// Java: private static long bitsPerDigit[] (scaled by 1024).
 const BITS_PER_DIGIT: [i64; 37] = [
-    0, 0, 1024, 1624, 2048, 2378, 2648, 2875, 3072, 3247, 3402, 3543, 3672, 3790, 3899, 4001,
-    4096, 4186, 4271, 4350, 4426, 4498, 4567, 4633, 4696, 4756, 4814, 4870, 4923, 4975, 5025,
-    5074, 5120, 5166, 5210, 5253, 5295,
+    0, 0, 1024, 1624, 2048, 2378, 2648, 2875, 3072, 3247, 3402, 3543, 3672, 3790, 3899, 4001, 4096,
+    4186, 4271, 4350, 4426, 4498, 4567, 4633, 4696, 4756, 4814, 4870, 4923, 4975, 5025, 5074, 5120,
+    5166, 5210, 5253, 5295,
 ];
 
 /// Java: private static int digitsPerInt[].
 const DIGITS_PER_INT: [i32; 37] = [
-    0, 0, 30, 19, 15, 13, 11, 11, 10, 9, 9, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 6, 6, 6, 6, 6, 6,
-    6, 6, 6, 6, 6, 6, 6, 6, 5,
+    0, 0, 30, 19, 15, 13, 11, 11, 10, 9, 9, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 6, 6, 6, 6, 6, 6, 6,
+    6, 6, 6, 6, 6, 6, 6, 5,
 ];
 
 /// Java: private static int intRadix[].
 const INT_RADIX: [i32; 37] = [
     0, 0, 0x40000000, 0x4546b3db, 0x40000000, 0x48c27395, 0x159fd800, 0x75db9c97, 0x40000000,
-    0x17179149, 0x3b9aca00, 0x0cc6db61, 0x19a10000, 0x309f1021, 0x57f6c100, 0x0a2f1b6f,
-    0x10000000, 0x18754571, 0x247dbc80, 0x3547667b, 0x4c4b4000, 0x6b5a6e1d, 0x06c20a40,
-    0x08d2d931, 0x000b6400, 0x0e8d4a51, 0x1269ae40, 0x17179149, 0x1cb91000, 0x23744899,
-    0x2b73a840, 0x34e63b41, 0x40000000, 0x4cfa3cc1, 0x5c13d840, 0x6d91b519, 0x039aa400,
+    0x17179149, 0x3b9aca00, 0x0cc6db61, 0x19a10000, 0x309f1021, 0x57f6c100, 0x0a2f1b6f, 0x10000000,
+    0x18754571, 0x247dbc80, 0x3547667b, 0x4c4b4000, 0x6b5a6e1d, 0x06c20a40, 0x08d2d931, 0x000b6400,
+    0x0e8d4a51, 0x1269ae40, 0x17179149, 0x1cb91000, 0x23744899, 0x2b73a840, 0x34e63b41, 0x40000000,
+    0x4cfa3cc1, 0x5c13d840, 0x6d91b519, 0x039aa400,
 ];
 
 /// Java: private static int digitsPerLong[].
@@ -117,7 +117,6 @@ pub(crate) struct BigInteger {
     /// Java: private int firstNonzeroIntNumPlusTwo.
     first_nonzero_int_num_plus_two: AtomicI32,
 }
-
 
 impl Clone for BigInteger {
     fn clone(&self) -> BigInteger {
@@ -294,12 +293,18 @@ impl BigInteger {
     fn parse_int_digits(source: &[u16], start: usize, end: usize) -> i32 {
         let mut result = crate::digit_helper::digit(source[start], 10);
         if result == -1 {
-            panic!("NumberFormatException: {}", String::from_utf16_lossy(source));
+            panic!(
+                "NumberFormatException: {}",
+                String::from_utf16_lossy(source)
+            );
         }
         for index in start + 1..end {
             let next_val = crate::digit_helper::digit(source[index], 10);
             if next_val == -1 {
-                panic!("NumberFormatException: {}", String::from_utf16_lossy(source));
+                panic!(
+                    "NumberFormatException: {}",
+                    String::from_utf16_lossy(source)
+                );
             }
             result = 10 * result + next_val;
         }
@@ -314,7 +319,9 @@ impl BigInteger {
         let mut carry: i64 = 0;
         let mut i = len as isize - 1;
         while i >= 0 {
-            let product = ylong.wrapping_mul(x[i as usize] as i64 & LONG_MASK).wrapping_add(carry);
+            let product = ylong
+                .wrapping_mul(x[i as usize] as i64 & LONG_MASK)
+                .wrapping_add(carry);
             x[i as usize] = product as i32;
             carry = ((product as u64) >> 32) as i64;
             i -= 1;
@@ -336,7 +343,7 @@ impl BigInteger {
         if val.is_empty() {
             panic!("NumberFormatException: Zero length BigInteger");
         }
-        crate::big_integer::check_from_index_size(off, len, val.len());
+        check_from_index_size(off, len, val.len());
         if len == 0 {
             return ZERO.clone();
         }
@@ -381,7 +388,7 @@ impl BigInteger {
         if !(-1..=1).contains(&signum) {
             panic!("NumberFormatException: Invalid signum value");
         }
-        crate::big_integer::check_from_index_size(off, len, magnitude.len());
+        check_from_index_size(off, len, magnitude.len());
         let mag = Self::strip_leading_zero_bytes(-129, magnitude, off, len);
         let signum = if mag.is_empty() {
             0
@@ -395,18 +402,12 @@ impl BigInteger {
     }
 
     /// Java: public BigInteger(int signum, byte[] magnitude).
-    pub(crate) fn from_signum_magnitude_bytes_full(
-        signum: i32,
-        magnitude: &[u8],
-    ) -> BigInteger {
+    pub(crate) fn from_signum_magnitude_bytes_full(signum: i32, magnitude: &[u8]) -> BigInteger {
         BigInteger::from_signum_magnitude_bytes(signum, magnitude, 0, magnitude.len())
     }
 
     /// Java: private BigInteger(int signum, int[] magnitude).
-    pub(crate) fn from_signum_magnitude_ints(
-        signum: i32,
-        magnitude: Vec<i32>,
-    ) -> BigInteger {
+    pub(crate) fn from_signum_magnitude_ints(signum: i32, magnitude: Vec<i32>) -> BigInteger {
         let mag = Self::strip_leading_zero_ints(magnitude);
         if !(-1..=1).contains(&signum) {
             panic!("NumberFormatException: Invalid signum value");
@@ -458,9 +459,7 @@ impl BigInteger {
         if cursor == len {
             panic!("NumberFormatException: Zero length BigInteger");
         }
-        while cursor < len
-            && crate::digit_helper::digit(chars[cursor as usize], radix) == 0
-        {
+        while cursor < len && crate::digit_helper::digit(chars[cursor as usize], radix) == 0 {
             cursor += 1;
         }
         if cursor == len {
@@ -530,8 +529,7 @@ impl BigInteger {
         }
         let start = cursor as usize;
         cursor += first_group_len;
-        magnitude[(num_words - 1) as usize] =
-            Self::parse_int_digits(val, start, cursor as usize);
+        magnitude[(num_words - 1) as usize] = Self::parse_int_digits(val, start, cursor as usize);
         while cursor < len {
             let start = cursor as usize;
             cursor += DIGITS_PER_INT[10];
@@ -597,9 +595,7 @@ impl BigInteger {
             }
             let p = BigInteger::new_from_internal(temp.clone(), 1);
             if bit_length > 6 {
-                let r = p
-                    .remainder(&SMALL_PRIME_PRODUCT)
-                    .long_value();
+                let r = p.remainder(&SMALL_PRIME_PRODUCT).long_value();
                 if r % 3 == 0
                     || r % 5 == 0
                     || r % 7 == 0
@@ -634,8 +630,7 @@ impl BigInteger {
         let search_len = Self::get_prime_search_len(bit_length);
         let mut search_sieve = BitSieve::new(&p, search_len);
         let mut candidate = search_sieve.retrieve(&p, certainty, Some(rnd));
-        while candidate.is_none()
-            || candidate.as_ref().map(|c| c.bit_length()) != Some(bit_length)
+        while candidate.is_none() || candidate.as_ref().map(|c| c.bit_length()) != Some(bit_length)
         {
             p = p.add(&BigInteger::value_of_long(2 * search_len as i64));
             if p.bit_length() != bit_length {
@@ -814,10 +809,7 @@ impl BigInteger {
         let mut i = k.bit_length() - 2;
         while i >= 0 {
             let mut u2 = u.multiply(&v).modulo(n);
-            let mut v2 = v
-                .square()
-                .add(&d.multiply(&u.square()))
-                .modulo(n);
+            let mut v2 = v.square().add(&d.multiply(&u.square())).modulo(n);
             if v2.test_bit(0) {
                 v2 = v2.subtract(n);
             }
@@ -888,10 +880,7 @@ impl BigInteger {
             return val.clone();
         }
         if val.signum == self.signum {
-            return BigInteger::new_from_internal(
-                Self::add_mags(&self.mag, &val.mag),
-                self.signum,
-            );
+            return BigInteger::new_from_internal(Self::add_mags(&self.mag, &val.mag), self.signum);
         }
         let cmp = self.compare_magnitude(val);
         if cmp == 0 {
@@ -914,7 +903,14 @@ impl BigInteger {
         if self.signum == 0 {
             return BigInteger::value_of_long(val);
         }
-        if (if val > 0 { 1 } else if val < 0 { -1 } else { 0 }) == self.signum {
+        if (if val > 0 {
+            1
+        } else if val < 0 {
+            -1
+        } else {
+            0
+        }) == self.signum
+        {
             return BigInteger::new_from_internal(
                 Self::add_mag_long(&self.mag, val.abs()),
                 self.signum,
@@ -958,14 +954,21 @@ impl BigInteger {
             sum = (x[x_index] as i64 & LONG_MASK) + (val & LONG_MASK);
             res[x_index] = sum as i32;
             x_index -= 1;
-            sum = (x[x_index] as i64 & LONG_MASK) + (high_word as i64 & LONG_MASK) + ((sum as u64) >> 32) as i64;
+            sum = (x[x_index] as i64 & LONG_MASK)
+                + (high_word as i64 & LONG_MASK)
+                + ((sum as u64) >> 32) as i64;
             res[x_index] = sum as i32;
             result = Self::propagate_add_carry(x, res, x_index, sum);
         }
         result
     }
 
-    fn propagate_add_carry(x: &[i32], mut result: Vec<i32>, mut x_index: usize, sum: i64) -> Vec<i32> {
+    fn propagate_add_carry(
+        x: &[i32],
+        mut result: Vec<i32>,
+        mut x_index: usize,
+        sum: i64,
+    ) -> Vec<i32> {
         let mut carry = (sum as u64) >> 32 != 0;
         while x_index > 0 && carry {
             x_index -= 1;
@@ -1025,9 +1028,11 @@ impl BigInteger {
                 result[0] = if borrow { high_word - 1 } else { high_word };
                 result
             } else {
-                let mut difference = ((val as i32) as i64 & LONG_MASK) - (little[1] as i64 & LONG_MASK);
+                let mut difference =
+                    ((val as i32) as i64 & LONG_MASK) - (little[1] as i64 & LONG_MASK);
                 result[1] = difference as i32;
-                difference = (high_word as i64 & LONG_MASK) - (little[0] as i64 & LONG_MASK) + (difference >> 32);
+                difference = (high_word as i64 & LONG_MASK) - (little[0] as i64 & LONG_MASK)
+                    + (difference >> 32);
                 result[0] = difference as i32;
                 result
             }
@@ -1049,13 +1054,19 @@ impl BigInteger {
             difference = (big[big_index] as i64 & LONG_MASK) - (val & LONG_MASK);
             result[big_index] = difference as i32;
             big_index -= 1;
-            difference = (big[big_index] as i64 & LONG_MASK) - (high_word as i64 & LONG_MASK) + (difference >> 32);
+            difference = (big[big_index] as i64 & LONG_MASK) - (high_word as i64 & LONG_MASK)
+                + (difference >> 32);
             result[big_index] = difference as i32;
         }
         Self::propagate_sub_borrow(big, result, big_index, difference)
     }
 
-    fn propagate_sub_borrow(big: &[i32], mut result: Vec<i32>, mut big_index: usize, difference: i64) -> Vec<i32> {
+    fn propagate_sub_borrow(
+        big: &[i32],
+        mut result: Vec<i32>,
+        mut big_index: usize,
+        difference: i64,
+    ) -> Vec<i32> {
         let mut borrow = difference >> 32 != 0;
         while big_index > 0 && borrow {
             big_index -= 1;
@@ -1165,7 +1176,9 @@ impl BigInteger {
         let yl = y as i64 & LONG_MASK;
         let mut rstart = rmag.len();
         for i in (0..xlen).rev() {
-            let product = (x[i] as i64 & LONG_MASK).wrapping_mul(yl).wrapping_add(carry);
+            let product = (x[i] as i64 & LONG_MASK)
+                .wrapping_mul(yl)
+                .wrapping_add(carry);
             rstart -= 1;
             rmag[rstart] = product as i32;
             carry = ((product as u64) >> 32) as i64;
@@ -1202,7 +1215,9 @@ impl BigInteger {
         let mut carry: i64 = 0;
         let mut rstart = rmag.len();
         for i in (0..xlen).rev() {
-            let product = (self.mag[i] as i64 & LONG_MASK).wrapping_mul(dl).wrapping_add(carry);
+            let product = (self.mag[i] as i64 & LONG_MASK)
+                .wrapping_mul(dl)
+                .wrapping_add(carry);
             rstart -= 1;
             rmag[rstart] = product as i32;
             carry = ((product as u64) >> 32) as i64;
@@ -1379,7 +1394,13 @@ impl BigInteger {
 
     /// Java: private BigInteger getToomSlice(int lowerSize, int upperSize,
     /// int slice, int fullsize).
-    fn get_toom_slice(&self, lower_size: i32, upper_size: i32, slice: i32, fullsize: i32) -> BigInteger {
+    fn get_toom_slice(
+        &self,
+        lower_size: i32,
+        upper_size: i32,
+        slice: i32,
+        fullsize: i32,
+    ) -> BigInteger {
         let len = self.mag.len() as i32;
         let offset = fullsize - len;
         let (mut start, end);
@@ -1475,7 +1496,8 @@ impl BigInteger {
             return self.square_karatsuba();
         }
         if !is_recursion {
-            if Self::bit_length_of(&self.mag, self.mag.len() as i32) as i64 > 16i64 * MAX_MAG_LENGTH as i64
+            if Self::bit_length_of(&self.mag, self.mag.len() as i32) as i64
+                > 16i64 * MAX_MAG_LENGTH as i64
             {
                 Self::report_overflow();
             }
@@ -1533,7 +1555,8 @@ impl BigInteger {
         while j < len {
             let piece = x[j as usize] as i64 & LONG_MASK;
             let product = piece.wrapping_mul(piece);
-            z[i as usize] = last_product_low_word.wrapping_shl(31) | ((product as u64 >> 33) as i32);
+            z[i as usize] =
+                last_product_low_word.wrapping_shl(31) | ((product as u64 >> 33) as i32);
             i += 1;
             z[i as usize] = ((product as u64) >> 1) as i32;
             i += 1;
@@ -1563,7 +1586,11 @@ impl BigInteger {
         let xhs = xh.square_with_recursion(true);
         let xls = xl.square_with_recursion(true);
         xhs.shift_left(half * 32)
-            .add(&xl.add(&xh).square_with_recursion(true).subtract(&xhs.add(&xls)))
+            .add(
+                &xl.add(&xh)
+                    .square_with_recursion(true)
+                    .subtract(&xhs.add(&xls)),
+            )
             .shift_left(half * 32)
             .add(&xls)
     }
@@ -1582,7 +1609,11 @@ impl BigInteger {
         da1 = da1.add(&a1);
         let v1 = da1.square_with_recursion(true);
         let vinf = a2.square_with_recursion(true);
-        let v2 = da1.add(&a2).shift_left(1).subtract(&a0).square_with_recursion(true);
+        let v2 = da1
+            .add(&a2)
+            .shift_left(1)
+            .subtract(&a0)
+            .square_with_recursion(true);
         let mut t2 = v2.subtract(&vm1).exact_divide_by3();
         let mut tm1 = v1.subtract(&vm1).shift_right(1);
         let mut t1 = v1.subtract(&v0);
@@ -1591,8 +1622,7 @@ impl BigInteger {
         t2 = t2.subtract(&vinf.shift_left(1));
         tm1 = tm1.subtract(&t2);
         let ss = k * 32;
-        vinf
-            .shift_left(ss)
+        vinf.shift_left(ss)
             .add(&t2)
             .shift_left(ss)
             .add(&t1)
@@ -1701,7 +1731,11 @@ impl BigInteger {
             panic!("ArithmeticException: Negative exponent");
         }
         if self.signum == 0 {
-            return if exponent == 0 { ONE.clone() } else { self.clone() };
+            return if exponent == 0 {
+                ONE.clone()
+            } else {
+                self.clone()
+            };
         }
         let mut part_to_square = self.abs();
         let powers_of_two = part_to_square.get_lowest_set_bit();
@@ -1750,7 +1784,9 @@ impl BigInteger {
             }
             if powers_of_two > 0 {
                 if bits_to_shift as i64 + scale_factor <= 62 {
-                    return BigInteger::value_of_long(result.wrapping_shl(bits_to_shift as u32) * new_sign);
+                    return BigInteger::value_of_long(
+                        result.wrapping_shl(bits_to_shift as u32) * new_sign,
+                    );
                 }
                 return BigInteger::value_of_long(result * new_sign).shift_left(bits_to_shift);
             }
@@ -1785,7 +1821,9 @@ impl BigInteger {
         if self.signum < 0 {
             panic!("ArithmeticException: Negative BigInteger");
         }
-        MutableBigInteger::new_from_big_integer(self).sqrt_public().to_big_integer()
+        MutableBigInteger::new_from_big_integer(self)
+            .sqrt_public()
+            .to_big_integer()
     }
 
     /// Java: public BigInteger[] sqrtAndRemainder().
@@ -1919,19 +1957,35 @@ impl BigInteger {
             panic!("ArithmeticException: BigInteger: modulus not positive");
         }
         if exponent.signum == 0 {
-            return if m.equals(&ONE) { ZERO.clone() } else { ONE.clone() };
+            return if m.equals(&ONE) {
+                ZERO.clone()
+            } else {
+                ONE.clone()
+            };
         }
         if self.equals(&ONE) {
-            return if m.equals(&ONE) { ZERO.clone() } else { ONE.clone() };
+            return if m.equals(&ONE) {
+                ZERO.clone()
+            } else {
+                ONE.clone()
+            };
         }
         if self.equals(&ZERO) && exponent.signum >= 0 {
             return ZERO.clone();
         }
         if self.equals(&NEGATIVE_ONE) && !exponent.test_bit(0) {
-            return if m.equals(&ONE) { ZERO.clone() } else { ONE.clone() };
+            return if m.equals(&ONE) {
+                ZERO.clone()
+            } else {
+                ONE.clone()
+            };
         }
         let invert_result = exponent.signum < 0;
-        let exponent = if invert_result { exponent.negate() } else { exponent.clone() };
+        let exponent = if invert_result {
+            exponent.negate()
+        } else {
+            exponent.clone()
+        };
         let base = if self.signum < 0 || self.compare_to(m) >= 0 {
             self.modulo(m)
         } else {
@@ -2077,9 +2131,7 @@ impl BigInteger {
     }
 
     /// Java: static int[] bnExpModThreshTable.
-    const BN_EXP_MOD_THRESH_TABLE: [i32; 7] = [
-        7, 25, 81, 241, 673, 1793, i32::MAX,
-    ];
+    const BN_EXP_MOD_THRESH_TABLE: [i32; 7] = [7, 25, 81, 241, 673, 1793, i32::MAX];
 
     /// Java: private BigInteger oddModPow(BigInteger y, BigInteger z).
     fn odd_mod_pow(&self, y: &BigInteger, z: &BigInteger) -> BigInteger {
@@ -2128,7 +2180,14 @@ impl BigInteger {
         let mut t = b[..mod_len as usize].to_vec();
         let mut i = 1;
         while i < tblmask {
-            table[i as usize] = Self::montgomery_multiply(&t, &table[(i - 1) as usize], &mod_mag, mod_len, inv, None);
+            table[i as usize] = Self::montgomery_multiply(
+                &t,
+                &table[(i - 1) as usize],
+                &mod_mag,
+                mod_len,
+                inv,
+                None,
+            );
             i += 1;
         }
         let mut bitpos = 1i32 << ((ebits - 1) & 31);
@@ -2136,8 +2195,7 @@ impl BigInteger {
         let mut elen = exp.len() as i32;
         let mut e_index = 0usize;
         for _ in 0..=wbits {
-            buf = (buf << 1)
-                | if (exp[e_index] & bitpos) != 0 { 1 } else { 0 };
+            buf = (buf << 1) | if (exp[e_index] & bitpos) != 0 { 1 } else { 0 };
             bitpos = ((bitpos as u32) >> 1) as i32;
             if bitpos == 0 {
                 e_index += 1;
@@ -2257,8 +2315,7 @@ impl BigInteger {
         let mut len = len;
         while len > 0 {
             len -= 1;
-            sum = (a[len as usize] as i64 & LONG_MASK)
-                - (b[len as usize] as i64 & LONG_MASK)
+            sum = (a[len as usize] as i64 & LONG_MASK) - (b[len as usize] as i64 & LONG_MASK)
                 + (sum >> 32);
             a[len as usize] = sum as i32;
         }
@@ -2391,7 +2448,10 @@ impl BigInteger {
         if n == 0 {
             return self.clone();
         }
-        BigInteger::new_from_internal(Self::left_shift_mag(&self.mag, n.wrapping_neg()), self.signum)
+        BigInteger::new_from_internal(
+            Self::left_shift_mag(&self.mag, n.wrapping_neg()),
+            self.signum,
+        )
     }
 
     /// Java: private BigInteger shiftRightImpl(int n).
@@ -2604,7 +2664,8 @@ impl BigInteger {
                 }
                 lsb += (i << 5) + (b as u32).trailing_zeros() as i32;
             }
-            self.lowest_set_bit_plus_two.store(lsb + 2, Ordering::Relaxed);
+            self.lowest_set_bit_plus_two
+                .store(lsb + 2, Ordering::Relaxed);
         }
         lsb
     }
@@ -2618,7 +2679,8 @@ impl BigInteger {
             if len == 0 {
                 n = 0;
             } else {
-                let mag_bit_length = ((len as i32 - 1) << 5) + Self::bit_length_for_int(self.mag[0]);
+                let mag_bit_length =
+                    ((len as i32 - 1) << 5) + Self::bit_length_for_int(self.mag[0]);
                 if self.signum < 0 {
                     let mut pow2 = self.mag[0].count_ones() == 1;
                     let mut i = 1;
@@ -2626,7 +2688,11 @@ impl BigInteger {
                         pow2 = self.mag[i] == 0;
                         i += 1;
                     }
-                    n = if pow2 { mag_bit_length - 1 } else { mag_bit_length };
+                    n = if pow2 {
+                        mag_bit_length - 1
+                    } else {
+                        mag_bit_length
+                    };
                 } else {
                     n = mag_bit_length;
                 }
@@ -2684,11 +2750,7 @@ impl BigInteger {
                 _ => 0,
             };
         }
-        if self.signum > val.signum {
-            1
-        } else {
-            -1
-        }
+        if self.signum > val.signum { 1 } else { -1 }
     }
 
     /// Java: final int compareMagnitude(BigInteger val).
@@ -2817,7 +2879,8 @@ impl BigInteger {
         let radix = if radix < 2 || radix > 36 { 10 } else { radix };
         let abs = self.abs();
         let b = abs.bit_length();
-        let num_chars = (b as f64 * LOG_TWO / LOG_CACHE[radix as usize]).floor() as i32 + 1
+        let num_chars = (b as f64 * LOG_TWO / LOG_CACHE[radix as usize]).floor() as i32
+            + 1
             + if self.signum < 0 { 1 } else { 0 };
         let mut sb = String::with_capacity(num_chars as usize);
         if self.signum < 0 {
@@ -2898,8 +2961,8 @@ impl BigInteger {
             return;
         }
         let b = u.bit_length();
-        let n = ((b as f64 * LOG_TWO / LOG_CACHE[radix as usize]).ln() / LOG_TWO - 1.0).round()
-            as i32;
+        let n =
+            ((b as f64 * LOG_TWO / LOG_CACHE[radix as usize]).ln() / LOG_TWO - 1.0).round() as i32;
         let v = Self::get_radix_conversion_cache(radix, n);
         let (q, r) = u.divide_and_remainder(&v);
         let expected_digits = 1i32 << n;
@@ -2970,9 +3033,8 @@ impl BigInteger {
         if self.signum == 0 {
             return 0.0f32;
         }
-        let exponent = ((self.mag.len() as i32 - 1) << 5)
-            + Self::bit_length_for_int(self.mag[0])
-            - 1;
+        let exponent =
+            ((self.mag.len() as i32 - 1) << 5) + Self::bit_length_for_int(self.mag[0]) - 1;
         if exponent < 63 {
             return self.long_value() as f32;
         }
@@ -2992,17 +3054,21 @@ impl BigInteger {
         } else {
             twice_signif_floor = ((self.mag[0] as u32) >> n_bits) as i32;
             if twice_signif_floor == 0 {
-                twice_signif_floor =
-                    self.mag[0].wrapping_shl(n_bits2 as u32) | ((self.mag[1] as u32) >> n_bits) as i32;
+                twice_signif_floor = self.mag[0].wrapping_shl(n_bits2 as u32)
+                    | ((self.mag[1] as u32) >> n_bits) as i32;
             }
         }
         let mut signif_floor = twice_signif_floor >> 1;
         signif_floor &= FLOAT_SIGNIF_BIT_MASK;
         let increment = (twice_signif_floor & 1) != 0
             && ((signif_floor & 1) != 0 || self.abs().get_lowest_set_bit() < shift);
-        let signif_rounded = if increment { signif_floor + 1 } else { signif_floor };
-        let mut bits = ((exponent + FLOAT_EXP_BIAS) << (FLOAT_SIGNIFICAND_WIDTH - 1))
-            + signif_rounded;
+        let signif_rounded = if increment {
+            signif_floor + 1
+        } else {
+            signif_floor
+        };
+        let mut bits =
+            ((exponent + FLOAT_EXP_BIAS) << (FLOAT_SIGNIFICAND_WIDTH - 1)) + signif_rounded;
         bits |= self.signum & FLOAT_SIGN_BIT_MASK;
         f32::from_bits(bits as u32)
     }
@@ -3012,9 +3078,8 @@ impl BigInteger {
         if self.signum == 0 {
             return 0.0f64;
         }
-        let exponent = ((self.mag.len() as i32 - 1) << 5)
-            + Self::bit_length_for_int(self.mag[0])
-            - 1;
+        let exponent =
+            ((self.mag.len() as i32 - 1) << 5) + Self::bit_length_for_int(self.mag[0]) - 1;
         if exponent < 63 {
             return self.long_value() as f64;
         }
@@ -3035,18 +3100,13 @@ impl BigInteger {
             low_bits = self.mag[1];
         } else {
             high_bits = ((self.mag[0] as u32) >> n_bits) as i32;
-            low_bits = self.mag[0].wrapping_shl(n_bits2 as u32) | ((self.mag[1] as u32) >> n_bits) as i32;
+            low_bits =
+                self.mag[0].wrapping_shl(n_bits2 as u32) | ((self.mag[1] as u32) >> n_bits) as i32;
             if high_bits == 0 {
                 let high_bits2 = low_bits;
                 let low_bits2 = self.mag[1].wrapping_shl(n_bits2 as u32)
                     | ((self.mag[2] as u32) >> n_bits) as i32;
-                return Self::double_value_from_parts(
-                    exponent,
-                    high_bits2,
-                    low_bits2,
-                    shift,
-                    self,
-                );
+                return Self::double_value_from_parts(exponent, high_bits2, low_bits2, shift, self);
             }
         }
         Self::double_value_from_parts(exponent, high_bits, low_bits, shift, self)
@@ -3059,12 +3119,17 @@ impl BigInteger {
         shift: i32,
         value: &BigInteger,
     ) -> f64 {
-        let twice_signif_floor = ((high_bits as i64 & LONG_MASK) << 32) | (low_bits as i64 & LONG_MASK);
+        let twice_signif_floor =
+            ((high_bits as i64 & LONG_MASK) << 32) | (low_bits as i64 & LONG_MASK);
         let mut signif_floor = twice_signif_floor >> 1;
         signif_floor &= DOUBLE_SIGNIF_BIT_MASK;
         let increment = (twice_signif_floor & 1) != 0
             && ((signif_floor & 1) != 0 || value.abs().get_lowest_set_bit() < shift);
-        let signif_rounded = if increment { signif_floor + 1 } else { signif_floor };
+        let signif_rounded = if increment {
+            signif_floor + 1
+        } else {
+            signif_floor
+        };
         let mut bits = ((exponent + DOUBLE_EXP_BIAS) as i64) << (DOUBLE_SIGNIFICAND_WIDTH - 1);
         bits += signif_rounded;
         bits |= (value.signum as i64) & DOUBLE_SIGN_BIT_MASK;
@@ -3154,7 +3219,8 @@ impl BigInteger {
                 i -= 1;
             }
             fn_value = mlen - i - 1;
-            self.first_nonzero_int_num_plus_two.store(fn_value + 2, Ordering::Relaxed);
+            self.first_nonzero_int_num_plus_two
+                .store(fn_value + 2, Ordering::Relaxed);
         }
         fn_value
     }
@@ -3183,11 +3249,7 @@ impl BigInteger {
         while keep < val.len() && val[keep] == 0 {
             keep += 1;
         }
-        if keep == 0 {
-            val
-        } else {
-            val[keep..].to_vec()
-        }
+        if keep == 0 { val } else { val[keep..].to_vec() }
     }
 
     /// Java: private static int[] stripLeadingZeroBytes(byte[] a, int from,
@@ -3255,7 +3317,11 @@ impl BigInteger {
             d = (d << 8) | (a[from] as i32 & 0xFF);
             from += 1;
         }
-        let c = if ((to - from) as i32 | d0 | d) == 0 { 1 } else { 0 };
+        let c = if ((to - from) as i32 | d0 | d) == 0 {
+            1
+        } else {
+            0
+        };
         let mut res = vec![0i32; c + 1 + ((to - f) >> 2)];
         res[0] = if c == 0 { d0 } else { -1 };
         let mut i = res.len() - ((to - from) >> 2);
@@ -3356,7 +3422,9 @@ fn parse_int_str(s: &str, radix: i32) -> i32 {
 /// int length).
 fn check_from_index_size(from_index: usize, size: usize, length: usize) {
     if from_index > length || size > length - from_index {
-        panic!("IndexOutOfBoundsException: Range [{from_index}, {from_index} + {size}) out of bounds for length {length}");
+        panic!(
+            "IndexOutOfBoundsException: Range [{from_index}, {from_index} + {size}) out of bounds for length {length}"
+        );
     }
 }
 
@@ -3552,10 +3620,7 @@ impl BitSieve {
             for _ in 0..64 {
                 if (next_long & 1) == 1 {
                     let candidate = init_value.add(&BigInteger::value_of_long(offset));
-                    if candidate.prime_to_certainty(
-                        certainty,
-                        random.as_deref_mut(),
-                    ) {
+                    if candidate.prime_to_certainty(certainty, random.as_deref_mut()) {
                         return Some(candidate);
                     }
                 }
@@ -3662,7 +3727,6 @@ impl SignedMutableBigInteger {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3697,10 +3761,7 @@ mod tests {
             a.remainder(&bi("1234567890123456789")).to_debug_string(),
             "1234567890"
         );
-        assert_eq!(
-            a.modulo(&bi("4294967296")).to_debug_string(),
-            "1312754386"
-        );
+        assert_eq!(a.modulo(&bi("4294967296")).to_debug_string(), "1312754386");
         assert_eq!(
             bi("12345").pow(17).to_debug_string(),
             "3592101522916075416804149916723226187790444507512040527030181884765625"
@@ -3711,10 +3772,7 @@ mod tests {
         );
         assert_eq!(a.shift_right(67).to_debug_string(), "836575742");
         assert_eq!(a.and(&b).to_debug_string(), "39857104640305249140344357442");
-        assert_eq!(
-            a.or(&b).to_debug_string(),
-            "-15165747737836113450097443873"
-        );
+        assert_eq!(a.or(&b).to_debug_string(), "-15165747737836113450097443873");
         assert_eq!(
             a.xor(&b).to_debug_string(),
             "-55022852378141362590441801315"
@@ -3759,10 +3817,15 @@ mod tests {
             "569109174"
         );
         assert_eq!(
-            bi("1234567").mod_inverse(&bi("987654323")).to_debug_string(),
+            bi("1234567")
+                .mod_inverse(&bi("987654323"))
+                .to_debug_string(),
             "177586530"
         );
-        assert_eq!(b.negate().to_debug_string(), "98765432109876543210987654321");
+        assert_eq!(
+            b.negate().to_debug_string(),
+            "98765432109876543210987654321"
+        );
         assert_eq!(b.abs().to_debug_string(), "98765432109876543210987654321");
         assert_eq!(a.compare_to(&b), 1);
         assert_eq!(

@@ -88,11 +88,11 @@ pub trait ClassLoader {
     /// URLClassLoader.findClass). The byte content of the class file is
     /// returned instead of a java.lang.Class (the port does not run a JVM;
     /// registered adapter, see the javax.tools class loader contract).
-    fn find_class(&self, name: &javac_strings::JavaString) -> Option<Vec<u8>>;
+    fn find_class(&self, name: &JavaString) -> Option<Vec<u8>>;
 
     /// Finds the resource with the given name (Java:
     /// URLClassLoader.findResource).
-    fn find_resource(&self, name: &javac_strings::JavaString) -> Option<Vec<u8>>;
+    fn find_resource(&self, name: &JavaString) -> Option<Vec<u8>>;
 }
 
 /// Mapping of `java.lang.annotation.Annotation`.
@@ -109,7 +109,9 @@ pub struct ServiceLoader<S> {
 
 impl<S> ServiceLoader<S> {
     pub fn new() -> ServiceLoader<S> {
-        ServiceLoader { marker: PhantomData }
+        ServiceLoader {
+            marker: PhantomData,
+        }
     }
 }
 

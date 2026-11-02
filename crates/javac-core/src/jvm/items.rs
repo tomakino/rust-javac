@@ -15,7 +15,7 @@ use crate::jvm::code::{Chain, Code};
 use crate::jvm::cr_table::CrtKey;
 use crate::jvm::crt_flags::{CRT_BRANCH_FALSE, CRT_BRANCH_TRUE};
 use crate::jvm::pool_constant::{
-    loadable_to_pool_constant, BasicConstant, LoadableConstantRef, PoolKey,
+    BasicConstant, LoadableConstantRef, PoolKey, loadable_to_pool_constant,
 };
 use crate::jvm::pool_writer::PoolWriter;
 
@@ -107,10 +107,7 @@ impl Items {
         let types = Rc::clone(&self.types);
         let syms = Rc::clone(&self.syms);
         let erased = types.erasure(ctx, &*syms, ty);
-        Item::new(
-            Code::typecode(ctx, erased),
-            ItemKind::Dynamic { member },
-        )
+        Item::new(Code::typecode(ctx, erased), ItemKind::Dynamic { member })
     }
 
     /// Make an item representing an indexed expression.
@@ -130,7 +127,10 @@ impl Items {
             .sym(v)
             .local_adr()
             .expect("AssertionError: variable symbol expected");
-        Item::new(Code::typecode(ctx, erased), ItemKind::Local { reg, type_: erased })
+        Item::new(
+            Code::typecode(ctx, erased),
+            ItemKind::Local { reg, type_: erased },
+        )
     }
 
     /// Make an item representing a local anonymous variable.
@@ -149,10 +149,7 @@ impl Items {
         let types = Rc::clone(&self.types);
         let syms = Rc::clone(&self.syms);
         let erased = types.erasure(ctx, &*syms, ty);
-        Item::new(
-            Code::typecode(ctx, erased),
-            ItemKind::Static { member },
-        )
+        Item::new(Code::typecode(ctx, erased), ItemKind::Static { member })
     }
 
     /// Make an item representing an instance variable or method.
@@ -168,10 +165,7 @@ impl Items {
         let erased = types.erasure(ctx, &*syms, ty);
         Item::new(
             Code::typecode(ctx, erased),
-            ItemKind::Member {
-                member,
-                nonvirtual,
-            },
+            ItemKind::Member { member, nonvirtual },
         )
     }
 
@@ -204,7 +198,10 @@ impl Items {
                 ImmediateValue::String(v) => BasicConstant::string(v),
                 _ => panic!("AssertionError: string literal expected"),
             },
-            _ => panic!("UnsupportedOperationException: unsupported tag: {}", typecode),
+            _ => panic!(
+                "UnsupportedOperationException: unsupported tag: {}",
+                typecode
+            ),
         };
         Item::new(
             typecode,
@@ -217,12 +214,7 @@ impl Items {
     /// Make an item representing an assignment expression.
     pub fn make_assign_item(&self, lhs: Item) -> Item {
         let typecode = lhs.typecode;
-        Item::new(
-            typecode,
-            ItemKind::Assign {
-                lhs: Box::new(lhs),
-            },
-        )
+        Item::new(typecode, ItemKind::Assign { lhs: Box::new(lhs) })
     }
 
     /// Make an item representing a conditional or unconditional jump.
@@ -251,9 +243,7 @@ impl Items {
             ItemKind::Void => panic!("AssertionError: cannot load a void item"),
             ItemKind::Stack => item.clone(),
             ItemKind::Indexed => {
-                self.code
-                    .borrow_mut()
-                    .emitop0(ctx, IALOAD + item.typecode);
+                self.code.borrow_mut().emitop0(ctx, IALOAD + item.typecode);
                 self.stack_item[item.typecode as usize].clone()
             }
             ItemKind::SelfItem { .. } => {
@@ -283,10 +273,7 @@ impl Items {
                 self.stack_item[item.typecode as usize].clone()
             }
             ItemKind::Dynamic { member } => {
-                assert!(
-                    ctx.sym(*member).kind == crate::code::kinds::Kind::VAR,
-                    "AssertionError: dynamic constant expected"
-                );
+                assert_eq!(ctx.sym(*member).kind, crate::code::kinds::Kind::VAR, "AssertionError: dynamic constant expected");
                 let ty = ctx.sym(*member).ty.expect("member type");
                 let types = Rc::clone(&self.types);
                 let syms = Rc::clone(&self.syms);
@@ -323,12 +310,7 @@ impl Items {
     }
 
     /// Generate code to load an immediate item.
-    fn load_immediate(
-        &self,
-        ctx: &mut CompilerContext,
-        item: &Item,
-        value: &LoadableConstantRef,
-    ) {
+    fn load_immediate(&self, ctx: &mut CompilerContext, item: &Item, value: &LoadableConstantRef) {
         let typecode = item.typecode;
         match typecode {
             INT_CODE | BYTE_CODE | SHORT_CODE | CHAR_CODE => {
@@ -346,9 +328,7 @@ impl Items {
             LONG_CODE => {
                 let lval = immediate_long(value);
                 if lval == 0 || lval == 1 {
-                    self.code
-                        .borrow_mut()
-                        .emitop0(ctx, LCONST_0 + lval as i32);
+                    self.code.borrow_mut().emitop0(ctx, LCONST_0 + lval as i32);
                 } else {
                     self.ldc(ctx, value);
                 }
@@ -356,9 +336,7 @@ impl Items {
             FLOAT_CODE => {
                 let fval = immediate_float(value);
                 if is_pos_zero_f32(fval) || fval == 1.0 || fval == 2.0 {
-                    self.code
-                        .borrow_mut()
-                        .emitop0(ctx, FCONST_0 + fval as i32);
+                    self.code.borrow_mut().emitop0(ctx, FCONST_0 + fval as i32);
                 } else {
                     self.ldc(ctx, value);
                 }
@@ -366,9 +344,7 @@ impl Items {
             DOUBLE_CODE => {
                 let dval = immediate_double(value);
                 if is_pos_zero_f64(dval) || dval == 1.0 {
-                    self.code
-                        .borrow_mut()
-                        .emitop0(ctx, DCONST_0 + dval as i32);
+                    self.code.borrow_mut().emitop0(ctx, DCONST_0 + dval as i32);
                 } else {
                     self.ldc(ctx, value);
                 }
@@ -487,10 +463,7 @@ impl Items {
                 self.stack_item[rescode as usize].clone()
             }
             ItemKind::Dynamic { member } => {
-                assert!(
-                    ctx.sym(*member).kind == crate::code::kinds::Kind::MTH,
-                    "AssertionError: dynamic method expected"
-                );
+                assert_eq!(ctx.sym(*member).kind, crate::code::kinds::Kind::MTH, "AssertionError: dynamic method expected");
                 let ty = ctx.sym(*member).ty.expect("member type");
                 let types = Rc::clone(&self.types);
                 let syms = Rc::clone(&self.syms);
@@ -747,12 +720,7 @@ impl Items {
     }
 
     /// Coerce an item to the given target type.
-    pub fn coerce_type(
-        &self,
-        ctx: &mut CompilerContext,
-        item: &Item,
-        targettype: TypeId,
-    ) -> Item {
+    pub fn coerce_type(&self, ctx: &mut CompilerContext, item: &Item, targettype: TypeId) -> Item {
         let targetcode = Code::typecode(ctx, targettype);
         self.coerce(ctx, item, targetcode)
     }
@@ -808,7 +776,12 @@ impl Items {
         let merged = Code::merge_chains(true_jumps, branch);
         let end_pc = self.code.borrow_mut().cur_cp(ctx);
         if let Some(crt) = &mut self.code.borrow_mut().crt {
-            crt.put(CrtKey::Tree(tree.expect("condition tree")), CRT_BRANCH_TRUE, start_pc, end_pc);
+            crt.put(
+                CrtKey::Tree(tree.expect("condition tree")),
+                CRT_BRANCH_TRUE,
+                start_pc,
+                end_pc,
+            );
         }
         merged
     }
@@ -826,7 +799,12 @@ impl Items {
         let merged = Code::merge_chains(false_jumps, branch);
         let end_pc = self.code.borrow_mut().cur_cp(ctx);
         if let Some(crt) = &mut self.code.borrow_mut().crt {
-            crt.put(CrtKey::Tree(tree.expect("condition tree")), CRT_BRANCH_FALSE, start_pc, end_pc);
+            crt.put(
+                CrtKey::Tree(tree.expect("condition tree")),
+                CRT_BRANCH_FALSE,
+                start_pc,
+                end_pc,
+            );
         }
         merged
     }
@@ -861,14 +839,9 @@ impl Items {
     pub fn describe(&self, ctx: &CompilerContext, item: &Item) -> String {
         match &item.kind {
             ItemKind::Void => "void".to_string(),
-            ItemKind::Stack => format!(
-                "stack({})",
-                TYPE_CODE_NAMES[item.typecode as usize]
-            ),
+            ItemKind::Stack => format!("stack({})", TYPE_CODE_NAMES[item.typecode as usize]),
             ItemKind::Indexed => format!("indexed({})", TYPE_CODE_NAMES[item.typecode as usize]),
-            ItemKind::SelfItem { is_super } => {
-                if *is_super { "super" } else { "this" }.to_string()
-            }
+            ItemKind::SelfItem { is_super } => if *is_super { "super" } else { "this" }.to_string(),
             ItemKind::Local { reg, type_ } => {
                 format!("localItem(type={:?}; reg={})", type_, reg)
             }

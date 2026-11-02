@@ -194,7 +194,9 @@ mod tests {
 
     impl TestVisitor {
         fn new() -> TestVisitor {
-            TestVisitor { visited: Vec::new() }
+            TestVisitor {
+                visited: Vec::new(),
+            }
         }
     }
 

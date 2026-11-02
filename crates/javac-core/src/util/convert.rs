@@ -132,17 +132,23 @@ fn parse_long(s: &JavaString, radix: i32) -> Result<i64, NumberFormatException> 
 fn digit(c: u16, radix: i32) -> i32 {
     if (c >= b'0' as u16) && (c <= b'9' as u16) {
         let d = (c - b'0' as u16) as i32;
-        if d < radix { return d; }
+        if d < radix {
+            return d;
+        }
         return -1;
     }
     if (c >= b'a' as u16) && (c <= b'z' as u16) {
         let d = (c - b'a' as u16) as i32 + 10;
-        if d < radix { return d; }
+        if d < radix {
+            return d;
+        }
         return -1;
     }
     if (c >= b'A' as u16) && (c <= b'Z' as u16) {
         let d = (c - b'A' as u16) as i32 + 10;
-        if d < radix { return d; }
+        if d < radix {
+            return d;
+        }
         return -1;
     }
     -1
@@ -294,14 +300,16 @@ pub fn escape_unicode(s: &JavaString) -> JavaString {
         let ch = result.char_at(i);
         if ch > 255 {
             let mut buf = JavaString::new();
-            buf.as_units_mut().extend_from_slice(&result.as_units()[0..i]);
+            buf.as_units_mut()
+                .extend_from_slice(&result.as_units()[0..i]);
             while i < len {
                 let ch = result.char_at(i);
                 if ch > 255 {
                     buf.as_units_mut().push(b'\\' as u16);
                     buf.as_units_mut().push(b'u' as u16);
                     for shift in [12, 8, 4, 0] {
-                        buf.as_units_mut().push(hex_digit(((ch >> shift) % 16) as i32));
+                        buf.as_units_mut()
+                            .push(hex_digit(((ch >> shift) % 16) as i32));
                     }
                 } else {
                     buf.push(ch);
@@ -317,7 +325,11 @@ pub fn escape_unicode(s: &JavaString) -> JavaString {
 }
 
 fn hex_digit(d: i32) -> u16 {
-    if d < 10 { b'0' as u16 + d as u16 } else { b'a' as u16 + (d - 10) as u16 }
+    if d < 10 {
+        b'0' as u16 + d as u16
+    } else {
+        b'a' as u16 + (d - 10) as u16
+    }
 }
 
 // ------------------------------------------------------------------------
@@ -434,9 +446,18 @@ mod tests {
         assert_eq!(string2int(&JavaString::from("123"), 10).unwrap(), 123);
         assert_eq!(string2int(&JavaString::from("-7"), 10).unwrap(), -7);
         assert_eq!(string2int(&JavaString::from("ff"), 16).unwrap(), 255);
-        assert_eq!(string2int(&JavaString::from("abc"), 10).unwrap_err(), NumberFormatException);
-        assert_eq!(string2long(&JavaString::from("9223372036854775807"), 10).unwrap(), i64::MAX);
-        assert_eq!(string2long(&JavaString::from("9223372036854775808"), 10).unwrap_err(), NumberFormatException);
+        assert_eq!(
+            string2int(&JavaString::from("abc"), 10).unwrap_err(),
+            NumberFormatException
+        );
+        assert_eq!(
+            string2long(&JavaString::from("9223372036854775807"), 10).unwrap(),
+            i64::MAX
+        );
+        assert_eq!(
+            string2long(&JavaString::from("9223372036854775808"), 10).unwrap_err(),
+            NumberFormatException
+        );
     }
 
     #[test]
@@ -447,8 +468,17 @@ mod tests {
 
     #[test]
     fn package_split_str() {
-        assert_eq!(short_name_str(&JavaString::from("a.b.C")).to_string_lossy(), "C");
-        assert_eq!(package_part_str(&JavaString::from("a.b.C")).to_string_lossy(), "a.b");
-        assert_eq!(package_part_str(&JavaString::from("C")).to_string_lossy(), "");
+        assert_eq!(
+            short_name_str(&JavaString::from("a.b.C")).to_string_lossy(),
+            "C"
+        );
+        assert_eq!(
+            package_part_str(&JavaString::from("a.b.C")).to_string_lossy(),
+            "a.b"
+        );
+        assert_eq!(
+            package_part_str(&JavaString::from("C")).to_string_lossy(),
+            ""
+        );
     }
 }

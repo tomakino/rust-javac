@@ -44,7 +44,9 @@ impl NameTableHandle {
     pub fn shared() -> Rc<NameTableHandle> {
         // Java: new SharedNameTable(names) -> this(names, 0x8000, 0x20000)
         Rc::new(NameTableHandle {
-            inner: RefCell::new(NameTableInner::Shared(SharedNameTable::new(0x8000, 0x20000))),
+            inner: RefCell::new(NameTableInner::Shared(SharedNameTable::new(
+                0x8000, 0x20000,
+            ))),
             names: RefCell::new(None),
         })
     }
@@ -138,9 +140,7 @@ impl NameTableHandle {
     /// Java: protected static boolean equals(byte[] bytes1, int offset1,
     ///                                          byte[] bytes2, int offset2, int length)
     pub fn equals(bytes1: &[u8], offset1: i32, bytes2: &[u8], offset2: i32, length: i32) -> bool {
-        (0..length).all(|i| {
-            bytes1[(offset1 + i) as usize] == bytes2[(offset2 + i) as usize]
-        })
+        (0..length).all(|i| bytes1[(offset1 + i) as usize] == bytes2[(offset2 + i) as usize])
     }
 }
 
@@ -197,7 +197,8 @@ impl Name {
 
     /// Java: public Name append(Name n)
     pub fn append(&self, n: &Name) -> Name {
-        let mut bs = Vec::with_capacity(self.get_byte_length() as usize + n.get_byte_length() as usize);
+        let mut bs =
+            Vec::with_capacity(self.get_byte_length() as usize + n.get_byte_length() as usize);
         self.with_bytes(|b| bs.extend_from_slice(b));
         n.with_bytes(|b| bs.extend_from_slice(b));
         self.table.from_utf(&bs, 0, bs.len() as i32)
@@ -205,7 +206,8 @@ impl Name {
 
     /// Java: public Name append(char c, Name n)
     pub fn append_char(&self, c: u8, n: &Name) -> Name {
-        let mut bs = Vec::with_capacity(self.get_byte_length() as usize + 1 + n.get_byte_length() as usize);
+        let mut bs =
+            Vec::with_capacity(self.get_byte_length() as usize + 1 + n.get_byte_length() as usize);
         self.with_bytes(|b| bs.extend_from_slice(b));
         bs.push(c);
         n.with_bytes(|b| bs.extend_from_slice(b));
@@ -238,7 +240,9 @@ impl Name {
         if self.get_byte_length() < prefix.get_byte_length() {
             return false;
         }
-        prefix.with_bytes(|prefix_bytes| self.with_bytes(|bytes| bytes[..prefix_bytes.len()] == *prefix_bytes))
+        prefix.with_bytes(|prefix_bytes| {
+            self.with_bytes(|bytes| bytes[..prefix_bytes.len()] == *prefix_bytes)
+        })
     }
 
     /// Java: public Name subName(int start, int end)

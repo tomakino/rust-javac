@@ -14,9 +14,9 @@ use std::rc::Rc;
 
 use crate::main::option::InvalidValueException;
 use crate::main::option::Option;
-use std::option::Option as StdOption;
 use crate::resources::diagnostic_contract::ErrorInfo;
 use crate::util::log::Log;
+use std::option::Option as StdOption;
 
 /// Java: public abstract class OptionHelper.
 pub trait OptionHelper {

@@ -5,5 +5,4 @@
 use super::case_label_tree::CaseLabelTree;
 use super::tree::Tree;
 
-pub trait PatternTree: Tree + CaseLabelTree {
-}
+pub trait PatternTree: Tree + CaseLabelTree {}

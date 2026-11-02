@@ -193,8 +193,14 @@ mod tests {
         assert!(!CompileState::INIT.is_after(CompileState::PARSE));
         assert!(CompileState::GENERATE.is_after(CompileState::LOWER));
         assert!(!CompileState::ATTR.is_after(CompileState::ATTR));
-        assert_eq!(CompileState::max(CompileState::ENTER, CompileState::FLOW), CompileState::FLOW);
-        assert_eq!(CompileState::max(CompileState::GENERATE, CompileState::LOWER), CompileState::GENERATE);
+        assert_eq!(
+            CompileState::max(CompileState::ENTER, CompileState::FLOW),
+            CompileState::FLOW
+        );
+        assert_eq!(
+            CompileState::max(CompileState::GENERATE, CompileState::LOWER),
+            CompileState::GENERATE
+        );
         assert_eq!(CompileState::GENERATE.value(), 10);
     }
 }

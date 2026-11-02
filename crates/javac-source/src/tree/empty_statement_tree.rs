@@ -12,5 +12,4 @@
 /// @since 1.6
 use super::statement_tree::StatementTree;
 
-pub trait EmptyStatementTree: StatementTree {
-}
+pub trait EmptyStatementTree: StatementTree {}

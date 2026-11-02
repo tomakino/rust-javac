@@ -1,3 +1,5 @@
+use super::expression_tree::ExpressionTree;
+use super::statement_tree::StatementTree;
 /// A tree node for a {@code yield} statement.
 ///
 /// For example:
@@ -9,13 +11,10 @@
 ///
 /// @since 13
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
-use super::statement_tree::StatementTree;
 
 pub trait YieldTree: StatementTree {
     /// Returns the expression for this {@code yield} statement.
     ///
     /// @return the expression
     fn get_value(&self) -> Rc<dyn ExpressionTree>;
-
 }

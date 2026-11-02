@@ -55,9 +55,7 @@ pub fn loadable_pool_tag(c: &LoadableConstantRef) -> i32 {
     match c {
         LoadableConstantRef::Basic(basic) => basic.pool_tag(),
         LoadableConstantRef::Class(_) => crate::jvm::class_file::CONSTANT_CLASS,
-        LoadableConstantRef::MethodHandle(_) => {
-            crate::jvm::class_file::CONSTANT_METHODHANDLE
-        }
+        LoadableConstantRef::MethodHandle(_) => crate::jvm::class_file::CONSTANT_METHODHANDLE,
         LoadableConstantRef::MethodType(_) => crate::jvm::class_file::CONSTANT_METHODTYPE,
         LoadableConstantRef::Dynamic(_) => crate::jvm::class_file::CONSTANT_DYNAMIC,
     }
@@ -95,38 +93,41 @@ impl BasicConstant {
         BasicConstant { tag, data }
     }
 
-/// Create a pool constant describing the given `int` value.
-///
-/// tag CONSTANT_Integer whose pool key is the boxed integer; two equal integers
-/// therefore share one constant-pool entry.
-///
-/// # Arguments
-///   - i: the integer value.
-///
-/// # Returns
-///   - the basic loadable constant.
-///
-/// # Panics
-///   - none.
-///
+    /// Create a pool constant describing the given `int` value.
+    ///
+    /// tag CONSTANT_Integer whose pool key is the boxed integer; two equal integers
+    /// therefore share one constant-pool entry.
+    ///
+    /// # Arguments
+    ///   - i: the integer value.
+    ///
+    /// # Returns
+    ///   - the basic loadable constant.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
     pub fn int(i: i32) -> BasicConstant {
-        BasicConstant::new(crate::jvm::class_file::CONSTANT_INTEGER, PoolKey::Integer(i))
+        BasicConstant::new(
+            crate::jvm::class_file::CONSTANT_INTEGER,
+            PoolKey::Integer(i),
+        )
     }
 
-/// Create a pool constant describing the given `float` value.
-///
-/// bit pattern so that pool-key equality follows Java Float.equals semantics
-/// (NaN == NaN and +0.0 != -0.0 in the constant pool).
-///
-/// # Arguments
-///   - f: the float value.
-///
-/// # Returns
-///   - the basic loadable constant.
-///
-/// # Panics
-///   - none.
-///
+    /// Create a pool constant describing the given `float` value.
+    ///
+    /// bit pattern so that pool-key equality follows Java Float.equals semantics
+    /// (NaN == NaN and +0.0 != -0.0 in the constant pool).
+    ///
+    /// # Arguments
+    ///   - f: the float value.
+    ///
+    /// # Returns
+    ///   - the basic loadable constant.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
     pub fn float(f: f32) -> BasicConstant {
         BasicConstant::new(
             crate::jvm::class_file::CONSTANT_FLOAT,
@@ -134,38 +135,38 @@ impl BasicConstant {
         )
     }
 
-/// Create a pool constant describing the given `long` value.
-///
-/// tag CONSTANT_Long; JVMS 4.4.5 counts such entries as two slots in the pool,
-/// which is handled by the pool writer, not by this key.
-///
-/// # Arguments
-///   - l: the long value.
-///
-/// # Returns
-///   - the basic loadable constant.
-///
-/// # Panics
-///   - none.
-///
+    /// Create a pool constant describing the given `long` value.
+    ///
+    /// tag CONSTANT_Long; JVMS 4.4.5 counts such entries as two slots in the pool,
+    /// which is handled by the pool writer, not by this key.
+    ///
+    /// # Arguments
+    ///   - l: the long value.
+    ///
+    /// # Returns
+    ///   - the basic loadable constant.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
     pub fn long(l: i64) -> BasicConstant {
         BasicConstant::new(crate::jvm::class_file::CONSTANT_LONG, PoolKey::Long(l))
     }
 
-/// Create a pool constant describing the given `double` value.
-///
-/// used for the pool key so that the constant-pool deduplication matches Java
-/// Double.equals semantics.
-///
-/// # Arguments
-///   - d: the double value.
-///
-/// # Returns
-///   - the basic loadable constant.
-///
-/// # Panics
-///   - none.
-///
+    /// Create a pool constant describing the given `double` value.
+    ///
+    /// used for the pool key so that the constant-pool deduplication matches Java
+    /// Double.equals semantics.
+    ///
+    /// # Arguments
+    ///   - d: the double value.
+    ///
+    /// # Returns
+    ///   - the basic loadable constant.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
     pub fn double(d: f64) -> BasicConstant {
         BasicConstant::new(
             crate::jvm::class_file::CONSTANT_DOUBLE,
@@ -173,52 +174,52 @@ impl BasicConstant {
         )
     }
 
-/// Create a pool constant describing the given `String` value.
-///
-/// tag CONSTANT_String and a string pool key; the same text used by several
-/// instructions is merged into a single constant-pool entry.
-///
-/// # Arguments
-///   - s: the string value.
-///
-/// # Returns
-///   - the basic loadable constant.
-///
-/// # Panics
-///   - none.
-///
+    /// Create a pool constant describing the given `String` value.
+    ///
+    /// tag CONSTANT_String and a string pool key; the same text used by several
+    /// instructions is merged into a single constant-pool entry.
+    ///
+    /// # Arguments
+    ///   - s: the string value.
+    ///
+    /// # Returns
+    ///   - the basic loadable constant.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
     pub fn string(s: JavaString) -> BasicConstant {
         BasicConstant::new(crate::jvm::class_file::CONSTANT_STRING, PoolKey::String(s))
     }
 }
 
 impl PoolConstant for BasicConstant {
-/// Return the constant-pool entry key of this basic constant.
-///
-/// the constant itself; BasicConstant overrides it with the boxed payload so that
-/// structurally equal values deduplicate in the constant pool.
-///
-/// # Returns
-///   - the payload pool key.
-///
-/// # Panics
-///   - none.
-///
+    /// Return the constant-pool entry key of this basic constant.
+    ///
+    /// the constant itself; BasicConstant overrides it with the boxed payload so that
+    /// structurally equal values deduplicate in the constant pool.
+    ///
+    /// # Returns
+    ///   - the payload pool key.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
     fn pool_key(&self) -> PoolKey {
         self.data.clone()
     }
 
-/// Return the JVMS constant-pool tag of this basic constant.
-///
-/// entry (CONSTANT_Integer, CONSTANT_Float, CONSTANT_Long, CONSTANT_Double or
-/// CONSTANT_String for the LoadableConstant.BasicConstant family).
-///
-/// # Returns
-///   - the constant-pool tag.
-///
-/// # Panics
-///   - none.
-///
+    /// Return the JVMS constant-pool tag of this basic constant.
+    ///
+    /// entry (CONSTANT_Integer, CONSTANT_Float, CONSTANT_Long, CONSTANT_Double or
+    /// CONSTANT_String for the LoadableConstant.BasicConstant family).
+    ///
+    /// # Returns
+    ///   - the constant-pool tag.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
     fn pool_tag(&self) -> i32 {
         self.tag
     }
@@ -346,7 +347,7 @@ impl BsmKey {
         let static_args = dynamic.static_args();
         let bsm_key = match bsm {
             Some(sym) => PoolKey::MethodHandle(sym),
-            None => PoolKey::Symbol(crate::ids::SymbolId::new(0)),
+            None => PoolKey::Symbol(SymbolId::new(0)),
         };
         let static_arg_keys = static_args
             .iter()

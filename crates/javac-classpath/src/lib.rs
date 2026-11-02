@@ -199,7 +199,9 @@ impl ClassPath {
             }
         }
 
-        Err(Error::NoSystemLibraries { home: jdk_home.to_path_buf() })
+        Err(Error::NoSystemLibraries {
+            home: jdk_home.to_path_buf(),
+        })
     }
 
     /// The JDK home this class path was created from.
@@ -368,7 +370,9 @@ mod tests {
         }
 
         // Slash-separated and ".class"-suffixed names are accepted too.
-        let slash = class_path.read_class("java/lang/Object").expect("slash name");
+        let slash = class_path
+            .read_class("java/lang/Object")
+            .expect("slash name");
         assert_eq!(slash, class_path.read_class("java.lang.Object").unwrap());
         let suffixed = class_path
             .read_class("java.lang.Object.class")
@@ -385,12 +389,16 @@ mod tests {
         let class_path = ClassPath::system(&home).expect("system class path");
         assert!(class_path.read_class("no.such.Class").is_none());
         assert!(class_path.module_of_class("no.such.Class").is_none());
-        assert!(class_path
-            .read_class_in_module("java.base", "no.such.Class")
-            .is_none());
-        assert!(class_path
-            .read_class_in_module("no.such.module", "java.lang.Object")
-            .is_none());
+        assert!(
+            class_path
+                .read_class_in_module("java.base", "no.such.Class")
+                .is_none()
+        );
+        assert!(
+            class_path
+                .read_class_in_module("no.such.module", "java.lang.Object")
+                .is_none()
+        );
     }
 
     #[test]

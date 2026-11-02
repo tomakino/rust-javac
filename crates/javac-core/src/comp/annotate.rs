@@ -28,10 +28,10 @@ use crate::code::deferred_lint_handler::DeferredLintHandler;
 use crate::code::flags;
 use crate::code::kinds::Kind;
 use crate::code::lint::Lint;
-use crate::code::source::{Feature, Source};
-use crate::code::symtab::Symtab;
 use crate::code::scope::LookupKind;
+use crate::code::source::{Feature, Source};
 use crate::code::symbol::{CompletionFailure, SymbolKind};
+use crate::code::symtab::Symtab;
 use crate::code::type_tag::TypeTag;
 use crate::comp::attr::Attr;
 use crate::comp::attr_context::AttrContext;
@@ -48,7 +48,7 @@ use crate::resources::diagnostic_contract::{DiagnosticArg, KindNameArg, SymbolAr
 use crate::tree::jc_tree::{Tag, TreeKind};
 use crate::tree::tree_info;
 use crate::tree::tree_maker::{TreeFactory, TreeMaker};
-use crate::tree::tree_scanner::{tree_scanner_visitor_delegate, TreeScannerVisitor};
+use crate::tree::tree_scanner::{TreeScannerVisitor, tree_scanner_visitor_delegate};
 use crate::util::abstract_log::AbstractLog;
 use crate::util::jc_diagnostic::{JCDiagnostic, SimpleDiagnosticPosition};
 use crate::util::list::List;
@@ -71,7 +71,7 @@ pub trait AnnotationTypeCompleter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         sym: SymbolId,
-        attr: Option<&mut crate::comp::attr::Attr>,
+        attr: Option<&mut Attr>,
     ) -> Result<(), CompletionFailure>;
 }
 
@@ -148,7 +148,7 @@ impl AnnotationTypeMetadata {
         metadata: &Rc<AnnotationTypeMetadata>,
         ctx: &mut CompilerContext,
         syms: &Symtab,
-        mut attr: Option<&mut crate::comp::attr::Attr>,
+        mut attr: Option<&mut Attr>,
     ) -> Result<(), CompletionFailure> {
         let Some(meta_data_for) = metadata.meta_data_for else {
             return Ok(());
@@ -158,9 +158,7 @@ impl AnnotationTypeMetadata {
             // the stack; keep passing that Attr so a source annotation type
             // completed here does not look the service up re-entrantly.
             match attr.as_deref_mut() {
-                Some(attr) => {
-                    ctx.complete_symbol_with_attr(syms, meta_data_for, Some(attr))?
-                }
+                Some(attr) => ctx.complete_symbol_with_attr(syms, meta_data_for, Some(attr))?,
                 None => ctx.complete_symbol(syms, meta_data_for)?,
             }
         }
@@ -194,7 +192,7 @@ impl AnnotationTypeMetadata {
         metadata: &Rc<AnnotationTypeMetadata>,
         ctx: &mut CompilerContext,
         syms: &Symtab,
-        attr: Option<&mut crate::comp::attr::Attr>,
+        attr: Option<&mut Attr>,
     ) -> Result<Option<AttributeId>, CompletionFailure> {
         Self::complete_shared(metadata, ctx, syms, attr)?;
         Ok(*metadata.repeatable.borrow())
@@ -217,7 +215,7 @@ impl AnnotationTypeMetadata {
         metadata: &Rc<AnnotationTypeMetadata>,
         ctx: &mut CompilerContext,
         syms: &Symtab,
-        attr: Option<&mut crate::comp::attr::Attr>,
+        attr: Option<&mut Attr>,
     ) -> Result<Option<AttributeId>, CompletionFailure> {
         Self::complete_shared(metadata, ctx, syms, attr)?;
         Ok(*metadata.target.borrow())
@@ -241,7 +239,7 @@ impl AnnotationTypeMetadata {
         metadata: &Rc<AnnotationTypeMetadata>,
         ctx: &mut CompilerContext,
         syms: &Symtab,
-        attr: Option<&mut crate::comp::attr::Attr>,
+        attr: Option<&mut Attr>,
     ) -> Result<Vec<SymbolId>, CompletionFailure> {
         Self::complete_shared(metadata, ctx, syms, attr)?;
         let Some(meta_data_for) = metadata.meta_data_for else {
@@ -286,7 +284,7 @@ impl AnnotationTypeMetadata {
         metadata: &Rc<AnnotationTypeMetadata>,
         ctx: &mut CompilerContext,
         syms: &Symtab,
-        attr: Option<&mut crate::comp::attr::Attr>,
+        attr: Option<&mut Attr>,
     ) -> Result<Vec<SymbolId>, CompletionFailure> {
         let members = Self::get_annotation_elements_shared(metadata, ctx, syms, attr)?;
         let mut result: Vec<SymbolId> = Vec::new();
@@ -371,8 +369,8 @@ impl AnnotationTypeMetadata {
 pub type AnnotateRunnable = Box<
     dyn FnMut(
         &mut CompilerContext,
-        &crate::code::symtab::Symtab,
-        &mut crate::comp::attr::Attr,
+        &Symtab,
+        &mut Attr,
     ) -> Result<(), CompletionFailure>,
 >;
 
@@ -504,7 +502,7 @@ pub struct AnnotateServices {
     pub syms: Rc<Symtab>,
     pub types: Rc<crate::code::types::Types>,
     pub chk: Rc<Check>,
-    pub attr: Rc<std::cell::RefCell<Attr>>,
+    pub attr: Rc<RefCell<Attr>>,
     pub cfolder: Rc<ConstFold>,
     pub deferred_lint_handler: Rc<DeferredLintHandler>,
     pub enter: Rc<Enter>,
@@ -513,7 +511,7 @@ pub struct AnnotateServices {
     pub make: Rc<TreeMaker>,
     pub type_envs: Rc<TypeEnvs>,
     pub infer: Rc<crate::comp::infer::Infer>,
-    pub queues: Rc<std::cell::RefCell<AnnotateQueues>>,
+    pub queues: Rc<RefCell<AnnotateQueues>>,
     /// Java: private final Attribute theUnfinishedDefaultValue
     pub the_unfinished_default_value: AttributeId,
     /// Java: private final boolean allowRepeatedAnnos
@@ -523,10 +521,10 @@ pub struct AnnotateServices {
     /// Annotation types whose declaration-level @Repeatable validation has been
     /// queued once (the use-site processing reports declaration errors after
     /// the repeated uses).
-    pub validated_repeatable_decls: Rc<std::cell::RefCell<std::collections::HashSet<SymbolId>>>,
+    pub validated_repeatable_decls: Rc<RefCell<std::collections::HashSet<SymbolId>>>,
     /// Weak self reference used by the queued closures (the Java inner-class
     /// instances capture the enclosing Annotate); set right after construction.
-    pub self_ref: std::cell::RefCell<std::rc::Weak<AnnotateServices>>,
+    pub self_ref: RefCell<std::rc::Weak<AnnotateServices>>,
 }
 
 /// Java: public class Annotate (Annotate.java:78).
@@ -540,7 +538,7 @@ pub struct Annotate {
 
 impl Annotate {
     /// Java: protected Annotate(Context context) — explicit services (ADR 0001).
-#[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         ctx: &mut CompilerContext,
         names: Rc<Names>,
@@ -548,7 +546,7 @@ impl Annotate {
         syms: Rc<Symtab>,
         types: Rc<crate::code::types::Types>,
         chk: Rc<Check>,
-        attr: Rc<std::cell::RefCell<Attr>>,
+        attr: Rc<RefCell<Attr>>,
         cfolder: Rc<ConstFold>,
         deferred_lint_handler: Rc<DeferredLintHandler>,
         enter: Rc<Enter>,
@@ -560,10 +558,8 @@ impl Annotate {
         source: Source,
     ) -> Annotate {
         let error_ty = ctx.typ(syms.err_type).clone();
-        let unfinished = ctx.alloc_attribute(Attribute::new(
-            Some(syms.err_type),
-            AttributeKind::Error,
-        ));
+        let unfinished =
+            ctx.alloc_attribute(Attribute::new(Some(syms.err_type), AttributeKind::Error));
         let _ = error_ty;
         let infer = crate::comp::infer::Infer::new(
             ctx,
@@ -571,7 +567,7 @@ impl Annotate {
             Rc::clone(&diags),
             Rc::clone(&names),
         );
-        let queues = Rc::new(std::cell::RefCell::new(AnnotateQueues::new()));
+        let queues = Rc::new(RefCell::new(AnnotateQueues::new()));
         let services = Rc::new(AnnotateServices {
             names,
             log,
@@ -591,10 +587,10 @@ impl Annotate {
             the_unfinished_default_value: unfinished,
             allow_repeated_annos: Feature::REPEATED_ANNOTATIONS.allowed_in_source(source),
             source_name: source.name().to_string(),
-            validated_repeatable_decls: Rc::new(std::cell::RefCell::new(
+            validated_repeatable_decls: Rc::new(RefCell::new(
                 std::collections::HashSet::new(),
             )),
-            self_ref: std::cell::RefCell::new(std::rc::Weak::new()),
+            self_ref: RefCell::new(std::rc::Weak::new()),
         });
         *services.self_ref.borrow_mut() = Rc::downgrade(&services);
         Annotate {
@@ -610,9 +606,7 @@ impl Annotate {
     /// its explicit dependencies; the Context registration makes the instance
     /// reachable like the Java Context singleton (registered adapter: the
     /// instance must be registered by the compiler entry point).
-    pub fn instance(
-        context: &mut crate::util::context::Context,
-    ) -> Rc<Annotate> {
+    pub fn instance(context: &mut crate::util::context::Context) -> Rc<Annotate> {
         match context.get::<Annotate>() {
             Some(instance) => instance,
             None => panic!("AssertionError: Annotate is not registered in the Context"),
@@ -632,7 +626,7 @@ impl Annotate {
     pub fn unblock_annotations(
         &self,
         _ctx: &mut CompilerContext,
-        _syms: &crate::code::symtab::Symtab,
+        _syms: &Symtab,
     ) -> Result<(), CompletionFailure> {
         self.block_count.set(self.block_count.get() - 1);
         if self.block_count.get() == 0 {
@@ -644,8 +638,8 @@ impl Annotate {
     pub fn unblock_annotations_with_attr(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
-        attr: &mut crate::comp::attr::Attr,
+        syms: &Symtab,
+        attr: &mut Attr,
     ) -> Result<(), CompletionFailure> {
         self.block_count.set(self.block_count.get() - 1);
         if self.block_count.get() == 0 {
@@ -668,8 +662,8 @@ impl Annotate {
     pub fn enter_done(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
-        attr: &mut crate::comp::attr::Attr,
+        syms: &Symtab,
+        attr: &mut Attr,
     ) -> Result<(), CompletionFailure> {
         self.unblock_annotations_with_attr(ctx, syms, attr)
     }
@@ -691,7 +685,11 @@ impl Annotate {
 
     /// Java: public void afterTypes(Runnable a) (Annotate.java:215-217)
     pub fn after_types(&self, task: AnnotateRunnable) {
-        self.services.queues.borrow_mut().after_types_q.push_back(task);
+        self.services
+            .queues
+            .borrow_mut()
+            .after_types_q
+            .push_back(task);
     }
 
     /// Java: private boolean isFlushing() (Annotate.java:203-205)
@@ -731,8 +729,8 @@ impl Annotate {
     pub fn drain_with_attr(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
-        attr: &mut crate::comp::attr::Attr,
+        syms: &Symtab,
+        attr: &mut Attr,
     ) -> Result<(), CompletionFailure> {
         if self.annotations_blocked() {
             return Ok(());
@@ -749,8 +747,8 @@ impl Annotate {
     fn drain_pending_with_attr(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
-        attr: &mut crate::comp::attr::Attr,
+        syms: &Symtab,
+        attr: &mut Attr,
     ) -> Result<(), CompletionFailure> {
         loop {
             let segment = self.services.queues.borrow_mut().pending.pop_front();
@@ -772,7 +770,9 @@ impl Annotate {
                 while let Some(inner) = remaining.pending.pop_back() {
                     queues.pending.push_front(inner);
                 }
-                queues.pending.push_front(PendingFlush::take(&mut remaining));
+                queues
+                    .pending
+                    .push_front(PendingFlush::take(&mut remaining));
                 return Err(failure);
             }
         }
@@ -782,8 +782,8 @@ impl Annotate {
     fn drain_live_queues(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
-        attr: &mut crate::comp::attr::Attr,
+        syms: &Symtab,
+        attr: &mut Attr,
     ) -> Result<(), CompletionFailure> {
         loop {
             let task = self.services.queues.borrow_mut().q.pop_front();
@@ -800,12 +800,7 @@ impl Annotate {
             }
         }
         loop {
-            let task = self
-                .services
-                .queues
-                .borrow_mut()
-                .after_types_q
-                .pop_front();
+            let task = self.services.queues.borrow_mut().after_types_q.pop_front();
             match task {
                 Some(mut task) => task(ctx, syms, attr)?,
                 None => break,
@@ -824,8 +819,8 @@ impl Annotate {
     pub fn flush_with_attr(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
-        attr: &mut crate::comp::attr::Attr,
+        syms: &Symtab,
+        attr: &mut Attr,
     ) -> Result<(), CompletionFailure> {
         self.drain_with_attr(ctx, syms, attr)
     }
@@ -856,7 +851,11 @@ impl Annotate {
 impl Annotate {
     /// Java: public List<TypeCompound> fromAnnotations(List<JCAnnotation>
     /// annotations) (Annotate.java:146-158)
-    pub fn from_annotations(&self, ctx: &CompilerContext, annotations: &List<TreeId>) -> List<AttributeId> {
+    pub fn from_annotations(
+        &self,
+        ctx: &CompilerContext,
+        annotations: &List<TreeId>,
+    ) -> List<AttributeId> {
         self.services.from_annotations(ctx, annotations)
     }
 
@@ -882,31 +881,47 @@ impl Annotate {
         let env_validate = Rc::clone(&local_env);
         let annotations_normal = annotations.clone();
         let annotations_validate = annotations.clone();
-        self.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
-            services.annotate_later_normal(ctx, syms, &annotations_normal, &env, s, defer_pos, _attr)
-        }));
-        self.validate(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
-            let services = &services_validate;
-            let source = env_source_file(ctx, &env_validate);
-            let prev = services.log.use_source(source);
-            let declaration_tree = {
-                let env_tree = env_validate.tree;
-                match env_tree {
-                    Some(env_tree) => tree_info::declaration_for(ctx, s, env_tree),
-                    None => None,
-                }
-            };
-            let result = services.chk.validate_annotations(
-                ctx,
-                syms,
-                &annotations_validate,
-                declaration_tree,
-                s,
-                Some(_attr),
-            );
-            services.log.use_source(prev);
-            result
-        }));
+        self.normal(Box::new(
+            move |ctx: &mut CompilerContext,
+                  syms: &Symtab,
+                  _attr: &mut Attr| {
+                services.annotate_later_normal(
+                    ctx,
+                    syms,
+                    &annotations_normal,
+                    &env,
+                    s,
+                    defer_pos,
+                    _attr,
+                )
+            },
+        ));
+        self.validate(Box::new(
+            move |ctx: &mut CompilerContext,
+                  syms: &Symtab,
+                  _attr: &mut Attr| {
+                let services = &services_validate;
+                let source = env_source_file(ctx, &env_validate);
+                let prev = services.log.use_source(source);
+                let declaration_tree = {
+                    let env_tree = env_validate.tree;
+                    match env_tree {
+                        Some(env_tree) => tree_info::declaration_for(ctx, s, env_tree),
+                        None => None,
+                    }
+                };
+                let result = services.chk.validate_annotations(
+                    ctx,
+                    syms,
+                    &annotations_validate,
+                    declaration_tree,
+                    s,
+                    Some(_attr),
+                );
+                services.log.use_source(prev);
+                result
+            },
+        ));
     }
 
     /// Java: public void annotateDefaultValueLater(JCExpression defaultValue,
@@ -925,33 +940,44 @@ impl Annotate {
         let services_validate = Rc::clone(&self.services);
         let env = Rc::clone(&local_env);
         let env_validate = Rc::clone(&local_env);
-        self.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
-            let source = env_source_file(ctx, &env);
-            let prev = services.log.use_source(source);
-            let prev_pos = services.deferred_lint_handler.immediate();
-            let result = if let Some(defer_pos) = defer_pos {
-                let saved = services.deferred_lint_handler.set_pos(Rc::new(
-                    SimpleDiagnosticPosition::new(defer_pos),
-                ));
-                let r = services.enter_default_value(ctx, syms, default_value, &env, m, _attr);
-                services.deferred_lint_handler.set_pos_state(saved);
-                r
-            } else {
-                services.enter_default_value(ctx, syms, default_value, &env, m, _attr)
-            };
-            services.deferred_lint_handler.set_pos_state(prev_pos);
-            services.log.use_source(prev);
-            result
-        }));
-        self.validate(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
-            let source = env_source_file(ctx, &env_validate);
-            let prev = services_validate.log.use_source(source);
-            services_validate
-                .chk
-                .validate_annotation_tree(ctx, syms, default_value, Some(_attr));
-            services_validate.log.use_source(prev);
-            Ok(())
-        }));
+        self.normal(Box::new(
+            move |ctx: &mut CompilerContext,
+                  syms: &Symtab,
+                  _attr: &mut Attr| {
+                let source = env_source_file(ctx, &env);
+                let prev = services.log.use_source(source);
+                let prev_pos = services.deferred_lint_handler.immediate();
+                let result = if let Some(defer_pos) = defer_pos {
+                    let saved = services
+                        .deferred_lint_handler
+                        .set_pos(Rc::new(SimpleDiagnosticPosition::new(defer_pos)));
+                    let r = services.enter_default_value(ctx, syms, default_value, &env, m, _attr);
+                    services.deferred_lint_handler.set_pos_state(saved);
+                    r
+                } else {
+                    services.enter_default_value(ctx, syms, default_value, &env, m, _attr)
+                };
+                services.deferred_lint_handler.set_pos_state(prev_pos);
+                services.log.use_source(prev);
+                result
+            },
+        ));
+        self.validate(Box::new(
+            move |ctx: &mut CompilerContext,
+                  syms: &Symtab,
+                  _attr: &mut Attr| {
+                let source = env_source_file(ctx, &env_validate);
+                let prev = services_validate.log.use_source(source);
+                services_validate.chk.validate_annotation_tree(
+                    ctx,
+                    syms,
+                    default_value,
+                    Some(_attr),
+                );
+                services_validate.log.use_source(prev);
+                Ok(())
+            },
+        ));
     }
 }
 
@@ -962,13 +988,14 @@ impl AnnotateServices {
     fn annotate_later_normal(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         annotations: &List<TreeId>,
         local_env: &Rc<Env<AttrContext>>,
         s: SymbolId,
         defer_pos: Option<i32>,
-    
-        attr: &mut crate::comp::attr::Attr,) -> Result<(), CompletionFailure> {
+
+        attr: &mut Attr,
+    ) -> Result<(), CompletionFailure> {
         assert!(
             ctx.sym(s).kind == Kind::PCK || ctx.sym(s).annotations_pending_completion(),
             "AssertionError: annotations pending completion"
@@ -977,7 +1004,8 @@ impl AnnotateServices {
         let prev = self.log.use_source(source);
         let prev_pos = match defer_pos {
             Some(defer_pos) => self
-                .deferred_lint_handler.set_pos(Rc::new(SimpleDiagnosticPosition::new(defer_pos))),
+                .deferred_lint_handler
+                .set_pos(Rc::new(SimpleDiagnosticPosition::new(defer_pos))),
             None => self.deferred_lint_handler.immediate(),
         };
         let prev_lint = if defer_pos.is_some() {
@@ -990,13 +1018,9 @@ impl AnnotateServices {
                 let head = *annotations.head();
                 self.log.error_at(
                     ctx.tree(head).pos,
-                    crate::resources::compiler_properties::errors::already_annotated(
-                        KindNameArg::placeholder(
-                            format!("{:?}", ctx.sym(s).kind.kind_name()),
-                        ),
-                        SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(
-                            ctx, s,
-                        )),
+                    errors::already_annotated(
+                        KindNameArg::placeholder(format!("{:?}", ctx.sym(s).kind.kind_name())),
+                        SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, s)),
                     )
                     .into(),
                 );
@@ -1016,24 +1040,40 @@ impl AnnotateServices {
     fn enter_default_value(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         default_value: TreeId,
         local_env: &Rc<Env<AttrContext>>,
         m: SymbolId,
-    
-        attr: &mut crate::comp::attr::Attr,) -> Result<(), CompletionFailure> {
+
+        attr: &mut Attr,
+    ) -> Result<(), CompletionFailure> {
         let m_type = ctx.sym(m).ty.expect("method type");
         let return_type = return_type_of(ctx, m_type);
-        let value = self.attribute_annotation_value(ctx, syms, return_type, default_value, local_env, attr)?;
-        if let SymbolKind::MethodSymbol { default_value: slot, .. } = &mut ctx.sym_mut(m).kind_data {
+        let value = self.attribute_annotation_value(
+            ctx,
+            syms,
+            return_type,
+            default_value,
+            local_env,
+            attr,
+        )?;
+        if let SymbolKind::MethodSymbol {
+            default_value: slot,
+            ..
+        } = &mut ctx.sym_mut(m).kind_data
+        {
             *slot = Some(value);
         }
         Ok(())
     }
 
     /// Java: private boolean isAttributeTrue(Attribute attr) (Annotate.java:452-456)
-    fn is_attribute_true(&self, ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab, attr: AttributeId) -> bool {
+    fn is_attribute_true(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        attr: AttributeId,
+    ) -> bool {
         let (attr_ty, constant_value) = match &ctx.attr(attr).kind {
             AttributeKind::Constant { value } => (ctx.attr(attr).ty, Some(value.clone())),
             _ => (None, None),
@@ -1064,14 +1104,15 @@ impl AnnotateServices {
     fn annotate_now(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         to_annotate: SymbolId,
         with_annotations: &List<TreeId>,
         env: &Rc<Env<AttrContext>>,
         type_annotations: bool,
         is_type_param: bool,
-    
-        attr: &mut crate::comp::attr::Attr,) -> Result<(), CompletionFailure> {
+
+        attr: &mut Attr,
+    ) -> Result<(), CompletionFailure> {
         let mut annotated: Vec<(SymbolId, Vec<AttributeId>)> = Vec::new();
         let mut pos: std::collections::HashMap<AttributeId, i32> = std::collections::HashMap::new();
         let mut current = with_annotations.clone();
@@ -1117,9 +1158,14 @@ impl AnnotateServices {
             {
                 ctx.sym_mut(to_annotate).flags_field |= flags::DEPRECATED as i64;
                 ctx.sym_mut(to_annotate).flags_field |= flags::DEPRECATED_ANNOTATION;
-                let for_removal = self.names.from_string(&javac_strings::JavaString::from("forRemoval"));
-                if self.is_attribute_true(ctx, syms, ctx.attr(c).member(ctx, &for_removal).unwrap_or(c))
-                {
+                let for_removal = self
+                    .names
+                    .from_string(&javac_strings::JavaString::from("forRemoval"));
+                if self.is_attribute_true(
+                    ctx,
+                    syms,
+                    ctx.attr(c).member(ctx, &for_removal).unwrap_or(c),
+                ) {
                     ctx.sym_mut(to_annotate).flags_field |= flags::DEPRECATED_REMOVAL;
                 }
             }
@@ -1130,19 +1176,19 @@ impl AnnotateServices {
             } {
                 ctx.sym_mut(to_annotate).flags_field |= flags::PREVIEW_API;
                 let reflective = self.names.reflective.clone();
-                if self.is_attribute_true(ctx, syms, ctx.attr(c).member(ctx, &reflective).unwrap_or(c))
-                {
+                if self.is_attribute_true(
+                    ctx,
+                    syms,
+                    ctx.attr(c).member(ctx, &reflective).unwrap_or(c),
+                ) {
                     ctx.sym_mut(to_annotate).flags_field |= flags::PREVIEW_REFLECTIVE;
                 }
             }
             let value_based_type = syms.value_based_type;
-            if !is_erroneous
-                && ctx.sym(to_annotate).kind == Kind::TYP
-                && {
-                    self.types
-                        .is_same_type(ctx, syms, annotation_ty, value_based_type)
-                }
-            {
+            if !is_erroneous && ctx.sym(to_annotate).kind == Kind::TYP && {
+                self.types
+                    .is_same_type(ctx, syms, annotation_ty, value_based_type)
+            } {
                 ctx.sym_mut(to_annotate).flags_field |= flags::VALUE_BASED;
             }
             current = current.tail();
@@ -1158,9 +1204,15 @@ impl AnnotateServices {
                     pos: pos.clone(),
                     is_type_compound: type_annotations,
                 };
-                if let Some(res) =
-                    self.make_container_annotation(ctx, syms, lb, &context, to_annotate, is_type_param, attr)?
-                {
+                if let Some(res) = self.make_container_annotation(
+                    ctx,
+                    syms,
+                    lb,
+                    &context,
+                    to_annotate,
+                    is_type_param,
+                    attr,
+                )? {
                     buf = buf.prepend(res);
                 }
             }
@@ -1172,10 +1224,12 @@ impl AnnotateServices {
             current_buf = current_buf.tail();
         }
         if type_annotations {
-            ctx.sym_mut(to_annotate).append_unique_type_attributes(reversed);
+            ctx.sym_mut(to_annotate)
+                .append_unique_type_attributes(reversed);
         } else {
             ctx.sym_mut(to_annotate).reset_annotations();
-            ctx.sym_mut(to_annotate).set_declaration_attributes(reversed);
+            ctx.sym_mut(to_annotate)
+                .set_declaration_attributes(reversed);
         }
         Ok(())
     }
@@ -1186,11 +1240,12 @@ impl AnnotateServices {
     fn attribute_annotation(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         tree: TreeId,
         expected_annotation_type: TypeId,
         env: &Rc<Env<AttrContext>>,
-        attr: &mut crate::comp::attr::Attr) -> Result<AttributeId, CompletionFailure> {
+        attr: &mut Attr,
+    ) -> Result<AttributeId, CompletionFailure> {
         let existing = match &ctx.tree(tree).kind {
             TreeKind::Annotation { attribute, .. } => *attribute,
             _ => None,
@@ -1198,10 +1253,14 @@ impl AnnotateServices {
         if existing.is_some() && ctx.tree(tree).ty.is_some() {
             return Ok(existing.expect("annotation attribute"));
         }
-        let elems = self.attribute_annotation_values(ctx, syms, tree, expected_annotation_type, env, attr)?;
+        let elems =
+            self.attribute_annotation_values(ctx, syms, tree, expected_annotation_type, env, attr)?;
         let ty = ctx.tree(tree).ty.expect("annotation tree type");
         let attribute = ctx.alloc_attribute(Attribute::new_compound(Some(ty), elems));
-        if let TreeKind::Annotation { attribute: slot, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::Annotation {
+            attribute: slot, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *slot = Some(attribute);
         }
         Ok(attribute)
@@ -1213,11 +1272,12 @@ impl AnnotateServices {
     fn attribute_type_annotation(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         a: TreeId,
         expected_annotation_type: TypeId,
         env: &Rc<Env<AttrContext>>,
-        attr: &mut crate::comp::attr::Attr) -> Result<AttributeId, CompletionFailure> {
+        attr: &mut Attr,
+    ) -> Result<AttributeId, CompletionFailure> {
         let existing = match &ctx.tree(a).kind {
             TreeKind::Annotation { attribute, .. } => *attribute,
             _ => None,
@@ -1228,11 +1288,19 @@ impl AnnotateServices {
         if !(existing.is_none() || ctx.tree(a).ty.is_none() || !is_type_compound) {
             return Ok(existing.expect("type compound"));
         }
-        let elems = self.attribute_annotation_values(ctx, syms, a, expected_annotation_type, env, attr)?;
+        let elems =
+            self.attribute_annotation_values(ctx, syms, a, expected_annotation_type, env, attr)?;
         let ty = ctx.tree(a).ty.expect("annotation tree type");
         let position = crate::code::type_annotation_position::TypeAnnotationPosition::unknown();
-        let attribute = ctx.alloc_attribute(Attribute::new_type_compound(Some(ty), elems, Some(position)));
-        if let TreeKind::Annotation { attribute: slot, .. } = &mut ctx.tree_mut(a).kind {
+        let attribute = ctx.alloc_attribute(Attribute::new_type_compound(
+            Some(ty),
+            elems,
+            Some(position),
+        ));
+        if let TreeKind::Annotation {
+            attribute: slot, ..
+        } = &mut ctx.tree_mut(a).kind
+        {
             *slot = Some(attribute);
         }
         Ok(attribute)
@@ -1263,21 +1331,22 @@ impl AnnotateServices {
     fn attribute_annotation_values(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         a: TreeId,
         expected: TypeId,
         env: &Rc<Env<AttrContext>>,
-    
-        attr: &mut crate::comp::attr::Attr,) -> Result<List<Pair<SymbolId, AttributeId>>, CompletionFailure> {
+
+        attr: &mut Attr,
+    ) -> Result<List<Pair<SymbolId, AttributeId>>, CompletionFailure> {
         let annotation_type_tree = match &ctx.tree(a).kind {
-            TreeKind::Annotation { annotation_type, .. } => annotation_type.expect("annotation type"),
+            TreeKind::Annotation {
+                annotation_type, ..
+            } => annotation_type.expect("annotation type"),
             _ => panic!("expected an annotation"),
         };
         let at = match ctx.tree(annotation_type_tree).ty {
             Some(at) => at,
-            None => {
-                    attr.attrib_type(ctx, syms, annotation_type_tree, env)
-            }
+            None => attr.attrib_type(ctx, syms, annotation_type_tree, env),
         };
         let checked = {
             let chk = Rc::clone(&self.chk);
@@ -1291,9 +1360,9 @@ impl AnnotateServices {
         if !is_annotation_type && !is_error {
             self.log.error_at(
                 ctx.tree(annotation_type_tree).pos,
-                errors::not_annotation_type(
-                    TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, tsym)),
-                )
+                errors::not_annotation_type(TypeArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, tsym),
+                ))
                 .into(),
             );
             is_error = true;
@@ -1334,14 +1403,17 @@ impl AnnotateServices {
         let mut current = args;
         while current.non_empty() {
             let arg = *current.head();
-            if let Some(pair) = self.attribute_annotation_name_value_pair(ctx, syms,
+            if let Some(pair) = self.attribute_annotation_name_value_pair(
+                ctx,
+                syms,
                 arg,
                 checked,
                 is_error,
                 env,
                 elided_value,
                 annotation_type_tree,
-            attr)? {
+                attr,
+            )? {
                 let method_erroneous = ctx
                     .sym(pair.fst)
                     .ty
@@ -1363,15 +1435,16 @@ impl AnnotateServices {
     fn attribute_annotation_name_value_pair(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         name_value_pair: TreeId,
         this_annotation_type: TypeId,
         bad_annotation: bool,
         env: &Rc<Env<AttrContext>>,
         elided_value: bool,
         _annotation_type_tree: TreeId,
-    
-        attr: &mut crate::comp::attr::Attr,) -> Result<Option<Pair<SymbolId, AttributeId>>, CompletionFailure> {
+
+        attr: &mut Attr,
+    ) -> Result<Option<Pair<SymbolId, AttributeId>>, CompletionFailure> {
         if !ctx.tree(name_value_pair).has_tag(Tag::ASSIGN) {
             self.log.error_at(
                 ctx.tree(name_value_pair).pos,
@@ -1384,16 +1457,15 @@ impl AnnotateServices {
             if let TreeKind::Binary { lhs: Some(lhs), .. } = &ctx.tree(name_value_pair).kind
                 && let TreeKind::Ident { name, .. } = &ctx.tree(*lhs).kind
             {
-                let info = crate::resources::compiler_properties::errors::cant_resolve(
-                    crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                let info = errors::cant_resolve(
+                    KindNameArg::placeholder(
                         "kindname.variable",
                     ),
                     name.clone(),
                     (),
                     (),
                 );
-                self.log
-                    .error_at(ctx.tree(*lhs).pos, info.into());
+                self.log.error_at(ctx.tree(*lhs).pos, info.into());
             }
             let err_type = syms.err_type;
             ctx.tree_mut(name_value_pair).ty = Some(err_type);
@@ -1410,10 +1482,15 @@ impl AnnotateServices {
             );
             let err_type = syms.err_type;
             ctx.tree_mut(name_value_pair).ty = Some(err_type);
-            let _ = self.attribute_annotation_value(ctx, syms, err_type, name_value_pair, env, attr)?;
+            let _ =
+                self.attribute_annotation_value(ctx, syms, err_type, name_value_pair, env, attr)?;
             return Ok(None);
         }
-        let left_pos = if elided_value { ctx.tree(rhs).pos } else { ctx.tree(lhs).pos };
+        let left_pos = if elided_value {
+            ctx.tree(rhs).pos
+        } else {
+            ctx.tree(lhs).pos
+        };
         let left_name = match &ctx.tree(lhs).kind {
             TreeKind::Ident { name, .. } => name.clone(),
             _ => panic!("expected an identifier"),
@@ -1487,16 +1564,15 @@ impl AnnotateServices {
     fn attribute_annotation_value(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         expected_element_type: TypeId,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
-    
-        attr: &mut crate::comp::attr::Attr,) -> Result<AttributeId, CompletionFailure> {
+
+        attr: &mut Attr,
+    ) -> Result<AttributeId, CompletionFailure> {
         let mut expected_element_type = expected_element_type;
-        let expected_sym = ctx
-            .typ(expected_element_type)
-            .tsym;
+        let expected_sym = ctx.typ(expected_element_type).tsym;
         let completion_error = match expected_sym {
             Some(sym) if ctx.sym(sym).completer.is_some() => {
                 ctx.complete_symbol_with_attr(syms, sym, Some(attr)).err()
@@ -1519,11 +1595,15 @@ impl AnnotateServices {
             );
             expected_element_type = syms.err_type;
         }
-        if ctx
-            .typ(expected_element_type)
-            .has_tag(TypeTag::ARRAY)
-        {
-            return self.get_annotation_array_value(ctx, syms, expected_element_type, tree, env, attr);
+        if ctx.typ(expected_element_type).has_tag(TypeTag::ARRAY) {
+            return self.get_annotation_array_value(
+                ctx,
+                syms,
+                expected_element_type,
+                tree,
+                env,
+                attr,
+            );
         }
         if ctx.tree(tree).has_tag(Tag::NEWARRAY) {
             if !ctx.typ(expected_element_type).has_tag(TypeTag::ERROR) {
@@ -1549,7 +1629,8 @@ impl AnnotateServices {
             if let Some(elems) = elems {
                 let err_type = syms.err_type;
                 for elem in elems.iter() {
-                    let _ = self.attribute_annotation_value(ctx, syms, err_type, elem, env, attr)?;
+                    let _ =
+                        self.attribute_annotation_value(ctx, syms, err_type, elem, env, attr)?;
                 }
             }
             let err_type = syms.err_type;
@@ -1561,7 +1642,14 @@ impl AnnotateServices {
             .unwrap_or(false);
         if expected_is_annotation_type {
             if ctx.tree(tree).has_tag(Tag::ANNOTATION) {
-                return self.attribute_annotation(ctx, syms, tree, expected_element_type, env, attr);
+                return self.attribute_annotation(
+                    ctx,
+                    syms,
+                    tree,
+                    expected_element_type,
+                    env,
+                    attr,
+                );
             } else {
                 self.log.error_at(
                     ctx.tree(tree).pos,
@@ -1588,7 +1676,9 @@ impl AnnotateServices {
             let err_type = syms.err_type;
             let _ = self.attribute_annotation(ctx, syms, tree, err_type, env, attr)?;
             let annotation_type_tree = match &ctx.tree(tree).kind {
-                TreeKind::Annotation { annotation_type, .. } => *annotation_type,
+                TreeKind::Annotation {
+                    annotation_type, ..
+                } => *annotation_type,
                 _ => None,
             };
             let orig = annotation_type_tree.and_then(|t| ctx.tree(t).ty);
@@ -1612,12 +1702,26 @@ impl AnnotateServices {
                 .is_same_type(ctx, syms, expected_element_type, string_type)
         } && !ctx.typ(expected_element_type).has_tag(TypeTag::ERROR);
         if is_primitive || is_string {
-            return self.get_annotation_primitive_value(ctx, syms, expected_element_type, tree, env, attr);
+            return self.get_annotation_primitive_value(
+                ctx,
+                syms,
+                expected_element_type,
+                tree,
+                env,
+                attr,
+            );
         }
         let class_type = syms.class_type;
         let class_tsym = ctx.typ(class_type).tsym;
         if ctx.typ(expected_element_type).tsym == class_tsym {
-            return self.get_annotation_class_value(ctx, syms, expected_element_type, tree, env, attr);
+            return self.get_annotation_class_value(
+                ctx,
+                syms,
+                expected_element_type,
+                tree,
+                env,
+                attr,
+            );
         }
         let is_enum = ctx.typ(expected_element_type).has_tag(TypeTag::CLASS)
             && ctx
@@ -1626,7 +1730,14 @@ impl AnnotateServices {
                 .map(|tsym| (ctx.sym(tsym).flags_field & flags::ENUM as i64) != 0)
                 .unwrap_or(false);
         if is_enum {
-            return self.get_annotation_enum_value(ctx, syms, expected_element_type, tree, env, attr);
+            return self.get_annotation_enum_value(
+                ctx,
+                syms,
+                expected_element_type,
+                tree,
+                env,
+                attr,
+            );
         }
         if !ctx.typ(expected_element_type).has_tag(TypeTag::ERROR) {
             self.log.error_at(
@@ -1635,9 +1746,7 @@ impl AnnotateServices {
             );
         }
         let info = self.annotation_value_info(ctx, expected_element_type, attr);
-        let attributed = {
-            attr.attrib_tree(ctx, syms, tree, env, info)?
-        };
+        let attributed = { attr.attrib_tree(ctx, syms, tree, env, info)? };
         Ok(ctx.alloc_attribute(Attribute::new_error(Some(attributed))))
     }
 }
@@ -1648,64 +1757,105 @@ impl AnnotateServices {
     /// Java: private Attribute getAnnotationEnumValue(Type expectedElementType,
     /// JCExpression tree, Env<AttrContext> env) (Annotate.java:662-677)
     #[allow(clippy::single_match)]
-    fn get_annotation_enum_value(&self, ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab, expected_element_type: TypeId, tree: TreeId, env: &Rc<Env<AttrContext>>,
-        attr: &mut crate::comp::attr::Attr,) -> Result<AttributeId, CompletionFailure> {
+    fn get_annotation_enum_value(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        expected_element_type: TypeId,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        attr: &mut Attr,
+    ) -> Result<AttributeId, CompletionFailure> {
         let info = self.annotation_value_info(ctx, expected_element_type, attr);
-        let result = {
-            attr.attrib_tree(ctx, syms, tree, env, info)?
-        };
+        let result = { attr.attrib_tree(ctx, syms, tree, env, info)? };
         let sym = tree_info::symbol(ctx, tree);
         let nonstatic_select = tree_info::nonstatic_select(ctx, tree);
         let is_enum_constant = sym
-            .map(|sym| ctx.sym(sym).kind == Kind::VAR && (ctx.sym(sym).flags_field & flags::ENUM as i64) != 0)
+            .map(|sym| {
+                ctx.sym(sym).kind == Kind::VAR
+                    && (ctx.sym(sym).flags_field & flags::ENUM as i64) != 0
+            })
             .unwrap_or(false);
         if sym.is_none() || nonstatic_select || !is_enum_constant {
             self.log.error_at(
                 ctx.tree(tree).pos,
                 errors::enum_annotation_must_be_enum_constant().into(),
             );
-            return Ok(ctx.alloc_attribute(Attribute::new_error(Some(original_type_of(ctx, result)))));
+            return Ok(
+                ctx.alloc_attribute(Attribute::new_error(Some(original_type_of(ctx, result))))
+            );
         }
-        Ok(ctx.alloc_attribute(Attribute::new_enum(Some(expected_element_type), sym.expect("enum constant"))))
+        Ok(ctx.alloc_attribute(Attribute::new_enum(
+            Some(expected_element_type),
+            sym.expect("enum constant"),
+        )))
     }
 
     /// Java: private Attribute getAnnotationClassValue(Type expectedElementType,
     /// JCExpression tree, Env<AttrContext> env) (Annotate.java:679-703)
-    fn get_annotation_class_value(&self, ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab, expected_element_type: TypeId, tree: TreeId, env: &Rc<Env<AttrContext>>,
-        attr: &mut crate::comp::attr::Attr,) -> Result<AttributeId, CompletionFailure> {
+    fn get_annotation_class_value(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        expected_element_type: TypeId,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        attr: &mut Attr,
+    ) -> Result<AttributeId, CompletionFailure> {
         let info = self.annotation_value_info(ctx, expected_element_type, attr);
-        let result = {
-            attr.attrib_tree(ctx, syms, tree, env, info)?
-        };
+        let result = { attr.attrib_tree(ctx, syms, tree, env, info)? };
         if ctx.typ(result).has_tag(TypeTag::ERROR) {
             let class_name = self.names._class.clone();
             let tree_name = tree_info::name(ctx, tree);
-            if tree_name.as_ref().map(|name| name.to_java_string() == class_name.to_java_string()).unwrap_or(false) {
+            if tree_name
+                .as_ref()
+                .map(|name| name.to_java_string() == class_name.to_java_string())
+                .unwrap_or(false)
+            {
                 let selected = match &ctx.tree(tree).kind {
                     TreeKind::FieldAccess { selected, .. } => *selected,
                     _ => None,
                 };
                 if let Some(selected) = selected {
                     let selected_ty = ctx.tree(selected).ty;
-                    let selected_erroneous = selected_ty.map(|ty| ctx.typ(ty).has_tag(TypeTag::ERROR)).unwrap_or(false);
+                    let selected_erroneous = selected_ty
+                        .map(|ty| ctx.typ(ty).has_tag(TypeTag::ERROR))
+                        .unwrap_or(false);
                     if selected_erroneous {
-                        let name = ctx.typ(selected_ty.expect("selected type")).tsym.map(|tsym| ctx.sym(tsym).name.clone()).unwrap_or_else(|| self.names.empty.clone());
+                        let name = ctx
+                            .typ(selected_ty.expect("selected type"))
+                            .tsym
+                            .map(|tsym| ctx.sym(tsym).name.clone())
+                            .unwrap_or_else(|| self.names.empty.clone());
                         let unknown_symbol = syms.unknown_symbol;
                         let class_type = syms.class_type;
-                        let err_type =
-                            self.types.create_error_type(ctx, name, unknown_symbol, Some(class_type));
-                        return Ok(ctx.alloc_attribute(Attribute::new_unresolved_class(Some(expected_element_type), Some(err_type))));
+                        let err_type = self.types.create_error_type(
+                            ctx,
+                            name,
+                            unknown_symbol,
+                            Some(class_type),
+                        );
+                        return Ok(ctx.alloc_attribute(Attribute::new_unresolved_class(
+                            Some(expected_element_type),
+                            Some(err_type),
+                        )));
                     }
                 }
             }
-            return Ok(ctx.alloc_attribute(Attribute::new_error(Some(original_type_of(ctx, result)))));
+            return Ok(
+                ctx.alloc_attribute(Attribute::new_error(Some(original_type_of(ctx, result))))
+            );
         }
         let class_name = self.names._class.clone();
-        let matches_class = tree_info::name(ctx, tree).as_ref().map(|name| name.to_java_string() == class_name.to_java_string()).unwrap_or(false);
+        let matches_class = tree_info::name(ctx, tree)
+            .as_ref()
+            .map(|name| name.to_java_string() == class_name.to_java_string())
+            .unwrap_or(false);
         if !matches_class {
-            self.log.error_at(ctx.tree(tree).pos, errors::annotation_value_must_be_class_literal().into());
+            self.log.error_at(
+                ctx.tree(tree).pos,
+                errors::annotation_value_must_be_class_literal().into(),
+            );
             let err_type = syms.err_type;
             return Ok(ctx.alloc_attribute(Attribute::new_error(Some(err_type))));
         }
@@ -1715,7 +1865,12 @@ impl AnnotateServices {
         };
         let selected_ty = selected.and_then(|selected| ctx.tree(selected).ty);
         let attribute = {
-            Attribute::new_class(ctx, syms, &self.types, selected_ty.expect("class literal type"))
+            Attribute::new_class(
+                ctx,
+                syms,
+                &self.types,
+                selected_ty.expect("class literal type"),
+            )
         };
         Ok(ctx.alloc_attribute(attribute))
     }
@@ -1723,18 +1878,27 @@ impl AnnotateServices {
     /// Java: private Attribute getAnnotationPrimitiveValue(Type
     /// expectedElementType, JCExpression tree, Env<AttrContext> env)
     /// (Annotate.java:705-722)
-    fn get_annotation_primitive_value(&self, ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab, expected_element_type: TypeId, tree: TreeId, env: &Rc<Env<AttrContext>>,
-        attr: &mut crate::comp::attr::Attr,) -> Result<AttributeId, CompletionFailure> {
+    fn get_annotation_primitive_value(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        expected_element_type: TypeId,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        attr: &mut Attr,
+    ) -> Result<AttributeId, CompletionFailure> {
         let info = self.annotation_value_info(ctx, expected_element_type, attr);
-        let mut result = {
-            attr.attrib_tree(ctx, syms, tree, env, info)?
-        };
+        let mut result = { attr.attrib_tree(ctx, syms, tree, env, info)? };
         if ctx.typ(result).has_tag(TypeTag::ERROR) {
-            return Ok(ctx.alloc_attribute(Attribute::new_error(Some(original_type_of(ctx, result)))));
+            return Ok(
+                ctx.alloc_attribute(Attribute::new_error(Some(original_type_of(ctx, result))))
+            );
         }
         if ctx.typ(result).const_value().is_none() {
-            self.log.error_at(ctx.tree(tree).pos, errors::attribute_value_must_be_constant().into());
+            self.log.error_at(
+                ctx.tree(tree).pos,
+                errors::attribute_value_must_be_constant().into(),
+            );
             return Ok(ctx.alloc_attribute(Attribute::new_error(Some(expected_element_type))));
         }
         let tree_type = ctx.tree(tree).ty;
@@ -1745,15 +1909,24 @@ impl AnnotateServices {
             }
         }
         result = {
-            self.cfolder.coerce(ctx, syms, result, expected_element_type)
+            self.cfolder
+                .coerce(ctx, syms, result, expected_element_type)
         };
-        let value = ctx.typ(result).const_value().expect("constant value").clone();
+        let value = ctx
+            .typ(result)
+            .const_value()
+            .expect("constant value")
+            .clone();
         Ok(ctx.alloc_attribute(Attribute::new_constant(Some(expected_element_type), value)))
     }
 
     /// Java: private Attr.ResultInfo annotationValueInfo(Type pt) (Annotate.java:686-689)
-    fn annotation_value_info(&self, ctx: &mut CompilerContext, pt: TypeId,
-        attr: &mut crate::comp::attr::Attr,) -> crate::comp::attr::ResultInfo {
+    fn annotation_value_info(
+        &self,
+        ctx: &mut CompilerContext,
+        pt: TypeId,
+        attr: &mut Attr,
+    ) -> crate::comp::attr::ResultInfo {
         let _ = ctx;
         let base = attr.unknown_expr_info.clone();
         let mut result = base.dup(Some(pt));
@@ -1763,12 +1936,17 @@ impl AnnotateServices {
         result
     }
 
-
     /// Java: private Attribute getAnnotationArrayValue(Type expectedElementType,
     /// JCExpression tree, Env<AttrContext> env) (Annotate.java:742-770)
-    fn get_annotation_array_value(&self, ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab, expected_element_type: TypeId, tree: TreeId, env: &Rc<Env<AttrContext>>,
-        attr: &mut crate::comp::attr::Attr,) -> Result<AttributeId, CompletionFailure> {
+    fn get_annotation_array_value(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        expected_element_type: TypeId,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        attr: &mut Attr,
+    ) -> Result<AttributeId, CompletionFailure> {
         let mut tree = tree;
         if !ctx.tree(tree).has_tag(Tag::NEWARRAY) {
             let make = &*self.make;
@@ -1777,15 +1955,18 @@ impl AnnotateServices {
             tree = array;
         }
         let (elemtype, elems) = match &ctx.tree(tree).kind {
-            TreeKind::NewArray { elemtype, elems, .. } => (*elemtype, (*elems).clone()),
+            TreeKind::NewArray {
+                elemtype, elems, ..
+            } => (*elemtype, (*elems).clone()),
             _ => panic!("expected a new array"),
         };
         if let Some(elemtype) = elemtype {
-            self.log.error_at(ctx.tree(elemtype).pos, errors::new_not_allowed_in_annotation().into());
+            self.log.error_at(
+                ctx.tree(elemtype).pos,
+                errors::new_not_allowed_in_annotation().into(),
+            );
         }
-        let elem_type = {
-            self.types.elemtype(ctx, syms, expected_element_type)
-        };
+        let elem_type = { self.types.elemtype(ctx, syms, expected_element_type) };
         let mut buf: Vec<AttributeId> = Vec::new();
         if let Some(elems) = elems {
             for elem in elems.iter() {
@@ -1815,12 +1996,12 @@ impl AnnotateServices {
     fn process_repeated_annotations(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         annotations: &[AttributeId],
         context: &AnnotatedContext,
         on: SymbolId,
         is_type_param: bool,
-        attr: &mut crate::comp::attr::Attr,
+        attr: &mut Attr,
     ) -> Result<Option<AttributeId>, CompletionFailure> {
         let first_occurrence = annotations[0];
         let mut repeated: Vec<AttributeId> = Vec::new();
@@ -1831,23 +2012,39 @@ impl AnnotateServices {
         let mut count = 0;
         for current_anno in annotations.iter() {
             count += 1;
-            let anno_type = ctx.attr(*current_anno).ty.expect("annotation attribute type");
+            let anno_type = ctx
+                .attr(*current_anno)
+                .ty
+                .expect("annotation attribute type");
             orig_anno_type = Some(anno_type);
             if array_of_orig_anno_type.is_none() {
                 array_of_orig_anno_type = Some(self.types.make_array_type(ctx, syms, anno_type));
             }
             let report_error = count > 1;
-            let current_pos = context.pos.get(current_anno).copied().unwrap_or(crate::util::position::NOPOS);
-            let current_container_type = self.get_containing_type(ctx, syms, *current_anno, current_pos, report_error, &mut *attr)?;
+            let current_pos = context
+                .pos
+                .get(current_anno)
+                .copied()
+                .unwrap_or(crate::util::position::NOPOS);
+            let current_container_type = self.get_containing_type(
+                ctx,
+                syms,
+                *current_anno,
+                current_pos,
+                report_error,
+                &mut *attr,
+            )?;
             let Some(current_container_type) = current_container_type else {
                 continue;
             };
             assert!(
-                target_container_type.is_none() || target_container_type == Some(current_container_type),
+                target_container_type.is_none()
+                    || target_container_type == Some(current_container_type),
                 "AssertionError: target container type"
             );
             target_container_type = Some(current_container_type);
-            container_value_symbol = self.validate_container(ctx, syms, current_container_type, anno_type, current_pos)?;
+            container_value_symbol =
+                self.validate_container(ctx, syms, current_container_type, anno_type, current_pos)?;
             if container_value_symbol.is_none() {
                 continue;
             }
@@ -1856,7 +2053,11 @@ impl AnnotateServices {
         let orig_anno_type = orig_anno_type.expect("annotation type");
         if !repeated.is_empty() && target_container_type.is_none() {
             self.log.error_at(
-                context.pos.get(&first_occurrence).copied().unwrap_or(crate::util::position::NOPOS),
+                context
+                    .pos
+                    .get(&first_occurrence)
+                    .copied()
+                    .unwrap_or(crate::util::position::NOPOS),
                 errors::duplicate_annotation_invalid_repeated(TypeArg::placeholder(
                     crate::comp::resolve::symbol_display_name(
                         ctx,
@@ -1873,7 +2074,11 @@ impl AnnotateServices {
         // The port keeps sym.raw_attributes in source order (javac keeps them
         // reversed and reverses here), so the repeated annotations are already
         // in source order and must not be reversed again.
-        let pos = context.pos.get(&first_occurrence).copied().unwrap_or(crate::util::position::NOPOS);
+        let pos = context
+            .pos
+            .get(&first_occurrence)
+            .copied()
+            .unwrap_or(crate::util::position::NOPOS);
         let pair = Pair::new(container_value_symbol.expect("container value symbol"), {
             let values: Vec<AttributeId> = repeated.clone();
             ctx.alloc_attribute(Attribute::new_array(array_of_orig_anno_type, values))
@@ -1915,16 +2120,13 @@ impl AnnotateServices {
             //         Errors.InvalidRepeatableAnnotationNotApplicable(targetContainerType, on) :
             //         Errors.InvalidRepeatableAnnotationNotApplicableInContext(targetContainerType));
             // } (Annotate.java:832-835).
-            if !self
-                .chk
-                .is_type_annotation_tree(
-                    ctx,
-                    syms,
-                    anno_tree,
-                    is_type_param,
-                    Some(&mut *attr),
-                )
-            {
+            if !self.chk.is_type_annotation_tree(
+                ctx,
+                syms,
+                anno_tree,
+                is_type_param,
+                Some(&mut *attr),
+            ) {
                 let container_name = crate::comp::resolve::symbol_display_name(
                     ctx,
                     ctx.typ(container_type).tsym.expect("container tsym"),
@@ -1947,7 +2149,10 @@ impl AnnotateServices {
             return Ok(Some(at));
         }
         let container_type = target_container_type.expect("container type");
-        let c = ctx.alloc_attribute(Attribute::new_compound(Some(container_type), List::of(pair)));
+        let c = ctx.alloc_attribute(Attribute::new_compound(
+            Some(container_type),
+            List::of(pair),
+        ));
         let anno_tree = {
             let make = &*self.make;
             make.at(pos);
@@ -1964,7 +2169,8 @@ impl AnnotateServices {
             let chk = Rc::clone(&self.chk);
             chk.annotation_applicable(ctx, syms, anno_tree, on, Some(&mut *attr))?
         };
-        let suppress = is_record_member && (ctx.sym(on).flags_field & flags::GENERATED_MEMBER as i64) != 0;
+        let suppress =
+            is_record_member && (ctx.sym(on).flags_field & flags::GENERATED_MEMBER as i64) != 0;
         if !applicable && !suppress {
             self.log.error_at(
                 ctx.tree(anno_tree).pos,
@@ -1994,7 +2200,8 @@ impl AnnotateServices {
                 .into(),
             );
         }
-        let attributed = self.attribute_annotation(ctx, syms, anno_tree, container_type, &context.env, attr)?;
+        let attributed =
+            self.attribute_annotation(ctx, syms, anno_tree, container_type, &context.env, attr)?;
         if let AttributeKind::Compound { synthesized, .. } = &mut ctx.attr_mut(c).kind {
             *synthesized = true;
         }
@@ -2008,18 +2215,35 @@ impl AnnotateServices {
 impl AnnotateServices {
     /// Java: private Type getContainingType(Attribute.Compound currentAnno,
     /// DiagnosticPosition pos, boolean reportError) (Annotate.java:940-960)
-    fn get_containing_type(&self, ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab, current_anno: AttributeId, pos: i32, report_error: bool,
-        attr: &mut crate::comp::attr::Attr) -> Result<Option<TypeId>, CompletionFailure> {
+    fn get_containing_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        current_anno: AttributeId,
+        pos: i32,
+        report_error: bool,
+        attr: &mut Attr,
+    ) -> Result<Option<TypeId>, CompletionFailure> {
         let orig_anno_type = ctx.attr(current_anno).ty.expect("annotation type");
         let orig_anno_decl = ctx.typ(orig_anno_type).tsym.expect("annotation symbol");
-        let Some(metadata) = ctx.sym(orig_anno_decl).get_annotation_type_metadata().cloned() else {
+        let Some(metadata) = ctx
+            .sym(orig_anno_decl)
+            .get_annotation_type_metadata()
+            .cloned()
+        else {
             return Ok(None);
         };
-        let ca = AnnotationTypeMetadata::get_repeatable_shared(&metadata, ctx, syms, Some(&mut *attr))?;
+        let ca =
+            AnnotationTypeMetadata::get_repeatable_shared(&metadata, ctx, syms, Some(&mut *attr))?;
         let Some(ca) = ca else {
             if report_error {
-                self.log.error_at(pos, errors::duplicate_annotation_missing_container(TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, orig_anno_decl))).into());
+                self.log.error_at(
+                    pos,
+                    errors::duplicate_annotation_missing_container(TypeArg::placeholder(
+                        crate::comp::resolve::symbol_display_name(ctx, orig_anno_decl),
+                    ))
+                    .into(),
+                );
             }
             return Ok(None);
         };
@@ -2028,34 +2252,67 @@ impl AnnotateServices {
     }
 
     /// Java: private Type filterSame(Type t, Type s) (Annotate.java:962-968)
-    fn filter_same(&self, ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab, t: Option<TypeId>, s: Option<TypeId>) -> Option<TypeId> {
+    fn filter_same(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: Option<TypeId>,
+        s: Option<TypeId>,
+    ) -> Option<TypeId> {
         let Some(t) = t else { return t };
         let Some(s) = s else { return Some(t) };
-        if self.types.is_same_type(ctx, syms, t, s) { None } else { Some(t) }
+        if self.types.is_same_type(ctx, syms, t, s) {
+            None
+        } else {
+            Some(t)
+        }
     }
 
     /// Java: private Type extractContainingType(Attribute.Compound ca,
     /// DiagnosticPosition pos, TypeSymbol annoDecl) (Annotate.java:971-993)
-    fn extract_containing_type(&self, ctx: &mut CompilerContext, ca: AttributeId, pos: i32, anno_decl: SymbolId) -> Result<Option<TypeId>, CompletionFailure> {
+    fn extract_containing_type(
+        &self,
+        ctx: &mut CompilerContext,
+        ca: AttributeId,
+        pos: i32,
+        anno_decl: SymbolId,
+    ) -> Result<Option<TypeId>, CompletionFailure> {
         let values = match &ctx.attr(ca).kind {
             AttributeKind::Compound { values, .. } => values.clone(),
             _ => List::nil(),
         };
         if values.is_empty() {
-            self.log.error_at(pos, errors::invalid_repeatable_annotation(SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, anno_decl))).into());
+            self.log.error_at(
+                pos,
+                errors::invalid_repeatable_annotation(SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, anno_decl),
+                ))
+                .into(),
+            );
             return Ok(None);
         }
         let pair = values.head().clone();
         let name = ctx.sym(pair.fst).name.clone();
         if name.to_java_string() != self.names.value.to_java_string() {
-            self.log.error_at(pos, errors::invalid_repeatable_annotation(SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, anno_decl))).into());
+            self.log.error_at(
+                pos,
+                errors::invalid_repeatable_annotation(SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, anno_decl),
+                ))
+                .into(),
+            );
             return Ok(None);
         }
         let class_type = match &ctx.attr(pair.snd).kind {
             AttributeKind::Class { class_type } => *class_type,
             _ => {
-                self.log.error_at(pos, errors::invalid_repeatable_annotation(SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, anno_decl))).into());
+                self.log.error_at(
+                    pos,
+                    errors::invalid_repeatable_annotation(SymbolArg::placeholder(
+                        crate::comp::resolve::symbol_display_name(ctx, anno_decl),
+                    ))
+                    .into(),
+                );
                 return Ok(None);
             }
         };
@@ -2064,10 +2321,19 @@ impl AnnotateServices {
 
     /// Java: private MethodSymbol validateContainer(Type targetContainerType,
     /// Type originalAnnoType, DiagnosticPosition pos) (Annotate.java:1000-1057)
-    fn validate_container(&self, ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab, target_container_type: TypeId, original_anno_type: TypeId, pos: i32) -> Result<Option<SymbolId>, CompletionFailure> {
+    fn validate_container(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        target_container_type: TypeId,
+        original_anno_type: TypeId,
+        pos: i32,
+    ) -> Result<Option<SymbolId>, CompletionFailure> {
         let mut fatal_error = false;
-        let container_tsym = ctx.typ(target_container_type).tsym.expect("container symbol");
+        let container_tsym = ctx
+            .typ(target_container_type)
+            .tsym
+            .expect("container symbol");
         let members = match &ctx.sym(container_tsym).kind_data {
             SymbolKind::ClassSymbol { members_field, .. } => *members_field,
             _ => None,
@@ -2076,7 +2342,12 @@ impl AnnotateServices {
         let mut nr_value_elems = 0;
         let mut container_value_symbol: Option<SymbolId> = None;
         if let Some(scope) = members {
-            let symbols = ctx.scope_get_symbols_by_name(scope, &value_name, LookupKind::NON_RECURSIVE, &|_| true);
+            let symbols = ctx.scope_get_symbols_by_name(
+                scope,
+                &value_name,
+                LookupKind::NON_RECURSIVE,
+                &|_| true,
+            );
             for elm in symbols {
                 nr_value_elems += 1;
                 if nr_value_elems == 1 && ctx.sym(elm).kind == Kind::MTH {
@@ -2088,31 +2359,72 @@ impl AnnotateServices {
             }
         }
         if fatal_error {
-            self.log.error_at(pos, errors::invalid_repeatable_annotation_multiple_values(TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, container_tsym)), nr_value_elems).into());
+            self.log.error_at(
+                pos,
+                errors::invalid_repeatable_annotation_multiple_values(
+                    TypeArg::placeholder(crate::comp::resolve::symbol_display_name(
+                        ctx,
+                        container_tsym,
+                    )),
+                    nr_value_elems,
+                )
+                .into(),
+            );
             return Ok(None);
         } else if nr_value_elems == 0 {
-            self.log.error_at(pos, errors::invalid_repeatable_annotation_no_value(DiagnosticArg::from_display(crate::comp::resolve::symbol_display_name(ctx, container_tsym))).into());
+            self.log.error_at(
+                pos,
+                errors::invalid_repeatable_annotation_no_value(DiagnosticArg::from_display(
+                    crate::comp::resolve::symbol_display_name(ctx, container_tsym),
+                ))
+                .into(),
+            );
             return Ok(None);
         }
-        let Some(container_value_symbol) = container_value_symbol else { return Ok(None) };
+        let Some(container_value_symbol) = container_value_symbol else {
+            return Ok(None);
+        };
         if ctx.sym(container_value_symbol).kind != Kind::MTH {
-            self.log.error_at(pos, errors::invalid_repeatable_annotation_invalid_value(TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, container_tsym))).into());
+            self.log.error_at(
+                pos,
+                errors::invalid_repeatable_annotation_invalid_value(TypeArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, container_tsym),
+                ))
+                .into(),
+            );
             fatal_error = true;
         }
-        let method_type = ctx.sym(container_value_symbol).ty.expect("container value method type");
+        let method_type = ctx
+            .sym(container_value_symbol)
+            .ty
+            .expect("container value method type");
         let value_ret_type = return_type_of(ctx, method_type);
-        let expected_type = {
-            self.types.make_array_type(ctx, syms, original_anno_type)
-        };
+        let expected_type = { self.types.make_array_type(ctx, syms, original_anno_type) };
         let is_array = ctx.typ(value_ret_type).has_tag(TypeTag::ARRAY);
         let same = {
-            self.types.is_same_type(ctx, syms, expected_type, value_ret_type)
+            self.types
+                .is_same_type(ctx, syms, expected_type, value_ret_type)
         };
         if !(is_array && same) {
-            self.log.error_at(pos, errors::invalid_repeatable_annotation_value_return(DiagnosticArg::from_display(crate::comp::resolve::symbol_display_name(ctx, container_tsym)), TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, value_ret_type)), TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, expected_type))).into());
+            self.log.error_at(
+                pos,
+                errors::invalid_repeatable_annotation_value_return(
+                    DiagnosticArg::from_display(crate::comp::resolve::symbol_display_name(
+                        ctx,
+                        container_tsym,
+                    )),
+                    TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, value_ret_type)),
+                    TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, expected_type)),
+                )
+                .into(),
+            );
             fatal_error = true;
         }
-        Ok(if fatal_error { None } else { Some(container_value_symbol) })
+        Ok(if fatal_error {
+            None
+        } else {
+            Some(container_value_symbol)
+        })
     }
 
     /// Java: private <T> T makeContainerAnnotation(List<T> toBeReplaced,
@@ -2126,7 +2438,7 @@ impl AnnotateServices {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         orig_anno_type: TypeId,
-        attr: &mut crate::comp::attr::Attr,
+        attr: &mut Attr,
     ) -> Result<(), CompletionFailure> {
         let Some(decl) = ctx.typ(orig_anno_type).tsym else {
             return Ok(());
@@ -2137,12 +2449,8 @@ impl AnnotateServices {
         let Some(metadata) = ctx.sym(decl).get_annotation_type_metadata().cloned() else {
             return Ok(());
         };
-        let repeatable = AnnotationTypeMetadata::get_repeatable_shared(
-            &metadata,
-            ctx,
-            syms,
-            Some(&mut *attr),
-        )?;
+        let repeatable =
+            AnnotationTypeMetadata::get_repeatable_shared(&metadata, ctx, syms, Some(&mut *attr))?;
         let Some(repeatable) = repeatable else {
             return Ok(());
         };
@@ -2173,12 +2481,7 @@ impl AnnotateServices {
         };
         let repeatable_tsym = ctx.typ(syms.repeatable_type).tsym?;
         for annotation in annotations.iter() {
-            if ctx
-                .tree(annotation)
-                .ty
-                .and_then(|ty| ctx.typ(ty).tsym)
-                == Some(repeatable_tsym)
-            {
+            if ctx.tree(annotation).ty.and_then(|ty| ctx.typ(ty).tsym) == Some(repeatable_tsym) {
                 return Some(ctx.tree(annotation).pos);
             }
         }
@@ -2187,8 +2490,25 @@ impl AnnotateServices {
 
     #[allow(clippy::collapsible_if)]
     #[allow(clippy::too_many_arguments)]
-    fn make_container_annotation(&self, ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, to_be_replaced: &[AttributeId], context: &AnnotatedContext, sym: SymbolId, is_type_param: bool, attr: &mut crate::comp::attr::Attr) -> Result<Option<AttributeId>, CompletionFailure> {
-        let valid_repeated = self.process_repeated_annotations(ctx, syms, to_be_replaced, context, sym, is_type_param, attr)?;
+    fn make_container_annotation(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        to_be_replaced: &[AttributeId],
+        context: &AnnotatedContext,
+        sym: SymbolId,
+        is_type_param: bool,
+        attr: &mut Attr,
+    ) -> Result<Option<AttributeId>, CompletionFailure> {
+        let valid_repeated = self.process_repeated_annotations(
+            ctx,
+            syms,
+            to_be_replaced,
+            context,
+            sym,
+            is_type_param,
+            attr,
+        )?;
         let orig_anno_type = ctx
             .attr(to_be_replaced[0])
             .ty
@@ -2196,15 +2516,39 @@ impl AnnotateServices {
         // Java: Check.validateRepeatable runs for the annotation type
         // declaration after the repeated uses have been processed.
         self.validate_repeatable_declaration(ctx, syms, orig_anno_type, attr)?;
-        let Some(valid_repeated) = valid_repeated else { return Ok(None) };
-        let repeated_type = ctx.attr(valid_repeated).ty.expect("repeated annotation type");
-        let repeated_tsym = ctx.typ(repeated_type).tsym.expect("repeated annotation symbol");
-        if let Some((_, manual)) = context.annotated.iter().find(|(tsym, _)| *tsym == repeated_tsym) {
+        let Some(valid_repeated) = valid_repeated else {
+            return Ok(None);
+        };
+        let repeated_type = ctx
+            .attr(valid_repeated)
+            .ty
+            .expect("repeated annotation type");
+        let repeated_tsym = ctx
+            .typ(repeated_type)
+            .tsym
+            .expect("repeated annotation symbol");
+        if let Some((_, manual)) = context
+            .annotated
+            .iter()
+            .find(|(tsym, _)| *tsym == repeated_tsym)
+        {
             if let Some(first) = manual.first() {
-                let first_pos = context.pos.get(first).copied().unwrap_or(crate::util::position::NOPOS);
+                let first_pos = context
+                    .pos
+                    .get(first)
+                    .copied()
+                    .unwrap_or(crate::util::position::NOPOS);
                 let first_ty = ctx.attr(*first).ty.expect("manual container type");
                 let first_tsym = ctx.typ(first_ty).tsym.expect("manual container symbol");
-                self.log.error_at(first_pos, errors::invalid_repeatable_annotation_repeated_and_container_present(SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, first_tsym))).into());
+                self.log.error_at(
+                    first_pos,
+                    errors::invalid_repeatable_annotation_repeated_and_container_present(
+                        SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(
+                            ctx, first_tsym,
+                        )),
+                    )
+                    .into(),
+                );
             }
         }
         Ok(Some(valid_repeated))
@@ -2246,7 +2590,9 @@ fn return_type_of(ctx: &CompilerContext, method_type: TypeId) -> TypeId {
 /// Java: Type.getOriginalType().
 fn original_type_of(ctx: &CompilerContext, ty: TypeId) -> TypeId {
     match &ctx.typ(ty).kind {
-        crate::code::type_::TypeKindData::ErrorType { original_type, .. } => original_type.unwrap_or(ty),
+        crate::code::type_::TypeKindData::ErrorType { original_type, .. } => {
+            original_type.unwrap_or(ty)
+        }
         _ => ty,
     }
 }
@@ -2262,16 +2608,166 @@ pub struct TypeAnnotate<'a> {
     env: Rc<Env<AttrContext>>,
     sym: SymbolId,
     defer_pos: Option<i32>,
-    syms: &'a crate::code::symtab::Symtab,
-    attr: &'a mut crate::comp::attr::Attr,
+    syms: &'a Symtab,
+    attr: &'a mut Attr,
 }
 
 tree_scanner_visitor_delegate!(TypeAnnotate<'a>, 'a);
 
 impl TreeScannerVisitor for TypeAnnotate<'_> {
+    fn visit_class_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        // a classdef declared within a method is visited separately later
+    }
+
+    fn visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (mods, restype, typarams, recvparam, params, thrown, default_value) =
+            match &ctx.tree(tree).kind {
+                TreeKind::MethodDecl {
+                    mods,
+                    restype,
+                    typarams,
+                    recvparam,
+                    params,
+                    thrown,
+                    default_value,
+                    ..
+                } => (
+                    *mods,
+                    *restype,
+                    typarams.clone(),
+                    *recvparam,
+                    params.clone(),
+                    thrown.clone(),
+                    *default_value,
+                ),
+                _ => panic!("expected a method declaration"),
+            };
+        self.scan(ctx, mods);
+        self.scan(ctx, restype);
+        self.scan_list(ctx, &typarams);
+        self.scan(ctx, recvparam);
+        self.scan_list(ctx, &params);
+        self.scan_list(ctx, &thrown);
+        self.scan(ctx, default_value);
+        // Do not annotate the body, just the signature.
+    }
+
+    fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (mods, vartype, init) = match &ctx.tree(tree).kind {
+            TreeKind::VariableDecl {
+                mods,
+                vartype,
+                init,
+                ..
+            } => (*mods, *vartype, *init),
+            _ => panic!("expected a variable declaration"),
+        };
+        let prev_pos = self.defer_pos;
+        self.defer_pos = Some(ctx.tree(tree).pos);
+        if ctx.sym(self.sym).kind == Kind::VAR {
+            self.scan(ctx, mods);
+            self.scan(ctx, vartype);
+        }
+        self.scan(ctx, init);
+        self.defer_pos = prev_pos;
+    }
+
+    fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (encl, typeargs, clazz, args, def) = match &ctx.tree(tree).kind {
+            TreeKind::NewClass {
+                encl,
+                typeargs,
+                clazz,
+                args,
+                def,
+                ..
+            } => (*encl, typeargs.clone(), *clazz, args.clone(), *def),
+            _ => panic!("expected a new class"),
+        };
+        self.scan(ctx, encl);
+        self.scan_list(ctx, &typeargs);
+        if def.is_none() {
+            self.scan(ctx, clazz);
+        }
+        self.scan_list(ctx, &args);
+    }
+
+    fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (annotations, dim_annotations, elemtype, elems) = match &ctx.tree(tree).kind {
+            TreeKind::NewArray {
+                annotations,
+                dim_annotations,
+                elemtype,
+                elems,
+                ..
+            } => (
+                annotations.clone(),
+                dim_annotations.clone(),
+                *elemtype,
+                (*elems).clone(),
+            ),
+            _ => panic!("expected a new array"),
+        };
+        self.services.enter_type_annotations(
+            ctx,
+            self.syms,
+            &annotations,
+            &self.env,
+            self.sym,
+            self.defer_pos,
+            false,
+            &mut *self.attr,
+        );
+        for dim_annos in dim_annotations.iter() {
+            self.services.enter_type_annotations(
+                ctx,
+                self.syms,
+                &dim_annos,
+                &self.env,
+                self.sym,
+                self.defer_pos,
+                false,
+                &mut *self.attr,
+            );
+        }
+        self.scan(ctx, elemtype);
+        if let Some(elems) = elems {
+            self.scan_list(ctx, &elems);
+        }
+    }
+
+    fn visit_binding_pattern(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        // type binding pattern types are annotated separately (Annotate.java:1145-1149)
+    }
+
+    fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (annotations, bounds) = match &ctx.tree(tree).kind {
+            TreeKind::TypeParameter {
+                annotations,
+                bounds,
+                ..
+            } => (annotations.clone(), bounds.clone()),
+            _ => panic!("expected a type parameter"),
+        };
+        self.services.enter_type_annotations(
+            ctx,
+            self.syms,
+            &annotations,
+            &self.env,
+            self.sym,
+            self.defer_pos,
+            true,
+            &mut *self.attr,
+        );
+        self.scan_list(ctx, &bounds);
+    }
+
     fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, underlying_type) = match &ctx.tree(tree).kind {
-            TreeKind::AnnotatedType { annotations, underlying_type } => (annotations.clone(), *underlying_type),
+            TreeKind::AnnotatedType {
+                annotations,
+                underlying_type,
+            } => (annotations.clone(), *underlying_type),
             _ => panic!("expected an annotated type"),
         };
         self.services.enter_type_annotations(
@@ -2286,87 +2782,6 @@ impl TreeScannerVisitor for TypeAnnotate<'_> {
         );
         self.scan(ctx, underlying_type);
     }
-
-    fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (annotations, bounds) = match &ctx.tree(tree).kind {
-            TreeKind::TypeParameter { annotations, bounds, .. } => (annotations.clone(), bounds.clone()),
-            _ => panic!("expected a type parameter"),
-        };
-        self.services.enter_type_annotations(ctx, self.syms, &annotations, &self.env, self.sym, self.defer_pos, true, &mut *self.attr);
-        self.scan_list(ctx, &bounds);
-    }
-
-    fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (annotations, dim_annotations, elemtype, elems) = match &ctx.tree(tree).kind {
-            TreeKind::NewArray { annotations, dim_annotations, elemtype, elems, .. } => {
-                (annotations.clone(), dim_annotations.clone(), *elemtype, (*elems).clone())
-            }
-            _ => panic!("expected a new array"),
-        };
-        self.services.enter_type_annotations(ctx, self.syms, &annotations, &self.env, self.sym, self.defer_pos, false, &mut *self.attr);
-        for dim_annos in dim_annotations.iter() {
-            self.services.enter_type_annotations(ctx, self.syms, &dim_annos, &self.env, self.sym, self.defer_pos, false, &mut *self.attr);
-        }
-        self.scan(ctx, elemtype);
-        if let Some(elems) = elems {
-            self.scan_list(ctx, &elems);
-        }
-    }
-
-    fn visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (mods, restype, typarams, recvparam, params, thrown, default_value) = match &ctx.tree(tree).kind {
-            TreeKind::MethodDecl { mods, restype, typarams, recvparam, params, thrown, default_value, .. } => {
-                (*mods, *restype, typarams.clone(), *recvparam, params.clone(), thrown.clone(), *default_value)
-            }
-            _ => panic!("expected a method declaration"),
-        };
-        self.scan(ctx, mods);
-        self.scan(ctx, restype);
-        self.scan_list(ctx, &typarams);
-        self.scan(ctx, recvparam);
-        self.scan_list(ctx, &params);
-        self.scan_list(ctx, &thrown);
-        self.scan(ctx, default_value);
-        // Do not annotate the body, just the signature.
-    }
-
-    fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (mods, vartype, init) = match &ctx.tree(tree).kind {
-            TreeKind::VariableDecl { mods, vartype, init, .. } => (*mods, *vartype, *init),
-            _ => panic!("expected a variable declaration"),
-        };
-        let prev_pos = self.defer_pos;
-        self.defer_pos = Some(ctx.tree(tree).pos);
-        if ctx.sym(self.sym).kind == Kind::VAR {
-            self.scan(ctx, mods);
-            self.scan(ctx, vartype);
-        }
-        self.scan(ctx, init);
-        self.defer_pos = prev_pos;
-    }
-
-    fn visit_binding_pattern(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
-        // type binding pattern types are annotated separately (Annotate.java:1145-1149)
-    }
-
-    fn visit_class_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
-        // a classdef declared within a method is visited separately later
-    }
-
-    fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (encl, typeargs, clazz, args, def) = match &ctx.tree(tree).kind {
-            TreeKind::NewClass { encl, typeargs, clazz, args, def, .. } => {
-                (*encl, typeargs.clone(), *clazz, args.clone(), *def)
-            }
-            _ => panic!("expected a new class"),
-        };
-        self.scan(ctx, encl);
-        self.scan_list(ctx, &typeargs);
-        if def.is_none() {
-            self.scan(ctx, clazz);
-        }
-        self.scan_list(ctx, &args);
-    }
 }
 
 impl AnnotateServices {
@@ -2378,19 +2793,21 @@ impl AnnotateServices {
     pub fn enter_type_annotations(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         annotations: &List<TreeId>,
         env: &Rc<Env<AttrContext>>,
         s: SymbolId,
         defer_pos: Option<i32>,
         is_type_param: bool,
-        attr: &mut crate::comp::attr::Attr) {
+        attr: &mut Attr,
+    ) {
         let source = env_source_file(ctx, env);
         let prev = self.log.use_source(source);
         let prev_lint_pos = match defer_pos {
-            Some(defer_pos) => Some(self.deferred_lint_handler.set_pos(Rc::new(
-                SimpleDiagnosticPosition::new(defer_pos),
-            ))),
+            Some(defer_pos) => Some(
+                self.deferred_lint_handler
+                    .set_pos(Rc::new(SimpleDiagnosticPosition::new(defer_pos))),
+            ),
             None => None,
         };
         let _ = self.annotate_now(ctx, syms, s, annotations, env, true, is_type_param, attr);
@@ -2399,14 +2816,16 @@ impl AnnotateServices {
         }
         self.log.use_source(prev);
     }
-
 }
-
 
 impl AnnotateServices {
     /// Java: public List<TypeCompound> fromAnnotations(List<JCAnnotation> annotations)
     /// (Annotate.java:146-158)
-    pub fn from_annotations(&self, ctx: &CompilerContext, annotations: &List<TreeId>) -> List<AttributeId> {
+    pub fn from_annotations(
+        &self,
+        ctx: &CompilerContext,
+        annotations: &List<TreeId>,
+    ) -> List<AttributeId> {
         if annotations.is_empty() {
             return List::nil();
         }
@@ -2433,44 +2852,62 @@ impl AnnotateServices {
     /// Java: public void queueScanTreeAndTypeAnnotate(JCTree tree,
     /// Env<AttrContext> env, Symbol sym, DiagnosticPosition deferPos)
     /// (Annotate.java:1041-1049)
-    pub fn queue_scan_tree_and_type_annotate(&self, tree: TreeId, env: &Rc<Env<AttrContext>>, sym: SymbolId, defer_pos: i32) {
+    pub fn queue_scan_tree_and_type_annotate(
+        &self,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        sym: SymbolId,
+        defer_pos: i32,
+    ) {
         let services = self.self_rc();
         let env = Rc::clone(env);
-        self.queues.borrow_mut().q.push_back(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, attr: &mut crate::comp::attr::Attr| {
-            let mut annotator = TypeAnnotate {
-                services: Rc::clone(&services),
-                env: Rc::clone(&env),
-                sym,
-                defer_pos: Some(defer_pos),
-                syms,
-                attr,
-            };
-            annotator.scan(ctx, Some(tree));
-            Ok(())
-        }));
+        self.queues.borrow_mut().q.push_back(Box::new(
+            move |ctx: &mut CompilerContext,
+                  syms: &Symtab,
+                  attr: &mut Attr| {
+                let mut annotator = TypeAnnotate {
+                    services: Rc::clone(&services),
+                    env: Rc::clone(&env),
+                    sym,
+                    defer_pos: Some(defer_pos),
+                    syms,
+                    attr,
+                };
+                annotator.scan(ctx, Some(tree));
+                Ok(())
+            },
+        ));
     }
 
     /// Java: public void annotateTypeSecondStage(JCTree tree,
     /// List<JCAnnotation> annotations, Type storeAt) (Annotate.java:1052-1062)
-    pub fn annotate_type_second_stage(&self, tree: TreeId, annotations: &List<TreeId>, store_at: TypeId) {
+    pub fn annotate_type_second_stage(
+        &self,
+        tree: TreeId,
+        annotations: &List<TreeId>,
+        store_at: TypeId,
+    ) {
         let services = self.self_rc();
         let annotations = annotations.clone();
         let _ = tree;
-        self.queues.borrow_mut().types_q.push_back(Box::new(move |ctx: &mut CompilerContext, _syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
-            let compounds = services.from_annotations(ctx, &annotations);
-            assert!(
-                annotations.length() == compounds.length(),
-                "AssertionError: annotations size mismatch"
-            );
-            let current = ctx.typ(store_at).metadata.clone().unwrap_or_else(
-                crate::code::type_metadata::TypeMetadata::empty,
-            );
-            let entry = crate::code::type_metadata::Entry::Annotations(
-                crate::code::type_metadata::Annotations::new(compounds),
-            );
-            ctx.typ_mut(store_at).metadata = Some(current.combine(entry));
-            Ok(())
-        }));
+        self.queues.borrow_mut().types_q.push_back(Box::new(
+            move |ctx: &mut CompilerContext,
+                  _syms: &Symtab,
+                  _attr: &mut Attr| {
+                let compounds = services.from_annotations(ctx, &annotations);
+                assert_eq!(annotations.length(), compounds.length(), "AssertionError: annotations size mismatch");
+                let current = ctx
+                    .typ(store_at)
+                    .metadata
+                    .clone()
+                    .unwrap_or_else(crate::code::type_metadata::TypeMetadata::empty);
+                let entry = crate::code::type_metadata::Entry::Annotations(
+                    crate::code::type_metadata::Annotations::new(compounds),
+                );
+                ctx.typ_mut(store_at).metadata = Some(current.combine(entry));
+                Ok(())
+            },
+        ));
     }
 
     /// Java: public void annotateTypeParameterSecondStage(JCTree tree,
@@ -2479,14 +2916,18 @@ impl AnnotateServices {
         let services = self.self_rc();
         let annotations = annotations.clone();
         let _ = tree;
-        self.queues.borrow_mut().types_q.push_back(Box::new(move |ctx: &mut CompilerContext, _syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
-            let compounds = services.from_annotations(ctx, &annotations);
-            assert!(
-                annotations.length() == compounds.length(),
-                "AssertionError: annotations size mismatch"
-            );
-            Ok(())
-        }));
+        self.queues.borrow_mut().types_q.push_back(Box::new(
+            move |ctx: &mut CompilerContext,
+                  _syms: &Symtab,
+                  _attr: &mut Attr| {
+                let compounds = services.from_annotations(ctx, &annotations);
+                assert!(
+                    annotations.length() == compounds.length(),
+                    "AssertionError: annotations size mismatch"
+                );
+                Ok(())
+            },
+        ));
     }
 }
 
@@ -2501,12 +2942,12 @@ pub struct AnnotationTypeVisitor<'a> {
     env: Option<Rc<Env<AttrContext>>>,
     target: Option<AttributeId>,
     repeatable: Option<AttributeId>,
-    syms: &'a crate::code::symtab::Symtab,
+    syms: &'a Symtab,
     /// Port adapter (A3k): the Attr of the caller that triggered the source
     /// annotation completion. Upstream Annotate reuses the single Java Attr
     /// instance; the ported service object can only be re-borrowed when no
     /// caller Attr is in flight, so the visitor carries the caller's Attr.
-    attr: Option<&'a mut crate::comp::attr::Attr>,
+    attr: Option<&'a mut Attr>,
 }
 
 tree_scanner_visitor_delegate!(AnnotationTypeVisitor<'a>, 'a);
@@ -2529,7 +2970,9 @@ impl TreeScannerVisitor for AnnotationTypeVisitor<'_> {
 
     fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let annotation_type_tree = match &ctx.tree(tree).kind {
-            TreeKind::Annotation { annotation_type, .. } => annotation_type.expect("annotation type"),
+            TreeKind::Annotation {
+                annotation_type, ..
+            } => annotation_type.expect("annotation type"),
             _ => panic!("expected an annotation"),
         };
         let services = Rc::clone(&self.services);
@@ -2551,7 +2994,13 @@ impl TreeScannerVisitor for AnnotationTypeVisitor<'_> {
                 let annotation_type = syms.annotation_type;
                 let checked = {
                     let chk = Rc::clone(&services.chk);
-                    chk.check_type_basic(ctx, syms, ctx.tree(annotation_type_tree).pos, attributed, annotation_type)
+                    chk.check_type_basic(
+                        ctx,
+                        syms,
+                        ctx.tree(annotation_type_tree).pos,
+                        attributed,
+                        annotation_type,
+                    )
                 };
                 ctx.tree_mut(annotation_type_tree).ty = Some(checked);
                 checked
@@ -2575,7 +3024,14 @@ impl TreeScannerVisitor for AnnotationTypeVisitor<'_> {
                     // is then the sole borrow of the shared Attr.
                     let mut attr = attr_rc.borrow_mut();
                     services
-                        .attribute_annotation(ctx, syms, tree, annotation_target_type, &env, &mut attr)
+                        .attribute_annotation(
+                            ctx,
+                            syms,
+                            tree,
+                            annotation_target_type,
+                            &env,
+                            &mut attr,
+                        )
                         .ok()
                 }
             };
@@ -2620,11 +3076,12 @@ impl AnnotationTypeCompleter for SourceCompleter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         sym: SymbolId,
-        attr: Option<&mut crate::comp::attr::Attr>,
+        attr: Option<&mut Attr>,
     ) -> Result<(), CompletionFailure> {
         let env = self.services.type_envs.get(sym);
         if let Some(env) = env {
-            self.services.attribute_annotation_type(ctx, syms, &env, attr)?;
+            self.services
+                .attribute_annotation_type(ctx, syms, &env, attr)?;
         }
         Ok(())
     }
@@ -2633,7 +3090,9 @@ impl AnnotationTypeCompleter for SourceCompleter {
 impl AnnotateServices {
     /// Java: public AnnotationTypeCompleter annotationTypeSourceCompleter()
     /// (Annotate.java:1199-1201)
-    pub fn annotation_type_source_completer(self: &Rc<AnnotateServices>) -> Rc<dyn AnnotationTypeCompleter> {
+    pub fn annotation_type_source_completer(
+        self: &Rc<AnnotateServices>,
+    ) -> Rc<dyn AnnotationTypeCompleter> {
         Rc::new(SourceCompleter::new(Rc::clone(self)))
     }
 
@@ -2642,9 +3101,9 @@ impl AnnotateServices {
     fn attribute_annotation_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
-        attr: Option<&mut crate::comp::attr::Attr>,
+        attr: Option<&mut Attr>,
     ) -> Result<(), CompletionFailure> {
         let tree = env.tree.expect("annotation type env tree");
         let sym = match &ctx.tree(tree).kind {
@@ -2652,7 +3111,10 @@ impl AnnotateServices {
             _ => panic!("expected a class declaration"),
         };
         let is_annotation_type = (ctx.sym(sym).flags_field & flags::ANNOTATION as i64) != 0;
-        assert!(is_annotation_type, "trying to annotation type complete a non-annotation type");
+        assert!(
+            is_annotation_type,
+            "trying to annotation type complete a non-annotation type"
+        );
         let source = env_source_file(ctx, env);
         let prev = self.log.use_source(source);
         let mut visitor = AnnotationTypeVisitor {
@@ -2685,17 +3147,11 @@ mod tests {
     use std::rc::Rc;
 
     use super::*;
+    use crate::code::dependencies::{Dependencies, DummyDependencies};
     use crate::code::types::Types;
     use crate::comp::attr::Attr;
     use crate::comp::check::Check;
     use crate::comp::const_fold::ConstFold;
-    use javac_tools::error::Error as ToolsError;
-    use javac_tools::tools::java_file_manager::{
-        FileObjectRef, JavaFileManager, JavaFileObjectRef, Location, LocationRef,
-    };
-    use javac_tools::tools::java_file_object::Kind;
-    use javac_tools::tools::option_checker::OptionChecker;
-    use crate::code::dependencies::{Dependencies, DummyDependencies};
     use crate::comp::enter::Enter;
     use crate::comp::member_enter::MemberEnter;
     use crate::comp::type_enter::TypeEnter;
@@ -2704,8 +3160,14 @@ mod tests {
     use crate::util::context::Context;
     use crate::util::javac_messages::JavacMessages;
     use crate::util::options::Options;
+    use javac_tools::error::Error as ToolsError;
+    use javac_tools::tools::java_file_manager::{
+        FileObjectRef, JavaFileManager, JavaFileObjectRef, Location, LocationRef,
+    };
+    use javac_tools::tools::java_file_object::Kind;
+    use javac_tools::tools::option_checker::OptionChecker;
 
-struct UnusedFileManager;
+    struct UnusedFileManager;
 
     impl OptionChecker for UnusedFileManager {
         fn is_supported_option(&self, _option: &javac_strings::JavaString) -> i32 {
@@ -2809,28 +3271,29 @@ struct UnusedFileManager;
     }
 
     fn harness() -> AnnotateHarness {
+        #[test]
+        fn instance_returns_the_registered_service() {
+            let harness = harness();
+            let mut context = Context::new();
+            context.put::<Annotate>(Rc::clone(&harness.annotate));
+            let instance = Annotate::instance(&mut context);
+            assert!(Rc::ptr_eq(&instance, &harness.annotate));
+        }
 
-    #[test]
-    fn instance_returns_the_registered_service() {
-        let harness = harness();
-        let mut context = Context::new();
-        context.put::<Annotate>(Rc::clone(&harness.annotate));
-        let instance = Annotate::instance(&mut context);
-        assert!(Rc::ptr_eq(&instance, &harness.annotate));
-    }
-
-    #[test]
-    #[should_panic(expected = "Annotate is not registered in the Context")]
-    fn instance_requires_registration() {
-        let mut context = Context::new();
-        let _ = Annotate::instance(&mut context);
-    }
+        #[test]
+        #[should_panic(expected = "Annotate is not registered in the Context")]
+        fn instance_requires_registration() {
+            let mut context = Context::new();
+            let _ = Annotate::instance(&mut context);
+        }
         let mut ctx = CompilerContext::new();
         let mut context = Context::new();
         let log = Log::instance(&mut context);
         let names = Rc::new(Names::new(false));
         let messages = JavacMessages::instance(&mut context);
-        let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(messages, "compiler"));
+        let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(
+            messages, "compiler",
+        ));
         let options = Options::instance(&mut context);
         let lint = Lint::instance(&mut context);
         let syms = Rc::new(Symtab::new(
@@ -2868,7 +3331,7 @@ struct UnusedFileManager;
             manager,
             &options,
             Rc::clone(&todo),
-            Rc::clone(&type_envs)
+            Rc::clone(&type_envs),
         ));
         let annotate_cell: Rc<RefCell<Option<Rc<Annotate>>>> = Rc::new(RefCell::new(None));
         let member_enter = Rc::new(MemberEnter::new(
@@ -2877,7 +3340,7 @@ struct UnusedFileManager;
             Rc::clone(&check),
             Rc::clone(&types),
             Rc::clone(&deferred),
-            Rc::clone(&annotate_cell)
+            Rc::clone(&annotate_cell),
         ));
         let type_enter = Rc::new(RefCell::new(TypeEnter::new(
             Rc::clone(&names),
@@ -2893,7 +3356,7 @@ struct UnusedFileManager;
             Rc::clone(&type_envs),
             Rc::clone(&dependencies),
             Rc::clone(&annotate_cell),
-            Rc::clone(&todo)
+            Rc::clone(&todo),
         )));
         type_enter.borrow().set_self_ref(Rc::downgrade(&type_enter));
         let basic_handler = Rc::clone(&check.basic_handler);
@@ -2923,7 +3386,7 @@ struct UnusedFileManager;
             &options,
             crate::code::preview::Preview::instance(&mut context),
         )));
-        let resolve = Rc::new(crate::comp::resolve::Resolve::new(
+        let resolve = Rc::new(Resolve::new(
             &mut ctx,
             Rc::clone(&names),
             Rc::clone(&log),
@@ -2971,7 +3434,9 @@ struct UnusedFileManager;
         let push = |name: &'static str| {
             let order = Rc::clone(&order);
             Box::new(
-                move |_ctx: &mut CompilerContext, _syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
+                move |_ctx: &mut CompilerContext,
+                      _syms: &Symtab,
+                      _attr: &mut Attr| {
                     order.borrow_mut().push(name);
                     Ok(())
                 },
@@ -2996,7 +3461,9 @@ struct UnusedFileManager;
         let push = |name: &'static str| {
             let order = Rc::clone(&order);
             Box::new(
-                move |_ctx: &mut CompilerContext, _syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
+                move |_ctx: &mut CompilerContext,
+                      _syms: &Symtab,
+                      _attr: &mut Attr| {
                     order.borrow_mut().push(name);
                     Ok(())
                 },
@@ -3007,7 +3474,10 @@ struct UnusedFileManager;
         h.annotate.after_types(push("afterTypes"));
         h.annotate.validate(push("validate"));
         h.annotate.request_flush().expect("flush while blocked");
-        assert!(order.borrow().is_empty(), "blocked annotations must not flush");
+        assert!(
+            order.borrow().is_empty(),
+            "blocked annotations must not flush"
+        );
         let attr_rc = Rc::clone(&h.attr);
         let mut attr = attr_rc.borrow_mut();
         h.annotate
@@ -3029,7 +3499,9 @@ struct UnusedFileManager;
             Some(string_type),
             crate::util::constants::ConstantValue::String(javac_strings::JavaString::from("value")),
         ));
-        let compound = h.ctx.alloc_attribute(Attribute::new_compound(Some(bool_type), List::nil()));
+        let compound = h
+            .ctx
+            .alloc_attribute(Attribute::new_compound(Some(bool_type), List::nil()));
         let compound_tree = {
             let make = &*h.make;
             make.at(0);

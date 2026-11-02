@@ -1,3 +1,5 @@
+use super::annotation_tree::AnnotationTree;
+use super::tree::Tree;
 /// A tree node for a type parameter.
 ///
 /// For example:
@@ -16,8 +18,6 @@
 /// @since 1.6
 use javac_tools::lang::model::element::Name;
 use std::rc::Rc;
-use super::annotation_tree::AnnotationTree;
-use super::tree::Tree;
 
 pub trait TypeParameterTree: Tree {
     /// Returns the name of the type parameter.
@@ -38,5 +38,4 @@ pub trait TypeParameterTree: Tree {
     /// @return annotations on the type parameter declaration
     /// @since 1.8
     fn get_annotations(&self) -> Vec<Rc<dyn AnnotationTree>>;
-
 }

@@ -20,8 +20,8 @@ use std::rc::Rc;
 use javac_ctsym::CtSym;
 use javac_strings::JavaString;
 use javac_tools::error::Error;
-use javac_tools::jdk::ClassLoader;
 use javac_tools::java_io::{Reader, StringReader, Writer};
+use javac_tools::jdk::ClassLoader;
 use javac_tools::tools::file_object::FileObject;
 use javac_tools::tools::java_file_manager::{
     FileObjectRef, JavaFileManager, JavaFileObjectRef, Location, LocationRef,
@@ -189,7 +189,6 @@ impl CtSymJavaFileManager {
             .map(|known| known.class_name.clone())
     }
 
-
     /// The ct.sym entry name of a file object created by this manager (either a
     /// SigJavaFileObject or its underlying ct.sym file object).
     fn known_entry_for_ptr(&self, ptr: usize) -> Option<String> {
@@ -198,7 +197,6 @@ impl CtSymJavaFileManager {
             .get(&ptr)
             .map(|known| known.entry_name.clone())
     }
-
 }
 
 impl javac_tools::tools::option_checker::OptionChecker for CtSymJavaFileManager {
@@ -279,7 +277,8 @@ impl JavaFileManager for CtSymJavaFileManager {
             }
             return Ok(self.ct_sym_class(class_name));
         }
-        self.inner.get_java_file_for_input(location, class_name, kind)
+        self.inner
+            .get_java_file_for_input(location, class_name, kind)
     }
 
     fn get_java_file_for_output(
@@ -311,7 +310,11 @@ impl JavaFileManager for CtSymJavaFileManager {
                 let class_name = if package_name.is_empty() {
                     stem.replace('/', ".")
                 } else {
-                    format!("{}.{}", package_name.to_string_lossy(), stem.replace('/', "."))
+                    format!(
+                        "{}.{}",
+                        package_name.to_string_lossy(),
+                        stem.replace('/', ".")
+                    )
                 };
                 return Ok(self
                     .ct_sym_class(&JavaString::from(class_name.as_str()))
@@ -442,9 +445,7 @@ impl JavaFileObject for SigJavaFileObject {
     fn is_name_compatible(&self, simple_name: &JavaString, _kind: Kind) -> bool {
         // Java: super.isNameCompatible(simpleName + ".sig", Kind.OTHER)
         // (JDKPlatformProvider.java:351-354).
-        let simple = JavaString::from(
-            format!("{}.sig", simple_name.to_string_lossy()).as_str(),
-        );
+        let simple = JavaString::from(format!("{}.sig", simple_name.to_string_lossy()).as_str());
         self.delegate.is_name_compatible(&simple, Kind::OTHER)
     }
 
@@ -477,7 +478,11 @@ impl CtSymFileObject {
     /// The signature bytes of the entry (Java: Files.newInputStream of the entry).
     fn read_signature(&self) -> Result<Vec<u8>, Error> {
         self.archive
-            .get_sig_in_module(self.release, &self.module, &self.class_name.to_string_lossy())
+            .get_sig_in_module(
+                self.release,
+                &self.module,
+                &self.class_name.to_string_lossy(),
+            )
             .ok_or_else(|| {
                 Error::io(JavaString::from(
                     format!("ct.sym entry not found: {}", self.entry_name).as_str(),
@@ -580,4 +585,3 @@ impl JavaFileObject for CtSymFileObject {
         None
     }
 }
-

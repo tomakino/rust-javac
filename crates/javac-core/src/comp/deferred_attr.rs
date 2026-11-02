@@ -37,10 +37,10 @@ use crate::comp::resolve::MethodResolutionPhase;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{SymbolId, TreeId, TypeId};
 use crate::tree::jc_tree::{Tag, TreeKind};
-use crate::util::list::List;
-use crate::util::warner::Warner;
-use crate::util::names::Names;
 use crate::tree::tree_scanner::TreeScannerVisitor;
+use crate::util::list::List;
+use crate::util::names::Names;
+use crate::util::warner::Warner;
 
 /// Java: enum DeferredAttr.AttributionMode
 #[allow(non_camel_case_types)]
@@ -63,15 +63,18 @@ impl AttributionMode {
         !matches!(self, AttributionMode::FULL)
     }
 
-/// /// Java: AttributionMode.recover() (DeferredAttr.java:1435-1450).
-///
-/// # Panics
-///   - none.
-///
-/// Upstream: DeferredAttr.java:1435-1450.
-///
+    /// /// Java: AttributionMode.recover() (DeferredAttr.java:1435-1450).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: DeferredAttr.java:1435-1450.
+    ///
     pub fn recover(self) -> bool {
-        matches!(self, AttributionMode::FULL | AttributionMode::ATTRIB_TO_TREE)
+        matches!(
+            self,
+            AttributionMode::FULL | AttributionMode::ATTRIB_TO_TREE
+        )
     }
 }
 
@@ -97,11 +100,7 @@ pub struct SpeculativeEntry {
 impl SpeculativeEntry {
     /// Java: boolean matches(MethodResolutionPhase phase)
     pub fn matches(&self, phase: MethodResolutionPhase) -> bool {
-        self.result_info
-            .check_context
-            .deferred_attr_context()
-            .phase
-            == phase
+        self.result_info.check_context.deferred_attr_context().phase == phase
     }
 }
 
@@ -216,7 +215,10 @@ pub fn deferred_type_speculative_type(
 ) -> Option<TypeId> {
     let (_, _, _, _, cache, argument) = deferred_fields(ctx, t);
     if let Some(data) = argument {
-        let argument_attr = attr.argument_attr.get().cloned()
+        let argument_attr = attr
+            .argument_attr
+            .get()
+            .cloned()
             .expect("AssertionError: argumentAttr service must be installed");
         let argument_attr = argument_attr.borrow();
         let selected = argument_attr.argument_type_speculative_type(ctx, &data, t, msym, phase);
@@ -235,7 +237,10 @@ pub fn deferred_type_speculative_tree(
 ) -> Option<TreeId> {
     let (_, _, _, _, cache, argument) = deferred_fields(ctx, t);
     if let Some(data) = argument {
-        let argument_attr = attr.argument_attr.get().cloned()
+        let argument_attr = attr
+            .argument_attr
+            .get()
+            .cloned()
             .expect("AssertionError: argumentAttr service must be installed");
         let argument_attr = argument_attr.borrow();
         return argument_attr.argument_type_speculative_tree(ctx, &data, t, deferred_attr_context);
@@ -263,7 +268,10 @@ pub fn deferred_type_complete_base(
             let (tree, env, mode, _, cache, _) = deferred_fields(ctx, t);
             // Java: Assert.check(mode == null || mode == AttrMode.SPECULATIVE);
             debug_assert!(mode.is_none() || mode == Some(AttrMode::SPECULATIVE));
-            let deferred = attr.deferred_attr.get().cloned()
+            let deferred = attr
+                .deferred_attr
+                .get()
+                .cloned()
                 .expect("AssertionError: deferredAttr service must be installed");
             let result_info_rc = Rc::new(result_info.clone());
             let speculative_tree = {
@@ -302,7 +310,10 @@ pub fn deferred_type_complete(
     let argument = deferred_fields(ctx, t).5;
     match argument {
         Some(data) => {
-            let argument_attr = attr.argument_attr.get().cloned()
+            let argument_attr = attr
+                .argument_attr
+                .get()
+                .cloned()
                 .expect("AssertionError: argumentAttr service must be installed");
             // Port adapter (A3k): run the completion on a session clone; the
             // surrounding speculative attribution may re-enter Attr::attribTree
@@ -412,7 +423,7 @@ impl DeferredAttrContext {
             phase,
             inference_context,
             parent,
-            warn: warn,
+            warn,
             deferred_attr_nodes: RefCell::new(Vec::new()),
             empty: false,
         }
@@ -506,13 +517,7 @@ impl DeferredAttrContext {
                     Some(warn) => warn,
                     None => &default_warn,
                 };
-                context.solve_any(
-                    ctx,
-                    syms,
-                    types,
-                    List::from_iterable(stuck_vars),
-                    warn_ref,
-                )?;
+                context.solve_any(ctx, syms, types, List::from_iterable(stuck_vars), warn_ref)?;
                 let context = Rc::clone(&self.inference_context);
                 context.notify_change(ctx, syms, types)?;
             }
@@ -640,15 +645,24 @@ fn process_deferred_attr_node(
         AttrMode::SPECULATIVE => {
             if node.deferred_stuck_policy.is_stuck() {
                 // Java: new StructuralStuckChecker().check(dt, resultInfo, deferredAttrContext)
-                let svc_rc = attr.deferred_attr.get().cloned()
+                let svc_rc = attr
+                    .deferred_attr
+                    .get()
+                    .cloned()
                     .expect("AssertionError: deferredAttr service must be installed");
                 // Java: DeferredAttr.StructuralStuckChecker holds the shared
                 // DeferredAttr instance (DeferredAttr.java:757-800). The port
                 // must not hold a mutable RefCell borrow across the recursive
                 // speculative attribution below (it re-enters this service).
                 let svc = svc_rc.borrow();
-                let result = svc
-                    .structural_stuck_check(ctx, syms, attr, node.dt, &node.result_info, deferred_attr_context);
+                let result = svc.structural_stuck_check(
+                    ctx,
+                    syms,
+                    attr,
+                    node.dt,
+                    &node.result_info,
+                    deferred_attr_context,
+                );
                 match result {
                     Ok(()) => Ok(true),
                     Err(failure) => Err(failure),
@@ -745,7 +759,8 @@ impl crate::comp::check::CheckContext for ParentCheckContext {
         req: TypeId,
         warn: &Warner,
     ) -> bool {
-        self.enclosing.compatible(ctx, syms, types, found, req, warn)
+        self.enclosing
+            .compatible(ctx, syms, types, found, req, warn)
     }
 
     fn report(
@@ -766,7 +781,8 @@ impl crate::comp::check::CheckContext for ParentCheckContext {
         found: TypeId,
         req: TypeId,
     ) -> Warner {
-        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+        self.enclosing
+            .check_warner(ctx, syms, types, pos, found, req)
     }
 
     fn inference_context(&self) -> &Rc<InferenceContext> {
@@ -818,37 +834,36 @@ pub fn deferred_type_check(
     let pt = result_info
         .pt
         .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
-    let policy: Rc<dyn DeferredStuckPolicy> = if ctx.typ(pt).has_tag(TypeTag::NONE)
-        || types.is_erroneous_type(ctx, syms, pt)
-    {
-        Rc::new(DummyStuckPolicy)
-    } else if deferred_attr_context.mode == AttrMode::SPECULATIVE
-        || deferred_attr_context.inside_overload_phase()
-    {
-        let chk_rc = Rc::clone(&attr.chk);
-        let chk = Rc::clone(&chk_rc);
-        Rc::new(overload_stuck_policy_new(
-            ctx,
-            syms,
-            types,
-            &attr.diags,
-            &chk,
-            result_info,
-            t,
-        ))
-    } else {
-        let chk_rc = Rc::clone(&attr.chk);
-        let chk = Rc::clone(&chk_rc);
-        Rc::new(check_stuck_policy_new(
-            ctx,
-            syms,
-            types,
-            &attr.diags,
-            &chk,
-            result_info,
-            t,
-        ))
-    };
+    let policy: Rc<dyn DeferredStuckPolicy> =
+        if ctx.typ(pt).has_tag(TypeTag::NONE) || types.is_erroneous_type(ctx, syms, pt) {
+            Rc::new(DummyStuckPolicy)
+        } else if deferred_attr_context.mode == AttrMode::SPECULATIVE
+            || deferred_attr_context.inside_overload_phase()
+        {
+            let chk_rc = Rc::clone(&attr.chk);
+            let chk = Rc::clone(&chk_rc);
+            Rc::new(overload_stuck_policy_new(
+                ctx,
+                syms,
+                types,
+                &attr.diags,
+                &chk,
+                result_info,
+                t,
+            ))
+        } else {
+            let chk_rc = Rc::clone(&attr.chk);
+            let chk = Rc::clone(&chk_rc);
+            Rc::new(check_stuck_policy_new(
+                ctx,
+                syms,
+                types,
+                &attr.diags,
+                &chk,
+                result_info,
+                t,
+            ))
+        };
     check_with_policy(
         ctx,
         syms,
@@ -906,14 +921,8 @@ fn check_with_policy(
         }
         Ok(crate::code::symtab::no_type_id(ctx))
     } else {
-        let result = deferred_type_complete(
-            ctx,
-            syms,
-            attr,
-            t,
-            result_info,
-            deferred_attr_context,
-        )?;
+        let result =
+            deferred_type_complete(ctx, syms, attr, t, result_info, deferred_attr_context)?;
         if let TypeKindData::Deferred { mode: slot, .. } = &mut ctx.typ_mut(t).kind {
             *slot = Some(deferred_attr_context.mode);
         }
@@ -966,14 +975,18 @@ pub struct DeferredMapCtx<'a> {
 impl DeferredTypeMap {
     /// Java: protected DeferredTypeMap(AttrMode mode, Symbol msym,
     /// MethodResolutionPhase phase) (DeferredAttr.java:1000-1010)
-    pub fn new(mode: AttrMode, msym: Option<SymbolId>, phase: MethodResolutionPhase) -> DeferredTypeMap {
+    pub fn new(
+        mode: AttrMode,
+        msym: Option<SymbolId>,
+        phase: MethodResolutionPhase,
+    ) -> DeferredTypeMap {
         DeferredTypeMap {
             deferred_attr_context: Rc::new(DeferredAttrContext::new(
                 mode,
                 msym,
                 phase,
                 crate::comp::infer::empty_context(),
-                Some(crate::comp::deferred_attr::empty_deferred_attr_context()),
+                Some(empty_deferred_attr_context()),
                 None,
             )),
             recovery: false,
@@ -983,7 +996,10 @@ impl DeferredTypeMap {
 
     /// Java: new Infer.ImplicitArgType(Symbol msym, MethodResolutionPhase phase)
     /// — the mapping behavior is fixed (adapter flag).
-    pub fn new_implicit_arg(_msym: Option<SymbolId>, _phase: MethodResolutionPhase) -> DeferredTypeMap {
+    pub fn new_implicit_arg(
+        _msym: Option<SymbolId>,
+        _phase: MethodResolutionPhase,
+    ) -> DeferredTypeMap {
         let mut map = DeferredTypeMap::new(AttrMode::SPECULATIVE, None, MethodResolutionPhase::BOX);
         map.implicit_arg = true;
         map
@@ -1042,7 +1058,9 @@ impl DeferredTypeMap {
         use crate::code::type_tag::TypeTag;
         if ctx.typ(t).has_tag(TypeTag::BOT) {
             // infer as java.lang.Void for now
-            let boxed = dctx.types.boxed_class_ro(ctx, dctx.syms, dctx.syms.void_type);
+            let boxed = dctx
+                .types
+                .boxed_class_ro(ctx, dctx.syms, dctx.syms.void_type);
             return ctx.sym(boxed).ty.expect("boxed void type");
         }
         if ctx.typ(t).get_tag() == TypeTag::CLASS {
@@ -1133,10 +1151,7 @@ impl DeferredTypeMap {
                 }
             }
             TypeKindData::WildcardType {
-                type_,
-                kind,
-                bound,
-                ..
+                type_, kind, bound, ..
             } => {
                 let Some(type_) = *type_ else {
                     return t;
@@ -1152,7 +1167,9 @@ impl DeferredTypeMap {
                         TypeKindData::WildcardType {
                             type_: Some(type1),
                             kind: *kind,
-                            bound: *bound, is_printing_bound: std::cell::Cell::new(false), },
+                            bound: *bound,
+                            is_printing_bound: std::cell::Cell::new(false),
+                        },
                     ))
                 }
             }
@@ -1273,7 +1290,7 @@ impl DeferredTypeMap {
         let tree = deferred_fields(ctx, dt).0;
         let is_lambda_or_member_ref = matches!(
             ctx.tree(tree).tag,
-            crate::tree::jc_tree::Tag::REFERENCE | crate::tree::jc_tree::Tag::LAMBDA
+            Tag::REFERENCE | Tag::LAMBDA
         );
         let is_functional_interface = pt
             .map(|pt| {
@@ -1292,7 +1309,7 @@ impl DeferredTypeMap {
         // Java: dt.check(attr.new RecoveryInfo(deferredAttrContext, ptRecovery) {
         // check(pos, found) => chk.checkNonVoid(pos, super.check(pos, found)) });
         let recovery_info = {
-            let mut info = crate::comp::attr::ResultInfo::new_with_mode(
+            let mut info = ResultInfo::new_with_mode(
                 crate::code::kinds::KindSelector::VAL,
                 Some(pt_recovery),
                 Rc::new(crate::comp::attr::RecoveryCheckContext {
@@ -1523,12 +1540,16 @@ impl ResolveDeferredRecoveryMap {
         if !dctx.types.is_erroneous_type(ctx, dctx.syms, res) {
             let tree = deferred_fields(ctx, dt).0;
             match ctx.tree(tree).tag {
-                crate::tree::jc_tree::Tag::LAMBDA | crate::tree::jc_tree::Tag::REFERENCE => {
+                Tag::LAMBDA | Tag::REFERENCE => {
                     return Some(dt);
                 }
-                crate::tree::jc_tree::Tag::CONDEXPR => {
+                Tag::CONDEXPR => {
                     let recovery_type = dctx.syms.recovery_type;
-                    return if res == recovery_type { Some(dt) } else { Some(res) };
+                    return if res == recovery_type {
+                        Some(dt)
+                    } else {
+                        Some(res)
+                    };
                 }
                 _ => {}
             }
@@ -1583,7 +1604,9 @@ impl FilterScanner {
             Tag::CONDEXPR => {
                 let (truepart, falsepart) = match &ctx.tree(tree).kind {
                     TreeKind::Conditional {
-                        truepart, falsepart, ..
+                        truepart,
+                        falsepart,
+                        ..
                     } => (*truepart, *falsepart),
                     _ => panic!("expected a conditional"),
                 };
@@ -1935,17 +1958,19 @@ impl CheckStuckPolicy {
         if !types.is_functional_interface(ctx, env.syms, env.diags, env.chk, pt_tsym) {
             return;
         }
-        let descriptor_type = match types.find_descriptor_type(ctx, env.syms, env.diags, env.chk, pt) {
-            Ok(descriptor) => descriptor,
-            Err(_) => return,
-        };
+        let descriptor_type =
+            match types.find_descriptor_type(ctx, env.syms, env.diags, env.chk, pt) {
+                Ok(descriptor) => descriptor,
+                Err(_) => return,
+            };
         let desc_params = types.get_parameter_types_public(ctx, descriptor_type);
         let free_arg_vars = self.free_vars_of(ctx, types, env, desc_params);
         let param_kind = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::Lambda { param_kind, .. } => *param_kind,
+            TreeKind::Lambda { param_kind, .. } => *param_kind,
             _ => return,
         };
-        if param_kind == crate::tree::jc_tree::ParameterKind::IMPLICIT && !free_arg_vars.is_empty() {
+        if param_kind == crate::tree::jc_tree::ParameterKind::IMPLICIT && !free_arg_vars.is_empty()
+        {
             self.stuck_vars.borrow_mut().extend(free_arg_vars);
             let ret = types.get_return_type_public(ctx, descriptor_type);
             let thrown = ctx.typ(descriptor_type).get_thrown_types(ctx);
@@ -1964,15 +1989,13 @@ impl CheckStuckPolicy {
         ctx: &mut CompilerContext,
         types: &Types,
         env: &StuckScannerEnv,
-        ts: crate::util::list::List<TypeId>,
+        ts: List<TypeId>,
     ) -> Vec<TypeId> {
         let mut result: Vec<TypeId> = Vec::new();
         let mut current = ts;
         while current.non_empty() {
             let t = *current.head();
-            let vars = self
-                .inference_context
-                .free_vars_in(ctx, env.syms, types, t);
+            let vars = self.inference_context.free_vars_in(ctx, env.syms, types, t);
             result.extend(vars.iter());
             current = current.tail();
         }
@@ -1989,7 +2012,7 @@ impl CheckStuckPolicy {
     ) {
         // Java: scan(tree.expr)
         let expr = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::MemberReference { expr, .. } => *expr,
+            TreeKind::MemberReference { expr, .. } => *expr,
             _ => return,
         };
         FilterScanner::scan(ctx, expr, self, types, env);
@@ -2006,14 +2029,15 @@ impl CheckStuckPolicy {
         if !types.is_functional_interface(ctx, env.syms, env.diags, env.chk, pt_tsym) {
             return;
         }
-        let descriptor_type = match types.find_descriptor_type(ctx, env.syms, env.diags, env.chk, pt) {
-            Ok(descriptor) => descriptor,
-            Err(_) => return,
-        };
+        let descriptor_type =
+            match types.find_descriptor_type(ctx, env.syms, env.diags, env.chk, pt) {
+                Ok(descriptor) => descriptor,
+                Err(_) => return,
+            };
         let desc_params = types.get_parameter_types_public(ctx, descriptor_type);
         let free_arg_vars = self.free_vars_of(ctx, types, env, desc_params);
         let overload_kind = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::MemberReference { overload_kind, .. } => *overload_kind,
+            TreeKind::MemberReference { overload_kind, .. } => *overload_kind,
             _ => None,
         };
         if !free_arg_vars.is_empty()
@@ -2041,7 +2065,9 @@ impl CheckStuckPolicy {
         lambda_pt: Option<TypeId>,
     ) {
         let (body, _param_kind) = match &ctx.tree(lambda).kind {
-            TreeKind::Lambda { body, param_kind, .. } => (*body, *param_kind),
+            TreeKind::Lambda {
+                body, param_kind, ..
+            } => (*body, *param_kind),
             _ => panic!("expected a lambda"),
         };
         let Some(body) = body else {
@@ -2170,7 +2196,7 @@ impl OverloadStuckPolicy {
         let mut stack = vec![tree];
         while let Some(node) = stack.pop() {
             let is_implicit_lambda = match &ctx.tree(node).kind {
-                crate::tree::jc_tree::TreeKind::Lambda { param_kind, .. } => {
+                TreeKind::Lambda { param_kind, .. } => {
                     *param_kind == crate::tree::jc_tree::ParameterKind::IMPLICIT
                 }
                 _ => false,
@@ -2264,7 +2290,8 @@ pub struct DeferredAttrService {
     /// Java: final Names names
     pub names: Rc<Names>,
     /// Java: final DeferredCompletionFailureHandler dcfh
-    pub dcfh: Rc<crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler>,
+    pub dcfh:
+        Rc<crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler>,
     /// Java: final TreeCopier<Void> treeCopier
     pub tree_copier: crate::tree::tree_copier::TreeCopier,
     /// Java: shared tree for stuck expressions
@@ -2280,7 +2307,7 @@ pub struct PositionScannerVisitor {
     pub positions: std::collections::HashSet<i32>,
 }
 
-impl crate::tree::tree_scanner::TreeScannerVisitor for PositionScannerVisitor {
+impl TreeScannerVisitor for PositionScannerVisitor {
     /// Java: PosScanner.scan(JCTree): record the position then navigate.
     fn scan(&mut self, ctx: &mut CompilerContext, tree: Option<TreeId>) {
         if let Some(tree) = tree {
@@ -2295,19 +2322,19 @@ crate::tree::tree_scanner::tree_scanner_visitor_delegate!(PositionScannerVisitor
 impl DeferredAttrService {
     /// Java: protected DeferredAttr(Context context) (DeferredAttr.java:112-200)
     /// — the Ported construction with explicit services (ADR 0001).
-    /// 
+    ///
     /// # Arguments
     ///   - ctx: compiler context used to allocate the shared stuck tree;
     ///   - the service parameters mirror the upstream constructor fields.
-    /// 
+    ///
     ///    # Returns
     ///   - the shared DeferredAttrService handle.
-    /// 
+    ///
     ///    # Panics
     ///   - none.
-    /// 
+    ///
     ///    Upstream: DeferredAttr.java:112-230.
-    /// 
+    ///
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         ctx: &mut CompilerContext,
@@ -2320,15 +2347,17 @@ impl DeferredAttrService {
         types: Rc<Types>,
         syms: Rc<Symtab>,
         names: Rc<Names>,
-        dcfh: Rc<crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler>,
+        dcfh: Rc<
+            crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler,
+        >,
     ) -> Rc<DeferredAttrService> {
         // Java: stuckTree = make.Ident(names.empty).setType(Type.stuckType);
         let stuck_type = syms.stuck_type;
         let stuck_tree = ctx.alloc_tree(crate::tree::jc_tree::JCTree {
             pos: crate::util::position::NOPOS,
             ty: Some(stuck_type),
-            tag: crate::tree::jc_tree::Tag::IDENT,
-            kind: crate::tree::jc_tree::TreeKind::Ident {
+            tag: Tag::IDENT,
+            kind: TreeKind::Ident {
                 name: names.empty.clone(),
                 sym: None,
             },
@@ -2347,23 +2376,23 @@ impl DeferredAttrService {
             dcfh,
             tree_copier,
             stuck_tree,
-            empty_deferred_attr_context: crate::comp::deferred_attr::empty_deferred_attr_context(),
+            empty_deferred_attr_context: empty_deferred_attr_context(),
         })
     }
 
     /// Java: JCTree attribSpeculative(JCTree, Env, ResultInfo)
     /// (DeferredAttr.java:470-472)
-    /// 
+    ///
     /// # Arguments
     ///   - ctx/syms/attr: explicit services;
     ///   - tree/env/result_info: the speculative target.
-    /// 
+    ///
     ///    # Returns
     ///   - Ok(the speculative tree with its type).
-    /// 
+    ///
     ///    # Panics
     ///   - the copied tree must be a valid JCExpression tree (upstream Assert).
-    /// 
+    ///
     ///    Upstream: DeferredAttr.java:470-472.
     pub fn attrib_speculative(
         &self,
@@ -2390,30 +2419,30 @@ impl DeferredAttrService {
     /// Java: JCTree attribSpeculative(JCTree tree, Env, ResultInfo,
     /// TreeCopier<Z> deferredCopier, Supplier<DiagnosticHandler>,
     /// AttributionMode, LocalCacheContext) (DeferredAttr.java:481-489)
-    /// 
+    ///
     /// # Arguments
     ///   - as above plus diag_handler_creator/attribution_mode; the tree is copied first with tree_copier.
-    /// 
+    ///
     ///    # Returns
     ///   - Ok(the speculative tree) after attributing the copy.
-    /// 
+    ///
     ///    # Panics
     ///   - none beyond the registered dependency failures.
-    /// 
+    ///
     ///    Upstream: DeferredAttr.java:481-489.
-    /// 
-    /// 
+    ///
+    ///
     ///    # Arguments
     ///   - as above; Porting rules: the LocalCacheContext overload is registered with the ArgumentAttr stage.
-    /// 
+    ///
     ///    # Returns
     ///   - Ok(the speculative tree) after the attribution round.
-    /// 
+    ///
     ///    # Panics
     ///   - none.
-    /// 
+    ///
     ///    Upstream: DeferredAttr.java:496-520.
-    /// 
+    ///
     #[allow(clippy::too_many_arguments)]
     pub fn attrib_speculative_with_copier(
         &self,
@@ -2506,7 +2535,7 @@ impl DeferredAttrService {
                 let mut visitor = PositionScannerVisitor {
                     positions: std::collections::HashSet::new(),
                 };
-                crate::tree::tree_scanner::TreeScannerVisitor::scan(&mut visitor, ctx, Some(tree));
+                TreeScannerVisitor::scan(&mut visitor, ctx, Some(tree));
                 let positions = Rc::new(visitor.positions);
                 DiagnosticHandler::Deferred {
                     prev: None,
@@ -2519,12 +2548,14 @@ impl DeferredAttrService {
         };
         let prev_cf_handler = self.dcfh.set_handler(
             ctx,
-            Box::new(crate::code::deferred_completion_failure_handler::SpeculativeCodeHandler::new()),
+            Box::new(
+                crate::code::deferred_completion_failure_handler::SpeculativeCodeHandler::new(),
+            ),
         );
         let annotate_rc = self.annotate.borrow().clone();
-        let prev_queues = annotate_rc.as_ref().map(|annotate| {
-            annotate.set_queues(crate::comp::annotate::AnnotateQueues::new())
-        });
+        let prev_queues = annotate_rc
+            .as_ref()
+            .map(|annotate| annotate.set_queues(crate::comp::annotate::AnnotateQueues::new()));
         let nwarnings = self.log.nwarnings.get();
         self.log.nwarnings.set(0);
         self.log
@@ -2552,19 +2583,19 @@ impl DeferredAttrService {
 impl DeferredAttrService {
     /// Java: JCLambda attribSpeculativeLambda(JCLambda that, Env<AttrContext> env,
     /// ResultInfo resultInfo) (DeferredAttr.java:434-468)
-    /// 
+    ///
     /// # Arguments
     ///   - ctx/syms/attr/attr_recover/rs/chk/diags/flow: explicit services;
     ///   - that/env/result_info: the lambda and its target.
-    /// 
+    ///
     ///    # Returns
     ///   - Ok(the speculative lambda tree).
-    /// 
+    ///
     ///    # Panics
     ///   - the lambda body / return tree shapes are asserted as in the upstream casts.
-    /// 
+    ///
     ///    Upstream: DeferredAttr.java:434-468.
-    /// 
+    ///
     #[allow(clippy::too_many_arguments)]
     pub fn attrib_speculative_lambda(
         &self,
@@ -2582,14 +2613,14 @@ impl DeferredAttrService {
     ) -> Result<TreeId, DeferredAttrFailure> {
         use crate::tree::tree_maker::TreeFactory;
         let (params, body, pos) = match &ctx.tree(that).kind {
-            crate::tree::jc_tree::TreeKind::Lambda { params, body, .. } => {
+            TreeKind::Lambda { params, body, .. } => {
                 (params.clone(), *body, ctx.tree(that).pos)
             }
             _ => panic!("ClassCastException: JCLambda expected"),
         };
         let body = body.expect("lambda body");
         let mut stats = params.clone();
-        let body_is_expression = ctx.tree(body).tag != crate::tree::jc_tree::Tag::BLOCK;
+        let body_is_expression = ctx.tree(body).tag != Tag::BLOCK;
         if body_is_expression {
             let ret = {
                 let make = &*self.make;
@@ -2608,32 +2639,26 @@ impl DeferredAttrService {
         let local_env = attr.lambda_env(ctx, syms, that, env);
         local_env.info.borrow_mut().return_result = Some(result_info.clone());
         let outcome = (|| -> Result<TreeId, DeferredAttrFailure> {
-            let speculative_tree = self.attrib_speculative(
-                ctx,
-                syms,
-                attr,
-                lambda_block,
-                &local_env,
-                result_info,
-            )?;
+            let speculative_tree =
+                self.attrib_speculative(ctx, syms, attr, lambda_block, &local_env, result_info)?;
             let spec_stats = match &ctx.tree(speculative_tree).kind {
-                crate::tree::jc_tree::TreeKind::Block { stats, .. } => stats.clone(),
+                TreeKind::Block { stats, .. } => stats.clone(),
                 _ => panic!("ClassCastException: JCBlock expected"),
             };
-            let mut args: crate::util::list::List<TreeId> = crate::util::list::List::nil();
+            let mut args: List<TreeId> = List::nil();
             let mut all = spec_stats;
             let mut last: TreeId = speculative_tree;
             while all.non_empty() {
                 let stat = *all.head();
                 last = stat;
-                if ctx.tree(stat).tag == crate::tree::jc_tree::Tag::VARDEF {
+                if ctx.tree(stat).tag == Tag::VARDEF {
                     args = args.append(stat);
                 }
                 all = all.tail();
             }
-            let lambda_body = if ctx.tree(last).tag == crate::tree::jc_tree::Tag::RETURN {
+            let lambda_body = if ctx.tree(last).tag == Tag::RETURN {
                 match &ctx.tree(last).kind {
-                    crate::tree::jc_tree::TreeKind::Return { expr } => expr.expect("return expr"),
+                    TreeKind::Return { expr } => expr.expect("return expr"),
                     _ => last,
                 }
             } else {
@@ -2653,7 +2678,17 @@ impl DeferredAttrService {
                 // borrow must be shared: a borrow_mut held across pre_flow deadlocks
                 // the moment checkId -> recoverMethodInvocation runs again.
                 let attr_recover = attr_recover_rc.borrow();
-                attr.pre_flow(ctx, syms, &attr_recover, rs, &self.infer, chk, diags, env, speculative_lambda);
+                attr.pre_flow(
+                    ctx,
+                    syms,
+                    &attr_recover,
+                    rs,
+                    &self.infer,
+                    chk,
+                    diags,
+                    env,
+                    speculative_lambda,
+                );
             }
             flow.analyze_lambda(ctx, syms, env, speculative_lambda, &self.make, false);
             Ok(speculative_lambda)
@@ -2675,16 +2710,16 @@ impl DeferredAttrService {
 impl DeferredAttrService {
     /// Java: StructuralStuckChecker.check(DeferredType dt, ResultInfo,
     /// DeferredAttrContext) (DeferredAttr.java:808-816)
-    /// 
+    ///
     /// # Arguments
     ///   - ctx/syms/attr/dt/result_info/deferred_attr_context: the stuck node and its target.
-    /// 
+    ///
     ///    # Returns
     ///   - Ok(()) after recording the stuck tree in the speculative cache.
-    /// 
+    ///
     ///    # Panics
     ///   - none.
-    /// 
+    ///
     ///    Upstream: DeferredAttr.java:808-816.
     pub fn structural_stuck_check(
         &self,
@@ -2702,8 +2737,7 @@ impl DeferredAttrService {
             env,
         };
         self.structural_check_tree(ctx, syms, attr, &state, tree)?;
-        cache
-            .put(self.stuck_tree, Rc::clone(result_info));
+        cache.put(self.stuck_tree, Rc::clone(result_info));
         Ok(())
     }
 
@@ -2726,8 +2760,10 @@ impl DeferredAttrService {
             Tag::CONDEXPR => {
                 // Java: visitConditional: skip tree.cond
                 let (truepart, falsepart) = match &ctx.tree(tree).kind {
-                    crate::tree::jc_tree::TreeKind::Conditional {
-                        truepart, falsepart, ..
+                    TreeKind::Conditional {
+                        truepart,
+                        falsepart,
+                        ..
                     } => (*truepart, *falsepart),
                     _ => panic!("ClassCastException: JCConditional expected"),
                 };
@@ -2742,7 +2778,7 @@ impl DeferredAttrService {
             Tag::SWITCH_EXPRESSION => {
                 // Java: visitSwitchExpression: scan(tree.cases)
                 let cases = match &ctx.tree(tree).kind {
-                    crate::tree::jc_tree::TreeKind::SwitchExpression { cases, .. } => cases.clone(),
+                    TreeKind::SwitchExpression { cases, .. } => cases.clone(),
                     _ => panic!("ClassCastException: JCSwitchExpression expected"),
                 };
                 let mut current = cases;
@@ -2800,37 +2836,41 @@ impl DeferredAttrService {
             return Ok(());
         };
         let params = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::Lambda { params, .. } => params.clone(),
+            TreeKind::Lambda { params, .. } => params.clone(),
             _ => panic!("ClassCastException: JCLambda expected"),
         };
         let descriptor_params = self.types.get_parameter_types_public(ctx, descriptor_type);
         if list_len(&descriptor_params) != list_len_trees(&params) {
-            let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                crate::resources::compiler_properties::fragments::incompatible_arg_types_in_lambda(),
+            let diag = self
+                .diags
+                .fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::incompatible_arg_types_in_lambda(
+                ),
             ));
             check_context.report(ctx, ctx.tree(tree).pos, &diag);
         }
         let current_return_type = self.types.get_return_type_public(ctx, descriptor_type);
-        let return_type_is_void =
-            ctx.typ(current_return_type).has_tag(TypeTag::VOID);
+        let return_type_is_void = ctx.typ(current_return_type).has_tag(TypeTag::VOID);
         let (body, body_is_expression) = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::Lambda { body, .. } => {
+            TreeKind::Lambda { body, .. } => {
                 let body = body.expect("lambda body");
-                (body, ctx.tree(body).tag != crate::tree::jc_tree::Tag::BLOCK)
+                (body, ctx.tree(body).tag != Tag::BLOCK)
             }
             _ => panic!("ClassCastException: JCLambda expected"),
         };
         if body_is_expression {
-            let is_expression_compatible = !return_type_is_void
-                || crate::tree::tree_info::is_expression_statement(ctx, body);
+            let is_expression_compatible =
+                !return_type_is_void || crate::tree::tree_info::is_expression_statement(ctx, body);
             if !is_expression_compatible {
-                let missing = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                    crate::resources::compiler_properties::fragments::missing_ret_val(
-                        crate::resources::diagnostic_contract::TypeArg::placeholder(
-                            crate::comp::attr::type_display_of(ctx, current_return_type),
+                let missing = self
+                    .diags
+                    .fragment(crate::util::jc_diagnostic::Fragment::from(
+                        crate::resources::compiler_properties::fragments::missing_ret_val(
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                crate::comp::attr::type_display_of(ctx, current_return_type),
+                            ),
                         ),
-                    ),
-                ));
+                    ));
                 let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                     crate::resources::compiler_properties::fragments::incompatible_ret_type_in_lambda(
                         crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
@@ -2845,16 +2885,17 @@ impl DeferredAttrService {
                 self.lambda_body_struct_check(ctx, body);
             if return_type_is_void {
                 if !is_void_compatible {
-                    let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                        crate::resources::compiler_properties::fragments::unexpected_ret_val(),
-                    ));
+                    let diag = self
+                        .diags
+                        .fragment(crate::util::jc_diagnostic::Fragment::from(
+                            crate::resources::compiler_properties::fragments::unexpected_ret_val(),
+                        ));
                     check_context.report(ctx, ctx.tree(tree).pos, &diag);
                 }
             } else {
                 let can_complete_normally =
                     self.can_lambda_body_complete_normally(ctx, syms, attr, state, tree)?;
-                let is_value_compatible =
-                    is_potentially_value_compatible && !can_complete_normally;
+                let is_value_compatible = is_potentially_value_compatible && !can_complete_normally;
                 if !is_value_compatible && !is_void_compatible {
                     crate::util::abstract_log::AbstractLog::error_at(
                         &*self.log,
@@ -2866,13 +2907,15 @@ impl DeferredAttrService {
                     );
                 }
                 if !is_value_compatible {
-                    let missing = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                        crate::resources::compiler_properties::fragments::missing_ret_val(
-                            crate::resources::diagnostic_contract::TypeArg::placeholder(
-                                crate::comp::attr::type_display_of(ctx, current_return_type),
+                    let missing = self
+                        .diags
+                        .fragment(crate::util::jc_diagnostic::Fragment::from(
+                            crate::resources::compiler_properties::fragments::missing_ret_val(
+                                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                    crate::comp::attr::type_display_of(ctx, current_return_type),
+                                ),
                             ),
-                        ),
-                    ));
+                        ));
                     let int_pos = ctx.tree(tree).pos;
                     let source = self.log.current_source();
                     // Java: the details diagnostic carries the lambda position
@@ -2931,7 +2974,7 @@ impl DeferredAttrService {
             return Ok(());
         };
         let (expr, name) = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::MemberReference { expr, name, .. } => {
+            TreeKind::MemberReference { expr, name, .. } => {
                 (*expr, name.clone())
             }
             _ => panic!("ClassCastException: JCMemberReference expected"),
@@ -2946,7 +2989,7 @@ impl DeferredAttrService {
                 other => panic!("unexpected speculative attribution failure: {:?}", other),
             })?;
         let descriptor_params = self.types.get_parameter_types_public(ctx, descriptor);
-        let mut argtypes: crate::util::list::List<TypeId> = crate::util::list::List::nil();
+        let mut argtypes: List<TypeId> = List::nil();
         let mut current = descriptor_params;
         while current.non_empty() {
             argtypes = argtypes.append(crate::code::symtab::no_type_id(ctx));
@@ -2954,10 +2997,13 @@ impl DeferredAttrService {
         }
         let mref2 = {
             let copier = crate::tree::tree_copier::TreeCopier::new(Rc::clone(&self.make));
-            copier.copy(ctx, Some(tree)).expect("copied member reference")
+            copier
+                .copy(ctx, Some(tree))
+                .expect("copied member reference")
         };
-        if let crate::tree::jc_tree::TreeKind::MemberReference { expr: mref_expr, .. } =
-            &mut ctx.tree_mut(mref2).kind
+        if let TreeKind::MemberReference {
+            expr: mref_expr, ..
+        } = &mut ctx.tree_mut(mref2).kind
         {
             *mref_expr = Some(expr_tree);
         }
@@ -3009,7 +3055,7 @@ impl DeferredAttrService {
                 ));
                 let info = crate::resources::compiler_properties::errors::prob_found_req(
                     crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
-                        std::rc::Rc::new(diag),
+                        Rc::new(diag),
                     ),
                 );
                 // Java: the compact diagnostic is flagged COMPRESSED, which
@@ -3040,7 +3086,7 @@ impl DeferredAttrService {
     ) -> Result<bool, DeferredAttrFailure> {
         let _ = state;
         let old_params = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::Lambda { params, .. } => params.clone(),
+            TreeKind::Lambda { params, .. } => params.clone(),
             _ => panic!("ClassCastException: JCLambda expected"),
         };
         let err_type = ctx
@@ -3049,12 +3095,12 @@ impl DeferredAttrService {
             .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
         // Java: tree.params = tree.params.stream().map(vd -> make.VarDef(
         // vd.mods, vd.name, make.Erroneous(), null))
-        let mut new_params: crate::util::list::List<TreeId> = crate::util::list::List::nil();
+        let mut new_params: List<TreeId> = List::nil();
         let mut current = old_params.clone();
         while current.non_empty() {
             let vd = *current.head();
             let (mods, name) = match &ctx.tree(vd).kind {
-                crate::tree::jc_tree::TreeKind::VariableDecl { mods, name, .. } => {
+                TreeKind::VariableDecl { mods, name, .. } => {
                     (*mods, name.clone())
                 }
                 _ => panic!("ClassCastException: JCVariableDecl expected"),
@@ -3071,8 +3117,8 @@ impl DeferredAttrService {
             let new_vd = ctx.alloc_tree(crate::tree::jc_tree::JCTree {
                 pos: ctx.tree(vd).pos,
                 ty: Some(err_type),
-                tag: crate::tree::jc_tree::Tag::VARDEF,
-                kind: crate::tree::jc_tree::TreeKind::VariableDecl {
+                tag: Tag::VARDEF,
+                kind: TreeKind::VariableDecl {
                     mods,
                     name,
                     nameexpr: None,
@@ -3086,8 +3132,7 @@ impl DeferredAttrService {
             new_params = new_params.append(new_vd);
             current = current.tail();
         }
-        if let crate::tree::jc_tree::TreeKind::Lambda { params, .. } =
-            &mut ctx.tree_mut(tree).kind
+        if let TreeKind::Lambda { params, .. } = &mut ctx.tree_mut(tree).kind
         {
             *params = new_params;
         }
@@ -3103,14 +3148,20 @@ impl DeferredAttrService {
         let chk_rc = Rc::clone(&attr.chk);
         let chk = Rc::clone(&chk_rc);
         let diags = Rc::clone(&attr.diags);
-        let flow_rc = attr.argument_attr.get().cloned()
+        let flow_rc = attr
+            .argument_attr
+            .get()
+            .cloned()
             .and_then(|argument_attr| argument_attr.borrow().flow.borrow().clone())
             .expect("flow service");
         // Java: DeferredAttr.java:876-885 wraps the speculative lambda
         // attribution in ArgumentAttr.withLocalCacheContext()/leave(), so the
         // Erroneous-parameter run does not pollute the argument cache used by
         // the real attribution of the same lambda body.
-        let argument_attr_rc = attr.argument_attr.get().cloned()
+        let argument_attr_rc = attr
+            .argument_attr
+            .get()
+            .cloned()
             .expect("argument attr service");
         let argument_attr = argument_attr_rc.borrow();
         let mut local_cache = argument_attr.with_local_cache_context();
@@ -3130,8 +3181,7 @@ impl DeferredAttrService {
         drop(chk);
         let _ = rs;
         // Java: tree.params = oldParams (finally)
-        if let crate::tree::jc_tree::TreeKind::Lambda { params, .. } =
-            &mut ctx.tree_mut(tree).kind
+        if let TreeKind::Lambda { params, .. } = &mut ctx.tree_mut(tree).kind
         {
             *params = old_params;
         }
@@ -3142,7 +3192,7 @@ impl DeferredAttrService {
             other => panic!("unexpected speculative lambda failure: {:?}", other),
         })?;
         Ok(match &ctx.tree(speculative_lambda).kind {
-            crate::tree::jc_tree::TreeKind::Lambda {
+            TreeKind::Lambda {
                 can_complete_normally,
                 ..
             } => *can_complete_normally,
@@ -3151,20 +3201,16 @@ impl DeferredAttrService {
     }
 
     /// Java: LambdaBodyStructChecker (DeferredAttr.java:955-990)
-    /// 
+    ///
     /// # Fields
     ///   - is_void_compatible/is_potentially_value_compatible: the JLS value/void compatibility flags.
-    /// 
+    ///
     ///    # Panics
     ///   - none.
-    /// 
+    ///
     ///    Upstream: DeferredAttr.java:955-990.
-    /// 
-    fn lambda_body_struct_check(
-        &self,
-        ctx: &mut CompilerContext,
-        tree: TreeId,
-    ) -> (bool, bool) {
+    ///
+    fn lambda_body_struct_check(&self, ctx: &mut CompilerContext, tree: TreeId) -> (bool, bool) {
         let mut checker = LambdaBodyStructChecker {
             is_void_compatible: true,
             is_potentially_value_compatible: true,
@@ -3180,12 +3226,12 @@ impl DeferredAttrService {
 /// Java: DeferredAttrNode.StructuralStuckChecker state
 struct StructuralState {
     result_info: Rc<ResultInfo>,
-    inference_context: Rc<crate::comp::infer::InferenceContext>,
+    inference_context: Rc<InferenceContext>,
     env: Rc<Env<crate::comp::attr_context::AttrContext>>,
 }
 
 /// adapter helper: List length.
-fn list_len(list: &crate::util::list::List<TypeId>) -> usize {
+fn list_len(list: &List<TypeId>) -> usize {
     let mut current = list.clone();
     let mut n = 0;
     while current.non_empty() {
@@ -3195,7 +3241,7 @@ fn list_len(list: &crate::util::list::List<TypeId>) -> usize {
     n
 }
 
-fn list_len_trees(list: &crate::util::list::List<TreeId>) -> usize {
+fn list_len_trees(list: &List<TreeId>) -> usize {
     let mut current = list.clone();
     let mut n = 0;
     while current.non_empty() {
@@ -3223,7 +3269,7 @@ impl LambdaBodyStructChecker {
             Tag::RETURN => {
                 // Java: visitReturn
                 let expr = match &ctx.tree(tree).kind {
-                    crate::tree::jc_tree::TreeKind::Return { expr } => *expr,
+                    TreeKind::Return { expr } => *expr,
                     _ => None,
                 };
                 if expr.is_some() {
@@ -3241,9 +3287,7 @@ impl LambdaBodyStructChecker {
     }
 }
 
-
 impl DeferredAttrService {
-
     /// Java: JCTree attribSpeculative(JCTree tree, Env, ResultInfo,
     /// TreeCopier<Z> deferredCopier, Supplier<DiagnosticHandler>,
     /// AttributionMode, LocalCacheContext) (DeferredAttr.java:496-520) —
@@ -3287,7 +3331,6 @@ impl DeferredAttrService {
         )
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -3502,5 +3545,4 @@ mod tests {
             None
         );
     }
-
 }

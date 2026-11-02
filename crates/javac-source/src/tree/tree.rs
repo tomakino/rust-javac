@@ -15,19 +15,6 @@
 //!   trees (same contract as javax.lang.model): default None, concrete
 //!   implementations override the applicable one.
 
-/// Common interface for all nodes in an abstract syntax tree.
-///
-/// <p><b>WARNING:</b> This interface and its sub-interfaces are
-/// subject to change as the Java programming language evolves.
-/// These interfaces are implemented by the JDK Java compiler (javac)
-/// and should not be implemented either directly or indirectly by
-/// other applications.
-///
-/// @author Peter von der Ah&eacute;
-/// @author Jonathan Gibbons
-///
-/// @since 1.6
-use javac_strings::JavaString;
 use super::annotated_type_tree::AnnotatedTypeTree;
 use super::annotation_tree::AnnotationTree;
 use super::array_access_tree::ArrayAccessTree;
@@ -99,6 +86,19 @@ use super::variable_tree::VariableTree;
 use super::while_loop_tree::WhileLoopTree;
 use super::wildcard_tree::WildcardTree;
 use super::yield_tree::YieldTree;
+/// Common interface for all nodes in an abstract syntax tree.
+///
+/// <p><b>WARNING:</b> This interface and its sub-interfaces are
+/// subject to change as the Java programming language evolves.
+/// These interfaces are implemented by the JDK Java compiler (javac)
+/// and should not be implemented either directly or indirectly by
+/// other applications.
+///
+/// @author Peter von der Ah&eacute;
+/// @author Jonathan Gibbons
+///
+/// @since 1.6
+use javac_strings::JavaString;
 
 pub trait Tree {
     /// Returns the kind of this tree.
@@ -895,7 +895,6 @@ pub enum Kind {
     ///
     /// @since 13
     YIELD,
-
 }
 
 impl Kind {

@@ -45,7 +45,9 @@ impl MessageTable {
 
     /// Iterates the table entries (order is unspecified).
     pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.ensure().iter().map(|(key, value)| (key.as_str(), value.as_str()))
+        self.ensure()
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
     }
 }
 

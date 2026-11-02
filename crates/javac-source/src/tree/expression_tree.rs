@@ -9,5 +9,4 @@
 use super::case_label_tree::CaseLabelTree;
 use super::tree::Tree;
 
-pub trait ExpressionTree: Tree + CaseLabelTree {
-}
+pub trait ExpressionTree: Tree + CaseLabelTree {}

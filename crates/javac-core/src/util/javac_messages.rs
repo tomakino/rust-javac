@@ -43,10 +43,10 @@ use std::rc::Rc;
 use std::sync::Mutex;
 
 use crate::api::messages::Messages;
-use crate::resources::compiler_properties::COMPILER_MESSAGES;
 use crate::resources::bundles::{
     COMPILER_JA, COMPILER_ZH_CN, JAVAC_JA, JAVAC_ZH_CN, LAUNCHER_JA, LAUNCHER_ZH_CN,
 };
+use crate::resources::compiler_properties::COMPILER_MESSAGES;
 use crate::resources::{JAVAC_MESSAGES, LAUNCHER_MESSAGES};
 use crate::util::context::Context;
 use crate::util::message_format;
@@ -119,7 +119,13 @@ impl Locale {
                 if value.is_empty() {
                     continue;
                 }
-                let tag = value.split('.').next().unwrap_or("").split('@').next().unwrap_or("");
+                let tag = value
+                    .split('.')
+                    .next()
+                    .unwrap_or("")
+                    .split('@')
+                    .next()
+                    .unwrap_or("");
                 if tag.is_empty() || tag == "C" || tag == "POSIX" {
                     return Locale::new("en");
                 }
@@ -255,13 +261,13 @@ impl ResourceBundleHelper for NamedBundle {
 /// form down to the language and finally the base bundle, so a missing key in a
 /// translation falls back to the base text.
 fn lookup_bundle(bundle_name: &str, locale: &Locale) -> Option<ResourceBundle> {
-    let (base, variants): (ResourceBundleTable, &[(&str, ResourceBundleTable)]) =
-        match bundle_name {
-            DEFAULT_BUNDLE_NAME => (&COMPILER_MESSAGES, COMPILER_VARIANTS),
-            LAUNCHER_BUNDLE_NAME => (&LAUNCHER_MESSAGES, LAUNCHER_VARIANTS),
-            JAVAC_BUNDLE_NAME => (&JAVAC_MESSAGES, JAVAC_VARIANTS),
-            _ => return None,
-        };
+    let (base, variants): (ResourceBundleTable, &[(&str, ResourceBundleTable)]) = match bundle_name
+    {
+        DEFAULT_BUNDLE_NAME => (&COMPILER_MESSAGES, COMPILER_VARIANTS),
+        LAUNCHER_BUNDLE_NAME => (&LAUNCHER_MESSAGES, LAUNCHER_VARIANTS),
+        JAVAC_BUNDLE_NAME => (&JAVAC_MESSAGES, JAVAC_VARIANTS),
+        _ => return None,
+    };
     let mut tables = Vec::new();
     let mut candidate = locale.get_tag();
     loop {
@@ -372,9 +378,7 @@ impl JavacMessages {
             match helper.get_resource_bundle(locale) {
                 Some(bundle) => bundles.push(bundle),
                 // Java: catch MissingResourceException -> new InternalError(...)
-                None => panic!(
-                    "Cannot find requested resource bundle for locale {locale}"
-                ),
+                None => panic!("Cannot find requested resource bundle for locale {locale}"),
             }
         }
         self.bundle_cache
@@ -420,12 +424,7 @@ impl Messages for JavacMessages {
         JavacMessages::add(self, bundle_name);
     }
 
-    fn get_localized_string(
-        &self,
-        locale: Option<&Locale>,
-        key: &str,
-        args: &[String],
-    ) -> String {
+    fn get_localized_string(&self, locale: Option<&Locale>, key: &str, args: &[String]) -> String {
         self.get_localized_string_for(locale, key, args)
     }
 }
@@ -516,10 +515,7 @@ mod tests {
     fn formats_quoted_templates_like_javac() {
         let messages = JavacMessages::new(DEFAULT_BUNDLE_NAME);
         assert_eq!(
-            messages.get_localized_string(
-                "compiler.err.annotation.value.must.be.name.value",
-                &[]
-            ),
+            messages.get_localized_string("compiler.err.annotation.value.must.be.name.value", &[]),
             "annotation values must be of the form 'name=value'"
         );
         assert_eq!(
@@ -535,7 +531,8 @@ mod tests {
     fn missing_key_uses_broken_message_fallback() {
         let messages = JavacMessages::new(DEFAULT_BUNDLE_NAME);
         assert_eq!(
-            messages.get_localized_string("compiler.err.this.key.does.not.exist", &args(&["A", "B"])),
+            messages
+                .get_localized_string("compiler.err.this.key.does.not.exist", &args(&["A", "B"])),
             "compiler message file broken: key=compiler.err.this.key.does.not.exist arguments=A, B, {2}, {3}, {4}, {5}, {6}, {7}"
         );
     }
@@ -547,7 +544,10 @@ mod tests {
         messages.add_helper(Box::new(Helper(&TABLE_B)));
         assert_eq!(messages.get_localized_string("dup.key", &[]), "from B");
         messages.add_helper(Box::new(Helper(&CUSTOM_TABLE)));
-        assert_eq!(messages.get_localized_string("custom.key", &args(&["X"])), "custom X");
+        assert_eq!(
+            messages.get_localized_string("custom.key", &args(&["X"])),
+            "custom X"
+        );
     }
 
     #[test]
@@ -569,10 +569,8 @@ mod tests {
         // Translated templates keep the '' quote escaping and {n} placeholders.
         let template = table_value(&COMPILER_ZH_CN, "compiler.err.already.defined");
         assert_eq!(
-            messages.get_localized_string(
-                "compiler.err.already.defined",
-                &args(&["A", "B", "C", "D"])
-            ),
+            messages
+                .get_localized_string("compiler.err.already.defined", &args(&["A", "B", "C", "D"])),
             message_format::format(template, &args(&["A", "B", "C", "D"]))
         );
     }
@@ -660,11 +658,7 @@ mod tests {
         let messages = JavacMessages::new(DEFAULT_BUNDLE_NAME);
         let messages: &dyn Messages = &messages;
         assert_eq!(
-            messages.get_localized_string(
-                None,
-                "compiler.err.abstract.meth.cant.have.body",
-                &[]
-            ),
+            messages.get_localized_string(None, "compiler.err.abstract.meth.cant.have.body", &[]),
             "abstract methods cannot have a body"
         );
     }

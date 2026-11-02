@@ -29,17 +29,17 @@
 //! Local adapters keep the Java names/order: readPool/offset/tag/readIfNeeded/
 //! resolve/getUtf8/peekName/peekClassName/peekPackageName/peekModuleName/
 //! hasTag/getConstant/sizeof.
-//! 
+//!
 //! the getClass/getModule/getPackage/getType/getNameAndType
 //! names are kept with their upstream shape; the symbol/type-producing step is
 //! performed by the ClassReader wrappers listed above (the raw PoolValue seam).
 #![allow(dead_code)]
 
 use crate::jvm::class_file::{
-    internalize, CONSTANT_CLASS, CONSTANT_DOUBLE, CONSTANT_DYNAMIC, CONSTANT_FIELDREF,
-    CONSTANT_FLOAT, CONSTANT_INTEGER, CONSTANT_INTERFACEMETHODREF, CONSTANT_INVOKEDYNAMIC,
-    CONSTANT_LONG, CONSTANT_METHODHANDLE, CONSTANT_METHODREF, CONSTANT_METHODTYPE,
-    CONSTANT_MODULE, CONSTANT_NAMEANDTYPE, CONSTANT_PACKAGE, CONSTANT_STRING, CONSTANT_UTF8,
+    CONSTANT_CLASS, CONSTANT_DOUBLE, CONSTANT_DYNAMIC, CONSTANT_FIELDREF, CONSTANT_FLOAT,
+    CONSTANT_INTEGER, CONSTANT_INTERFACEMETHODREF, CONSTANT_INVOKEDYNAMIC, CONSTANT_LONG,
+    CONSTANT_METHODHANDLE, CONSTANT_METHODREF, CONSTANT_METHODTYPE, CONSTANT_MODULE,
+    CONSTANT_NAMEANDTYPE, CONSTANT_PACKAGE, CONSTANT_STRING, CONSTANT_UTF8, internalize,
 };
 use crate::util::byte_buffer::ByteBuffer;
 use crate::util::convert;
@@ -108,13 +108,21 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::UnexpectedConstPoolTagAt { tag, offset } => {
-                write!(f, "unexpected.const.pool.tag.at(tag={}, offset={})", tag, offset)
+                write!(
+                    f,
+                    "unexpected.const.pool.tag.at(tag={}, offset={})",
+                    tag, offset
+                )
             }
             Error::BadConstPoolTagAt { tag, offset } => {
                 write!(f, "bad.const.pool.tag.at(tag={}, offset={})", tag, offset)
             }
             Error::BadConstPoolIndex { index, length } => {
-                write!(f, "bad.const.pool.index(index={}, length={})", index, length)
+                write!(
+                    f,
+                    "bad.const.pool.index(index={}, length={})",
+                    index, length
+                )
             }
         }
     }
@@ -166,7 +174,10 @@ impl PoolReader {
     /// the port keeps the buffer/name parameters on the decoding methods and the
     /// reader context in the ClassReader get_* seam (see the file header).
     pub(crate) fn new() -> PoolReader {
-        PoolReader { offsets: Vec::new(), values: RefCell::new(Vec::new()) }
+        PoolReader {
+            offsets: Vec::new(),
+            values: RefCell::new(Vec::new()),
+        }
     }
 
     /// Java: peekClassName(index, mapper) — Get class name without resolving.
@@ -276,7 +287,10 @@ impl PoolReader {
                 Ok(convert::utf2string_range(&poolbuf.elems, offset + 2, len))
             }
         } else {
-            Err(Error::UnexpectedConstPoolTagAt { tag, offset: offset - 1 })
+            Err(Error::UnexpectedConstPoolTagAt {
+                tag,
+                offset: offset - 1,
+            })
         }
     }
 
@@ -346,7 +360,10 @@ impl PoolReader {
                 let name = self.get_name(poolbuf, index, names)?;
                 Ok(PoolValue::Module(name))
             }
-            _ => Err(Error::UnexpectedConstPoolTagAt { tag, offset: offset - 1 }),
+            _ => Err(Error::UnexpectedConstPoolTagAt {
+                tag,
+                offset: offset - 1,
+            }),
         }
     }
 
@@ -372,8 +389,13 @@ impl PoolReader {
                 CONSTANT_METHODHANDLE => {
                     offset += 3;
                 }
-                CONSTANT_FIELDREF | CONSTANT_METHODREF | CONSTANT_INTERFACEMETHODREF
-                | CONSTANT_NAMEANDTYPE | CONSTANT_INTEGER | CONSTANT_FLOAT | CONSTANT_DYNAMIC
+                CONSTANT_FIELDREF
+                | CONSTANT_METHODREF
+                | CONSTANT_INTERFACEMETHODREF
+                | CONSTANT_NAMEANDTYPE
+                | CONSTANT_INTEGER
+                | CONSTANT_FLOAT
+                | CONSTANT_DYNAMIC
                 | CONSTANT_INVOKEDYNAMIC => {
                     offset += 4;
                 }
@@ -381,7 +403,10 @@ impl PoolReader {
                     offset += 8;
                 }
                 _ => {
-                    return Err(Error::BadConstPoolTagAt { tag, offset: offset - 1 });
+                    return Err(Error::BadConstPoolTagAt {
+                        tag,
+                        offset: offset - 1,
+                    });
                 }
             }
             index += self.sizeof(tag);
@@ -441,7 +466,10 @@ impl PoolReader {
     /// Java: ImmutablePoolHelper.checkIndex(int index)
     fn check_index(&self, index: i32) -> Result<i32, Error> {
         if index <= 0 || index as usize >= self.offsets.len() {
-            Err(Error::BadConstPoolIndex { index, length: self.offsets.len() as i32 })
+            Err(Error::BadConstPoolIndex {
+                index,
+                length: self.offsets.len() as i32,
+            })
         } else {
             Ok(index)
         }
@@ -518,30 +546,60 @@ mod tests {
         let end = reader.read_pool(&buf, 8).expect("readPool");
         // The constant pool is followed by access_flags/this_class/... so the
         // pool end is inside the file; pool_count 92 matches javap.
-        assert!(end > 8 && (end as usize) < bytes.len(), "pool end inside the file");
+        assert!(
+            end > 8 && (end as usize) < bytes.len(),
+            "pool end inside the file"
+        );
         assert_eq!(buf.get_char(8), 92, "constant_pool_count");
 
         let names = Names::new(false);
         // Sample entries recorded from javap: #2 Utf8 java/lang/StringBuilder,
         // #5 Utf8 <init>, #6 Utf8 ()V, #91 Utf8 Object.java.
         assert_eq!(
-            reader.peek_name(&buf, 2, false, &names).unwrap().to_string_lossy(),
+            reader
+                .peek_name(&buf, 2, false, &names)
+                .unwrap()
+                .to_string_lossy(),
             "java/lang/StringBuilder"
         );
-        assert_eq!(reader.peek_name(&buf, 5, false, &names).unwrap().to_string_lossy(), "<init>");
-        assert_eq!(reader.peek_name(&buf, 6, false, &names).unwrap().to_string_lossy(), "()V");
         assert_eq!(
-            reader.peek_name(&buf, 91, false, &names).unwrap().to_string_lossy(),
+            reader
+                .peek_name(&buf, 5, false, &names)
+                .unwrap()
+                .to_string_lossy(),
+            "<init>"
+        );
+        assert_eq!(
+            reader
+                .peek_name(&buf, 6, false, &names)
+                .unwrap()
+                .to_string_lossy(),
+            "()V"
+        );
+        assert_eq!(
+            reader
+                .peek_name(&buf, 91, false, &names)
+                .unwrap()
+                .to_string_lossy(),
             "Object.java"
         );
 
         // #1 Class #2 -> internalized name java.lang.StringBuilder.
-        match reader.read_if_needed(&buf, 1, TagSet::Class, &names).unwrap() {
-            PoolValue::Class(name) => assert_eq!(name.to_java_string().to_string_lossy(), "java.lang.StringBuilder"),
+        match reader
+            .read_if_needed(&buf, 1, TagSet::Class, &names)
+            .unwrap()
+        {
+            PoolValue::Class(name) => assert_eq!(
+                name.to_java_string().to_string_lossy(),
+                "java.lang.StringBuilder"
+            ),
             other => panic!("expected Class, got {}", describe(&other)),
         }
         // #4 NameAndType #5:#6 -> <init> : ()V.
-        match reader.read_if_needed(&buf, 4, TagSet::NameAndType, &names).unwrap() {
+        match reader
+            .read_if_needed(&buf, 4, TagSet::NameAndType, &names)
+            .unwrap()
+        {
             PoolValue::NameAndType { name, descriptor } => {
                 assert_eq!(name.to_java_string().to_string_lossy(), "<init>");
                 assert_eq!(descriptor.to_java_string().to_string_lossy(), "()V");

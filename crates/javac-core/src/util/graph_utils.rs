@@ -95,11 +95,8 @@ pub trait AbstractNode<D, N: AbstractNode<D, N>>: Node<D, N> {
 }
 
 /// Java: AbstractNode.accept(NodeVisitor<D, N, A> visitor, A arg)
-pub fn accept_abstract_node<D, N, A>(
-    node: &N,
-    visitor: &mut dyn NodeVisitor<D, N, A>,
-    arg: &mut A,
-) where
+pub fn accept_abstract_node<D, N, A>(node: &N, visitor: &mut dyn NodeVisitor<D, N, A>, arg: &mut A)
+where
     N: AbstractNode<D, N>,
 {
     visitor.visit_node(node, arg);
@@ -277,7 +274,6 @@ impl<'a, D, N: TarjanNode<D, N> + PartialEq + 'a> Tarjan<'a, D, N> {
         self.sccs.add(cycle.to_list());
     }
 }
-
 
 /// Tarjan SCC over an index graph (Porting rules adapter): the ported generic tarjan above
 /// operates on &N references; the inference/deferred graphs keep their nodes in

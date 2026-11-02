@@ -70,12 +70,10 @@ After the fix: 1.26 s in the repository root, 0.70 s in a clean directory.
    context and solves).
 2. `TypeEnter.finishImports` must run after the completion cascade returns;
    the port ran it during nested completion, so `TlsUtil` static imports saw
-   only 1 of 7 members. It is now deferred to the outermost boundary
-   (`TypeEnter.java:204-217/223-237/249-297`).
+   only 1 of 7 members. It is now deferred to the outermost boundary (`TypeEnter.java:204-217/223-237/249-297`).
 3. `ResolvedConstructorType.overloadCheck` replaced TYPEVAR/UNDETVAR
    `localInfo.pt` with `noType`, a non-upstream special case; removing it let
-   the diamond return constraint reach the main inference context
-   (`ArgumentAttr.java:704-707`).
+   the diamond return constraint reach the main inference context (`ArgumentAttr.java:704-707`).
 4. Upstream `InferenceException extends InapplicableMethodException`
    (`Infer.java:138`); `catch_inapplicable_method_exception` must also catch
    `InferenceExceptionPayload` (e.g. `Resolve.instantiate`, `Resolve.java:
@@ -86,10 +84,10 @@ After the fix: 1.26 s in the repository root, 0.70 s in a clean directory.
 
 ### Performance (compile only, no execution)
 
-| Dataset | debug | release | javac (after warmup) |
-|---|---|---|---|
-| Gson | mean 23.21 s | mean **6.47 s** | 2.40 s |
-| OkHttp | mean 150.12 s | mean **51.84 s** | 8.17 s |
+| Dataset | debug         | release          | javac (after warmup) |
+|---------|---------------|------------------|----------------------|
+| Gson    | mean 23.21 s  | mean **6.47 s**  | 2.40 s               |
+| OkHttp  | mean 150.12 s | mean **51.84 s** | 8.17 s               |
 
 Release was about 3.6x/2.9x faster than debug; it remained about 2.7x/6.3x
 slower than javac, pending profiling (`samply`/`cargo flamegraph`).
@@ -113,13 +111,13 @@ slower than javac, pending profiling (`samply`/`cargo flamegraph`).
   parsed it as strict UTF-8; a local patch switched `String::from_utf8` to
   `from_utf8_lossy` (tool fix, not committed).
 - Hotspots and fixes:
-  1. Ten `name.to_java_string() == other.to_java_string()` comparisons in
-     `symtab.rs` became direct `Name` comparisons (the old code decoded
-     UTF-8 to UTF-16 and allocated on every comparison, over 22% of the
-     profile).
-  2. `enter.rs` borrows `visible_packages` instead of cloning it;
-     `modules.rs` updates `module_visible_packages()` in place via `sym_mut`.
-  3. `javac-zip` `entry_index` uses an FxHasher (lookup semantics unchanged).
+    1. Ten `name.to_java_string() == other.to_java_string()` comparisons in
+       `symtab.rs` became direct `Name` comparisons (the old code decoded
+       UTF-8 to UTF-16 and allocated on every comparison, over 22% of the
+       profile).
+    2. `enter.rs` borrows `visible_packages` instead of cloning it;
+       `modules.rs` updates `module_visible_packages()` in place via `sym_mut`.
+    3. `javac-zip` `entry_index` uses an FxHasher (lookup semantics unchanged).
 - Results (compile only): Gson release **0.973 s** (javac 2.40 s); OkHttp
   release **24.28 s** (previously 51.84 s; javac 8.17 s); Gson debug
   23.2 -> 6.48 s.
@@ -147,8 +145,8 @@ slower than javac, pending profiling (`samply`/`cargo flamegraph`).
   bytes through `NameTableHandle::with_bytes`, removing a byte copy and an
   `Rc` allocation per interned name. The corrected version (copy bytes at
   reentrancy-prone call sites) passes Gson 208/208 + IDENTICAL and lib 846.
-- **`FxNameMap`**: an Fx-style hasher for `Name`-keyed maps
-  (`visible_packages`, `NamedImportScope` `name2_scopes`, parser
+- **`FxNameMap`**: an Fx-style hasher for `Name`-keyed maps (`visible_packages`, `NamedImportScope` `name2_scopes`,
+  parser
   `tag_parsers`, module seen-packages); lookup/insert semantics unchanged.
 - Result (Gson debug, 3 CPU runs): min **5.531 s**, mean 5.615 s.
 
@@ -172,10 +170,9 @@ slower than javac, pending profiling (`samply`/`cargo flamegraph`).
 
 ### Round 6
 
-- **FxNameMap preallocation**: `fx_map_with_capacity` for the class index
-  (1024), visible packages (32), name2_scopes (8), tag parsers (25), and
-  module seen-packages (64), removing `reserve_rehash`. Gson debug CPU
-  **3.984 -> 3.406 s (-14%)**.
+- **FxNameMap preallocation**: `fx_map_with_capacity` for the class index (1024), visible packages (32), name2_scopes
+  (8), tag parsers (25), and
+  module seen-packages (64), removing `reserve_rehash`. Gson debug CPU **3.984 -> 3.406 s (-14%)**.
 - Cumulative: Gson debug CPU **5.531 -> 3.406 s (-38%)**.
 
 ### Round 7-10: javac_zip
@@ -183,8 +180,8 @@ slower than javac, pending profiling (`samply`/`cargo flamegraph`).
 - Adopted `zlib-rs` (pure Rust, zlib-compatible inflate) for the DEFLATED
   branch (`Inflate::new(false, 15)` plus `decompress(..., Finish)`),
   preallocating by `uncompressed_size` and checking `total_out`.
-- `rawzip` was evaluated; a pure-rawzip version failed 6 of 10 zip tests
-  (zip64, CP437 names, `archive_offset`, unknown compression methods) and was
+- `rawzip` was evaluated; a pure-rawzip version failed 6 of 10 zip tests (zip64, CP437 names, `archive_offset`, unknown
+  compression methods) and was
   reverted.
 - `libdeflater` could not be built (needs a C toolchain and the Windows SDK).
 - Final design: `ZipArchive` holds a rawzip reader plus a wayfinder per
@@ -204,5 +201,5 @@ slower than javac, pending profiling (`samply`/`cargo flamegraph`).
   `enterInner`); Gson remained 208/208 + IDENTICAL.
 - Remaining OkHttp byte differences: missing referenced member-class entries
   in `InnerClasses`, and lambda synthetic methods carrying `line 1` instead
-  of the lambda's line. `PoolWriter.keys_to_pos` is a linear `Vec` scan
-  (upstream uses a `HashMap`), making constant-pool lookup O(n^2).
+  of the lambda's line. `PoolWriter.keys_to_pos` is a linear `Vec` scan (upstream uses a `HashMap`), making
+  constant-pool lookup O (n^2).

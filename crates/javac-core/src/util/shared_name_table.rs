@@ -21,7 +21,6 @@
 //! implementation is a memory optimization with no observable effect; Rust
 //! creates a fresh table (registered deviation, see docs/STATUS.md).
 
-
 use crate::util::array_utils;
 use crate::util::convert;
 use crate::util::name::NameTableHandle;
@@ -64,7 +63,8 @@ impl SharedNameTable {
     /// Java: public Name fromChars(char[] cs, int start, int len)
     pub fn from_chars(&mut self, cs: &[u16], start: i32, len: i32) -> (i32, i32) {
         let nc = self.nc;
-        self.bytes = array_utils::ensure_capacity_bytes(std::mem::take(&mut self.bytes), nc + len * 3);
+        self.bytes =
+            array_utils::ensure_capacity_bytes(std::mem::take(&mut self.bytes), nc + len * 3);
         let nbytes = convert::chars2utf_into(cs, start, &mut self.bytes, nc, len) - nc;
         let h = (NameTableHandle::hash_value(&self.bytes, nc, nbytes) & self.hash_mask) as usize;
         let mut cur = self.hashes[h];
@@ -106,7 +106,8 @@ impl SharedNameTable {
         }
         let nc = self.nc;
         self.bytes = array_utils::ensure_capacity_bytes(std::mem::take(&mut self.bytes), nc + len);
-        self.bytes[nc as usize..(nc + len) as usize].copy_from_slice(&cs[start as usize..(start + len) as usize]);
+        self.bytes[nc as usize..(nc + len) as usize]
+            .copy_from_slice(&cs[start as usize..(start + len) as usize]);
         self.nodes.push(SharedNameNode {
             next: self.hashes[h],
             index: nc,
@@ -126,4 +127,3 @@ impl SharedNameTable {
         self.nodes.clear();
     }
 }
-

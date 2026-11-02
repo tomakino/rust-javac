@@ -10,9 +10,9 @@
 3. **Upstream diagnostic examples** - `cargo test -p rust-javac --test
    diag_examples`: runs the langtools corpus and compares normalized output
    with the checked-in baselines.
-   - Environment: `DIAG_EXAMPLES_FILTER`, `DIAG_EXAMPLES_VERBOSE`,
-     `DIAG_EXAMPLES_TIMEOUT_SECS`.
-   - Current: 602 comparable cases, 588 pass / 14 fail / 67 skip.
+    - Environment: `DIAG_EXAMPLES_FILTER`, `DIAG_EXAMPLES_VERBOSE`,
+      `DIAG_EXAMPLES_TIMEOUT_SECS`.
+    - Current: 602 comparable cases, 588 pass / 14 fail / 67 skip.
 4. **Corpus and oracle tooling** - `crates/javac-tests` provides
    `gen-corpus-baselines` and `diff_runner` for comparison against a local
    JDK installation.

@@ -114,7 +114,9 @@ impl DiagnosticArg {
     }
 
     /// Java: the nested diagnostic argument, if any.
-    pub fn nested_diagnostic(&self) -> Option<&std::rc::Rc<crate::util::jc_diagnostic::JCDiagnostic>> {
+    pub fn nested_diagnostic(
+        &self,
+    ) -> Option<&std::rc::Rc<crate::util::jc_diagnostic::JCDiagnostic>> {
         match self {
             DiagnosticArg::JCDiagnostic(diag) => Some(diag),
             DiagnosticArg::Text(_)
@@ -460,7 +462,7 @@ pub(crate) fn to_jc_diagnostic_arg(
     use crate::util::jc_diagnostic::DiagnosticArg as JcDiagnosticArg;
     match arg {
         DiagnosticArg::Text(text) => {
-            std::rc::Rc::new(javac_strings::JavaString::from(text.as_str())) as JcDiagnosticArg
+            std::rc::Rc::new(JavaString::from(text.as_str())) as JcDiagnosticArg
         }
         DiagnosticArg::JCDiagnostic(diag) => diag.clone(),
         DiagnosticArg::Type(type_arg) => std::rc::Rc::new(type_arg.clone()),

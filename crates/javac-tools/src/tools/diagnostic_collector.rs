@@ -30,7 +30,9 @@ pub struct DiagnosticCollector<S> {
 impl<S> DiagnosticCollector<S> {
     /// Creates a new instance of DiagnosticCollector.
     pub fn new() -> DiagnosticCollector<S> {
-        DiagnosticCollector { diagnostics: RefCell::new(Vec::new()) }
+        DiagnosticCollector {
+            diagnostics: RefCell::new(Vec::new()),
+        }
     }
 
     /// Returns a list view of diagnostics collected by this object.

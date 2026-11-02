@@ -64,7 +64,6 @@ pub enum ElementKind {
     OTHER,
 
     // Constants added since initial release
-
     /// A resource variable.
     /// @since 1.7
     RESOURCE_VARIABLE,
@@ -205,7 +204,10 @@ mod tests {
     fn enum_shape() {
         assert_eq!(ElementKind::values().len(), 21);
         assert_eq!(ElementKind::values()[0], ElementKind::PACKAGE);
-        assert_eq!(ElementKind::BINDING_VARIABLE.name(), JavaString::from("BINDING_VARIABLE"));
+        assert_eq!(
+            ElementKind::BINDING_VARIABLE.name(),
+            JavaString::from("BINDING_VARIABLE")
+        );
         assert_eq!(ElementKind::MODULE.to_string(), "MODULE");
     }
 }

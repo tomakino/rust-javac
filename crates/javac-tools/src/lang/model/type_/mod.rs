@@ -65,4 +65,3 @@ pub use type_visitor::TypeVisitor;
 pub use union_type::UnionType;
 pub use unknown_type_exception::UnknownTypeException;
 pub use wildcard_type::WildcardType;
-

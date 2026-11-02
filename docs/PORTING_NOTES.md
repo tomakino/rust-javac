@@ -92,8 +92,7 @@ Source comments reference the id; the full record stays here.
 ## PN-006 `Rc<RefCell<...>>` adaptation layer
 
 - Observed: the starting count was 541 syntactic occurrences (479
-  `Rc<RefCell<` plus 62 `Rc<std::cell::RefCell<`). The current count is 225
-  (213 plus 12).
+  `Rc<RefCell<` plus 62 `Rc<std::cell::RefCell<`). The current count is 225 (213 plus 12).
 - Cause: a direct port of Java's shared mutable object graph (Attr/Annotate
   construction, phase services, code generation workspaces, and public
   callback interfaces).

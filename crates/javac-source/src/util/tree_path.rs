@@ -57,7 +57,11 @@ impl TreePath {
         if Rc::ptr_eq(&path.get_leaf(), &target) {
             return Some(path);
         }
-        let mut finder = PathFinder { current: Some(path.clone()), target, result: None };
+        let mut finder = PathFinder {
+            current: Some(path.clone()),
+            target,
+            result: None,
+        };
         let _ = finder.scan_path(path, ());
         finder.result
     }
@@ -68,14 +72,22 @@ impl TreePath {
     /// (Java's TreePath(null, tree) is only legal for a compilation unit).
     pub(crate) fn new_root_tree(tree: Rc<dyn Tree>) -> TreePath {
         debug_assert_eq!(tree.get_kind(), Kind::COMPILATION_UNIT);
-        TreePath { compilation_unit: tree.clone(), parent: None, leaf: tree }
+        TreePath {
+            compilation_unit: tree.clone(),
+            parent: None,
+            leaf: tree,
+        }
     }
 
     /// Creates a TreePath for a root node.
     /// @param node the root node
     pub fn new_root(node: Rc<dyn CompilationUnitTree>) -> TreePath {
         let leaf: Rc<dyn Tree> = node;
-        TreePath { compilation_unit: leaf.clone(), parent: None, leaf }
+        TreePath {
+            compilation_unit: leaf.clone(),
+            parent: None,
+            leaf,
+        }
     }
 
     /// Creates a TreePath for a child node.
@@ -83,9 +95,17 @@ impl TreePath {
     /// @param tree the child node
     pub fn new_child(path: Rc<TreePath>, tree: Rc<dyn Tree>) -> TreePath {
         if tree.get_kind() == Kind::COMPILATION_UNIT {
-            TreePath { compilation_unit: tree.clone(), parent: None, leaf: tree }
+            TreePath {
+                compilation_unit: tree.clone(),
+                parent: None,
+                leaf: tree,
+            }
         } else {
-            TreePath { compilation_unit: path.compilation_unit.clone(), parent: Some(path), leaf: tree }
+            TreePath {
+                compilation_unit: path.compilation_unit.clone(),
+                parent: Some(path),
+                leaf: tree,
+            }
         }
     }
 
@@ -138,7 +158,7 @@ struct PathFinder {
 
 impl crate::tree::tree_visitor::TreeVisitor<Option<Rc<TreePath>>, ()> for PathFinder {}
 
-impl crate::util::tree_path_scanner::TreePathScanner<Rc<TreePath>, ()> for PathFinder {
+impl TreePathScanner<Rc<TreePath>, ()> for PathFinder {
     fn get_current_path(&self) -> Option<Rc<TreePath>> {
         self.current.clone()
     }
@@ -168,8 +188,7 @@ impl crate::util::tree_path_scanner::TreePathScanner<Rc<TreePath>, ()> for PathF
             }
         };
         self.set_current_path(Some(current));
-        let result =
-            crate::util::dispatch::dispatch_tree_path_scanner(self, tree.as_ref(), p);
+        let result = crate::util::dispatch::dispatch_tree_path_scanner(self, tree.as_ref(), p);
         self.set_current_path(prev);
         result
     }
@@ -198,7 +217,10 @@ mod tests {
         let path = child.iterator();
         assert_eq!(path.len(), 2);
         assert_eq!(path[0].get_kind(), crate::tree::tree::Kind::IDENTIFIER);
-        assert_eq!(path[1].get_kind(), crate::tree::tree::Kind::COMPILATION_UNIT);
+        assert_eq!(
+            path[1].get_kind(),
+            crate::tree::tree::Kind::COMPILATION_UNIT
+        );
     }
 
     #[test]
@@ -216,7 +238,9 @@ mod tests {
     fn get_path_finds_a_node_in_a_compilation_unit() {
         let ident: Rc<dyn crate::tree::tree::Tree> = Rc::new(IdentTree);
         let unit: Rc<dyn crate::tree::compilation_unit_tree::CompilationUnitTree> =
-            Rc::new(UnitTreeWithDecls { decls: vec![ident.clone()] });
+            Rc::new(UnitTreeWithDecls {
+                decls: vec![ident.clone()],
+            });
         let unit_tree: Rc<dyn crate::tree::tree::Tree> = unit.clone();
         let path = TreePath::get_path(unit, ident.clone()).expect("target found");
         assert!(Rc::ptr_eq(&path.get_leaf(), &ident));
@@ -237,7 +261,9 @@ mod tests {
     fn get_path_in_path_searches_a_subtree() {
         let ident: Rc<dyn crate::tree::tree::Tree> = Rc::new(IdentTree);
         let unit: Rc<dyn crate::tree::compilation_unit_tree::CompilationUnitTree> =
-            Rc::new(UnitTreeWithDecls { decls: vec![ident.clone()] });
+            Rc::new(UnitTreeWithDecls {
+                decls: vec![ident.clone()],
+            });
         let root = Rc::new(TreePath::new_root(unit));
         let path = TreePath::get_path_in_path(root.clone(), ident.clone()).expect("found");
         assert!(Rc::ptr_eq(&path.get_leaf(), &ident));

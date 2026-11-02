@@ -70,13 +70,9 @@ impl Kind {
     /// Java: private final Category category (constructor argument).
     fn category(self) -> Category {
         match self {
-            Kind::NIL
-            | Kind::PCK
-            | Kind::TYP
-            | Kind::VAR
-            | Kind::MTH
-            | Kind::POLY
-            | Kind::MDL => Category::BASIC,
+            Kind::NIL | Kind::PCK | Kind::TYP | Kind::VAR | Kind::MTH | Kind::POLY | Kind::MDL => {
+                Category::BASIC
+            }
             Kind::ERR => Category::ERROR,
             Kind::MISSING_ENCL | Kind::BAD_RESTRICTED_TYPE => Category::RESOLUTION,
             Kind::AMBIGUOUS
@@ -179,17 +175,11 @@ impl KindSelector {
 
     // common derived selectors
     pub const TYP_PCK: KindSelector = KindSelector::of(&[KindSelector::TYP, KindSelector::PCK]);
-    pub const VAL_MTH: KindSelector =
-        KindSelector::of(&[KindSelector::VAL, KindSelector::MTH]);
-    pub const VAL_POLY: KindSelector =
-        KindSelector::of(&[KindSelector::VAL, KindSelector::POLY]);
-    pub const VAL_TYP: KindSelector =
-        KindSelector::of(&[KindSelector::VAL, KindSelector::TYP]);
-    pub const VAL_TYP_PCK: KindSelector = KindSelector::of(&[
-        KindSelector::VAL,
-        KindSelector::TYP,
-        KindSelector::PCK,
-    ]);
+    pub const VAL_MTH: KindSelector = KindSelector::of(&[KindSelector::VAL, KindSelector::MTH]);
+    pub const VAL_POLY: KindSelector = KindSelector::of(&[KindSelector::VAL, KindSelector::POLY]);
+    pub const VAL_TYP: KindSelector = KindSelector::of(&[KindSelector::VAL, KindSelector::TYP]);
+    pub const VAL_TYP_PCK: KindSelector =
+        KindSelector::of(&[KindSelector::VAL, KindSelector::TYP, KindSelector::PCK]);
 
     /// Java: public static KindSelector of(KindSelector... kindSelectors)
     pub const fn of(kind_selectors: &[KindSelector]) -> KindSelector {
@@ -383,7 +373,6 @@ mod tests {
     use crate::util::list::List;
     use crate::util::name::Name;
     use crate::util::name::NameTableHandle;
-    use std::collections::HashMap;
     use std::rc::Rc;
 
     fn name(text: &[u16]) -> Name {
@@ -413,7 +402,7 @@ mod tests {
             record_components: List::nil(),
             permitted: List::nil(),
             is_permitted_explicit: false,
-                annotation_type_metadata: Default::default(),
+            annotation_type_metadata: Default::default(),
         }
     }
 

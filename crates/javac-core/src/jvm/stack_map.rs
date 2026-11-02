@@ -180,7 +180,9 @@ impl StackMapTableFrame {
                 }
             }
             StackMapTableFrame::SameLocals1StackItem {
-                offset_delta, stack, ..
+                offset_delta,
+                stack,
+                ..
             } => {
                 if self.get_frame_type() == SAME_LOCALS_1_STACK_ITEM_EXTENDED {
                     writer.append_char(*offset_delta);
@@ -370,7 +372,11 @@ pub fn compare(
     if !(-MAX_LOCAL_LENGTH_DIFF..=MAX_LOCAL_LENGTH_DIFF).contains(&diff_length) {
         return i32::MAX;
     }
-    let len = if diff_length > 0 { arr2.len() } else { arr1.len() };
+    let len = if diff_length > 0 {
+        arr2.len()
+    } else {
+        arr1.len()
+    };
     for i in 0..len {
         if !is_same_type(ctx, arr1[i], arr2[i], types, syms) {
             return i32::MAX;

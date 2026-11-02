@@ -11,7 +11,7 @@
 //! Minimal java.nio.file platform layer for the P2 file layer.
 //!
 //!
-//! * Path wraps [std::path::PathBuf]; the API keeps the Java method names in
+//! * Path wraps [path::PathBuf]; the API keeps the Java method names in
 //!   snake_case (is_absolute, to_absolute_path, normalize, relativize, resolve,
 //!   starts_with, ends_with, file_name, parent, root, to_uri, from_uri).
 //! * Windows semantics are implemented and oracle-tested (separator '\\',
@@ -33,4 +33,3 @@ pub mod path;
 pub use error::Error;
 pub use files::Files;
 pub use path::Path;
-

@@ -34,8 +34,8 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 fn rust_cli() -> &'static str {
@@ -294,9 +294,7 @@ fn skip_reason(example: &Example) -> Option<&'static str> {
         return Some("deprecated-profile");
     }
     if let Some(index) = options.iter().position(|option| option == "-source")
-        && options
-            .get(index + 1)
-            .is_some_and(|value| value == "7")
+        && options.get(index + 1).is_some_and(|value| value == "7")
     {
         // -source 7 selects the legacy inference diagnostic path; deprecated
         // mechanisms stay out of scope.
@@ -306,10 +304,10 @@ fn skip_reason(example: &Example) -> Option<&'static str> {
     // official Example driver packages the compiled classes with
     // JarOutputStream, Example.java:233-269); they stay out of scope here.
     if !files.module_path.is_empty()
-        && !files
-            .module_path
-            .iter()
-            .any(|path| path.file_name().is_some_and(|name| name == "module-info.java"))
+        && !files.module_path.iter().any(|path| {
+            path.file_name()
+                .is_some_and(|name| name == "module-info.java")
+        })
     {
         return Some("modules-automatic");
     }
@@ -504,7 +502,10 @@ fn run_example(example: &Example, index: usize) -> Outcome {
     if !example.files.class_path.is_empty() {
         let classpath_dir = temp.join("classpath");
         std::fs::create_dir_all(&classpath_dir).expect("classpath dir");
-        let mut cp_args = vec!["-d".to_string(), classpath_dir.to_string_lossy().to_string()];
+        let mut cp_args = vec![
+            "-d".to_string(),
+            classpath_dir.to_string_lossy().to_string(),
+        ];
         cp_args.extend(
             example
                 .files
@@ -550,7 +551,7 @@ fn run_example(example: &Example, index: usize) -> Outcome {
                     .find(|ancestor| {
                         ancestor.file_name().and_then(|name| name.to_str()) == Some("modulepath")
                     })
-                    .map(std::path::Path::to_path_buf)
+                    .map(Path::to_path_buf)
             })
             .expect("modulepath directory");
         let module_dir = temp.join("modulepath");
@@ -725,13 +726,15 @@ fn official_diagnostic_examples() {
         .unwrap_or(4);
     std::thread::scope(|scope| {
         for _ in 0..workers {
-            scope.spawn(|| loop {
-                let index = next.fetch_add(1, Ordering::Relaxed);
-                let Some(example) = selected.get(index) else {
-                    break;
-                };
-                let outcome = run_example(example, index);
-                outcomes.lock().unwrap().push(outcome);
+            scope.spawn(|| {
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(example) = selected.get(index) else {
+                        break;
+                    };
+                    let outcome = run_example(example, index);
+                    outcomes.lock().unwrap().push(outcome);
+                }
             });
         }
     });

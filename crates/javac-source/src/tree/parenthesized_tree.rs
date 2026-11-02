@@ -1,3 +1,4 @@
+use super::expression_tree::ExpressionTree;
 /// A tree node for a parenthesized expression.  Note: parentheses
 /// not be preserved by the parser.
 ///
@@ -12,11 +13,9 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
 
 pub trait ParenthesizedTree: ExpressionTree {
     /// Returns the expression within the parentheses.
     /// @return the expression
     fn get_expression(&self) -> Rc<dyn ExpressionTree>;
-
 }

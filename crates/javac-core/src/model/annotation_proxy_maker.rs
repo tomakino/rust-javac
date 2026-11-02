@@ -13,9 +13,7 @@
 use std::rc::Rc;
 
 use javac_strings::JavaString;
-use javac_tools::jdk::{
-    AnnotationProxy, AnnotationProxyException, AnnotationValueProxy,
-};
+use javac_tools::jdk::{AnnotationProxy, AnnotationProxyException, AnnotationValueProxy};
 
 use crate::code::attribute::AttributeKind;
 use crate::code::flags;
@@ -37,7 +35,10 @@ pub struct JavacAnnotationProxy {
 }
 
 impl JavacAnnotationProxy {
-    fn new(type_name: JavaString, values: Vec<(JavaString, AnnotationValueProxy)>) -> JavacAnnotationProxy {
+    fn new(
+        type_name: JavaString,
+        values: Vec<(JavaString, AnnotationValueProxy)>,
+    ) -> JavacAnnotationProxy {
         JavacAnnotationProxy { type_name, values }
     }
 }
@@ -94,7 +95,10 @@ impl std::fmt::Display for JavacAnnotationProxy {
 /// # Panics
 ///   - when the annotation attribute is not a compound or its type/members are
 ///     missing (class-file invariant, as in the upstream NPE/ClassCast paths).
-pub fn generate_annotation(ctx: &mut CompilerContext, anno: AttributeId) -> Rc<dyn AnnotationProxy> {
+pub fn generate_annotation(
+    ctx: &mut CompilerContext,
+    anno: AttributeId,
+) -> Rc<dyn AnnotationProxy> {
     Rc::new(generate_annotation_value(ctx, anno))
 }
 
@@ -172,9 +176,7 @@ fn generate_value(
     let element_name = ctx.sym(meth).name.to_java_string();
     let attr_kind = ctx.attr(attr).kind.clone();
     let value = match &attr_kind {
-        AttributeKind::Constant { value } => {
-            Some(annotation_constant_value(value))
-        }
+        AttributeKind::Constant { value } => Some(annotation_constant_value(value)),
         AttributeKind::Class { class_type } => {
             let type_name = class_type
                 .map(|ty| type_name_of(ctx, ty))
@@ -190,9 +192,7 @@ fn generate_value(
         AttributeKind::Array { values } => {
             generate_array_value(ctx, meth, attr, values, return_type, &element_name)
         }
-        AttributeKind::Enum { value } => {
-            generate_enum_value(ctx, attr, *value)
-        }
+        AttributeKind::Enum { value } => generate_enum_value(ctx, attr, *value),
         AttributeKind::Compound { .. } | AttributeKind::TypeCompound { .. } => {
             let return_tsym = ctx.typ(return_type).tsym?;
             if (ctx.sym(return_tsym).flags_field & flags::ANNOTATION as i64) == 0 {
@@ -360,14 +360,17 @@ fn value_matches(ctx: &CompilerContext, value: &AnnotationValueProxy, expected: 
         AnnotationValueProxy::Long(_) => ctx.typ(expected).has_tag(TypeTag::LONG),
         AnnotationValueProxy::Float(_) => ctx.typ(expected).has_tag(TypeTag::FLOAT),
         AnnotationValueProxy::Double(_) => ctx.typ(expected).has_tag(TypeTag::DOUBLE),
-        AnnotationValueProxy::String(_) => ctx
-            .typ(expected)
-            .has_tag(TypeTag::CLASS)
-            && ctx
-                .typ(expected)
-                .tsym
-                .map(|tsym| ctx.sym(tsym).flat_name().to_java_string() == JavaString::from("java.lang.String"))
-                .unwrap_or(false),
+        AnnotationValueProxy::String(_) => {
+            ctx.typ(expected).has_tag(TypeTag::CLASS)
+                && ctx
+                    .typ(expected)
+                    .tsym
+                    .map(|tsym| {
+                        ctx.sym(tsym).flat_name().to_java_string()
+                            == JavaString::from("java.lang.String")
+                    })
+                    .unwrap_or(false)
+        }
         AnnotationValueProxy::Class(_) => ctx.typ(expected).has_tag(TypeTag::CLASS),
         AnnotationValueProxy::Enum { .. } => {
             ctx.typ(expected).has_tag(TypeTag::CLASS)

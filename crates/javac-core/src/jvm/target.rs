@@ -364,7 +364,10 @@ mod tests {
     fn multi_release_value_is_the_release_number() {
         assert_eq!(Target::JDK1_1.multi_release_value().to_string_lossy(), "1");
         assert_eq!(Target::JDK1_8.multi_release_value().to_string_lossy(), "8");
-        assert_eq!(Target::JDK1_17.multi_release_value().to_string_lossy(), "17");
+        assert_eq!(
+            Target::JDK1_17.multi_release_value().to_string_lossy(),
+            "17"
+        );
     }
 
     #[test]

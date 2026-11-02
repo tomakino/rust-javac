@@ -197,8 +197,8 @@ impl BinaryToASCIIBuffer {
         if insignificant_digits != 0 {
             // Discard non-significant low-order bits, while rounding,
             // up to insignificant value.
-            let pow10 = fdbig_long5pow(insignificant_digits)
-                .wrapping_shl(insignificant_digits as u32); // 10^i == 5^i * 2^i;
+            let pow10 =
+                fdbig_long5pow(insignificant_digits).wrapping_shl(insignificant_digits as u32); // 10^i == 5^i * 2^i;
             let residue = lvalue % pow10;
             lvalue /= pow10;
             dec_exponent += insignificant_digits;
@@ -253,7 +253,13 @@ impl BinaryToASCIIBuffer {
         self.n_digits = self.digits.len() - digitno as usize;
     }
 
-    fn dtoa(&mut self, bin_exp: i32, mut fract_bits: i64, n_significant_bits: i32, is_compatible_format: bool) {
+    fn dtoa(
+        &mut self,
+        bin_exp: i32,
+        mut fract_bits: i64,
+        n_significant_bits: i32,
+        is_compatible_format: bool,
+    ) {
         assert!(fract_bits > 0); // fractBits here can't be zero or negative
         assert_ne!(fract_bits & FRACT_HOB, 0); // Hi-order bit should be set
         // Examine number. Determine if it is an easy case,
@@ -342,9 +348,29 @@ impl BinaryToASCIIBuffer {
             b2 -= m2;
             let s2_new = s2 - m2;
             m2 = 0;
-            return self.dtoa_hard(fract_bits, n_fract_bits, dec_exp, b2, s2_new, s5, m5, m2, is_compatible_format);
+            return self.dtoa_hard(
+                fract_bits,
+                n_fract_bits,
+                dec_exp,
+                b2,
+                s2_new,
+                s5,
+                m5,
+                m2,
+                is_compatible_format,
+            );
         }
-        self.dtoa_hard(fract_bits, n_fract_bits, dec_exp, b2, s2, s5, m5, m2, is_compatible_format);
+        self.dtoa_hard(
+            fract_bits,
+            n_fract_bits,
+            dec_exp,
+            b2,
+            s2,
+            s5,
+            m5,
+            m2,
+            is_compatible_format,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -445,7 +471,8 @@ impl BinaryToASCIIBuffer {
                 self.exact_decimal_conversion = b == 0;
             } else {
                 // still good! they're all longs!
-                let mut b = fract_bits.wrapping_mul(fdbig_long5pow(b5))
+                let mut b = fract_bits
+                    .wrapping_mul(fdbig_long5pow(b5))
                     .wrapping_shl(b2 as u32);
                 let s = fdbig_long5pow(s5).wrapping_shl(s2 as u32);
                 let mut m = fdbig_long5pow(m5).wrapping_shl(m2 as u32);
@@ -511,8 +538,7 @@ impl BinaryToASCIIBuffer {
             let shift_bias = sval.get_normalization_bias();
             sval = sval.left_shift(shift_bias); // normalize so that division works better
 
-            let mut bval =
-                FDBigInteger::value_of_mul_pow52(fract_bits, b5, b2 + shift_bias);
+            let mut bval = FDBigInteger::value_of_mul_pow52(fract_bits, b5, b2 + shift_bias);
             let mut mval = FDBigInteger::value_of_pow52(m5 + 1, m2 + shift_bias + 1);
 
             let ten_sval = FDBigInteger::value_of_pow52(s5 + 1, s2 + shift_bias + 1); //Sval.mult( 10 );
@@ -613,9 +639,7 @@ impl BinaryToASCIIBuffer {
     /// Estimate decimal exponent. (If it is small-ish,
     /// we could double-check.)
     fn estimate_dec_exp(fract_bits: i64, bin_exp: i32) -> i32 {
-        let d2 = f64::from_bits(
-            (EXP_ONE | (fract_bits & SIGNIF_BIT_MASK)) as u64,
-        );
+        let d2 = f64::from_bits((EXP_ONE | (fract_bits & SIGNIF_BIT_MASK)) as u64);
         let d = (d2 - 1.5) * 0.289529654 + 0.176091259 + (bin_exp as f64) * 0.301029995663981;
         let d_bits = d.to_bits(); // can't be NaN here so use raw
         let exponent = ((d_bits & EXP_BIT_MASK as u64) >> EXP_SHIFT) as i32 - EXP_BIAS;
@@ -623,10 +647,14 @@ impl BinaryToASCIIBuffer {
         if (0..52).contains(&exponent) {
             // hot path
             let mask = SIGNIF_BIT_MASK >> exponent;
-            let r = (((d_bits as i64 & SIGNIF_BIT_MASK) | FRACT_HOB)
-                >> (EXP_SHIFT - exponent)) as i32;
+            let r =
+                (((d_bits as i64 & SIGNIF_BIT_MASK) | FRACT_HOB) >> (EXP_SHIFT - exponent)) as i32;
             return if is_negative {
-                if (mask as i64 & d_bits as i64) == 0 { -r } else { -r - 1 }
+                if (mask as i64 & d_bits as i64) == 0 {
+                    -r
+                } else {
+                    -r - 1
+                }
             } else {
                 r
             };
@@ -673,8 +701,9 @@ impl BinaryToASCIIBuffer {
         if self.dec_exponent > 0 && self.dec_exponent < 8 {
             // print digits.digits.
             let mut char_length = i32::min(self.n_digits as i32, self.dec_exponent) as usize;
-            result[i..i + char_length]
-                .copy_from_slice(&self.digits[self.first_digit_index..self.first_digit_index + char_length]);
+            result[i..i + char_length].copy_from_slice(
+                &self.digits[self.first_digit_index..self.first_digit_index + char_length],
+            );
             i += char_length;
             if char_length < self.dec_exponent as usize {
                 char_length = self.dec_exponent as usize - char_length;
@@ -723,8 +752,8 @@ impl BinaryToASCIIBuffer {
             i += 1;
             if self.n_digits > 1 {
                 result[i..i + self.n_digits - 1].copy_from_slice(
-                    &self.digits[self.first_digit_index + 1
-                        ..self.first_digit_index + self.n_digits],
+                    &self.digits
+                        [self.first_digit_index + 1..self.first_digit_index + self.n_digits],
                 );
                 i += self.n_digits - 1;
             } else {
@@ -807,24 +836,21 @@ impl BinaryToASCIIConverter for BinaryToASCIIBuffer {
     }
 }
 
-static B2AC_POSITIVE_INFINITY: LazyLock<ExceptionalBinaryToASCIIBuffer> = LazyLock::new(|| {
-    ExceptionalBinaryToASCIIBuffer {
+static B2AC_POSITIVE_INFINITY: LazyLock<ExceptionalBinaryToASCIIBuffer> =
+    LazyLock::new(|| ExceptionalBinaryToASCIIBuffer {
         image: INFINITY_REP.to_string(),
         is_negative: false,
-    }
-});
-static B2AC_NEGATIVE_INFINITY: LazyLock<ExceptionalBinaryToASCIIBuffer> = LazyLock::new(|| {
-    ExceptionalBinaryToASCIIBuffer {
+    });
+static B2AC_NEGATIVE_INFINITY: LazyLock<ExceptionalBinaryToASCIIBuffer> =
+    LazyLock::new(|| ExceptionalBinaryToASCIIBuffer {
         image: format!("-{INFINITY_REP}"),
         is_negative: true,
-    }
-});
-static B2AC_NOT_A_NUMBER: LazyLock<ExceptionalBinaryToASCIIBuffer> = LazyLock::new(|| {
-    ExceptionalBinaryToASCIIBuffer {
+    });
+static B2AC_NOT_A_NUMBER: LazyLock<ExceptionalBinaryToASCIIBuffer> =
+    LazyLock::new(|| ExceptionalBinaryToASCIIBuffer {
         image: NAN_REP.to_string(),
         is_negative: false,
-    }
-});
+    });
 static B2AC_POSITIVE_ZERO: LazyLock<BinaryToASCIIBuffer> =
     LazyLock::new(|| BinaryToASCIIBuffer::for_zero(false, vec![b'0' as u16]));
 static B2AC_NEGATIVE_ZERO: LazyLock<BinaryToASCIIBuffer> =
@@ -853,7 +879,7 @@ fn get_binary_to_ascii_converter_double_compatible(
             }
         } else {
             Box::new(B2AC_NOT_A_NUMBER.clone())
-        }
+        };
     }
     // Finish unpacking
     // Normalize denormalized numbers.
@@ -882,7 +908,12 @@ fn get_binary_to_ascii_converter_double_compatible(
     let mut buf = BinaryToASCIIBuffer::new();
     buf.set_sign(is_negative);
     // call the routine that actually does all the hard work.
-    buf.dtoa(bin_exp, fract_bits, n_significant_bits, is_compatible_format);
+    buf.dtoa(
+        bin_exp,
+        fract_bits,
+        n_significant_bits,
+        is_compatible_format,
+    );
     Box::new(buf)
 }
 
@@ -901,7 +932,7 @@ pub(crate) fn get_binary_to_ascii_converter_float(f: f32) -> Box<dyn BinaryToASC
             }
         } else {
             Box::new(B2AC_NOT_A_NUMBER.clone())
-        }
+        };
     }
     // Finish unpacking
     // Normalize denormalized numbers.
@@ -941,8 +972,8 @@ pub(crate) fn get_binary_to_ascii_converter_float(f: f32) -> Box<dyn BinaryToASC
 
 // approximately ceil( log2( long5pow[i] ) )
 static N_5_BITS: [i32; 27] = [
-    0, 3, 5, 7, 10, 12, 14, 17, 19, 21, 24, 26, 28, 31, 33, 35, 38, 40, 42, 45, 47, 49, 52, 54,
-    56, 59, 61,
+    0, 3, 5, 7, 10, 12, 14, 17, 19, 21, 24, 26, 28, 31, 33, 35, 38, 40, 42, 45, 47, 49, 52, 54, 56,
+    59, 61,
 ];
 
 /// If insignificant==(1L << ixd)
@@ -951,14 +982,10 @@ static N_5_BITS: [i32; 27] = [
 /// for ( i = 0; insignificant >= 10L; i++ )
 ///        insignificant /= 10L;
 static INSIGNIFICANT_DIGITS_NUMBER: [i32; 64] = [
-    0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 8, 8, 8,
-    9, 9, 9, 9, 10, 10, 10, 11, 11, 11, 12, 12, 12, 12, 13, 13, 13, 14, 14, 14, 15, 15, 15, 15, 16,
-    16, 16, 17, 17, 17, 18, 18, 18, 19,
+    0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 8, 8, 8, 9, 9,
+    9, 9, 10, 10, 10, 11, 11, 11, 12, 12, 12, 12, 13, 13, 13, 14, 14, 14, 15, 15, 15, 15, 16, 16,
+    16, 17, 17, 17, 18, 18, 18, 19,
 ];
-
-
-
-
 
 // placeholder until the fdbig tables are public; replaced below.
 fn fdbig_small5pow(i: i32) -> i32 {
@@ -1106,8 +1133,8 @@ impl ASCIIToBinaryBuffer {
 /// All the positive powers of 10 that can be represented exactly in
 /// double/float.
 static SMALL_10_POW: [f64; 23] = [
-    1.0e0, 1.0e1, 1.0e2, 1.0e3, 1.0e4, 1.0e5, 1.0e6, 1.0e7, 1.0e8, 1.0e9, 1.0e10, 1.0e11,
-    1.0e12, 1.0e13, 1.0e14, 1.0e15, 1.0e16, 1.0e17, 1.0e18, 1.0e19, 1.0e20, 1.0e21, 1.0e22,
+    1.0e0, 1.0e1, 1.0e2, 1.0e3, 1.0e4, 1.0e5, 1.0e6, 1.0e7, 1.0e8, 1.0e9, 1.0e10, 1.0e11, 1.0e12,
+    1.0e13, 1.0e14, 1.0e15, 1.0e16, 1.0e17, 1.0e18, 1.0e19, 1.0e20, 1.0e21, 1.0e22,
 ];
 static SINGLE_SMALL_10_POW: [f32; 11] = [
     1.0e0, 1.0e1, 1.0e2, 1.0e3, 1.0e4, 1.0e5, 1.0e6, 1.0e7, 1.0e8, 1.0e9, 1.0e10,
@@ -1117,8 +1144,6 @@ static TINY_10_POW: [f64; 5] = [1e-16, 1e-32, 1e-64, 1e-128, 1e-256];
 
 const MAX_SMALL_TEN: i32 = SMALL_10_POW.len() as i32 - 1;
 const SINGLE_MAX_SMALL_TEN: i32 = SINGLE_SMALL_10_POW.len() as i32 - 1;
-
-
 
 impl ASCIIToBinaryConverter for ASCIIToBinaryBuffer {
     /// Takes a FloatingDecimal, which we presumably just scanned in,
@@ -1328,12 +1353,8 @@ impl ASCIIToBinaryConverter for ASCIIToBinaryBuffer {
             n_digits = MAX_NDIGITS + 1;
             digits[MAX_NDIGITS as usize] = b'1' as u16;
         }
-        let mut big_d0 = FDBigInteger::new_with_digits(
-            l_value,
-            &digits,
-            k_digits as usize,
-            n_digits as usize,
-        );
+        let mut big_d0 =
+            FDBigInteger::new_with_digits(l_value, &digits, k_digits as usize, n_digits as usize);
         exp = self.dec_exponent - n_digits;
 
         let mut ieee_bits = d_value.to_bits() as i64; // IEEE-754 bits of double candidate
@@ -1556,7 +1577,9 @@ impl ASCIIToBinaryConverter for ASCIIToBinaryBuffer {
                 // Else we have a hard case with a negative exp.
                 //
             }
-        } else if self.dec_exponent >= n_digits && (n_digits + self.dec_exponent) <= MAX_DECIMAL_DIGITS {
+        } else if self.dec_exponent >= n_digits
+            && (n_digits + self.dec_exponent) <= MAX_DECIMAL_DIGITS
+        {
             //
             // In double-precision, this is an exact floating integer.
             // So we can compute to double, then shorten to float
@@ -1649,8 +1672,12 @@ impl ASCIIToBinaryConverter for ASCIIToBinaryBuffer {
             n_digits = SINGLE_MAX_NDIGITS + 1;
             digits[SINGLE_MAX_NDIGITS as usize] = b'1' as u16;
         }
-        let mut big_d0 =
-            FDBigInteger::new_with_digits(i_value as i64, &digits, k_digits as usize, n_digits as usize);
+        let mut big_d0 = FDBigInteger::new_with_digits(
+            i_value as i64,
+            &digits,
+            k_digits as usize,
+            n_digits as usize,
+        );
         exp = self.dec_exponent - n_digits;
 
         let mut ieee_bits = f_value.to_bits() as i32; // IEEE-754 bits of float candidate
@@ -1786,14 +1813,16 @@ impl ASCIIToBinaryConverter for ASCIIToBinaryBuffer {
     }
 }
 
-
 enum ParseError {
     Message(String),
     IndexOutOfBounds,
 }
 
 fn char_at(units: &[u16], index: usize) -> Result<u16, ParseError> {
-    units.get(index).copied().ok_or(ParseError::IndexOutOfBounds)
+    units
+        .get(index)
+        .copied()
+        .ok_or(ParseError::IndexOutOfBounds)
 }
 
 fn java_trim(units: &[u16]) -> &[u16] {
@@ -2121,11 +2150,7 @@ fn parse_hex_string(input: &str) -> Result<Box<dyn ASCIIToBinaryConverter>, Pars
             });
         }
     };
-    let raw_exponent = if positive_exponent {
-        1i64
-    } else {
-        -1i64
-    } * unsigned_raw_exponent;
+    let raw_exponent = if positive_exponent { 1i64 } else { -1i64 } * unsigned_raw_exponent;
     let mut exponent: i64 = raw_exponent + exponent_adjust as i64;
     let mut round = false;
     let mut sticky = false;
@@ -2195,18 +2220,16 @@ fn parse_hex_string(input: &str) -> Result<Box<dyn ASCIIToBinaryConverter>, Pars
             float_bits |= F_EXP_BIT_MASK;
         } else {
             let thresh_shift = SIGNIFICAND_WIDTH - F_SIGNIFICAND_WIDTH - 1;
-            let float_sticky =
-                (significand & ((1i64 << thresh_shift) - 1)) != 0 || round || sticky;
+            let float_sticky = (significand & ((1i64 << thresh_shift) - 1)) != 0 || round || sticky;
             let mut i_value = (significand as u64 >> thresh_shift as u32) as i32;
             if (i_value & 3) != 1 || float_sticky {
                 i_value += 1;
             }
-            float_bits |= (((exponent as i32) + (F_EXP_BIAS - 1)) << SINGLE_EXP_SHIFT)
-                + (i_value >> 1);
+            float_bits |=
+                (((exponent as i32) + (F_EXP_BIAS - 1)) << SINGLE_EXP_SHIFT) + (i_value >> 1);
         }
     } else if exponent >= (F_MIN_SUB_EXPONENT - 1) as i64 {
-        let thresh_shift =
-            ((SIGNIFICAND_WIDTH - 2 + F_MIN_SUB_EXPONENT) as i64 - exponent) as i32;
+        let thresh_shift = ((SIGNIFICAND_WIDTH - 2 + F_MIN_SUB_EXPONENT) as i64 - exponent) as i32;
         assert!(thresh_shift >= SIGNIFICAND_WIDTH - F_SIGNIFICAND_WIDTH);
         assert!(thresh_shift < SIGNIFICAND_WIDTH);
         let float_sticky = (significand & ((1i64 << thresh_shift) - 1)) != 0 || round || sticky;

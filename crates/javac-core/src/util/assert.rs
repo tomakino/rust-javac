@@ -142,7 +142,10 @@ mod tests {
 
     #[test]
     fn assertion_error_display() {
-        assert_eq!(AssertionError::new(None).to_string(), "java.lang.AssertionError");
+        assert_eq!(
+            AssertionError::new(None).to_string(),
+            "java.lang.AssertionError"
+        );
         assert_eq!(
             AssertionError::new(Some("x".to_string())).to_string(),
             "java.lang.AssertionError: x"

@@ -6,8 +6,8 @@
 //! offsets for module/parent/base/extension and content offsets/sizes for the resource data. The
 //! full name of a location is reassembled exactly as ImageLocation.getFullName() does it.
 
-use crate::image_strings;
 use crate::Error;
+use crate::image_strings;
 
 /// Java: ImageLocation.ATTRIBUTE_END.
 pub const ATTRIBUTE_END: usize = 0;

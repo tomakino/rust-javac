@@ -482,11 +482,7 @@ pub(crate) fn format_placeholder_text<F: AbstractDiagnosticFormatter + ?Sized>(
     text: &str,
 ) -> String {
     if let Some(name) = text.strip_prefix("kindname.") {
-        return formatter.localize(
-            locale,
-            &format!("compiler.misc.kindname.{name}"),
-            &[],
-        );
+        return formatter.localize(locale, &format!("compiler.misc.kindname.{name}"), &[]);
     }
     if text.starts_with("compiler.misc.") {
         return formatter.localize(locale, text, &[]);

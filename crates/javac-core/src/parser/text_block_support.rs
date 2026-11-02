@@ -38,7 +38,11 @@ pub(crate) fn check_whitespace(string: &JavaString) -> HashSet<WhitespaceChecks>
     let opt_out = last_char == '\n' as u16 || last_char == '\r' as u16;
     let lines = java_string_methods::lines(string);
     let length = lines.len();
-    let last_line = if length == 0 { JavaString::new() } else { lines[length - 1].clone() };
+    let last_line = if length == 0 {
+        JavaString::new()
+    } else {
+        lines[length - 1].clone()
+    };
     if !opt_out {
         // Prime with the last line indentation (may be blank.)
         outdent = java_string_methods::index_of_non_whitespace(&last_line);

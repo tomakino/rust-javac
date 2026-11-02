@@ -1,3 +1,6 @@
+use super::block_tag_tree::BlockTagTree;
+use super::doc_tree::DocTree;
+use super::identifier_tree::IdentifierTree;
 /// A tree node for an {@code @param} block tag.
 ///
 /// <pre>
@@ -6,9 +9,6 @@
 ///
 /// @since 1.8
 use std::rc::Rc;
-use super::block_tag_tree::BlockTagTree;
-use super::doc_tree::DocTree;
-use super::identifier_tree::IdentifierTree;
 
 pub trait ParamTree: BlockTagTree {
     /// Returns {@code true} if this is documenting a type parameter.
@@ -22,5 +22,4 @@ pub trait ParamTree: BlockTagTree {
     /// Returns the description of the parameter.
     /// @return the description
     fn get_description(&self) -> Vec<Rc<dyn DocTree>>;
-
 }

@@ -43,12 +43,12 @@ use crate::api::diagnostic_formatter::{
     Configuration, DiagnosticFormatter, DiagnosticPart, MultilineLimit, PositionKind,
 };
 use crate::util::abstract_diagnostic_formatter::{
-    format_placeholder_text, AbstractDiagnosticFormatter, SimpleConfiguration,
+    AbstractDiagnosticFormatter, SimpleConfiguration, format_placeholder_text,
 };
 use crate::util::javac_messages::{JavacMessages, Locale};
-use crate::util::options::Options;
 use crate::util::jc_diagnostic::JCDiagnostic;
-use crate::util::layout_characters::{DIAG_INC, DETAILS_INC};
+use crate::util::layout_characters::{DETAILS_INC, DIAG_INC};
+use crate::util::options::Options;
 use crate::util::position::NOPOS;
 
 #[derive(Debug, Clone)]
@@ -112,10 +112,7 @@ impl BasicDiagnosticFormatter {
                 where_text.push('\n');
             }
             if names.len() == 1 {
-                where_text.push_str(&format!(
-                    "  where {} is a fresh type-variable:",
-                    names[0]
-                ));
+                where_text.push_str(&format!("  where {} is a fresh type-variable:", names[0]));
             } else {
                 where_text.push_str(&format!(
                     "  where {} are fresh type-variables:",
@@ -146,10 +143,7 @@ impl BasicDiagnosticFormatter {
                 where_text.push('\n');
             }
             if names.len() == 1 {
-                where_text.push_str(&format!(
-                    "  where {} is an intersection type:",
-                    names[0]
-                ));
+                where_text.push_str(&format!("  where {} is an intersection type:", names[0]));
             } else {
                 where_text.push_str(&format!(
                     "  where {} are intersection types:",
@@ -164,10 +158,7 @@ impl BasicDiagnosticFormatter {
                 for captured in &state.captured {
                     bounds = bounds.replace(&captured.original, &captured.name);
                 }
-                where_text.push_str(&format!(
-                    "\n    {} extends {}",
-                    intersection.name, bounds
-                ));
+                where_text.push_str(&format!("\n    {} extends {}", intersection.name, bounds));
             }
         }
         if !where_text.is_empty() && !text.contains(&where_text) {
@@ -183,8 +174,7 @@ impl BasicDiagnosticFormatter {
         collect_rich_arguments(d, &mut state);
         // Java: RichPrinter.visitTypeVar uses T#N when two distinct tvars
         // share the same simple name (disambiguateTvars).
-        let mut counts: std::collections::HashMap<String, usize> =
-            std::collections::HashMap::new();
+        let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for typevar in &state.typevars {
             *counts.entry(typevar.name.clone()).or_insert(0) += 1;
         }
@@ -253,7 +243,10 @@ impl BasicDiagnosticFormatter {
     }
 
     /// Java: public BasicDiagnosticFormatter(Options options, JavacMessages msgs)
-    pub fn new_with_options(messages: Rc<JavacMessages>, options: &Options) -> BasicDiagnosticFormatter {
+    pub fn new_with_options(
+        messages: Rc<JavacMessages>,
+        options: &Options,
+    ) -> BasicDiagnosticFormatter {
         BasicDiagnosticFormatter {
             messages,
             config: BasicConfiguration::new_with_options(options),
@@ -343,9 +336,7 @@ impl BasicDiagnosticFormatter {
             }
         }
         if d.is_multiline() && visible.contains(&DiagnosticPart::Subdiagnostics) {
-            current_indentation += self
-                .config
-                .get_indentation(DiagnosticPart::Subdiagnostics);
+            current_indentation += self.config.get_indentation(DiagnosticPart::Subdiagnostics);
             for sub in self.format_subdiagnostics(d, locale) {
                 buf.push('\n');
                 buf.push_str(&self.indent(&sub, current_indentation));
@@ -425,10 +416,11 @@ impl BasicDiagnosticFormatter {
             if source.get_file().is_some() && d.get_int_position() != NOPOS {
                 format = self.config.get_format(BasicFormatKind::DEFAULT_POS_FORMAT);
             } else if let Some(file) = source.get_file()
-                && file.get_kind()
-                    == javac_tools::tools::java_file_object::Kind::CLASS
+                && file.get_kind() == javac_tools::tools::java_file_object::Kind::CLASS
             {
-                format = self.config.get_format(BasicFormatKind::DEFAULT_CLASS_FORMAT);
+                format = self
+                    .config
+                    .get_format(BasicFormatKind::DEFAULT_CLASS_FORMAT);
             }
         }
         format
@@ -460,16 +452,16 @@ impl AbstractDiagnosticFormatter for BasicDiagnosticFormatter {
         self.config.is_caret_enabled()
     }
 
-    fn format_diagnostic_impl(&self, d: &JCDiagnostic, locale: Option<&Locale>) -> String {
-        self.format_diagnostic_basic(d, locale)
-    }
-
     fn format_type_argument(
         &self,
         arg: &crate::resources::diagnostic_contract::TypeArg,
         locale: Option<&Locale>,
     ) -> String {
         self.render_rich_type_arg(arg, locale)
+    }
+
+    fn format_diagnostic_impl(&self, d: &JCDiagnostic, locale: Option<&Locale>) -> String {
+        self.format_diagnostic_basic(d, locale)
     }
 
     fn format_message_impl(&self, d: &JCDiagnostic, locale: Option<&Locale>) -> String {
@@ -503,12 +495,7 @@ impl DiagnosticFormatter<JCDiagnostic> for BasicDiagnosticFormatter {
         self.format_source_impl(diag, fullname, Some(locale))
     }
 
-    fn format_position(
-        &self,
-        diag: &JCDiagnostic,
-        pk: PositionKind,
-        locale: &Locale,
-    ) -> String {
+    fn format_position(&self, diag: &JCDiagnostic, pk: PositionKind, locale: &Locale) -> String {
         self.format_position_impl(diag, pk, Some(locale))
     }
 
@@ -519,10 +506,7 @@ impl DiagnosticFormatter<JCDiagnostic> for BasicDiagnosticFormatter {
 
 /// Collect the declared type variables carried by Type arguments and render
 /// them as RichDiagnosticFormatter `where` clauses.
-fn format_where_clauses(
-    d: &JCDiagnostic,
-    typevars: &[RichTypeVar],
-) -> String {
+fn format_where_clauses(d: &JCDiagnostic, typevars: &[RichTypeVar]) -> String {
     let mut vars: Vec<crate::resources::diagnostic_contract::WhereTypeVar> = Vec::new();
     collect_where_clauses(d, &mut vars);
     if vars.is_empty() {
@@ -586,7 +570,8 @@ fn replace_identifier(text: &str, from: &str, to: &str) -> String {
 
 fn collect_rich_arguments(d: &JCDiagnostic, state: &mut RichWhereState) {
     for arg in d.get_args() {
-        if let Some(type_arg) = arg.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>() {
+        if let Some(type_arg) = arg.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>()
+        {
             for captured in &type_arg.where_captured {
                 if !state
                     .captured
@@ -630,7 +615,9 @@ fn collect_rich_arguments(d: &JCDiagnostic, state: &mut RichWhereState) {
             }
         } else if let Some(nested) = arg.downcast_ref::<JCDiagnostic>() {
             collect_rich_arguments(nested, state);
-        } else if let Some(items) = arg.downcast_ref::<Vec<crate::util::jc_diagnostic::DiagnosticArg>>() {
+        } else if let Some(items) =
+            arg.downcast_ref::<Vec<crate::util::jc_diagnostic::DiagnosticArg>>()
+        {
             for item in items {
                 if let Some(type_arg) =
                     item.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>()
@@ -690,7 +677,8 @@ fn collect_where_clauses(
     vars: &mut Vec<crate::resources::diagnostic_contract::WhereTypeVar>,
 ) {
     for arg in d.get_args() {
-        if let Some(type_arg) = arg.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>() {
+        if let Some(type_arg) = arg.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>()
+        {
             for var in &type_arg.where_vars {
                 if !vars
                     .iter()
@@ -709,10 +697,9 @@ fn collect_where_clauses(
                     item.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>()
                 {
                     for var in &type_arg.where_vars {
-                        if !vars
-                            .iter()
-                            .any(|existing| existing.name == var.name && existing.owner == var.owner)
-                        {
+                        if !vars.iter().any(|existing| {
+                            existing.name == var.name && existing.owner == var.owner
+                        }) {
                             vars.push(var.clone());
                         }
                     }
@@ -1057,10 +1044,10 @@ pub enum BasicFormatKind {
 mod tests {
     use super::*;
     use crate::util::java_string::JavaString;
-    use crate::util::jc_diagnostic::{Factory, LintCategory};
     use crate::util::javac_messages::{
-        ResourceBundle, ResourceBundleHelper, ResourceBundleTable, DEFAULT_BUNDLE_NAME,
+        DEFAULT_BUNDLE_NAME, ResourceBundle, ResourceBundleHelper, ResourceBundleTable,
     };
+    use crate::util::jc_diagnostic::{Factory, LintCategory};
     use javac_tools::error::Error;
     use javac_tools::tools::file_object::FileObject;
     use javac_tools::tools::java_file_object::{JavaFileObject, Kind};
@@ -1118,18 +1105,18 @@ mod tests {
             Err(Error::UnsupportedOperationException)
         }
 
-        fn get_char_content(
-            &self,
-            _ignore_encoding_errors: bool,
-        ) -> Result<Option<JavaString>, Error> {
-            Ok(Some(JavaString::from(self.content)))
-        }
-
         fn open_reader(
             &self,
             _ignore_encoding_errors: bool,
         ) -> Result<Box<dyn javac_tools::java_io::Reader>, Error> {
             Err(Error::UnsupportedOperationException)
+        }
+
+        fn get_char_content(
+            &self,
+            _ignore_encoding_errors: bool,
+        ) -> Result<Option<JavaString>, Error> {
+            Ok(Some(JavaString::from(self.content)))
         }
 
         fn open_writer(&self) -> Result<Box<dyn javac_tools::java_io::Writer>, Error> {
@@ -1243,8 +1230,10 @@ mod tests {
             "multi",
             Vec::new(),
         );
-        let multiline =
-            crate::util::jc_diagnostic::MultilineDiagnostic::new(&multi, crate::util::list::List::of(sub.clone()));
+        let multiline = crate::util::jc_diagnostic::MultilineDiagnostic::new(
+            &multi,
+            crate::util::list::List::of(sub.clone()),
+        );
         let text = formatter().format(multiline.as_diagnostic(), None);
         // summary (indent 0), details lines (DETAILS_INC = 2), subdiagnostics
         // (DIAG_INC = 4).
@@ -1275,12 +1264,24 @@ mod tests {
     #[test]
     fn configuration_defaults_and_setters() {
         let mut config = BasicConfiguration::new();
-        assert_eq!(config.get_format(BasicFormatKind::DEFAULT_POS_FORMAT), "%f:%l:%_%p%L%m");
-        assert_eq!(config.get_format(BasicFormatKind::DEFAULT_NO_POS_FORMAT), "%p%L%m");
-        assert_eq!(config.get_format(BasicFormatKind::DEFAULT_CLASS_FORMAT), "%f:%_%p%L%m");
+        assert_eq!(
+            config.get_format(BasicFormatKind::DEFAULT_POS_FORMAT),
+            "%f:%l:%_%p%L%m"
+        );
+        assert_eq!(
+            config.get_format(BasicFormatKind::DEFAULT_NO_POS_FORMAT),
+            "%p%L%m"
+        );
+        assert_eq!(
+            config.get_format(BasicFormatKind::DEFAULT_CLASS_FORMAT),
+            "%f:%_%p%L%m"
+        );
         assert_eq!(config.get_indentation(DiagnosticPart::Summary), 0);
         assert_eq!(config.get_indentation(DiagnosticPart::Details), DETAILS_INC);
-        assert_eq!(config.get_indentation(DiagnosticPart::Subdiagnostics), DIAG_INC);
+        assert_eq!(
+            config.get_indentation(DiagnosticPart::Subdiagnostics),
+            DIAG_INC
+        );
         assert_eq!(config.get_indentation(DiagnosticPart::Source), 0);
         assert!(config.is_caret_enabled());
         assert_eq!(config.get_source_position(), None);
@@ -1291,9 +1292,15 @@ mod tests {
         config.set_visible_part(DiagnosticPart::Source, false);
         assert!(!config.get_visible().contains(&DiagnosticPart::Source));
         config.set_format(BasicFormatKind::DEFAULT_NO_POS_FORMAT, "%m");
-        assert_eq!(config.get_format(BasicFormatKind::DEFAULT_NO_POS_FORMAT), "%m");
+        assert_eq!(
+            config.get_format(BasicFormatKind::DEFAULT_NO_POS_FORMAT),
+            "%m"
+        );
         config.init_old_format();
-        assert_eq!(config.get_format(BasicFormatKind::DEFAULT_POS_FORMAT), "%f:%l:%_%t%L%m");
+        assert_eq!(
+            config.get_format(BasicFormatKind::DEFAULT_POS_FORMAT),
+            "%f:%l:%_%t%L%m"
+        );
     }
 
     #[test]
@@ -1308,9 +1315,21 @@ mod tests {
         );
         let formatter = formatter();
         assert!(formatter.display_source(&diagnostic));
-        assert_eq!(formatter.format_source(&diagnostic, true, &Locale::default_locale()), "Test.java");
-        assert_eq!(formatter.format_position(&diagnostic, PositionKind::Line, &Locale::default_locale()), "2");
-        assert_eq!(formatter.format_position(&diagnostic, PositionKind::Column, &Locale::default_locale()), "13");
-        assert_eq!(formatter.format_position(&diagnostic, PositionKind::Offset, &Locale::default_locale()), "32");
+        assert_eq!(
+            formatter.format_source(&diagnostic, true, &Locale::default_locale()),
+            "Test.java"
+        );
+        assert_eq!(
+            formatter.format_position(&diagnostic, PositionKind::Line, &Locale::default_locale()),
+            "2"
+        );
+        assert_eq!(
+            formatter.format_position(&diagnostic, PositionKind::Column, &Locale::default_locale()),
+            "13"
+        );
+        assert_eq!(
+            formatter.format_position(&diagnostic, PositionKind::Offset, &Locale::default_locale()),
+            "32"
+        );
     }
 }

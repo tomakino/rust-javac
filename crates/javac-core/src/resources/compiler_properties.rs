@@ -4,6 +4,6 @@
 //! resources/l10n (see resources/bundles.rs), the accessor code in
 //! compiler_accessors.rs and the metadata in compiler_metadata.rs.
 
+pub use super::bundles::COMPILER_EN as COMPILER_MESSAGES;
 pub use super::compiler_accessors::{errors, fragments, notes, warnings};
 pub use super::compiler_metadata::COMPILER_KEYS;
-pub use super::bundles::COMPILER_EN as COMPILER_MESSAGES;

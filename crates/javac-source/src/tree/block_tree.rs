@@ -1,3 +1,4 @@
+use super::statement_tree::StatementTree;
 /// A tree node for a statement block.
 ///
 /// For example:
@@ -15,7 +16,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::statement_tree::StatementTree;
 
 pub trait BlockTree: StatementTree {
     /// Returns true if and only if this is a static initializer block.
@@ -25,5 +25,4 @@ pub trait BlockTree: StatementTree {
     /// Returns the statements comprising this block.
     /// @return the statements
     fn get_statements(&self) -> Vec<Rc<dyn StatementTree>>;
-
 }

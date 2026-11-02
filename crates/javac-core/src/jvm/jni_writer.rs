@@ -12,19 +12,19 @@
 
 use std::rc::Rc;
 
+use javac_strings::JavaString;
 use javac_tools::tools::java_file_manager::{FileObjectRef, JavaFileManager, LocationRef};
 use javac_tools::tools::standard_location::StandardLocation;
-use javac_strings::JavaString;
 
 use crate::code::flags;
 use crate::code::kinds::Kind;
-use crate::code::symbol::{symbol_is_directly_or_indirectly_local, symbol_packge, SymbolKind};
-use crate::ids::SymbolId;
+use crate::code::symbol::{SymbolKind, symbol_is_directly_or_indirectly_local, symbol_packge};
 use crate::code::symtab::Symtab;
 use crate::code::type_::TypeKindData;
 use crate::code::type_tag::TypeTag;
 use crate::code::types::Types;
 use crate::compiler_context::CompilerContext;
+use crate::ids::SymbolId;
 use crate::util::constants::ConstantValue;
 use crate::util::jc_diagnostic::DiagnosticArg;
 use crate::util::log::Log;
@@ -98,7 +98,9 @@ impl JNIWriter {
     /// # Panics
     ///   - none.
     pub fn needs_header(&self, ctx: &mut CompilerContext, syms: &Symtab, c: SymbolId) -> bool {
-        if symbol_is_directly_or_indirectly_local(ctx, c) || has_flag(ctx, c, flags::SYNTHETIC as i64) {
+        if symbol_is_directly_or_indirectly_local(ctx, c)
+            || has_flag(ctx, c, flags::SYNTHETIC as i64)
+        {
             return false;
         }
         if self.check_all {
@@ -120,7 +122,9 @@ impl JNIWriter {
         c: SymbolId,
         check_nested_classes: bool,
     ) -> bool {
-        if symbol_is_directly_or_indirectly_local(ctx, c) || has_flag(ctx, c, flags::SYNTHETIC as i64) {
+        if symbol_is_directly_or_indirectly_local(ctx, c)
+            || has_flag(ctx, c, flags::SYNTHETIC as i64)
+        {
             return false;
         }
         let members = class_members(ctx, c);
@@ -139,8 +143,7 @@ impl JNIWriter {
         }
         if check_nested_classes {
             for sym in &members {
-                if ctx.sym(*sym).kind == Kind::TYP
-                    && self.needs_header_impl(ctx, syms, *sym, true)
+                if ctx.sym(*sym).kind == Kind::TYP && self.needs_header_impl(ctx, syms, *sym, true)
                 {
                     return true;
                 }
@@ -210,8 +213,7 @@ impl JNIWriter {
         if self.verbose {
             let name = out_file.get_name();
             let arg: DiagnosticArg = Rc::new(name);
-            self.log
-                .print_verbose("wrote.file", vec![arg]);
+            self.log.print_verbose("wrote.file", vec![arg]);
         }
         Ok(out_file)
     }
@@ -280,7 +282,11 @@ impl JNIWriter {
         let Some(ty) = ctx.sym(f).ty else { return };
         let value_str = match ctx.typ(ty).get_tag() {
             TypeTag::BOOLEAN => match value {
-                ConstantValue::Boolean(v) => Some(if *v { "1L".to_string() } else { "0L".to_string() }),
+                ConstantValue::Boolean(v) => Some(if *v {
+                    "1L".to_string()
+                } else {
+                    "0L".to_string()
+                }),
                 _ => None,
             },
             TypeTag::BYTE => match value {
@@ -298,7 +304,11 @@ impl JNIWriter {
             TypeTag::LONG => match value {
                 ConstantValue::Long(v) => Some(format!(
                     "{v}{}",
-                    if std::env::consts::OS == "windows" { "i64" } else { "LL" }
+                    if std::env::consts::OS == "windows" {
+                        "i64"
+                    } else {
+                        "LL"
+                    }
                 )),
                 _ => None,
             },
@@ -331,10 +341,8 @@ impl JNIWriter {
         if let Some(value_str) = value_str {
             out.push_str("#undef ");
             let cname = encode_java_string(&class_qualified_name(ctx, cls), EncoderType::CLASS);
-            let fname = encode_java_string(
-                &ctx.sym(f).name.to_java_string(),
-                EncoderType::FIELDSTUB,
-            );
+            let fname =
+                encode_java_string(&ctx.sym(f).name.to_java_string(), EncoderType::FIELDSTUB);
             out.push_str(&format!("{cname}_{fname}\n"));
             out.push_str(&format!("#define {cname}_"));
             out.push_str(&format!("{fname} {value_str}\n"));
@@ -378,7 +386,10 @@ impl JNIWriter {
             ));
             out.push_str(&format!(" * Signature: {signature}\n"));
             out.push_str(" */\n");
-            let return_type = ctx.typ(md_ty).get_return_type(ctx).expect("method return type");
+            let return_type = ctx
+                .typ(md_ty)
+                .get_return_type(ctx)
+                .expect("method return type");
             let erased_return = self.types.erasure(ctx, syms, return_type);
             let jni_return = self.jni_type(ctx, syms, erased_return);
             let encoded_method = self.encode_method(ctx, syms, *md, sym, is_overloaded)?;
@@ -386,7 +397,11 @@ impl JNIWriter {
                 "JNIEXPORT {jni_return} JNICALL {encoded_method}\n"
             ));
             out.push_str("  (JNIEnv *, ");
-            out.push_str(if ctx.sym(*md).is_static(ctx) { "jclass" } else { "jobject" });
+            out.push_str(if ctx.sym(*md).is_static(ctx) {
+                "jclass"
+            } else {
+                "jobject"
+            });
             let parameter_types = ctx.typ(md_ty).get_parameter_types(ctx);
             for arg in parameter_types.iter() {
                 out.push_str(", ");
@@ -413,51 +428,49 @@ fn jni_type_of(
     syms: &Symtab,
     t: crate::ids::TypeId,
 ) -> String {
-        match ctx.typ(t).get_tag() {
-            TypeTag::ARRAY => {
-                let component = match &ctx.typ(t).kind {
-                    TypeKindData::ArrayType { elemtype, .. } => {
-                        elemtype.expect("array element type")
-                    }
-                    _ => crate::util::assert::error(),
-                };
-                match ctx.typ(component).get_tag() {
-                    TypeTag::BOOLEAN => "jbooleanArray",
-                    TypeTag::BYTE => "jbyteArray",
-                    TypeTag::CHAR => "jcharArray",
-                    TypeTag::SHORT => "jshortArray",
-                    TypeTag::INT => "jintArray",
-                    TypeTag::LONG => "jlongArray",
-                    TypeTag::FLOAT => "jfloatArray",
-                    TypeTag::DOUBLE => "jdoubleArray",
-                    TypeTag::ARRAY | TypeTag::CLASS => "jobjectArray",
-                    _ => crate::util::assert::error(),
-                }
-                .to_string()
+    match ctx.typ(t).get_tag() {
+        TypeTag::ARRAY => {
+            let component = match &ctx.typ(t).kind {
+                TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
+                _ => crate::util::assert::error(),
+            };
+            match ctx.typ(component).get_tag() {
+                TypeTag::BOOLEAN => "jbooleanArray",
+                TypeTag::BYTE => "jbyteArray",
+                TypeTag::CHAR => "jcharArray",
+                TypeTag::SHORT => "jshortArray",
+                TypeTag::INT => "jintArray",
+                TypeTag::LONG => "jlongArray",
+                TypeTag::FLOAT => "jfloatArray",
+                TypeTag::DOUBLE => "jdoubleArray",
+                TypeTag::ARRAY | TypeTag::CLASS => "jobjectArray",
+                _ => crate::util::assert::error(),
             }
-            TypeTag::VOID => "void".to_string(),
-            TypeTag::BOOLEAN => "jboolean".to_string(),
-            TypeTag::BYTE => "jbyte".to_string(),
-            TypeTag::CHAR => "jchar".to_string(),
-            TypeTag::SHORT => "jshort".to_string(),
-            TypeTag::INT => "jint".to_string(),
-            TypeTag::LONG => "jlong".to_string(),
-            TypeTag::FLOAT => "jfloat".to_string(),
-            TypeTag::DOUBLE => "jdouble".to_string(),
-            TypeTag::CLASS => {
-                let tsym = ctx.typ(t).tsym;
-                if tsym == ctx.typ(syms.string_type).tsym {
-                    "jstring".to_string()
-                } else if types.is_assignable(ctx, syms, t, syms.throwable_type) {
-                    "jthrowable".to_string()
-                } else if types.is_assignable(ctx, syms, t, syms.class_type) {
-                    "jclass".to_string()
-                } else {
-                    "jobject".to_string()
-                }
-            }
-            _ => crate::util::assert::error(),
+            .to_string()
         }
+        TypeTag::VOID => "void".to_string(),
+        TypeTag::BOOLEAN => "jboolean".to_string(),
+        TypeTag::BYTE => "jbyte".to_string(),
+        TypeTag::CHAR => "jchar".to_string(),
+        TypeTag::SHORT => "jshort".to_string(),
+        TypeTag::INT => "jint".to_string(),
+        TypeTag::LONG => "jlong".to_string(),
+        TypeTag::FLOAT => "jfloat".to_string(),
+        TypeTag::DOUBLE => "jdouble".to_string(),
+        TypeTag::CLASS => {
+            let tsym = ctx.typ(t).tsym;
+            if tsym == ctx.typ(syms.string_type).tsym {
+                "jstring".to_string()
+            } else if types.is_assignable(ctx, syms, t, syms.throwable_type) {
+                "jthrowable".to_string()
+            } else if types.is_assignable(ctx, syms, t, syms.class_type) {
+                "jclass".to_string()
+            } else {
+                "jobject".to_string()
+            }
+        }
+        _ => crate::util::assert::error(),
+    }
 }
 
 impl JNIWriter {
@@ -491,7 +504,6 @@ impl JNIWriter {
     fn guard_end(&self, out: &mut String) {
         out.push_str("#endif\n");
     }
-
 }
 
 impl JNIWriter {
@@ -840,10 +852,7 @@ mod tests {
 
     #[test]
     fn encode_jni_class_and_field_stub_names() {
-        let jni = encode_java_string(
-            &JavaString::from("java/lang/String"),
-            EncoderType::JNI,
-        );
+        let jni = encode_java_string(&JavaString::from("java/lang/String"), EncoderType::JNI);
         assert_eq!(jni, "java_lang_String");
         let class = encode_java_string(&JavaString::from("a.b$c"), EncoderType::CLASS);
         assert_eq!(class, "a_b__c");
@@ -863,12 +872,7 @@ mod tests {
     fn jni_primitive_types_match_upstream() {
         let names = Rc::new(Names::new(false));
         let mut ctx = CompilerContext::new();
-        let syms = Symtab::new(
-            &mut ctx,
-            Rc::clone(&names),
-            Target::JDK1_17,
-            Source::JDK17,
-        );
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, Source::JDK17);
         let types = Types::with_names(Rc::clone(&names));
         for (ty, expected) in [
             (syms.void_type, "void"),

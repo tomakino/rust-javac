@@ -1,3 +1,5 @@
+use super::expression_tree::ExpressionTree;
+use super::statement_tree::StatementTree;
 /// A tree node for a {@code do} statement.
 ///
 /// For example:
@@ -13,8 +15,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
-use super::statement_tree::StatementTree;
 
 pub trait DoWhileLoopTree: StatementTree {
     /// Returns the condition of the loop.
@@ -24,5 +24,4 @@ pub trait DoWhileLoopTree: StatementTree {
     /// Returns the body of the loop.
     /// @return the body of the loop
     fn get_statement(&self) -> Rc<dyn StatementTree>;
-
 }

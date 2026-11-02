@@ -191,10 +191,18 @@ mod tests {
     #[test]
     fn lookup_and_unused_values() {
         assert_eq!(TargetType::from_target_type_value(0x13), TargetType::FIELD);
-        assert_eq!(TargetType::from_target_type_value(0x4B), TargetType::METHOD_REFERENCE_TYPE_ARGUMENT);
-        assert_eq!(TargetType::from_target_type_value(0x02), TargetType::UNKNOWN);
-        assert_eq!(TargetType::from_target_type_value(0xFF), TargetType::UNKNOWN);
+        assert_eq!(
+            TargetType::from_target_type_value(0x4B),
+            TargetType::METHOD_REFERENCE_TYPE_ARGUMENT
+        );
+        assert_eq!(
+            TargetType::from_target_type_value(0x02),
+            TargetType::UNKNOWN
+        );
+        assert_eq!(
+            TargetType::from_target_type_value(0xFF),
+            TargetType::UNKNOWN
+        );
         assert!(std::panic::catch_unwind(|| TargetType::from_target_type_value(0x4C)).is_err());
     }
 }
-

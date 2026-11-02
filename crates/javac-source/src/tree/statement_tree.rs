@@ -8,5 +8,4 @@
 /// @since 1.6
 use super::tree::Tree;
 
-pub trait StatementTree: Tree {
-}
+pub trait StatementTree: Tree {}

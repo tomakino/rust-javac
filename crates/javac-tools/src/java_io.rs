@@ -62,12 +62,20 @@ pub struct StringReader {
 impl StringReader {
     /// Java: `StringReader(String s)`.
     pub fn new(content: JavaString) -> StringReader {
-        StringReader { content: content.as_units().to_vec(), next: 0, closed: false }
+        StringReader {
+            content: content.as_units().to_vec(),
+            next: 0,
+            closed: false,
+        }
     }
 
     /// Constructs the reader from an already encoded UTF-16 sequence.
     pub fn from_units(content: Vec<u16>) -> StringReader {
-        StringReader { content, next: 0, closed: false }
+        StringReader {
+            content,
+            next: 0,
+            closed: false,
+        }
     }
 
     /// Java: `StringReader.ready()`.
@@ -149,7 +157,10 @@ impl InputStreamReader {
     fn decode_more(&mut self) -> Result<(), Error> {
         use javac_charset::{ByteBuffer, CharBuffer};
         let mut bytes = [0u8; 8192];
-        let count = self.input.read(&mut bytes).map_err(InputStreamReader::io_error)?;
+        let count = self
+            .input
+            .read(&mut bytes)
+            .map_err(InputStreamReader::io_error)?;
         let end_of_input = count == 0;
         if end_of_input {
             self.eof = true;

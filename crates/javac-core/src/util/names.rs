@@ -435,7 +435,10 @@ mod tests {
         assert_eq!(names.init.to_java_string().to_string_lossy(), "<init>");
         assert_eq!(names.clinit.to_java_string().to_string_lossy(), "<clinit>");
         assert_eq!(names._class.to_java_string().to_string_lossy(), "class");
-        assert_eq!(names.java_lang_Object.to_java_string().to_string_lossy(), "java.lang.Object");
+        assert_eq!(
+            names.java_lang_Object.to_java_string().to_string_lossy(),
+            "java.lang.Object"
+        );
         assert_eq!(names.empty.to_java_string().to_string_lossy(), "");
         assert!(names.empty.is_empty());
         // names must be interned in the same table

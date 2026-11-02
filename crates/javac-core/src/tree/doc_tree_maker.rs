@@ -62,9 +62,10 @@ pub struct DocTreeMaker {
     diags: Rc<Factory>,
     /// Java: private final ReferenceParser referenceParser;
     /// injected explicitly (registered adapter; see new()).
-    reference_parser: std::cell::RefCell<Option<Rc<crate::parser::reference_parser::ReferenceParser>>>,
-// REGISTERED P6: trees: JavacTrees (used by getSentenceBreak); ReferenceParser
-// is injected (reference_parser) for newReferenceTree.
+    reference_parser:
+        std::cell::RefCell<Option<Rc<crate::parser::reference_parser::ReferenceParser>>>,
+    // REGISTERED P6: trees: JavacTrees (used by getSentenceBreak); ReferenceParser
+    // is injected (reference_parser) for newReferenceTree.
 }
 
 impl DocTreeMaker {
@@ -110,11 +111,9 @@ impl DocTreeMaker {
     /// Reassign current position.
     ///
     /// Java: public DocTreeMaker at(DiagnosticPosition pos)
-    pub fn at_diagnostic_position(
-        &self,
-        pos: Option<&dyn DiagnosticPosition>,
-    ) -> &DocTreeMaker {
-        self.pos.set(pos.map_or(NOPOS, |position| position.get_start_position()));
+    pub fn at_diagnostic_position(&self, pos: Option<&dyn DiagnosticPosition>) -> &DocTreeMaker {
+        self.pos
+            .set(pos.map_or(NOPOS, |position| position.get_start_position()));
         self
     }
 
@@ -270,10 +269,7 @@ impl DocTreeMaker {
         text: JavaString,
         diag: Rc<JCDiagnostic>,
     ) -> Rc<DCTree> {
-        self.node(DCKind::Erroneous {
-            body: text,
-            diag,
-        })
+        self.node(DCKind::Erroneous { body: text, diag })
     }
 
     /// Java: public DCErroneous newErroneousTree(String text,
@@ -309,11 +305,7 @@ impl DocTreeMaker {
 
     /// Java: public DCThrows newExceptionTree(ReferenceTree name,
     /// List<? extends DocTree> description)
-    pub fn new_exception_tree(
-        &self,
-        name: &Rc<DCTree>,
-        description: &[Rc<DCTree>],
-    ) -> Rc<DCTree> {
+    pub fn new_exception_tree(&self, name: &Rc<DCTree>, description: &[Rc<DCTree>]) -> Rc<DCTree> {
         assert_kind(name, "DCThrows.name", Kind::REFERENCE);
         let description = Self::to_list(description);
         self.node(DCKind::Throws {
@@ -407,11 +399,7 @@ impl DocTreeMaker {
 
     /// Java: public DCProvides newProvidesTree(ReferenceTree name,
     /// List<? extends DocTree> description)
-    pub fn new_provides_tree(
-        &self,
-        name: &Rc<DCTree>,
-        description: &[Rc<DCTree>],
-    ) -> Rc<DCTree> {
+    pub fn new_provides_tree(&self, name: &Rc<DCTree>, description: &[Rc<DCTree>]) -> Rc<DCTree> {
         assert_kind(name, "DCProvides.serviceType", Kind::REFERENCE);
         let description = Self::to_list(description);
         self.node(DCKind::Provides {
@@ -593,11 +581,7 @@ impl DocTreeMaker {
 
     /// Java: public DCUnknownInlineTag newUnknownInlineTagTree(Name name,
     /// List<? extends DocTree> content)
-    pub fn new_unknown_inline_tag_tree(
-        &self,
-        name: Name,
-        content: &[Rc<DCTree>],
-    ) -> Rc<DCTree> {
+    pub fn new_unknown_inline_tag_tree(&self, name: Name, content: &[Rc<DCTree>]) -> Rc<DCTree> {
         let content = Self::to_list(content);
         self.node(DCKind::UnknownInlineTag {
             name,
@@ -1129,7 +1113,7 @@ mod tests {
     fn reference_tree_parses_the_signature() {
         let mut maker = maker();
         let mut context = crate::util::context::Context::new();
-        let names = Rc::new(crate::util::names::Names::new(false));
+        let names = Rc::new(Names::new(false));
         let source = crate::code::source::Source::JDK17;
         let scanner_factory = crate::parser::scanner_factory::ScannerFactory::new(
             &mut context,
@@ -1143,9 +1127,9 @@ mod tests {
             scanner_factory,
             None,
         ));
-        maker.set_reference_parser(Rc::new(crate::parser::reference_parser::ReferenceParser::new(
-            factory,
-        )));
+        maker.set_reference_parser(Rc::new(
+            crate::parser::reference_parser::ReferenceParser::new(factory),
+        ));
         let mut ctx = crate::compiler_context::CompilerContext::new();
         let tree = maker.new_reference_tree(&mut ctx, JavaString::from("java.lang.String"));
         assert_eq!(tree.get_kind(), Kind::REFERENCE);
@@ -1183,5 +1167,4 @@ mod tests {
             _ => panic!("expected an erroneous doc tree"),
         }
     }
-
 }

@@ -31,7 +31,6 @@ use javac_strings::JavaString;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Modifier {
     // Note java.lang.reflect.Modifier includes INTERFACE, but that's a VMism.
-
     /// The modifier {@code public}
     PUBLIC,
     /// The modifier {@code protected}

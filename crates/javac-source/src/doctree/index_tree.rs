@@ -1,3 +1,5 @@
+use super::doc_tree::DocTree;
+use super::inline_tag_tree::InlineTagTree;
 /// A tree node for an {@code @index} inline tag.
 ///
 /// <pre>
@@ -6,8 +8,6 @@
 ///
 /// @since 9
 use std::rc::Rc;
-use super::doc_tree::DocTree;
-use super::inline_tag_tree::InlineTagTree;
 
 pub trait IndexTree: InlineTagTree {
     /// Returns the specified search term.
@@ -17,5 +17,4 @@ pub trait IndexTree: InlineTagTree {
     /// Returns the description, if any.
     /// @return the description
     fn get_description(&self) -> Vec<Rc<dyn DocTree>>;
-
 }

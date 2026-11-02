@@ -2,7 +2,6 @@
 // module element::element mirrors that (clippy::module_inception is expected).
 #![allow(clippy::module_inception)]
 
-
 //! Interfaces used to model elements of the Java programming language.
 //!
 //! The term "element" in this package is used to refer to program
@@ -154,4 +153,3 @@ pub use unknown_annotation_value_exception::UnknownAnnotationValueException;
 pub use unknown_directive_exception::UnknownDirectiveException;
 pub use unknown_element_exception::UnknownElementException;
 pub use variable_element::{ConstantValue, VariableElement};
-

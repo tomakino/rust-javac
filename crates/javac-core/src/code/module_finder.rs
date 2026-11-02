@@ -20,12 +20,12 @@ use crate::code::flags;
 use crate::code::kinds::Kind;
 use crate::code::symbol::{Completer, CompleterRef, CompletionFailure, SymbolKind};
 use crate::code::symtab::Symtab;
-use crate::jvm::module_name_reader::ModuleNameReader;
 use crate::compiler_context::CompilerContext;
+use crate::jvm::module_name_reader::ModuleNameReader;
 use crate::resources::compiler_properties::{errors, fragments};
 use crate::util::abstract_log::AbstractLog;
 use crate::util::java_string::JavaString;
-use crate::util::jc_diagnostic::{Fragment, Factory};
+use crate::util::jc_diagnostic::{Factory, Fragment};
 use crate::util::log::Log;
 use crate::util::name::Name;
 use crate::util::names::Names;
@@ -77,9 +77,10 @@ impl ModuleLocationIterator {
     fn has_next(&mut self, file_manager: &dyn JavaFileManager) -> bool {
         loop {
             if let Some(inner) = &self.inner
-                && self.inner_index < inner.len() {
-                    return true;
-                }
+                && self.inner_index < inner.len()
+            {
+                return true;
+            }
             if self.outer_index >= MODULE_LOCATION_OUTERS.len() {
                 return false;
             }
@@ -287,9 +288,7 @@ impl ModuleFinder {
             (None, None) => None,
             (Some(src), None) => Some(src),
             (None, Some(class)) => Some(class),
-            (Some(src), Some(class)) => {
-                Some(self.class_finder.preferred_file_object(&src, &class))
-            }
+            (Some(src), Some(class)) => Some(self.class_finder.preferred_file_object(&src, &class)),
         };
         let msym = match fo {
             None => syms.unnamed_module,
@@ -328,9 +327,7 @@ impl ModuleFinder {
     ) -> Result<crate::ids::SymbolId, CompletionFailure> {
         let name = match fo.get_kind() {
             FileKind::SOURCE => match Self::read_source_module_name(&fo) {
-                Some(name) if !name.to_string_lossy().is_empty() => {
-                    self.names.from_string(&name)
-                }
+                Some(name) if !name.to_string_lossy().is_empty() => self.names.from_string(&name),
                 _ => {
                     let module_info = syms.define_class(
                         ctx,
@@ -367,7 +364,9 @@ impl ModuleFinder {
         };
         if classfile.is_none() {
             set_module_info_classfile(ctx, module_info, Some(Rc::clone(&fo)));
-            if self.file_manager.has_location(&StandardLocation::PATCH_MODULE_PATH)
+            if self
+                .file_manager
+                .has_location(&StandardLocation::PATCH_MODULE_PATH)
                 && name != self.names.error
             {
                 // Adapter: the ported JavaFileManager trait has no nullable
@@ -382,18 +381,19 @@ impl ModuleFinder {
                     .ok();
                 set_patch_location(ctx, msym, patch_location.clone());
                 if let Some(patch_location) = patch_location {
-                    let patch_fo_class = self
-                        .get_module_info_from_location(&Some(patch_location.clone()), FileKind::CLASS);
-                    let patch_fo_source = self
-                        .get_module_info_from_location(&Some(patch_location), FileKind::SOURCE);
+                    let patch_fo_class = self.get_module_info_from_location(
+                        &Some(patch_location.clone()),
+                        FileKind::CLASS,
+                    );
+                    let patch_fo_source =
+                        self.get_module_info_from_location(&Some(patch_location), FileKind::SOURCE);
                     let patch_fo = match (patch_fo_class, patch_fo_source) {
                         (None, None) => None,
                         (Some(class), None) => Some(class),
                         (None, Some(source)) => Some(source),
-                        (Some(class), Some(source)) => Some(
-                            self.class_finder
-                                .preferred_file_object(&class, &source),
-                        ),
+                        (Some(class), Some(source)) => {
+                            Some(self.class_finder.preferred_file_object(&class, &source))
+                        }
                     };
                     if let Some(patch_fo) = patch_fo {
                         set_module_info_classfile(ctx, module_info, Some(patch_fo));
@@ -493,13 +493,12 @@ impl ModuleFinder {
                     .iter()
                     .any(|(candidate, _)| candidate.to_java_string() == name.to_java_string());
                 if duplicate {
-                    let outer = loc_iter.outer()
-                        .expect("module location iterator outer");
+                    let outer = loc_iter.outer().expect("module location iterator outer");
                     // Java: log.error(Errors.DuplicateModuleOnPath(
                     //         getDescription(moduleLocationIterator.outer), n));
                     let fragment = self
                         .diags
-                        .fragment(crate::util::jc_diagnostic::Fragment::from(
+                        .fragment(Fragment::from(
                             Self::get_description(outer),
                         ));
                     let arg = crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
@@ -542,8 +541,7 @@ impl ModuleFinder {
                         set_patch_output_location(ctx, msym, output);
                     }
                 }
-                let outer = loc_iter.outer()
-                    .expect("module location iterator outer");
+                let outer = loc_iter.outer().expect("module location iterator outer");
                 if outer == StandardLocation::MODULE_SOURCE_PATH {
                     set_source_location(ctx, msym, Some(Rc::clone(&location)));
                     if self
@@ -600,10 +598,14 @@ impl ModuleFinder {
             fo,
         );
         if fo.is_none() {
-            fo = self.get_module_info_from_location(&module_class_location(ctx, msym), FileKind::CLASS);
+            fo = self
+                .get_module_info_from_location(&module_class_location(ctx, msym), FileKind::CLASS);
             fo = Self::preferred_file_object(
                 self.class_finder.as_ref(),
-                self.get_module_info_from_location(&module_source_location(ctx, msym), FileKind::SOURCE),
+                self.get_module_info_from_location(
+                    &module_source_location(ctx, msym),
+                    FileKind::SOURCE,
+                ),
                 fo,
             );
         }
@@ -663,7 +665,9 @@ impl ModuleFinder {
     }
 
     /// Java: Fragment getDescription(StandardLocation l) (ModuleFinder.java:400-409).
-    fn get_description(location: StandardLocation) -> crate::resources::diagnostic_contract::FragmentInfo {
+    fn get_description(
+        location: StandardLocation,
+    ) -> crate::resources::diagnostic_contract::FragmentInfo {
         match location {
             StandardLocation::MODULE_PATH => fragments::locn_module_path(),
             StandardLocation::MODULE_SOURCE_PATH => fragments::locn_module_source_path(),
@@ -689,8 +693,6 @@ impl Completer for ModuleInfoCompleter {
         // Java: classFinder.fillIn(msym.module_info).
         self.class_finder.complete(ctx, syms, sym)
     }
-
-
 }
 
 /// The source and class locations of a module symbol (Java field reads).
@@ -708,10 +710,7 @@ fn module_locations(
     }
 }
 
-fn module_patch_location(
-    ctx: &CompilerContext,
-    msym: crate::ids::SymbolId,
-) -> Option<LocationRef> {
+fn module_patch_location(ctx: &CompilerContext, msym: crate::ids::SymbolId) -> Option<LocationRef> {
     match &ctx.sym(msym).kind_data {
         SymbolKind::ModuleSymbol { patch_location, .. } => patch_location.clone(),
         _ => panic!("module expected"),
@@ -731,10 +730,7 @@ fn module_patch_output_location(
     }
 }
 
-fn module_class_location(
-    ctx: &CompilerContext,
-    msym: crate::ids::SymbolId,
-) -> Option<LocationRef> {
+fn module_class_location(ctx: &CompilerContext, msym: crate::ids::SymbolId) -> Option<LocationRef> {
     match &ctx.sym(msym).kind_data {
         SymbolKind::ModuleSymbol { class_location, .. } => class_location.clone(),
         _ => panic!("module expected"),
@@ -804,7 +800,8 @@ fn set_module_patch_output_location(
     location: Option<LocationRef>,
 ) {
     if let SymbolKind::ModuleSymbol {
-        patch_output_location, ..
+        patch_output_location,
+        ..
     } = &mut ctx.sym_mut(msym).kind_data
     {
         *patch_output_location = location;
@@ -851,7 +848,11 @@ fn module_info_files(
     Option<Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>>,
 ) {
     match &ctx.sym(module_info).kind_data {
-        SymbolKind::ClassSymbol { sourcefile, classfile, .. } => (sourcefile.clone(), classfile.clone()),
+        SymbolKind::ClassSymbol {
+            sourcefile,
+            classfile,
+            ..
+        } => (sourcefile.clone(), classfile.clone()),
         _ => panic!("class expected"),
     }
 }
@@ -865,7 +866,6 @@ fn set_module_info_classfile(
         *classfile = file;
     }
 }
-
 
 /// Skip whitespace and Java comments while scanning a module declaration.
 fn skip_source_space_and_comments(chars: &[char], i: &mut usize) {
@@ -920,19 +920,17 @@ mod tests {
 
     use javac_strings::JavaString;
     use javac_tools::error::Error;
-    use javac_tools::tools::java_file_manager::{
-        FileObjectRef, JavaFileObjectRef,
-    };
+    use javac_tools::tools::java_file_manager::{FileObjectRef, JavaFileObjectRef};
     use javac_tools::tools::java_file_object::Kind as FileKind;
     use javac_tools::tools::option_checker::OptionChecker;
 
     use crate::code::class_finder::ClassFinder;
+    use crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler;
+    use crate::code::preview::Preview;
     use crate::code::source::Source;
     use crate::code::symtab::Symtab;
     use crate::compiler_context::CompilerContext;
     use crate::jvm::class_reader::ClassReader;
-    use crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler;
-    use crate::code::preview::Preview;
     use crate::jvm::profile::Profile;
     use crate::jvm::target::Target;
     use crate::util::context::Context;
@@ -1128,7 +1126,7 @@ mod tests {
             Rc::clone(&profile),
             &options,
             None,
-            std::rc::Rc::new(std::cell::RefCell::new(None)),
+            Rc::new(RefCell::new(None)),
         );
         let factory = finder.get_completer_factory();
         Symtab::set_initial_completer(&mut syms, &mut ctx, factory);

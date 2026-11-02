@@ -45,11 +45,11 @@
 pub mod big_integer;
 pub mod digit_helper;
 pub mod fdbig_integer;
+pub mod floating_decimal;
 pub mod mutable_big_integer;
 pub mod random;
-pub mod floating_decimal;
 
 pub use floating_decimal::{
-    parse_double, parse_float, to_java_string_double, to_java_string_float, try_parse_double,
-    try_parse_float, NumberFormatException,
+    NumberFormatException, parse_double, parse_float, to_java_string_double, to_java_string_float,
+    try_parse_double, try_parse_float,
 };

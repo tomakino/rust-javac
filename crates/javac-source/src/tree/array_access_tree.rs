@@ -1,3 +1,4 @@
+use super::expression_tree::ExpressionTree;
 /// A tree node for an array access expression.
 ///
 /// For example:
@@ -11,7 +12,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
 
 pub trait ArrayAccessTree: ExpressionTree {
     /// Returns the expression for the array being accessed.
@@ -21,5 +21,4 @@ pub trait ArrayAccessTree: ExpressionTree {
     /// Returns the expression for the index.
     /// @return the index
     fn get_index(&self) -> Rc<dyn ExpressionTree>;
-
 }

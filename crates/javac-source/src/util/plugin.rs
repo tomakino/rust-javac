@@ -63,19 +63,37 @@ mod tests {
     }
 
     impl JavacTask for NoopTask {
-        fn parse(&mut self) -> Result<Vec<Rc<dyn crate::tree::compilation_unit_tree::CompilationUnitTree>>, javac_tools::error::Error> {
+        fn parse(
+            &mut self,
+        ) -> Result<
+            Vec<Rc<dyn crate::tree::compilation_unit_tree::CompilationUnitTree>>,
+            javac_tools::error::Error,
+        > {
             Ok(Vec::new())
         }
-        fn analyze(&mut self) -> Result<Vec<Rc<dyn javac_tools::lang::model::element::Element>>, javac_tools::error::Error> {
+        fn analyze(
+            &mut self,
+        ) -> Result<
+            Vec<Rc<dyn javac_tools::lang::model::element::Element>>,
+            javac_tools::error::Error,
+        > {
             Ok(Vec::new())
         }
-        fn generate(&mut self) -> Result<Vec<Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>>, javac_tools::error::Error> {
+        fn generate(
+            &mut self,
+        ) -> Result<
+            Vec<Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>>,
+            javac_tools::error::Error,
+        > {
             Ok(Vec::new())
         }
         fn set_task_listener(&mut self, _listener: Rc<RefCell<dyn TaskListener>>) {}
         fn add_task_listener(&mut self, _listener: Rc<RefCell<dyn TaskListener>>) {}
         fn remove_task_listener(&mut self, _listener: Rc<RefCell<dyn TaskListener>>) {}
-        fn get_type_mirror(&mut self, _path: &[Rc<dyn crate::tree::tree::Tree>]) -> Option<Rc<dyn javac_tools::lang::model::type_::TypeMirror>> {
+        fn get_type_mirror(
+            &mut self,
+            _path: &[Rc<dyn crate::tree::tree::Tree>],
+        ) -> Option<Rc<dyn javac_tools::lang::model::type_::TypeMirror>> {
             None
         }
     }

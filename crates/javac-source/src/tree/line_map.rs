@@ -37,5 +37,4 @@ pub trait LineMap {
     /// @param  pos   character offset of the position
     /// @return       the tab-expanded column number of pos (first column is 1)
     fn get_column_number(&self, pos: i64) -> i64;
-
 }

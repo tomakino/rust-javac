@@ -14,13 +14,13 @@ pub use bundles::LAUNCHER_EN as LAUNCHER_MESSAGES;
 
 #[cfg(test)]
 mod tests {
-    use super::compiler_properties::{errors, COMPILER_KEYS, COMPILER_MESSAGES};
-    use super::diagnostic_contract::{DiagnosticType, SymbolArg};
+    use super::JAVAC_MESSAGES;
+    use super::LAUNCHER_MESSAGES;
     use super::bundles::{
         COMPILER_JA, COMPILER_ZH_CN, JAVAC_JA, JAVAC_ZH_CN, LAUNCHER_JA, LAUNCHER_ZH_CN,
     };
-    use super::JAVAC_MESSAGES;
-    use super::LAUNCHER_MESSAGES;
+    use super::compiler_properties::{COMPILER_KEYS, COMPILER_MESSAGES, errors};
+    use super::diagnostic_contract::{DiagnosticType, SymbolArg};
 
     #[test]
     fn generated_metadata_matches_upstream_snapshot() {

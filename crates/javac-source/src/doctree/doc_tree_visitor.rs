@@ -74,7 +74,9 @@ pub trait DocTreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_attribute(&mut self, _node: &dyn AttributeTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_attribute: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_attribute: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an AuthorTree node.
@@ -98,7 +100,9 @@ pub trait DocTreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_deprecated(&mut self, _node: &dyn DeprecatedTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_deprecated: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_deprecated: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a DocCommentTree node.
@@ -106,7 +110,9 @@ pub trait DocTreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_doc_comment(&mut self, _node: &dyn DocCommentTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_doc_comment: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_doc_comment: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a DocRootTree node.
@@ -135,7 +141,9 @@ pub trait DocTreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_end_element(&mut self, _node: &dyn EndElementTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_end_element: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_end_element: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an EntityTree node.
@@ -151,7 +159,9 @@ pub trait DocTreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_erroneous(&mut self, _node: &dyn ErroneousTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_erroneous: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_erroneous: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a HiddenTree node.
@@ -173,7 +183,9 @@ pub trait DocTreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_identifier(&mut self, _node: &dyn IdentifierTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_identifier: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_identifier: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an IndexTree node.
@@ -195,7 +207,9 @@ pub trait DocTreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_inherit_doc(&mut self, _node: &dyn InheritDocTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_inherit_doc: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_inherit_doc: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a LinkTree node.
@@ -241,7 +255,9 @@ pub trait DocTreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_reference(&mut self, _node: &dyn ReferenceTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_reference: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_reference: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a ReturnTree node.
@@ -273,7 +289,9 @@ pub trait DocTreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_serial_data(&mut self, _node: &dyn SerialDataTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_serial_data: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_serial_data: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a SerialFieldTree node.
@@ -281,7 +299,9 @@ pub trait DocTreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_serial_field(&mut self, _node: &dyn SerialFieldTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_serial_field: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_serial_field: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a SinceTree node.
@@ -297,7 +317,9 @@ pub trait DocTreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_start_element(&mut self, _node: &dyn StartElementTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_start_element: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_start_element: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a SummaryTree node.
@@ -347,7 +369,9 @@ pub trait DocTreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_unknown_block_tag(&mut self, _node: &dyn UnknownBlockTagTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_unknown_block_tag: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_unknown_block_tag: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an UnknownInlineTagTree node.
@@ -355,7 +379,9 @@ pub trait DocTreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_unknown_inline_tag(&mut self, _node: &dyn UnknownInlineTagTree, _p: P) -> R {
-        panic!("AbstractMethodError: visit_unknown_inline_tag: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_unknown_inline_tag: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a UsesTree node.
@@ -397,7 +423,6 @@ pub trait DocTreeVisitor<R, P> {
     fn visit_other(&mut self, _node: &dyn DocTree, _p: P) -> R {
         panic!("AbstractMethodError: visit_other: Rust: visitor interface method not overridden")
     }
-
 }
 
 #[cfg(test)]

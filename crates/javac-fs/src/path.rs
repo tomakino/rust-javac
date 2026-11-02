@@ -64,27 +64,54 @@ fn is_separator(ch: char) -> bool {
 
 impl Parsed {
     fn empty_path() -> Parsed {
-        Parsed { prefix: None, rooted: false, elements: Vec::new(), empty: true, unc: false, trailing: false }
+        Parsed {
+            prefix: None,
+            rooted: false,
+            elements: Vec::new(),
+            empty: true,
+            unc: false,
+            trailing: false,
+        }
     }
 
     fn from_elements(elements: Vec<String>) -> Parsed {
-        Parsed { prefix: None, rooted: false, elements, empty: false, unc: false, trailing: false }
+        Parsed {
+            prefix: None,
+            rooted: false,
+            elements,
+            empty: false,
+            unc: false,
+            trailing: false,
+        }
     }
 
     fn parse(text: &str) -> Result<Parsed, Error> {
         if text.contains('\0') {
-            return Err(Error::InvalidPath { path: text.to_string() });
+            return Err(Error::InvalidPath {
+                path: text.to_string(),
+            });
         }
         if text.is_empty() {
             return Ok(Parsed::empty_path());
         }
-        let mut parsed = Parsed { prefix: None, rooted: false, elements: Vec::new(), empty: false, unc: false, trailing: false };
+        let mut parsed = Parsed {
+            prefix: None,
+            rooted: false,
+            elements: Vec::new(),
+            empty: false,
+            unc: false,
+            trailing: false,
+        };
         let mut rest = text;
         if cfg!(windows) {
             let bytes = text.as_bytes();
-            if bytes.len() >= 2 && is_separator(text.chars().next().unwrap()) && is_separator(text.chars().nth(1).unwrap()) {
+            if bytes.len() >= 2
+                && is_separator(text.chars().next().unwrap())
+                && is_separator(text.chars().nth(1).unwrap())
+            {
                 // UNC: \\server\share\...
-                let segments: Vec<&str> = text.split(is_separator).filter(|s| !s.is_empty()).collect();
+                let segments: Vec<&str> =
+                    text.split(is_separator).filter(|s| !s.is_empty()).collect();
                 let server = segments.first().copied().unwrap_or("");
                 let share = segments.get(1).copied().unwrap_or("");
                 parsed.prefix = Some(format!("{}{}{}{}{}", SEP, SEP, server, SEP, share));
@@ -156,12 +183,18 @@ impl Parsed {
     }
 
     fn has_dot_or_dotdot(&self) -> bool {
-        self.elements.iter().any(|element| element == "." || element == "..")
+        self.elements
+            .iter()
+            .any(|element| element == "." || element == "..")
     }
 
     fn root_key(&self) -> Option<String> {
         let root = self.root_text();
-        Some(if cfg!(windows) { root.to_ascii_lowercase() } else { root })
+        Some(if cfg!(windows) {
+            root.to_ascii_lowercase()
+        } else {
+            root
+        })
     }
 
     fn root_text(&self) -> String {
@@ -182,7 +215,9 @@ impl Parsed {
 impl Path {
     /// Java: Paths.get(String) / Path.of(String).
     pub fn new(path: &str) -> Result<Path, Error> {
-        Ok(Path { parsed: Parsed::parse(path)? })
+        Ok(Path {
+            parsed: Parsed::parse(path)?,
+        })
     }
 
     /// Wraps an existing std path.
@@ -282,7 +317,9 @@ impl Path {
     /// comparison, and equal paths produce the empty path.
     pub fn relativize(&self, other: &Path) -> Result<Path, Error> {
         if self == other {
-            return Ok(Path { parsed: Parsed::empty_path() });
+            return Ok(Path {
+                parsed: Parsed::empty_path(),
+            });
         }
         if self.is_absolute() != other.is_absolute() {
             return Err(Error::IllegalArgument {
@@ -297,7 +334,11 @@ impl Path {
         if self.parsed.empty {
             return Ok(other.clone());
         }
-        let base = if self.parsed.has_dot_or_dotdot() { self.normalize() } else { self.clone() };
+        let base = if self.parsed.has_dot_or_dotdot() {
+            self.normalize()
+        } else {
+            self.clone()
+        };
         let child = if other.parsed.has_dot_or_dotdot() {
             other.normalize()
         } else {
@@ -319,7 +360,9 @@ impl Path {
         for element in &child_elements[common..] {
             elements.push(element.clone());
         }
-        Ok(Path { parsed: Parsed::from_elements(elements) })
+        Ok(Path {
+            parsed: Parsed::from_elements(elements),
+        })
     }
 
     /// Java: Path.resolve(Path) — an absolute other path is returned as is;
@@ -380,7 +423,9 @@ impl Path {
         if other.is_empty() {
             return false;
         }
-        if other.is_absolute() && (!self.is_absolute() || root_keys_differ(&self.parsed, &other.parsed)) {
+        if other.is_absolute()
+            && (!self.is_absolute() || root_keys_differ(&self.parsed, &other.parsed))
+        {
             return false;
         }
         let this = &self.parsed.elements;
@@ -397,10 +442,14 @@ impl Path {
     /// Java: Path.getFileName().
     pub fn file_name(&self) -> Option<Path> {
         if let Some(element) = self.parsed.elements.last() {
-            return Some(Path { parsed: Parsed::from_elements(vec![element.clone()]) });
+            return Some(Path {
+                parsed: Parsed::from_elements(vec![element.clone()]),
+            });
         }
         if self.parsed.empty {
-            return Some(Path { parsed: Parsed::empty_path() });
+            return Some(Path {
+                parsed: Parsed::empty_path(),
+            });
         }
         None
     }
@@ -434,7 +483,14 @@ impl Path {
         }
         let text = self.parsed.root_text();
         Some(Path {
-            parsed: Parsed { prefix: Some(text), rooted: false, elements: Vec::new(), empty: false, unc: false, trailing: false },
+            parsed: Parsed {
+                prefix: Some(text),
+                rooted: false,
+                elements: Vec::new(),
+                empty: false,
+                unc: false,
+                trailing: false,
+            },
         })
     }
 
@@ -461,7 +517,9 @@ impl Path {
                 ),
             });
         }
-        Ok(Path { parsed: Parsed::from_elements(elements[begin..end].to_vec()) })
+        Ok(Path {
+            parsed: Parsed::from_elements(elements[begin..end].to_vec()),
+        })
     }
 
     /// Java: Path.getNameCount().
@@ -519,7 +577,11 @@ impl Path {
         let mut decoded = decode_uri_path(path)?;
         if cfg!(windows) && authority.is_empty() {
             let bytes = decoded.as_bytes();
-            if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
+            if bytes.len() >= 3
+                && bytes[0] == b'/'
+                && bytes[1].is_ascii_alphabetic()
+                && bytes[2] == b':'
+            {
                 decoded = decoded[1..].to_string();
             }
         }
@@ -590,7 +652,9 @@ impl Ord for Path {
             key.push(path.parsed.root_text());
             key.extend(path.parsed.elements.iter().cloned());
             if cfg!(windows) {
-                key.iter().map(|part| part.to_ascii_lowercase()).collect::<Vec<_>>()
+                key.iter()
+                    .map(|part| part.to_ascii_lowercase())
+                    .collect::<Vec<_>>()
             } else {
                 key
             }
@@ -622,12 +686,19 @@ fn elements_equal(left: &str, right: &str) -> bool {
 }
 
 fn elements_eq(left: &[String], right: &[String]) -> bool {
-    left.len() == right.len() && left.iter().zip(right.iter()).all(|(l, r)| elements_equal(l, r))
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right.iter())
+            .all(|(l, r)| elements_equal(l, r))
 }
 
 fn root_keys_differ(left: &Parsed, right: &Parsed) -> bool {
     // Java compares the root components when present; absent roots compare equal.
-    match (left.prefix.is_some() || left.rooted, right.prefix.is_some() || right.rooted) {
+    match (
+        left.prefix.is_some() || left.rooted,
+        right.prefix.is_some() || right.rooted,
+    ) {
         (false, false) => false,
         _ => left.root_key() != right.root_key(),
     }
@@ -640,7 +711,23 @@ fn encode_uri_path(path: &str) -> String {
         let keep = ch.is_ascii_alphanumeric()
             || matches!(
                 ch,
-                '/' | ':' | '-' | '_' | '.' | '~' | '!' | '$' | '&' | '\'' | '(' | ')' | '*' | '+' | ',' | ';' | '=' | '@'
+                '/' | ':'
+                    | '-'
+                    | '_'
+                    | '.'
+                    | '~'
+                    | '!'
+                    | '$'
+                    | '&'
+                    | '\''
+                    | '('
+                    | ')'
+                    | '*'
+                    | '+'
+                    | ','
+                    | ';'
+                    | '='
+                    | '@'
             );
         if keep || !ch.is_ascii() {
             encoded.push(ch);
@@ -662,11 +749,14 @@ fn decode_uri_path(path: &str) -> Result<String, Error> {
     while index < bytes.len() {
         if bytes[index] == b'%' {
             if index + 2 >= bytes.len() {
-                return Err(Error::InvalidPath { path: path.to_string() });
+                return Err(Error::InvalidPath {
+                    path: path.to_string(),
+                });
             }
             let hex = &path[index + 1..index + 3];
-            let byte = u8::from_str_radix(hex, 16)
-                .map_err(|_| Error::InvalidPath { path: path.to_string() })?;
+            let byte = u8::from_str_radix(hex, 16).map_err(|_| Error::InvalidPath {
+                path: path.to_string(),
+            })?;
             out.push(byte);
             index += 3;
         } else {
@@ -674,7 +764,9 @@ fn decode_uri_path(path: &str) -> Result<String, Error> {
             index += 1;
         }
     }
-    String::from_utf8(out).map_err(|_| Error::InvalidPath { path: path.to_string() })
+    String::from_utf8(out).map_err(|_| Error::InvalidPath {
+        path: path.to_string(),
+    })
 }
 
 #[cfg(all(windows, test))]
@@ -712,119 +804,479 @@ mod oracle {
     }
 
     const PATH_CASES: &[PathCase] = &[
-    PathCase { input: r#"C:\foo\bar"#, display: r#"C:\foo\bar"#, absolute: true, file_name: Some(r#"bar"#), parent: Some(r#"C:\foo"#), root: Some(r#"C:\"#), normalized: r#"C:\foo\bar"# },
-    PathCase { input: r#"C:/foo/bar/"#, display: r#"C:\foo\bar"#, absolute: true, file_name: Some(r#"bar"#), parent: Some(r#"C:\foo"#), root: Some(r#"C:\"#), normalized: r#"C:\foo\bar"# },
-    PathCase { input: r#"foo/bar"#, display: r#"foo\bar"#, absolute: false, file_name: Some(r#"bar"#), parent: Some(r#"foo"#), root: None, normalized: r#"foo\bar"# },
-    PathCase { input: r#"foo"#, display: r#"foo"#, absolute: false, file_name: Some(r#"foo"#), parent: None, root: None, normalized: r#"foo"# },
-    PathCase { input: r#""#, display: r#""#, absolute: false, file_name: Some(r#""#), parent: None, root: None, normalized: r#""# },
-    PathCase { input: r#"C:\"#, display: r#"C:\"#, absolute: true, file_name: None, parent: None, root: Some(r#"C:\"#), normalized: r#"C:\"# },
-    PathCase { input: r#"/"#, display: r#"\"#, absolute: false, file_name: None, parent: None, root: Some(r#"\"#), normalized: r#"\"# },
-    PathCase { input: r#"C:\foo\..\bar"#, display: r#"C:\foo\..\bar"#, absolute: true, file_name: Some(r#"bar"#), parent: Some(r#"C:\foo\.."#), root: Some(r#"C:\"#), normalized: r#"C:\bar"# },
-    PathCase { input: r#"C:\foo\.\bar"#, display: r#"C:\foo\.\bar"#, absolute: true, file_name: Some(r#"bar"#), parent: Some(r#"C:\foo\."#), root: Some(r#"C:\"#), normalized: r#"C:\foo\bar"# },
-    PathCase { input: r#"a\b\..\..\c"#, display: r#"a\b\..\..\c"#, absolute: false, file_name: Some(r#"c"#), parent: Some(r#"a\b\..\.."#), root: None, normalized: r#"c"# },
-    PathCase { input: r#"..\a"#, display: r#"..\a"#, absolute: false, file_name: Some(r#"a"#), parent: Some(r#".."#), root: None, normalized: r#"..\a"# },
-    PathCase { input: r#".\a"#, display: r#".\a"#, absolute: false, file_name: Some(r#"a"#), parent: Some(r#"."#), root: None, normalized: r#"a"# },
-    PathCase { input: r#"C:\foo\bar.txt"#, display: r#"C:\foo\bar.txt"#, absolute: true, file_name: Some(r#"bar.txt"#), parent: Some(r#"C:\foo"#), root: Some(r#"C:\"#), normalized: r#"C:\foo\bar.txt"# },
-    PathCase { input: r#"C:\foo\bar.tar.gz"#, display: r#"C:\foo\bar.tar.gz"#, absolute: true, file_name: Some(r#"bar.tar.gz"#), parent: Some(r#"C:\foo"#), root: Some(r#"C:\"#), normalized: r#"C:\foo\bar.tar.gz"# },
-    PathCase { input: r#"C:\foo\.hidden"#, display: r#"C:\foo\.hidden"#, absolute: true, file_name: Some(r#".hidden"#), parent: Some(r#"C:\foo"#), root: Some(r#"C:\"#), normalized: r#"C:\foo\.hidden"# },
-    PathCase { input: r#"C:\foo\bar."#, display: r#"C:\foo\bar."#, absolute: true, file_name: Some(r#"bar."#), parent: Some(r#"C:\foo"#), root: Some(r#"C:\"#), normalized: r#"C:\foo\bar."# },
-    PathCase { input: r#"C:\A\B"#, display: r#"C:\A\B"#, absolute: true, file_name: Some(r#"B"#), parent: Some(r#"C:\A"#), root: Some(r#"C:\"#), normalized: r#"C:\A\B"# },
-    PathCase { input: r#"c:\a\b\"#, display: r#"c:\a\b"#, absolute: true, file_name: Some(r#"b"#), parent: Some(r#"c:\a"#), root: Some(r#"c:\"#), normalized: r#"c:\a\b"# },
-    PathCase { input: r#"C:\foo\\bar"#, display: r#"C:\foo\bar"#, absolute: true, file_name: Some(r#"bar"#), parent: Some(r#"C:\foo"#), root: Some(r#"C:\"#), normalized: r#"C:\foo\bar"# },
-    PathCase { input: r#"\\server\share\dir"#, display: r#"\\server\share\dir"#, absolute: true, file_name: Some(r#"dir"#), parent: Some(r#"\\server\share\"#), root: Some(r#"\\server\share\"#), normalized: r#"\\server\share\dir"# },
-    PathCase { input: r#"C:foo"#, display: r#"C:foo"#, absolute: false, file_name: Some(r#"foo"#), parent: Some(r#"C:"#), root: Some(r#"C:"#), normalized: r#"C:foo"# },
-    PathCase { input: r#"C:\a b\c.txt"#, display: r#"C:\a b\c.txt"#, absolute: true, file_name: Some(r#"c.txt"#), parent: Some(r#"C:\a b"#), root: Some(r#"C:\"#), normalized: r#"C:\a b\c.txt"# },
-    PathCase { input: r#"C:\\u4e2d\u6587\x.txt"#, display: r#"C:\u4e2d\u6587\x.txt"#, absolute: true, file_name: Some(r#"x.txt"#), parent: Some(r#"C:\u4e2d\u6587"#), root: Some(r#"C:\"#), normalized: r#"C:\u4e2d\u6587\x.txt"# },
-    PathCase { input: r#"C:\..\x"#, display: r#"C:\..\x"#, absolute: true, file_name: Some(r#"x"#), parent: Some(r#"C:\.."#), root: Some(r#"C:\"#), normalized: r#"C:\x"# },
-    PathCase { input: r#"C:\a\..\..\b"#, display: r#"C:\a\..\..\b"#, absolute: true, file_name: Some(r#"b"#), parent: Some(r#"C:\a\..\.."#), root: Some(r#"C:\"#), normalized: r#"C:\b"# },
-    PathCase { input: r#"\\server\share\..\x"#, display: r#"\\server\share\..\x"#, absolute: true, file_name: Some(r#"x"#), parent: Some(r#"\\server\share\.."#), root: Some(r#"\\server\share\"#), normalized: r#"\\server\share\x"# },
-    PathCase { input: r#"C:..\a"#, display: r#"C:..\a"#, absolute: false, file_name: Some(r#"a"#), parent: Some(r#"C:.."#), root: Some(r#"C:"#), normalized: r#"C:..\a"# },
-    PathCase { input: r#"."#, display: r#"."#, absolute: false, file_name: Some(r#"."#), parent: None, root: None, normalized: r#""# },
-    PathCase { input: r#".."#, display: r#".."#, absolute: false, file_name: Some(r#".."#), parent: None, root: None, normalized: r#".."# },
-    PathCase { input: r#"C:"#, display: r#"C:"#, absolute: false, file_name: None, parent: None, root: Some(r#"C:"#), normalized: r#"C:"# },
-    PathCase { input: r#"\\server\share\"#, display: r#"\\server\share\"#, absolute: true, file_name: None, parent: None, root: Some(r#"\\server\share\"#), normalized: r#"\\server\share\"# },
-    PathCase { input: r#"C:/"#, display: r#"C:\"#, absolute: true, file_name: None, parent: None, root: Some(r#"C:\"#), normalized: r#"C:\"# },
-    PathCase { input: r#"C:\a\\..\b"#, display: r#"C:\a\..\b"#, absolute: true, file_name: Some(r#"b"#), parent: Some(r#"C:\a\.."#), root: Some(r#"C:\"#), normalized: r#"C:\b"# },
-    PathCase { input: r#"foo\..\bar"#, display: r#"foo\..\bar"#, absolute: false, file_name: Some(r#"bar"#), parent: Some(r#"foo\.."#), root: None, normalized: r#"bar"# },
-    PathCase { input: r#"C:\a\b\.."#, display: r#"C:\a\b\.."#, absolute: true, file_name: Some(r#".."#), parent: Some(r#"C:\a\b"#), root: Some(r#"C:\"#), normalized: r#"C:\a"# },
+        PathCase {
+            input: r#"C:\foo\bar"#,
+            display: r#"C:\foo\bar"#,
+            absolute: true,
+            file_name: Some(r#"bar"#),
+            parent: Some(r#"C:\foo"#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\foo\bar"#,
+        },
+        PathCase {
+            input: r#"C:/foo/bar/"#,
+            display: r#"C:\foo\bar"#,
+            absolute: true,
+            file_name: Some(r#"bar"#),
+            parent: Some(r#"C:\foo"#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\foo\bar"#,
+        },
+        PathCase {
+            input: r#"foo/bar"#,
+            display: r#"foo\bar"#,
+            absolute: false,
+            file_name: Some(r#"bar"#),
+            parent: Some(r#"foo"#),
+            root: None,
+            normalized: r#"foo\bar"#,
+        },
+        PathCase {
+            input: r#"foo"#,
+            display: r#"foo"#,
+            absolute: false,
+            file_name: Some(r#"foo"#),
+            parent: None,
+            root: None,
+            normalized: r#"foo"#,
+        },
+        PathCase {
+            input: r#""#,
+            display: r#""#,
+            absolute: false,
+            file_name: Some(r#""#),
+            parent: None,
+            root: None,
+            normalized: r#""#,
+        },
+        PathCase {
+            input: r#"C:\"#,
+            display: r#"C:\"#,
+            absolute: true,
+            file_name: None,
+            parent: None,
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\"#,
+        },
+        PathCase {
+            input: r#"/"#,
+            display: r#"\"#,
+            absolute: false,
+            file_name: None,
+            parent: None,
+            root: Some(r#"\"#),
+            normalized: r#"\"#,
+        },
+        PathCase {
+            input: r#"C:\foo\..\bar"#,
+            display: r#"C:\foo\..\bar"#,
+            absolute: true,
+            file_name: Some(r#"bar"#),
+            parent: Some(r#"C:\foo\.."#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\bar"#,
+        },
+        PathCase {
+            input: r#"C:\foo\.\bar"#,
+            display: r#"C:\foo\.\bar"#,
+            absolute: true,
+            file_name: Some(r#"bar"#),
+            parent: Some(r#"C:\foo\."#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\foo\bar"#,
+        },
+        PathCase {
+            input: r#"a\b\..\..\c"#,
+            display: r#"a\b\..\..\c"#,
+            absolute: false,
+            file_name: Some(r#"c"#),
+            parent: Some(r#"a\b\..\.."#),
+            root: None,
+            normalized: r#"c"#,
+        },
+        PathCase {
+            input: r#"..\a"#,
+            display: r#"..\a"#,
+            absolute: false,
+            file_name: Some(r#"a"#),
+            parent: Some(r#".."#),
+            root: None,
+            normalized: r#"..\a"#,
+        },
+        PathCase {
+            input: r#".\a"#,
+            display: r#".\a"#,
+            absolute: false,
+            file_name: Some(r#"a"#),
+            parent: Some(r#"."#),
+            root: None,
+            normalized: r#"a"#,
+        },
+        PathCase {
+            input: r#"C:\foo\bar.txt"#,
+            display: r#"C:\foo\bar.txt"#,
+            absolute: true,
+            file_name: Some(r#"bar.txt"#),
+            parent: Some(r#"C:\foo"#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\foo\bar.txt"#,
+        },
+        PathCase {
+            input: r#"C:\foo\bar.tar.gz"#,
+            display: r#"C:\foo\bar.tar.gz"#,
+            absolute: true,
+            file_name: Some(r#"bar.tar.gz"#),
+            parent: Some(r#"C:\foo"#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\foo\bar.tar.gz"#,
+        },
+        PathCase {
+            input: r#"C:\foo\.hidden"#,
+            display: r#"C:\foo\.hidden"#,
+            absolute: true,
+            file_name: Some(r#".hidden"#),
+            parent: Some(r#"C:\foo"#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\foo\.hidden"#,
+        },
+        PathCase {
+            input: r#"C:\foo\bar."#,
+            display: r#"C:\foo\bar."#,
+            absolute: true,
+            file_name: Some(r#"bar."#),
+            parent: Some(r#"C:\foo"#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\foo\bar."#,
+        },
+        PathCase {
+            input: r#"C:\A\B"#,
+            display: r#"C:\A\B"#,
+            absolute: true,
+            file_name: Some(r#"B"#),
+            parent: Some(r#"C:\A"#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\A\B"#,
+        },
+        PathCase {
+            input: r#"c:\a\b\"#,
+            display: r#"c:\a\b"#,
+            absolute: true,
+            file_name: Some(r#"b"#),
+            parent: Some(r#"c:\a"#),
+            root: Some(r#"c:\"#),
+            normalized: r#"c:\a\b"#,
+        },
+        PathCase {
+            input: r#"C:\foo\\bar"#,
+            display: r#"C:\foo\bar"#,
+            absolute: true,
+            file_name: Some(r#"bar"#),
+            parent: Some(r#"C:\foo"#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\foo\bar"#,
+        },
+        PathCase {
+            input: r#"\\server\share\dir"#,
+            display: r#"\\server\share\dir"#,
+            absolute: true,
+            file_name: Some(r#"dir"#),
+            parent: Some(r#"\\server\share\"#),
+            root: Some(r#"\\server\share\"#),
+            normalized: r#"\\server\share\dir"#,
+        },
+        PathCase {
+            input: r#"C:foo"#,
+            display: r#"C:foo"#,
+            absolute: false,
+            file_name: Some(r#"foo"#),
+            parent: Some(r#"C:"#),
+            root: Some(r#"C:"#),
+            normalized: r#"C:foo"#,
+        },
+        PathCase {
+            input: r#"C:\a b\c.txt"#,
+            display: r#"C:\a b\c.txt"#,
+            absolute: true,
+            file_name: Some(r#"c.txt"#),
+            parent: Some(r#"C:\a b"#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\a b\c.txt"#,
+        },
+        PathCase {
+            input: r#"C:\\u4e2d\u6587\x.txt"#,
+            display: r#"C:\u4e2d\u6587\x.txt"#,
+            absolute: true,
+            file_name: Some(r#"x.txt"#),
+            parent: Some(r#"C:\u4e2d\u6587"#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\u4e2d\u6587\x.txt"#,
+        },
+        PathCase {
+            input: r#"C:\..\x"#,
+            display: r#"C:\..\x"#,
+            absolute: true,
+            file_name: Some(r#"x"#),
+            parent: Some(r#"C:\.."#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\x"#,
+        },
+        PathCase {
+            input: r#"C:\a\..\..\b"#,
+            display: r#"C:\a\..\..\b"#,
+            absolute: true,
+            file_name: Some(r#"b"#),
+            parent: Some(r#"C:\a\..\.."#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\b"#,
+        },
+        PathCase {
+            input: r#"\\server\share\..\x"#,
+            display: r#"\\server\share\..\x"#,
+            absolute: true,
+            file_name: Some(r#"x"#),
+            parent: Some(r#"\\server\share\.."#),
+            root: Some(r#"\\server\share\"#),
+            normalized: r#"\\server\share\x"#,
+        },
+        PathCase {
+            input: r#"C:..\a"#,
+            display: r#"C:..\a"#,
+            absolute: false,
+            file_name: Some(r#"a"#),
+            parent: Some(r#"C:.."#),
+            root: Some(r#"C:"#),
+            normalized: r#"C:..\a"#,
+        },
+        PathCase {
+            input: r#"."#,
+            display: r#"."#,
+            absolute: false,
+            file_name: Some(r#"."#),
+            parent: None,
+            root: None,
+            normalized: r#""#,
+        },
+        PathCase {
+            input: r#".."#,
+            display: r#".."#,
+            absolute: false,
+            file_name: Some(r#".."#),
+            parent: None,
+            root: None,
+            normalized: r#".."#,
+        },
+        PathCase {
+            input: r#"C:"#,
+            display: r#"C:"#,
+            absolute: false,
+            file_name: None,
+            parent: None,
+            root: Some(r#"C:"#),
+            normalized: r#"C:"#,
+        },
+        PathCase {
+            input: r#"\\server\share\"#,
+            display: r#"\\server\share\"#,
+            absolute: true,
+            file_name: None,
+            parent: None,
+            root: Some(r#"\\server\share\"#),
+            normalized: r#"\\server\share\"#,
+        },
+        PathCase {
+            input: r#"C:/"#,
+            display: r#"C:\"#,
+            absolute: true,
+            file_name: None,
+            parent: None,
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\"#,
+        },
+        PathCase {
+            input: r#"C:\a\\..\b"#,
+            display: r#"C:\a\..\b"#,
+            absolute: true,
+            file_name: Some(r#"b"#),
+            parent: Some(r#"C:\a\.."#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\b"#,
+        },
+        PathCase {
+            input: r#"foo\..\bar"#,
+            display: r#"foo\..\bar"#,
+            absolute: false,
+            file_name: Some(r#"bar"#),
+            parent: Some(r#"foo\.."#),
+            root: None,
+            normalized: r#"bar"#,
+        },
+        PathCase {
+            input: r#"C:\a\b\.."#,
+            display: r#"C:\a\b\.."#,
+            absolute: true,
+            file_name: Some(r#".."#),
+            parent: Some(r#"C:\a\b"#),
+            root: Some(r#"C:\"#),
+            normalized: r#"C:\a"#,
+        },
     ];
 
     const RESOLVE_CASES: &[ResolveCase] = &[
-    ResolveCase { base: r#"C:\a\b"#, other: r#"c"#, result: r#"C:\a\b\c"# },
-    ResolveCase { base: r#"C:\a\b"#, other: r#"C:\x"#, result: r#"C:\x"# },
-    ResolveCase { base: r#"C:\a"#, other: r#"..\x"#, result: r#"C:\a\..\x"# },
-    ResolveCase { base: r#"foo"#, other: r#"bar"#, result: r#"foo\bar"# },
-    ResolveCase { base: r#"foo"#, other: r#""#, result: r#"foo"# },
-    ResolveCase { base: r#"C:\a\b"#, other: r#"c\d"#, result: r#"C:\a\b\c\d"# },
-    ResolveCase { base: r#"C:\"#, other: r#"a"#, result: r#"C:\a"# },
+        ResolveCase {
+            base: r#"C:\a\b"#,
+            other: r#"c"#,
+            result: r#"C:\a\b\c"#,
+        },
+        ResolveCase {
+            base: r#"C:\a\b"#,
+            other: r#"C:\x"#,
+            result: r#"C:\x"#,
+        },
+        ResolveCase {
+            base: r#"C:\a"#,
+            other: r#"..\x"#,
+            result: r#"C:\a\..\x"#,
+        },
+        ResolveCase {
+            base: r#"foo"#,
+            other: r#"bar"#,
+            result: r#"foo\bar"#,
+        },
+        ResolveCase {
+            base: r#"foo"#,
+            other: r#""#,
+            result: r#"foo"#,
+        },
+        ResolveCase {
+            base: r#"C:\a\b"#,
+            other: r#"c\d"#,
+            result: r#"C:\a\b\c\d"#,
+        },
+        ResolveCase {
+            base: r#"C:\"#,
+            other: r#"a"#,
+            result: r#"C:\a"#,
+        },
     ];
 
     const RELATIVIZE_CASES: &[RelativizeCase] = &[
-    RelativizeCase { base: r#"C:\a\b\c"#, other: r#"C:\a\b\d"#, result: r#"..\d"# },
-    RelativizeCase { base: r#"C:\a\b"#, other: r#"C:\a\b"#, result: r#""# },
-    RelativizeCase { base: r#"C:\a"#, other: r#"C:\a\b\c"#, result: r#"b\c"# },
-    RelativizeCase { base: r#"C:\a\b\c"#, other: r#"C:\a"#, result: r#"..\.."# },
-    RelativizeCase { base: r#"C:\a"#, other: r#"D:\b"#, result: r#"IllegalArgumentException"# },
-    RelativizeCase { base: r#"a\b"#, other: r#"a\b\c"#, result: r#"c"# },
-    RelativizeCase { base: r#"C:\A\B"#, other: r#"c:\a\b\c"#, result: r#"c"# },
-    RelativizeCase { base: r#"foo"#, other: r#"bar"#, result: r#"..\bar"# },
-    RelativizeCase { base: r#"C:foo"#, other: r#"C:bar"#, result: r#"..\bar"# },
-    RelativizeCase { base: r#"C:foo"#, other: r#"C:foo\bar"#, result: r#"bar"# },
-    RelativizeCase { base: r#"C:\a\b"#, other: r#"C:\a\b\c\"#, result: r#"c"# },
-    RelativizeCase { base: r#"C:\a\b"#, other: r#"a\b"#, result: r#"IllegalArgumentException"# },
-    RelativizeCase { base: r#"\\server\share\a"#, other: r#"\\SERVER\share\b"#, result: r#"..\b"# },
+        RelativizeCase {
+            base: r#"C:\a\b\c"#,
+            other: r#"C:\a\b\d"#,
+            result: r#"..\d"#,
+        },
+        RelativizeCase {
+            base: r#"C:\a\b"#,
+            other: r#"C:\a\b"#,
+            result: r#""#,
+        },
+        RelativizeCase {
+            base: r#"C:\a"#,
+            other: r#"C:\a\b\c"#,
+            result: r#"b\c"#,
+        },
+        RelativizeCase {
+            base: r#"C:\a\b\c"#,
+            other: r#"C:\a"#,
+            result: r#"..\.."#,
+        },
+        RelativizeCase {
+            base: r#"C:\a"#,
+            other: r#"D:\b"#,
+            result: r#"IllegalArgumentException"#,
+        },
+        RelativizeCase {
+            base: r#"a\b"#,
+            other: r#"a\b\c"#,
+            result: r#"c"#,
+        },
+        RelativizeCase {
+            base: r#"C:\A\B"#,
+            other: r#"c:\a\b\c"#,
+            result: r#"c"#,
+        },
+        RelativizeCase {
+            base: r#"foo"#,
+            other: r#"bar"#,
+            result: r#"..\bar"#,
+        },
+        RelativizeCase {
+            base: r#"C:foo"#,
+            other: r#"C:bar"#,
+            result: r#"..\bar"#,
+        },
+        RelativizeCase {
+            base: r#"C:foo"#,
+            other: r#"C:foo\bar"#,
+            result: r#"bar"#,
+        },
+        RelativizeCase {
+            base: r#"C:\a\b"#,
+            other: r#"C:\a\b\c\"#,
+            result: r#"c"#,
+        },
+        RelativizeCase {
+            base: r#"C:\a\b"#,
+            other: r#"a\b"#,
+            result: r#"IllegalArgumentException"#,
+        },
+        RelativizeCase {
+            base: r#"\\server\share\a"#,
+            other: r#"\\SERVER\share\b"#,
+            result: r#"..\b"#,
+        },
     ];
 
     const STARTS_WITH_CASES: &[(&str, &str, bool)] = &[
-    (r#"C:\A\B"#, r#"c:\a"#, true),
-    (r#"C:\A\B"#, r#"C:\a\b"#, true),
-    (r#"C:\A\B"#, r#"B"#, false),
-    (r#"C:\A\B"#, r#"c:\a\b\"#, true),
-    (r#"C:\foo\bar.txt"#, r#"bar.txt"#, false),
-    (r#"C:\foo\bar"#, r#"b"#, false),
-    (r#"C:\A\B"#, r#""#, false),
-    (r#"C:\A\B"#, r#"A"#, false),
-    (r#"C:\A\B"#, r#"C:\a\b\c"#, false),
-    (r#"C:\A\B"#, r#"C:\a\b"#, true),
+        (r#"C:\A\B"#, r#"c:\a"#, true),
+        (r#"C:\A\B"#, r#"C:\a\b"#, true),
+        (r#"C:\A\B"#, r#"B"#, false),
+        (r#"C:\A\B"#, r#"c:\a\b\"#, true),
+        (r#"C:\foo\bar.txt"#, r#"bar.txt"#, false),
+        (r#"C:\foo\bar"#, r#"b"#, false),
+        (r#"C:\A\B"#, r#""#, false),
+        (r#"C:\A\B"#, r#"A"#, false),
+        (r#"C:\A\B"#, r#"C:\a\b\c"#, false),
+        (r#"C:\A\B"#, r#"C:\a\b"#, true),
     ];
 
     const ENDS_WITH_CASES: &[(&str, &str, bool)] = &[
-    (r#"C:\A\B"#, r#"c:\a"#, false),
-    (r#"C:\A\B"#, r#"C:\a\b"#, true),
-    (r#"C:\A\B"#, r#"B"#, true),
-    (r#"C:\A\B"#, r#"c:\a\b\"#, true),
-    (r#"C:\foo\bar.txt"#, r#"bar.txt"#, true),
-    (r#"C:\foo\bar"#, r#"b"#, false),
-    (r#"C:\A\B"#, r#""#, false),
-    (r#"C:\A\B"#, r#"A"#, false),
-    (r#"C:\A\B"#, r#"C:\a\b\c"#, false),
-    (r#"C:\A\B"#, r#"C:\a\b"#, true),
+        (r#"C:\A\B"#, r#"c:\a"#, false),
+        (r#"C:\A\B"#, r#"C:\a\b"#, true),
+        (r#"C:\A\B"#, r#"B"#, true),
+        (r#"C:\A\B"#, r#"c:\a\b\"#, true),
+        (r#"C:\foo\bar.txt"#, r#"bar.txt"#, true),
+        (r#"C:\foo\bar"#, r#"b"#, false),
+        (r#"C:\A\B"#, r#""#, false),
+        (r#"C:\A\B"#, r#"A"#, false),
+        (r#"C:\A\B"#, r#"C:\a\b\c"#, false),
+        (r#"C:\A\B"#, r#"C:\a\b"#, true),
     ];
 
     const TO_URI_CASES: &[(&str, &str)] = &[
-    (r#"C:\a b\c.txt"#, r#"file:///C:/a%20b/c.txt"#),
-    (r#"C:\中文\x.txt"#, r#"file:///C:/中文/x.txt"#),
-    (r#"C:\a#b\x.txt"#, r#"file:///C:/a%23b/x.txt"#),
-    (r#"C:\a%%20b\x.txt"#, r#"file:///C:/a%25%2520b/x.txt"#),
-    (r#"C:\foo\bar.txt"#, r#"file:///C:/foo/bar.txt"#),
-    (r#"C:\a b\c.txt"#, r#"file:///C:/a%20b/c.txt"#),
-    (r#"\\server\share\dir"#, r#"file://server/share/dir"#),
-    (r#"C:\"#, r#"file:///C:/"#),
-    (r#"C:\a\b%c\x.txt"#, r#"file:///C:/a/b%25c/x.txt"#),
+        (r#"C:\a b\c.txt"#, r#"file:///C:/a%20b/c.txt"#),
+        (r#"C:\中文\x.txt"#, r#"file:///C:/中文/x.txt"#),
+        (r#"C:\a#b\x.txt"#, r#"file:///C:/a%23b/x.txt"#),
+        (r#"C:\a%%20b\x.txt"#, r#"file:///C:/a%25%2520b/x.txt"#),
+        (r#"C:\foo\bar.txt"#, r#"file:///C:/foo/bar.txt"#),
+        (r#"C:\a b\c.txt"#, r#"file:///C:/a%20b/c.txt"#),
+        (r#"\\server\share\dir"#, r#"file://server/share/dir"#),
+        (r#"C:\"#, r#"file:///C:/"#),
+        (r#"C:\a\b%c\x.txt"#, r#"file:///C:/a/b%25c/x.txt"#),
     ];
 
     const EQUALS_CASES: &[(&str, &str, bool)] = &[
-    (r#"C:\A\B"#, r#"c:\a\b"#, true),
-    (r#"C:\a\b"#, r#"C:\a\b\"#, true),
-    (r#"C:\a"#, r#"C:\a"#, true),
-    (r#"C:\a\b"#, r#"C:\a\b\c"#, false),
-    (r#"C:\a"#, r#"C:\\"#, false),
+        (r#"C:\A\B"#, r#"c:\a\b"#, true),
+        (r#"C:\a\b"#, r#"C:\a\b\"#, true),
+        (r#"C:\a"#, r#"C:\a"#, true),
+        (r#"C:\a\b"#, r#"C:\a\b\c"#, false),
+        (r#"C:\a"#, r#"C:\\"#, false),
     ];
 
     const FROM_URI_CASES: &[(&str, &str)] = &[
-    (r#"file:///C:/foo/bar.txt"#, r#"C:\foo\bar.txt"#),
-    (r#"file:///C:/a%20b/c.txt"#, r#"C:\a b\c.txt"#),
-    (r#"file:///C:/%E4%B8%AD%E6%96%87/x.txt"#, r#"C:\中文\x.txt"#),
+        (r#"file:///C:/foo/bar.txt"#, r#"C:\foo\bar.txt"#),
+        (r#"file:///C:/a%20b/c.txt"#, r#"C:\a b\c.txt"#),
+        (r#"file:///C:/%E4%B8%AD%E6%96%87/x.txt"#, r#"C:\中文\x.txt"#),
     ];
 
     fn path(input: &str) -> Path {
@@ -868,7 +1320,13 @@ mod oracle {
     fn resolve_cases_match_the_java_oracle() {
         for case in RESOLVE_CASES {
             let result = path(case.base).resolve(&path(case.other));
-            assert_eq!(result.to_java_string(), case.result, "resolve {} {}", case.base, case.other);
+            assert_eq!(
+                result.to_java_string(),
+                case.result,
+                "resolve {} {}",
+                case.base,
+                case.other
+            );
         }
     }
 
@@ -903,20 +1361,42 @@ mod oracle {
     #[test]
     fn starts_with_and_ends_with_cases_match_the_java_oracle() {
         for (base, other, expected) in STARTS_WITH_CASES {
-            assert_eq!(path(base).starts_with(&path(other)), *expected, "startsWith {} {}", base, other);
+            assert_eq!(
+                path(base).starts_with(&path(other)),
+                *expected,
+                "startsWith {} {}",
+                base,
+                other
+            );
         }
         for (base, other, expected) in ENDS_WITH_CASES {
-            assert_eq!(path(base).ends_with(&path(other)), *expected, "endsWith {} {}", base, other);
+            assert_eq!(
+                path(base).ends_with(&path(other)),
+                *expected,
+                "endsWith {} {}",
+                base,
+                other
+            );
         }
     }
 
     #[test]
     fn uri_cases_match_the_java_oracle() {
         for (input, expected) in TO_URI_CASES {
-            assert_eq!(path(input).to_uri().expect("to_uri"), *expected, "toUri {}", input);
+            assert_eq!(
+                path(input).to_uri().expect("to_uri"),
+                *expected,
+                "toUri {}",
+                input
+            );
         }
         for (uri, expected) in FROM_URI_CASES {
-            assert_eq!(Path::from_uri(uri).expect("from_uri").to_java_string(), *expected, "fromUri {}", uri);
+            assert_eq!(
+                Path::from_uri(uri).expect("from_uri").to_java_string(),
+                *expected,
+                "fromUri {}",
+                uri
+            );
         }
         assert!(matches!(
             Path::from_uri("http://example.com/x"),
@@ -938,7 +1418,9 @@ mod oracle {
         if cfg!(windows) {
             // Java oracle: "file:/tmp/x" -> \tmp\x; "file://host/share/x" -> \\host\share\x.
             assert_eq!(
-                Path::from_uri("file:/tmp/x").expect("single slash").to_java_string(),
+                Path::from_uri("file:/tmp/x")
+                    .expect("single slash")
+                    .to_java_string(),
                 "\\tmp\\x"
             );
             assert_eq!(
@@ -953,7 +1435,13 @@ mod oracle {
     #[test]
     fn equals_cases_match_the_java_oracle() {
         for (left, right, expected) in EQUALS_CASES {
-            assert_eq!(path(left) == path(right), *expected, "equals {} {}", left, right);
+            assert_eq!(
+                path(left) == path(right),
+                *expected,
+                "equals {} {}",
+                left,
+                right
+            );
         }
     }
 }
@@ -974,8 +1462,14 @@ mod syntax_tests {
 
     #[test]
     fn extension_rules() {
-        assert_eq!(Path::new("a/b.txt").unwrap().extension().as_deref(), Some("txt"));
-        assert_eq!(Path::new("a/b.tar.gz").unwrap().extension().as_deref(), Some("gz"));
+        assert_eq!(
+            Path::new("a/b.txt").unwrap().extension().as_deref(),
+            Some("txt")
+        );
+        assert_eq!(
+            Path::new("a/b.tar.gz").unwrap().extension().as_deref(),
+            Some("gz")
+        );
         assert_eq!(Path::new(".hidden").unwrap().extension(), None);
         assert_eq!(Path::new("a/b.").unwrap().extension().as_deref(), Some(""));
         assert_eq!(Path::new("a/b").unwrap().extension(), None);
@@ -989,8 +1483,14 @@ mod syntax_tests {
             p.subpath(1, 3).unwrap().to_java_string(),
             format!("b{}c", sep())
         );
-        assert!(matches!(p.subpath(3, 3), Err(Error::IllegalArgument { .. })));
-        assert!(matches!(p.subpath(0, 4), Err(Error::IllegalArgument { .. })));
+        assert!(matches!(
+            p.subpath(3, 3),
+            Err(Error::IllegalArgument { .. })
+        ));
+        assert!(matches!(
+            p.subpath(0, 4),
+            Err(Error::IllegalArgument { .. })
+        ));
     }
 
     #[test]
@@ -1013,10 +1513,7 @@ mod syntax_tests {
         let p = Path::new("a/./b/../c").unwrap();
         assert_eq!(p.to_java_string(), format!("a{s}.{s}b{s}..{s}c", s = sep()));
         assert_eq!(p.normalize().to_java_string(), format!("a{}c", sep()));
-        assert_eq!(
-            Path::new("./a").unwrap().normalize().to_java_string(),
-            "a"
-        );
+        assert_eq!(Path::new("./a").unwrap().normalize().to_java_string(), "a");
     }
 
     #[test]
@@ -1027,12 +1524,13 @@ mod syntax_tests {
             base.relativize(&child).unwrap().to_java_string(),
             format!("..{}d", sep())
         );
+        assert_eq!(base.relativize(&base).unwrap().to_java_string(), "");
         assert_eq!(
-            base.relativize(&base).unwrap().to_java_string(),
-            ""
-        );
-        assert_eq!(
-            Path::new("a").unwrap().relativize(&child).unwrap().to_java_string(),
+            Path::new("a")
+                .unwrap()
+                .relativize(&child)
+                .unwrap()
+                .to_java_string(),
             format!("b{}d", sep())
         );
     }
@@ -1043,6 +1541,10 @@ mod syntax_tests {
         let absolute = relative.to_absolute_path().expect("absolute path");
         assert!(absolute.is_absolute());
         // The result keeps the relative tail unchanged (Java does not normalize).
-        assert!(absolute.to_java_string().ends_with(&format!("target{}debug", sep())));
+        assert!(
+            absolute
+                .to_java_string()
+                .ends_with(&format!("target{}debug", sep()))
+        );
     }
 }

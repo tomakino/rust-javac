@@ -2,7 +2,6 @@
 // tree::tree mirrors that (clippy::module_inception is expected).
 #![allow(clippy::module_inception)]
 
-
 //! Provides interfaces to represent source code as abstract syntax
 //! trees (AST).
 //!

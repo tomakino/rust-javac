@@ -22,12 +22,16 @@ impl Files {
 
     /// Java: Files.isDirectory(Path) — false for missing paths or errors.
     pub fn is_directory(path: &Path) -> bool {
-        std::fs::metadata(path.as_path()).map(|meta| meta.is_dir()).unwrap_or(false)
+        std::fs::metadata(path.as_path())
+            .map(|meta| meta.is_dir())
+            .unwrap_or(false)
     }
 
     /// Java: Files.isRegularFile(Path) — false for missing paths or errors.
     pub fn is_regular_file(path: &Path) -> bool {
-        std::fs::metadata(path.as_path()).map(|meta| meta.is_file()).unwrap_or(false)
+        std::fs::metadata(path.as_path())
+            .map(|meta| meta.is_file())
+            .unwrap_or(false)
     }
 
     /// Java: Files.readAllBytes(Path).
@@ -75,7 +79,12 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("javac-fs-{}-{}-{}", tag, std::process::id(), unique))
+        std::env::temp_dir().join(format!(
+            "javac-fs-{}-{}-{}",
+            tag,
+            std::process::id(),
+            unique
+        ))
     }
 
     #[test]
@@ -93,7 +102,10 @@ mod tests {
         assert!(Files::exists(&a_path));
         assert!(Files::is_regular_file(&a_path));
         assert!(!Files::is_directory(&a_path));
-        assert_eq!(Files::read_all_bytes(&a_path).expect("readAllBytes"), b"abc");
+        assert_eq!(
+            Files::read_all_bytes(&a_path).expect("readAllBytes"),
+            b"abc"
+        );
         assert_eq!(Files::size(&a_path).expect("size"), 3);
         assert!(Files::last_modified_millis(&a_path).expect("lastModified") > 0);
 

@@ -13,9 +13,7 @@
 //! * visit methods take `&mut self` and call `default_action`.
 
 use super::abstract_annotation_value_visitor6::AbstractAnnotationValueVisitor6;
-use crate::lang::model::element::{
-    AnnotationMirror, AnnotationValue, ValueRef, VariableElement,
-};
+use crate::lang::model::element::{AnnotationMirror, AnnotationValue, ValueRef, VariableElement};
 use crate::lang::model::type_::TypeMirror;
 use javac_strings::JavaString;
 use std::rc::Rc;
@@ -42,7 +40,9 @@ use std::rc::Rc;
 /// @see SimpleAnnotationValueVisitor9
 /// @see SimpleAnnotationValueVisitor14
 /// @since 1.6
-pub trait SimpleAnnotationValueVisitor6<R: Clone, P>: AbstractAnnotationValueVisitor6<R, P> {
+pub trait SimpleAnnotationValueVisitor6<R: Clone, P>:
+    AbstractAnnotationValueVisitor6<R, P>
+{
     /// Default value to be returned; {@link #defaultAction
     /// defaultAction} returns this value unless the method is
     /// overridden.
@@ -192,10 +192,17 @@ mod tests {
 
     #[test]
     fn visit_methods_call_default_action() {
-        let mut v = DefaultVisitor { value: 5, last: None };
-        let int = ValueFixture { value: Value::Integer(1) };
+        let mut v = DefaultVisitor {
+            value: 5,
+            last: None,
+        };
+        let int = ValueFixture {
+            value: Value::Integer(1),
+        };
         assert_eq!(SimpleAnnotationValueVisitor6::visit_int(&mut v, 1, ()), 5);
-        let string = ValueFixture { value: Value::String(JavaString::from("s")) };
+        let string = ValueFixture {
+            value: Value::String(JavaString::from("s")),
+        };
         assert_eq!(
             SimpleAnnotationValueVisitor6::visit_string(&mut v, &JavaString::from("s"), ()),
             5

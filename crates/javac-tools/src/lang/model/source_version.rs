@@ -61,7 +61,6 @@ pub enum SourceVersion {
      *      preview, text blocks in preview again)
      *  15: text blocks (records and pattern matching in preview again)
      */
-
     /// The original version.
     ///
     /// The language described in
@@ -242,7 +241,9 @@ impl SourceVersion {
         SourceVersion::values()
             .into_iter()
             .find(|v| v.name() == *name)
-            .unwrap_or_else(|| panic!("IllegalArgumentException: No enum constant SourceVersion.{name}"))
+            .unwrap_or_else(|| {
+                panic!("IllegalArgumentException: No enum constant SourceVersion.{name}")
+            })
     }
 
     /// Java: `enum SourceVersion#values()`.
@@ -380,8 +381,7 @@ impl SourceVersion {
     /// trailing empty strings like `String.split(regex, -1)`.
     pub fn is_name_version(name: &JavaString, version: SourceVersion) -> bool {
         for s in name.split_char(b'.' as u16) {
-            if !SourceVersion::is_identifier(&s) || SourceVersion::is_keyword_version(&s, version)
-            {
+            if !SourceVersion::is_identifier(&s) || SourceVersion::is_keyword_version(&s, version) {
                 return false;
             }
         }
@@ -549,7 +549,11 @@ fn get_latest_supported() -> SourceVersion {
 /// Java: `Character.charCount(int codePoint)` — 2 for a supplementary code
 /// point (encoded as a UTF-16 surrogate pair), 1 otherwise.
 fn char_count(code_point: i32) -> usize {
-    if code_point >= javac_unicode::MIN_SUPPLEMENTARY_CODE_POINT { 2 } else { 1 }
+    if code_point >= javac_unicode::MIN_SUPPLEMENTARY_CODE_POINT {
+        2
+    } else {
+        1
+    }
 }
 
 impl std::fmt::Display for SourceVersion {
@@ -577,8 +581,14 @@ mod tests {
     #[test]
     fn value_of_and_values() {
         assert_eq!(SourceVersion::values().len(), 18);
-        assert_eq!(SourceVersion::value_of(&js("RELEASE_17")), SourceVersion::RELEASE_17);
-        assert_eq!(SourceVersion::value_of(&js("RELEASE_8")), SourceVersion::RELEASE_8);
+        assert_eq!(
+            SourceVersion::value_of(&js("RELEASE_17")),
+            SourceVersion::RELEASE_17
+        );
+        assert_eq!(
+            SourceVersion::value_of(&js("RELEASE_8")),
+            SourceVersion::RELEASE_8
+        );
         assert_eq!(SourceVersion::RELEASE_17.name(), js("RELEASE_17"));
     }
 
@@ -591,19 +601,45 @@ mod tests {
     #[test]
     fn version_dependent_keywords() {
         // strictfp since 1.2, assert since 1.4, enum since 1.5, _ since 9.
-        assert!(!SourceVersion::is_keyword_version(&js("strictfp"), SourceVersion::RELEASE_1));
-        assert!(SourceVersion::is_keyword_version(&js("strictfp"), SourceVersion::RELEASE_2));
-        assert!(!SourceVersion::is_keyword_version(&js("assert"), SourceVersion::RELEASE_3));
-        assert!(SourceVersion::is_keyword_version(&js("assert"), SourceVersion::RELEASE_4));
-        assert!(!SourceVersion::is_keyword_version(&js("enum"), SourceVersion::RELEASE_4));
-        assert!(SourceVersion::is_keyword_version(&js("enum"), SourceVersion::RELEASE_5));
-        assert!(!SourceVersion::is_keyword_version(&js("_"), SourceVersion::RELEASE_8));
-        assert!(SourceVersion::is_keyword_version(&js("_"), SourceVersion::RELEASE_9));
+        assert!(!SourceVersion::is_keyword_version(
+            &js("strictfp"),
+            SourceVersion::RELEASE_1
+        ));
+        assert!(SourceVersion::is_keyword_version(
+            &js("strictfp"),
+            SourceVersion::RELEASE_2
+        ));
+        assert!(!SourceVersion::is_keyword_version(
+            &js("assert"),
+            SourceVersion::RELEASE_3
+        ));
+        assert!(SourceVersion::is_keyword_version(
+            &js("assert"),
+            SourceVersion::RELEASE_4
+        ));
+        assert!(!SourceVersion::is_keyword_version(
+            &js("enum"),
+            SourceVersion::RELEASE_4
+        ));
+        assert!(SourceVersion::is_keyword_version(
+            &js("enum"),
+            SourceVersion::RELEASE_5
+        ));
+        assert!(!SourceVersion::is_keyword_version(
+            &js("_"),
+            SourceVersion::RELEASE_8
+        ));
+        assert!(SourceVersion::is_keyword_version(
+            &js("_"),
+            SourceVersion::RELEASE_9
+        ));
     }
 
     #[test]
     fn common_keywords_and_literals() {
-        for kw in ["public", "class", "int", "while", "new", "goto", "null", "true", "false"] {
+        for kw in [
+            "public", "class", "int", "while", "new", "goto", "null", "true", "false",
+        ] {
             assert!(SourceVersion::is_keyword(&js(kw)), "{kw}");
         }
         assert!(!SourceVersion::is_keyword(&js("var")));
@@ -612,7 +648,9 @@ mod tests {
         assert!(!SourceVersion::is_keyword(&js("non-sealed")));
         assert!(!SourceVersion::is_keyword(&js("")));
         // A Java String with an unpaired surrogate can never equal a keyword.
-        assert!(!SourceVersion::is_keyword(&JavaString::from_units(vec![0xD800])));
+        assert!(!SourceVersion::is_keyword(&JavaString::from_units(vec![
+            0xD800
+        ])));
     }
 
     #[test]

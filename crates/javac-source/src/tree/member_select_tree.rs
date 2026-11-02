@@ -1,3 +1,4 @@
+use super::expression_tree::ExpressionTree;
 /// A tree node for a member access expression.
 ///
 /// For example:
@@ -14,7 +15,6 @@
 /// @since 1.6
 use javac_tools::lang::model::element::Name;
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
 
 pub trait MemberSelectTree: ExpressionTree {
     /// Returns the expression for which a member is to be selected.
@@ -24,5 +24,4 @@ pub trait MemberSelectTree: ExpressionTree {
     /// Returns the name of the member to be selected.
     /// @return the member
     fn get_identifier(&self) -> Rc<dyn Name>;
-
 }

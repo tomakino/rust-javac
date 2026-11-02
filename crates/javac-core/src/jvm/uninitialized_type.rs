@@ -25,11 +25,7 @@ pub fn uninitialized_this(ctx: &mut CompilerContext, qtype: TypeId) -> TypeId {
 
 /// Create the pseudo-type of a not-yet-constructed object allocated at the
 /// given code offset.
-pub fn uninitialized_object(
-    ctx: &mut CompilerContext,
-    qtype: TypeId,
-    offset: i32,
-) -> TypeId {
+pub fn uninitialized_object(ctx: &mut CompilerContext, qtype: TypeId, offset: i32) -> TypeId {
     ctx.alloc_type(Type::new(
         TypeTag::UNINITIALIZED_OBJECT,
         None,

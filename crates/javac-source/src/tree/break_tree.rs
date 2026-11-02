@@ -1,3 +1,4 @@
+use super::statement_tree::StatementTree;
 /// A tree node for a {@code break} statement.
 ///
 /// For example:
@@ -14,11 +15,9 @@
 /// @since 1.6
 use javac_tools::lang::model::element::Name;
 use std::rc::Rc;
-use super::statement_tree::StatementTree;
 
 pub trait BreakTree: StatementTree {
     /// Returns the label for this {@code break} statement.
     /// @return the label
     fn get_label(&self) -> Rc<dyn Name>;
-
 }

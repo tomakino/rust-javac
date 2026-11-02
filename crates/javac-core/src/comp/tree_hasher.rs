@@ -27,7 +27,10 @@ impl TreeHasher {
     /// - `symbols` — the symbols captured by the lambda body
     /// - `symbol_hashes` — the precomputed hash of each captured symbol
     pub fn new(symbol_hashes: HashMap<SymbolId, i32>) -> TreeHasher {
-        TreeHasher { symbol_hashes, result: 17 }
+        TreeHasher {
+            symbol_hashes,
+            result: 17,
+        }
     }
 
     /// # Arguments
@@ -109,7 +112,11 @@ impl TreeHasher {
             ConstantValue::Double(v) => v.to_bits() as i64,
             ConstantValue::Character(v) => i64::from(*v),
             ConstantValue::Boolean(v) => {
-                if *v { 1231 } else { 1237 }
+                if *v {
+                    1231
+                } else {
+                    1237
+                }
             }
             ConstantValue::String(v) => {
                 let mut hash: i32 = 0;
@@ -124,6 +131,10 @@ impl TreeHasher {
 }
 
 impl TreeVisitor for TreeHasher {
+    fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        panic!("AssertionError: visitTree");
+    }
+
     fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let defs = match &ctx.tree(tree).kind {
             TreeKind::CompilationUnit { defs, .. } => defs.clone(),
@@ -131,7 +142,6 @@ impl TreeVisitor for TreeHasher {
         };
         self.scan_list(ctx, &defs);
     }
-
 
     fn visit_package_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, pid) = match &ctx.tree(tree).kind {
@@ -144,83 +154,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, pid);
     }
 
-
-    fn visit_module_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (mods, qual_id, directives) = match &ctx.tree(tree).kind {
-            TreeKind::ModuleDecl {
-                mods,
-                qual_id,
-                directives,
-                ..
-            } => (*mods, *qual_id, directives.clone()),
-            _ => panic!("expected a module declaration"),
-        };
-        self.scan(ctx, mods);
-        self.scan(ctx, qual_id);
-        self.scan_list_opt(ctx, directives);
-    }
-
-
-    fn visit_exports(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (qualid, module_names) = match &ctx.tree(tree).kind {
-            TreeKind::Exports {
-                qualid,
-                module_names,
-                ..
-            } => (*qualid, module_names.clone()),
-            _ => panic!("expected an exports directive"),
-        };
-        self.scan(ctx, qualid);
-        self.scan_list_opt(ctx, module_names);
-    }
-
-
-    fn visit_opens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (qualid, module_names) = match &ctx.tree(tree).kind {
-            TreeKind::Opens {
-                qualid,
-                module_names,
-                ..
-            } => (*qualid, module_names.clone()),
-            _ => panic!("expected an opens directive"),
-        };
-        self.scan(ctx, qualid);
-        self.scan_list_opt(ctx, module_names);
-    }
-
-
-    fn visit_provides(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (service_name, impl_names) = match &ctx.tree(tree).kind {
-            TreeKind::Provides {
-                service_name,
-                impl_names,
-                ..
-            } => (*service_name, impl_names.clone()),
-            _ => panic!("expected a provides directive"),
-        };
-        self.scan(ctx, service_name);
-        self.scan_list(ctx, &impl_names);
-    }
-
-
-    fn visit_requires(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let module_name = match &ctx.tree(tree).kind {
-            TreeKind::Requires { module_name, .. } => *module_name,
-            _ => panic!("expected a requires directive"),
-        };
-        self.scan(ctx, module_name);
-    }
-
-
-    fn visit_uses(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let qualid = match &ctx.tree(tree).kind {
-            TreeKind::Uses { qualid } => *qualid,
-            _ => panic!("expected a uses directive"),
-        };
-        self.scan(ctx, qualid);
-    }
-
-
     fn visit_import(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Import { qualid, .. } => *qualid,
@@ -228,7 +161,6 @@ impl TreeVisitor for TreeHasher {
         };
         self.scan(ctx, qualid);
     }
-
 
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, typarams, extending, implementing, permitting, defs) = match &ctx.tree(tree).kind
@@ -258,7 +190,6 @@ impl TreeVisitor for TreeHasher {
         self.scan_list(ctx, &permitting);
         self.scan_list(ctx, &defs);
     }
-
 
     fn visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, restype, typarams, recvparam, params, thrown, default_value, body) =
@@ -295,7 +226,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, body);
     }
 
-
     fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         if let TreeKind::VariableDecl { sym: Some(sym), .. } = &ctx.tree(tree).kind {
             let size = self.symbol_hashes.len() as i32;
@@ -317,9 +247,7 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, init);
     }
 
-
     fn visit_skip(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
-
 
     fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let stats = match &ctx.tree(tree).kind {
@@ -328,7 +256,6 @@ impl TreeVisitor for TreeHasher {
         };
         self.scan_list(ctx, &stats);
     }
-
 
     fn visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (body, cond) = match &ctx.tree(tree).kind {
@@ -339,7 +266,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, cond);
     }
 
-
     fn visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, body) = match &ctx.tree(tree).kind {
             TreeKind::WhileLoop { cond, body } => (*cond, *body),
@@ -348,7 +274,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, cond);
         self.scan(ctx, body);
     }
-
 
     fn visit_for_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (init, cond, step, body) = match &ctx.tree(tree).kind {
@@ -366,7 +291,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, body);
     }
 
-
     fn visit_foreach_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (var, expr, body) = match &ctx.tree(tree).kind {
             TreeKind::EnhancedForLoop { var, expr, body } => (*var, *expr, *body),
@@ -377,7 +301,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, body);
     }
 
-
     fn visit_labelled(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let body = match &ctx.tree(tree).kind {
             TreeKind::LabeledStatement { body, .. } => *body,
@@ -385,7 +308,6 @@ impl TreeVisitor for TreeHasher {
         };
         self.scan(ctx, body);
     }
-
 
     fn visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
@@ -398,7 +320,6 @@ impl TreeVisitor for TreeHasher {
         self.scan_list(ctx, &cases);
     }
 
-
     fn visit_case(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (labels, stats) = match &ctx.tree(tree).kind {
             TreeKind::Case { labels, stats, .. } => (labels.clone(), stats.clone()),
@@ -407,7 +328,6 @@ impl TreeVisitor for TreeHasher {
         self.scan_list(ctx, &labels);
         self.scan_list(ctx, &stats);
     }
-
 
     fn visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
@@ -420,7 +340,6 @@ impl TreeVisitor for TreeHasher {
         self.scan_list(ctx, &cases);
     }
 
-
     fn visit_synchronized(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lock, body) = match &ctx.tree(tree).kind {
             TreeKind::Synchronized { lock, body } => (*lock, *body),
@@ -429,7 +348,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, lock);
         self.scan(ctx, body);
     }
-
 
     fn visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (resources, body, catchers, finalizer) = match &ctx.tree(tree).kind {
@@ -448,7 +366,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, finalizer);
     }
 
-
     fn visit_catch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (param, body) = match &ctx.tree(tree).kind {
             TreeKind::Catch { param, body } => (*param, *body),
@@ -457,7 +374,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, param);
         self.scan(ctx, body);
     }
-
 
     fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
@@ -474,7 +390,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, falsepart);
     }
 
-
     fn visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, thenpart, elsepart) = match &ctx.tree(tree).kind {
             TreeKind::If {
@@ -489,7 +404,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, elsepart);
     }
 
-
     fn visit_exec(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::ExpressionStatement { expr } => *expr,
@@ -498,9 +412,7 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, expr);
     }
 
-
     fn visit_break(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
-
 
     fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let value = match &ctx.tree(tree).kind {
@@ -510,9 +422,7 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, value);
     }
 
-
     fn visit_continue(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
-
 
     fn visit_return(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
@@ -522,7 +432,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, expr);
     }
 
-
     fn visit_throw(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Throw { expr } => *expr,
@@ -530,7 +439,6 @@ impl TreeVisitor for TreeHasher {
         };
         self.scan(ctx, expr);
     }
-
 
     fn visit_assert(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, detail) = match &ctx.tree(tree).kind {
@@ -540,7 +448,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, cond);
         self.scan(ctx, detail);
     }
-
 
     fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (typeargs, meth, args) = match &ctx.tree(tree).kind {
@@ -556,7 +463,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, meth);
         self.scan_list(ctx, &args);
     }
-
 
     fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (encl, typeargs, clazz, args, def) = match &ctx.tree(tree).kind {
@@ -576,7 +482,6 @@ impl TreeVisitor for TreeHasher {
         self.scan_list(ctx, &args);
         self.scan(ctx, def);
     }
-
 
     fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, elemtype, dims, dim_annotations, elems) = match &ctx.tree(tree).kind {
@@ -604,7 +509,6 @@ impl TreeVisitor for TreeHasher {
         self.scan_list_opt(ctx, elems);
     }
 
-
     fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (body, params) = match &ctx.tree(tree).kind {
             TreeKind::Lambda { body, params, .. } => (*body, params.clone()),
@@ -614,7 +518,6 @@ impl TreeVisitor for TreeHasher {
         self.scan_list(ctx, &params);
     }
 
-
     fn visit_parens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Parens { expr } => *expr,
@@ -622,7 +525,6 @@ impl TreeVisitor for TreeHasher {
         };
         self.scan(ctx, expr);
     }
-
 
     fn visit_assign(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
@@ -633,7 +535,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, rhs);
     }
 
-
     fn visit_assignop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
             TreeKind::AssignOp { lhs, rhs, .. } => (*lhs, *rhs),
@@ -643,7 +544,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, rhs);
     }
 
-
     fn visit_unary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let arg = match &ctx.tree(tree).kind {
             TreeKind::Unary { arg, .. } => *arg,
@@ -651,7 +551,6 @@ impl TreeVisitor for TreeHasher {
         };
         self.scan(ctx, arg);
     }
-
 
     fn visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
@@ -662,7 +561,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, rhs);
     }
 
-
     fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, expr) = match &ctx.tree(tree).kind {
             TreeKind::TypeCast { clazz, expr } => (*clazz, *expr),
@@ -671,7 +569,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, clazz);
         self.scan(ctx, expr);
     }
-
 
     fn visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, pattern) = match &ctx.tree(tree).kind {
@@ -682,7 +579,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, pattern);
     }
 
-
     fn visit_binding_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let var = match &ctx.tree(tree).kind {
             TreeKind::BindingPattern { var } => *var,
@@ -691,9 +587,7 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, var);
     }
 
-
     fn visit_default_case_label(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
-
 
     fn visit_parenthesized_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let pattern = match &ctx.tree(tree).kind {
@@ -702,7 +596,6 @@ impl TreeVisitor for TreeHasher {
         };
         self.scan(ctx, pattern);
     }
-
 
     fn visit_guard_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (patt, expr) = match &ctx.tree(tree).kind {
@@ -713,7 +606,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, expr);
     }
 
-
     fn visit_indexed(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (indexed, index) = match &ctx.tree(tree).kind {
             TreeKind::ArrayAccess { indexed, index } => (*indexed, *index),
@@ -722,7 +614,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, indexed);
         self.scan(ctx, index);
     }
-
 
     fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         if let TreeKind::FieldAccess { sym, .. } = &ctx.tree(tree).kind {
@@ -736,7 +627,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, selected);
     }
 
-
     fn visit_reference(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, typeargs) = match &ctx.tree(tree).kind {
             TreeKind::MemberReference { expr, typeargs, .. } => (*expr, typeargs.clone()),
@@ -745,7 +635,6 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, expr);
         self.scan_list_opt(ctx, typeargs);
     }
-
 
     fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         if let TreeKind::Ident { sym, .. } = &ctx.tree(tree).kind {
@@ -772,7 +661,11 @@ impl TreeVisitor for TreeHasher {
                 Some(crate::tree::jc_tree::LiteralValue::Double(v)) => v.to_bits() as i64,
                 Some(crate::tree::jc_tree::LiteralValue::Character(v)) => i64::from(*v),
                 Some(crate::tree::jc_tree::LiteralValue::Boolean(v)) => {
-                    if *v { 1231 } else { 1237 }
+                    if *v {
+                        1231
+                    } else {
+                        1237
+                    }
                 }
                 Some(crate::tree::jc_tree::LiteralValue::String(v)) => {
                     let mut hash: i32 = 0;
@@ -789,7 +682,6 @@ impl TreeVisitor for TreeHasher {
 
     fn visit_type_ident(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
-
     fn visit_type_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let elemtype = match &ctx.tree(tree).kind {
             TreeKind::ArrayTypeTree { elemtype } => *elemtype,
@@ -797,7 +689,6 @@ impl TreeVisitor for TreeHasher {
         };
         self.scan(ctx, elemtype);
     }
-
 
     fn visit_type_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, arguments) = match &ctx.tree(tree).kind {
@@ -808,7 +699,6 @@ impl TreeVisitor for TreeHasher {
         self.scan_list(ctx, &arguments);
     }
 
-
     fn visit_type_union(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let alternatives = match &ctx.tree(tree).kind {
             TreeKind::TypeUnion { alternatives } => alternatives.clone(),
@@ -817,7 +707,6 @@ impl TreeVisitor for TreeHasher {
         self.scan_list(ctx, &alternatives);
     }
 
-
     fn visit_type_intersection(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let bounds = match &ctx.tree(tree).kind {
             TreeKind::TypeIntersection { bounds } => bounds.clone(),
@@ -825,7 +714,6 @@ impl TreeVisitor for TreeHasher {
         };
         self.scan_list(ctx, &bounds);
     }
-
 
     fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, bounds) = match &ctx.tree(tree).kind {
@@ -840,7 +728,6 @@ impl TreeVisitor for TreeHasher {
         self.scan_list(ctx, &bounds);
     }
 
-
     fn visit_wildcard(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (kind, inner) = match &ctx.tree(tree).kind {
             TreeKind::Wildcard { kind, inner } => (*kind, *inner),
@@ -852,18 +739,7 @@ impl TreeVisitor for TreeHasher {
         }
     }
 
-
     fn visit_type_bound_kind(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
-
-
-    fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let annotations = match &ctx.tree(tree).kind {
-            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
-            _ => panic!("expected modifiers"),
-        };
-        self.scan_list(ctx, &annotations);
-    }
-
 
     fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotation_type, args) = match &ctx.tree(tree).kind {
@@ -878,6 +754,13 @@ impl TreeVisitor for TreeHasher {
         self.scan_list(ctx, &args);
     }
 
+    fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let annotations = match &ctx.tree(tree).kind {
+            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+            _ => panic!("expected modifiers"),
+        };
+        self.scan_list(ctx, &annotations);
+    }
 
     fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, underlying_type) = match &ctx.tree(tree).kind {
@@ -891,9 +774,77 @@ impl TreeVisitor for TreeHasher {
         self.scan(ctx, underlying_type);
     }
 
-
     fn visit_erroneous(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
+    fn visit_module_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (mods, qual_id, directives) = match &ctx.tree(tree).kind {
+            TreeKind::ModuleDecl {
+                mods,
+                qual_id,
+                directives,
+                ..
+            } => (*mods, *qual_id, directives.clone()),
+            _ => panic!("expected a module declaration"),
+        };
+        self.scan(ctx, mods);
+        self.scan(ctx, qual_id);
+        self.scan_list_opt(ctx, directives);
+    }
+
+    fn visit_exports(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (qualid, module_names) = match &ctx.tree(tree).kind {
+            TreeKind::Exports {
+                qualid,
+                module_names,
+                ..
+            } => (*qualid, module_names.clone()),
+            _ => panic!("expected an exports directive"),
+        };
+        self.scan(ctx, qualid);
+        self.scan_list_opt(ctx, module_names);
+    }
+
+    fn visit_opens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (qualid, module_names) = match &ctx.tree(tree).kind {
+            TreeKind::Opens {
+                qualid,
+                module_names,
+                ..
+            } => (*qualid, module_names.clone()),
+            _ => panic!("expected an opens directive"),
+        };
+        self.scan(ctx, qualid);
+        self.scan_list_opt(ctx, module_names);
+    }
+
+    fn visit_provides(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (service_name, impl_names) = match &ctx.tree(tree).kind {
+            TreeKind::Provides {
+                service_name,
+                impl_names,
+                ..
+            } => (*service_name, impl_names.clone()),
+            _ => panic!("expected a provides directive"),
+        };
+        self.scan(ctx, service_name);
+        self.scan_list(ctx, &impl_names);
+    }
+
+    fn visit_requires(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let module_name = match &ctx.tree(tree).kind {
+            TreeKind::Requires { module_name, .. } => *module_name,
+            _ => panic!("expected a requires directive"),
+        };
+        self.scan(ctx, module_name);
+    }
+
+    fn visit_uses(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let qualid = match &ctx.tree(tree).kind {
+            TreeKind::Uses { qualid } => *qualid,
+            _ => panic!("expected a uses directive"),
+        };
+        self.scan(ctx, qualid);
+    }
 
     fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (defs, expr) = match &ctx.tree(tree).kind {
@@ -902,10 +853,5 @@ impl TreeVisitor for TreeHasher {
         };
         self.scan_list(ctx, &defs);
         self.scan(ctx, expr);
-    }
-
-
-    fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
-        panic!("AssertionError: visitTree");
     }
 }

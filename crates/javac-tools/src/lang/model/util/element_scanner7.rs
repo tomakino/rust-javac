@@ -57,9 +57,7 @@ mod tests {
         for CollectingScanner
     {
     }
-    impl crate::lang::model::util::element_scanner6::ElementScanner6<usize, ()>
-        for CollectingScanner
-    {
+    impl crate::lang::model::util::element_scanner6::ElementScanner6<usize, ()> for CollectingScanner {
         fn default_value(&self) -> Option<&usize> {
             None
         }
@@ -78,7 +76,7 @@ mod tests {
         let child: Rc<dyn Element> = Rc::new(Fixture::new(ElementKind::PACKAGE, "p"));
         let rv = Fixture::with_enclosed(ElementKind::RESOURCE_VARIABLE, "r", vec![child]);
         let mut scanner = CollectingScanner::new();
-        let result = <CollectingScanner as super::ElementScanner7<usize, ()>>::visit_variable(
+        let result = <CollectingScanner as ElementScanner7<usize, ()>>::visit_variable(
             &mut scanner,
             &rv,
             (),

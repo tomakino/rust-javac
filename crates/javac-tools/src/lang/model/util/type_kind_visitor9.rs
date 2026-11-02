@@ -62,7 +62,9 @@ mod tests {
         let module = TypeFixture::new(TypeKind::MODULE);
         let mut v = DefaultVisitor { value: 3 };
         let result = <DefaultVisitor as TypeKindVisitor9<usize, ()>>::visit_no_type_as_module(
-            &mut v, &module, (),
+            &mut v,
+            &module,
+            (),
         );
         assert_eq!(result, 3);
     }

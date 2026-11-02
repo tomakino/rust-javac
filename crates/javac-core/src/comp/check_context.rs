@@ -82,9 +82,7 @@ pub trait CheckContext {
         found: TypeId,
         req: TypeId,
     ) -> Rc<Warner> {
-        Rc::new(self.check_warner(
-            ctx, syms, types, pos, found, req,
-        ))
+        Rc::new(self.check_warner(ctx, syms, types, pos, found, req))
     }
 
     /// Java: public InferenceContext inferenceContext()
@@ -177,7 +175,7 @@ impl CheckContext for BasicCheckContext {
             crate::util::jc_diagnostic::Error::from(
                 crate::resources::compiler_properties::errors::prob_found_req(
                     crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
-                        std::rc::Rc::new(details.clone()),
+                        Rc::new(details.clone()),
                     ),
                 ),
             ),
@@ -207,4 +205,3 @@ impl CheckContext for BasicCheckContext {
         &self.deferred_empty
     }
 }
-

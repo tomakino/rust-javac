@@ -1,6 +1,5 @@
 #![allow(clippy::result_large_err)]
 #![allow(clippy::type_complexity)]
-
 // Method-level audit status (Type/Types batch): the previous 123-method
 // NOT PORTED list is resolved below. Every unit maps to a local implementation,
 // a dispatch adapter, or an explicitly registered dependency.
@@ -200,17 +199,15 @@ pub struct Types {
         >,
     >,
     /// Java: MembersClosureCache._map (Types.java:3012).
-    members_closure_cache: std::cell::RefCell<
-        std::collections::HashMap<SymbolId, crate::ids::ScopeId>,
-    >,
+    members_closure_cache:
+        std::cell::RefCell<std::collections::HashMap<SymbolId, crate::ids::ScopeId>>,
     /// Java: MembersClosureCache.seenTypes (Types.java:3014).
     members_closure_seen: std::cell::RefCell<std::collections::HashSet<SymbolId>>,
     /// Java: CandidatesCache.cache (Types.java:3151); the upstream Entry
     /// equality uses isSameType(site) + symbol identity, the port keys by the
     /// nominal TypeId (a cache-miss-only difference, registered Porting rules).
-    candidates_cache: std::cell::RefCell<
-        std::collections::HashMap<(TypeId, SymbolId), Vec<SymbolId>>,
-    >,
+    candidates_cache:
+        std::cell::RefCell<std::collections::HashMap<(TypeId, SymbolId), Vec<SymbolId>>>,
     /// Java: Map<Type,Boolean> isDerivedRawCache (Types.java:2668).
     is_derived_raw_cache: std::cell::RefCell<std::collections::HashMap<TypeId, bool>>,
     /// Java: Types.Lub.mergeCache (Types.java:3855): the per-Types guard that
@@ -262,7 +259,7 @@ pub fn implementation_filter_matches(
 /// Java: DescriptorCache.Entry (Types.java:703-720).
 #[derive(Clone)]
 pub struct DescriptorEntry {
-    pub cached_desc_res: crate::code::types::FunctionDescriptor,
+    pub cached_desc_res: FunctionDescriptor,
     pub prev_mark: i32,
 }
 
@@ -274,13 +271,13 @@ pub struct FunctionDescriptorLookupError {
 }
 
 impl FunctionDescriptorLookupError {
-/// /// Java: FunctionDescriptorLookupError() (Types.java:4100-4120).
-///
-/// # Panics
-///   - none.
-///
-/// Upstream: Types.java:4100-4120.
-///
+    /// /// Java: FunctionDescriptorLookupError() (Types.java:4100-4120).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:4100-4120.
+    ///
     pub fn new() -> FunctionDescriptorLookupError {
         FunctionDescriptorLookupError { diagnostic: None }
     }
@@ -290,13 +287,13 @@ impl FunctionDescriptorLookupError {
         self
     }
 
-/// /// Java: FunctionDescriptorLookupError.getDiagnostic() (Types.java:4120-4140).
-///
-/// # Panics
-///   - none.
-///
-/// Upstream: Types.java:4120-4140.
-///
+    /// /// Java: FunctionDescriptorLookupError.getDiagnostic() (Types.java:4120-4140).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:4120-4140.
+    ///
     pub fn get_diagnostic(&self) -> Option<&crate::util::jc_diagnostic::JCDiagnostic> {
         self.diagnostic.as_ref()
     }
@@ -322,13 +319,13 @@ pub struct FunctionDescriptorMerge {
 }
 
 impl FunctionDescriptor {
-/// /// Java: FunctionDescriptor(Symbol) (Types.java:3000-3020).
-///
-/// # Panics
-///   - none.
-///
-/// Upstream: Types.java:3000-3020.
-///
+    /// /// Java: FunctionDescriptor(Symbol) (Types.java:3000-3020).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:3000-3020.
+    ///
     pub fn new(desc_sym: SymbolId) -> FunctionDescriptor {
         FunctionDescriptor {
             desc_sym,
@@ -385,20 +382,9 @@ pub struct ClosureHolder {
 
 impl ClosureHolder {
     /// Java: void add(Type type) (Types.java:3753-3755)
-    pub fn add(
-        &mut self,
-        types: &Types,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) {
-        self.closure = types.closure_insert_with(
-            ctx,
-            syms,
-            self.closure.clone(),
-            t,
-            self.should_skip,
-        );
+    pub fn add(&mut self, types: &Types, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) {
+        self.closure =
+            types.closure_insert_with(ctx, syms, self.closure.clone(), t, self.should_skip);
     }
 
     /// Java: ClosureHolder merge(ClosureHolder other) (Types.java:3757-3760)
@@ -437,13 +423,7 @@ pub struct ClosureCollector {
 
 impl ClosureCollector {
     /// Java: ClosureHolder::add (the collector accumulator).
-    pub fn add(
-        &mut self,
-        types: &Types,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) {
+    pub fn add(&mut self, types: &Types, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) {
         self.holder.add(types, ctx, syms, t);
     }
 
@@ -546,8 +526,8 @@ impl Types {
         ) = init_new_types_fields();
         Types {
             names,
-            map_captures_to_bounds:
-                crate::code::source::Feature::MAP_CAPTURES_TO_BOUNDS.allowed_in_source(source),
+            map_captures_to_bounds: crate::code::source::Feature::MAP_CAPTURES_TO_BOUNDS
+                .allowed_in_source(source),
             descriptor_cache,
             implementation_cache,
             members_closure_cache,
@@ -567,7 +547,7 @@ impl Types {
     /// for the constructors that cannot inject it (registered adapter; upstream
     /// Types always reads Names.instance(context)).
     /// The captured type variable name (Types.java:122).
-    fn captured_name(&self) -> crate::util::name::Name {
+    fn captured_name(&self) -> Name {
         let names = std::rc::Rc::clone(&self.names);
         names.from_utf(b"<captured wildcard>")
     }
@@ -597,7 +577,13 @@ impl Types {
     // currently changes nothing for the ported branches (the port keeps the
     // parameter for the 1:1 signature, registered).
     #[allow(clippy::only_used_in_recursion)]
-    fn hash_code_impl(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, strict: bool) -> i32 {
+    fn hash_code_impl(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        strict: bool,
+    ) -> i32 {
         // Java: HashCodeVisitor.visit(t): the visitor dispatches on the concrete
         // type class; ErrorType overrides visitErrorType, TypeVar/CapturedType
         // use identityHashCode (strict mode also uses identityHashCode for
@@ -619,7 +605,8 @@ impl Types {
             }
             TypeKindData::ArrayType { elemtype, .. } => {
                 let elemtype = elemtype.expect("array element type");
-                self.hash_code_impl(ctx, syms, elemtype, strict).wrapping_add(12)
+                self.hash_code_impl(ctx, syms, elemtype, strict)
+                    .wrapping_add(12)
             }
             TypeKindData::MethodType {
                 argtypes, restype, ..
@@ -632,7 +619,12 @@ impl Types {
                 // - every argument but the last.
                 let last = argtypes.length() - 1;
                 for index in 0..last {
-                    h = (h << 5).wrapping_add(self.hash_code_impl(ctx, syms, argtypes.get(index), strict));
+                    h = (h << 5).wrapping_add(self.hash_code_impl(
+                        ctx,
+                        syms,
+                        argtypes.get(index),
+                        strict,
+                    ));
                 }
                 (h << 5).wrapping_add(self.hash_code_impl(ctx, syms, restype, strict))
             }
@@ -670,8 +662,8 @@ impl Types {
     /// # Panics
     ///   - none.
     fn hash_class_type(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> i32 {
-        let enclosing = get_enclosing_type(ctx, t)
-            .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
+        let enclosing =
+            get_enclosing_type(ctx, t).unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
         let mut result = self.hash_code_impl(ctx, syms, enclosing, false);
         result = result.wrapping_mul(127);
         let tsym = ctx.typ(t).tsym.expect("class type symbol");
@@ -686,7 +678,13 @@ impl Types {
     /// Is t the same type as s?
     ///
     /// Java: public boolean isSameType(Type t, Type s)
-    pub fn is_same_type(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, s: TypeId) -> bool {
+    pub fn is_same_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        s: TypeId,
+    ) -> bool {
         match &ctx.typ(t).kind {
             TypeKindData::JCPrimitiveType
             | TypeKindData::JCVoidType
@@ -707,9 +705,7 @@ impl Types {
             // Java: isSameTypeVisitor.visitErrorType -> true
             TypeKindData::ProxyType { .. } => t == s,
             TypeKindData::ErrorType { .. } => true,
-            TypeKindData::WildcardType { .. } => {
-                self.is_same_type_visit_wildcard(ctx, syms, t, s)
-            }
+            TypeKindData::WildcardType { .. } => self.is_same_type_visit_wildcard(ctx, syms, t, s),
             TypeKindData::ArrayType { .. } => self.is_same_type_visit_array(ctx, syms, t, s),
             TypeKindData::MethodType { .. } => self.is_same_type_visit_method(ctx, syms, t, s),
             TypeKindData::PackageType => t == s,
@@ -719,9 +715,7 @@ impl Types {
                 panic!("AssertionError: isSameType {:?}", ctx.typ(t).get_tag());
             }
             TypeKindData::ForAll { .. } => self.is_same_type_visit_for_all(ctx, syms, t, s),
-            TypeKindData::UndetVar { .. } => {
-                self.is_same_type_visit_undet_var(ctx, syms, t, s)
-            }
+            TypeKindData::UndetVar { .. } => self.is_same_type_visit_undet_var(ctx, syms, t, s),
             TypeKindData::Deferred { .. } => {
                 // Java: Types.SameType.visitType (Types.java:1106-1108):
                 // return t == s; — reference equality, no DEFERRED special case.
@@ -757,9 +751,7 @@ impl Types {
             // bound (Types.java:1469-1471).
             return true;
         }
-        if ctx.typ(s).has_tag(TypeTag::ERROR)
-            || ctx.typ(s).has_tag(TypeTag::UNKNOWN)
-        {
+        if ctx.typ(s).has_tag(TypeTag::ERROR) || ctx.typ(s).has_tag(TypeTag::UNKNOWN) {
             return true;
         }
         if ctx.typ(s).has_tag(TypeTag::BOT) {
@@ -843,12 +835,10 @@ impl Types {
                 } else {
                     // special case for s == ? super X, where upper(s) = u; check
                     // that u == t, where u has been set by Type.withTypeVar.
-                    ctx.typ(s).is_super_bound()
-                        && !ctx.typ(s).is_extends_bound()
-                        && {
-                            let upper = self.wild_upper_bound(ctx, syms, s);
-                            self.is_same_type(ctx, syms, t, upper)
-                        }
+                    ctx.typ(s).is_super_bound() && !ctx.typ(s).is_extends_bound() && {
+                        let upper = self.wild_upper_bound(ctx, syms, s);
+                        self.is_same_type(ctx, syms, t, upper)
+                    }
                 }
             }
             tag => panic!("AssertionError: isSameType {tag:?}"),
@@ -1037,15 +1027,11 @@ impl Types {
             return false;
         }
         let (t_qtype, t_tvars) = match &ctx.typ(t).kind {
-            TypeKindData::ForAll { qtype, tvars } => {
-                (qtype.expect("for-all qtype"), tvars.clone())
-            }
+            TypeKindData::ForAll { qtype, tvars } => (qtype.expect("for-all qtype"), tvars.clone()),
             _ => crate::util::assert::error(),
         };
         let (s_qtype, s_tvars) = match &ctx.typ(s).kind {
-            TypeKindData::ForAll { qtype, tvars } => {
-                (qtype.expect("for-all qtype"), tvars.clone())
-            }
+            TypeKindData::ForAll { qtype, tvars } => (qtype.expect("for-all qtype"), tvars.clone()),
             _ => crate::util::assert::error(),
         };
         self.has_same_bounds(ctx, syms, &t_tvars, &s_tvars) && {
@@ -1091,7 +1077,13 @@ impl Types {
     }
 
     /// Java: public boolean hasSameArgs(Type t, Type s)
-    pub fn has_same_args(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, s: TypeId) -> bool {
+    pub fn has_same_args(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        s: TypeId,
+    ) -> bool {
         // Java: hasSameArgs(t, s, true) -> HasSameArgs.visit(t, s).
         match &ctx.typ(t).kind {
             TypeKindData::MethodType { .. } => {
@@ -1104,9 +1096,7 @@ impl Types {
                     )
             }
             TypeKindData::ErrorType { .. } => false,
-            TypeKindData::UninitializedType { .. } => {
-                self.is_subtype_no_capture(ctx, syms, t, s)
-            }
+            TypeKindData::UninitializedType { .. } => self.is_subtype_no_capture(ctx, syms, t, s),
             TypeKindData::ForAll { .. } => {
                 // Java: hasSameArgs(t, s) == hasSameArgs(t, s, true)
                 // (Types.java:3254-3256); the strict entry requires strict=true.
@@ -1211,8 +1201,7 @@ impl Types {
                 }
             }
             TypeKindData::TypeVar { .. } | TypeKindData::CapturedType { .. } => {
-                let upper = ctx.upper_bound_of(t)
-                    .expect("type variable upper bound");
+                let upper = ctx.upper_bound_of(t).expect("type variable upper bound");
                 self.erasure_recurse(ctx, syms, upper, recurse)
             }
             TypeKindData::ForAll { qtype, .. } => {
@@ -1220,8 +1209,7 @@ impl Types {
                 let qtype = qtype.expect("for-all qtype");
                 self.erasure_recurse(ctx, syms, qtype, recurse)
             }
-            TypeKindData::MethodType { .. }
-            | TypeKindData::PartiallyInferredMethodType { .. } => {
+            TypeKindData::MethodType { .. } | TypeKindData::PartiallyInferredMethodType { .. } => {
                 // Java: StructuralTypeMapping.visitMethodType — erase the
                 // parameter, return and thrown types (the erasure visitor
                 // dispatches on the method type like any structural mapping).
@@ -1244,7 +1232,8 @@ impl Types {
                 for arg in argtypes.iter() {
                     argtypes1 = argtypes1.append(self.erasure_recurse(ctx, syms, arg, recurse));
                 }
-                let restype1 = restype.map(|restype| self.erasure_recurse(ctx, syms, restype, recurse));
+                let restype1 =
+                    restype.map(|restype| self.erasure_recurse(ctx, syms, restype, recurse));
                 let mut thrown1: List<TypeId> = List::nil();
                 for thrown_type in thrown.iter() {
                     thrown1 = thrown1.append(self.erasure_recurse(ctx, syms, thrown_type, recurse));
@@ -1285,8 +1274,8 @@ impl Types {
             // List.nil(), this, type.getMetadata());
             // Java: ClassType.getEnclosingType() returns Type.noType for a
             // top-level class; the port stores that as None.
-            let enclosing = get_enclosing_type(ctx, ty)
-                .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
+            let enclosing =
+                get_enclosing_type(ctx, ty).unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
             let erased_enclosing = self.erasure_recurse(ctx, syms, enclosing, false);
             ctx.alloc_type(Type::new(
                 TypeTag::CLASS,
@@ -1346,7 +1335,8 @@ impl Types {
                 };
                 match bound {
                     None => syms.object_type,
-                    Some(bound) => ctx.upper_bound_of(bound)
+                    Some(bound) => ctx
+                        .upper_bound_of(bound)
                         .expect("wildcard bound upper bound"),
                 }
             } else {
@@ -1416,13 +1406,14 @@ impl Types {
         if t == s {
             return true;
         }
-        match (
-            &ctx.typ(t).kind,
-            &ctx.typ(s).kind,
-        ) {
+        match (&ctx.typ(t).kind, &ctx.typ(s).kind) {
             (
-                TypeKindData::ArrayType { elemtype: t_elem, .. },
-                TypeKindData::ArrayType { elemtype: s_elem, .. },
+                TypeKindData::ArrayType {
+                    elemtype: t_elem, ..
+                },
+                TypeKindData::ArrayType {
+                    elemtype: s_elem, ..
+                },
             ) => match (t_elem, s_elem) {
                 (Some(t_elem), Some(s_elem)) => self.equals_ignore_metadata(ctx, *t_elem, *s_elem),
                 (None, None) => true,
@@ -1455,10 +1446,18 @@ impl Types {
         );
         if is_class_family {
             let existing = match &ctx.typ(t).kind {
-                TypeKindData::ClassType { supertype_field, .. }
-                | TypeKindData::ErasedClassType { supertype_field, .. }
-                | TypeKindData::UnionClassType { supertype_field, .. }
-                | TypeKindData::IntersectionClassType { supertype_field, .. } => *supertype_field,
+                TypeKindData::ClassType {
+                    supertype_field, ..
+                }
+                | TypeKindData::ErasedClassType {
+                    supertype_field, ..
+                }
+                | TypeKindData::UnionClassType {
+                    supertype_field, ..
+                }
+                | TypeKindData::IntersectionClassType {
+                    supertype_field, ..
+                } => *supertype_field,
                 _ => crate::util::assert::error(),
             };
             if let Some(sup) = existing {
@@ -1473,8 +1472,7 @@ impl Types {
                 // reentrant completion reuses the same Attr object.
                 match attr.as_deref_mut() {
                     Some(attr) => {
-                        if let Err(failure) =
-                            ctx.complete_class_symbol_with_attr(syms, tsym, attr)
+                        if let Err(failure) = ctx.complete_class_symbol_with_attr(syms, tsym, attr)
                         {
                             crate::code::symbol::throw_completion_failure(failure);
                         }
@@ -1490,12 +1488,18 @@ impl Types {
             if symbol_is_interface(ctx, tsym) {
                 let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
                 supertype_opt = match &ctx.typ(tsym_type).kind {
-                    TypeKindData::ClassType { supertype_field, .. }
-                    | TypeKindData::ErasedClassType { supertype_field, .. }
-                    | TypeKindData::UnionClassType { supertype_field, .. }
-                    | TypeKindData::IntersectionClassType { supertype_field, .. } => {
-                        *supertype_field
+                    TypeKindData::ClassType {
+                        supertype_field, ..
                     }
+                    | TypeKindData::ErasedClassType {
+                        supertype_field, ..
+                    }
+                    | TypeKindData::UnionClassType {
+                        supertype_field, ..
+                    }
+                    | TypeKindData::IntersectionClassType {
+                        supertype_field, ..
+                    } => *supertype_field,
                     _ => None,
                 };
             }
@@ -1511,7 +1515,14 @@ impl Types {
             let result = if has_erased_supertypes(ctx, t) {
                 self.erasure_recursive(ctx, syms, supertype)
             } else if formals.non_empty() {
-                self.subst_type(ctx, syms, supertype, &formals, &actuals, attr.as_deref_mut())
+                self.subst_type(
+                    ctx,
+                    syms,
+                    supertype,
+                    &formals,
+                    &actuals,
+                    attr.as_deref_mut(),
+                )
             } else {
                 supertype
             };
@@ -1569,12 +1580,18 @@ impl Types {
         );
         if is_class_family {
             let existing = match &ctx.typ(t).kind {
-                TypeKindData::ClassType { interfaces_field, .. }
-                | TypeKindData::ErasedClassType { interfaces_field, .. }
-                | TypeKindData::UnionClassType { interfaces_field, .. }
-                | TypeKindData::IntersectionClassType { interfaces_field, .. } => {
-                    interfaces_field.clone()
+                TypeKindData::ClassType {
+                    interfaces_field, ..
                 }
+                | TypeKindData::ErasedClassType {
+                    interfaces_field, ..
+                }
+                | TypeKindData::UnionClassType {
+                    interfaces_field, ..
+                }
+                | TypeKindData::IntersectionClassType {
+                    interfaces_field, ..
+                } => interfaces_field.clone(),
                 _ => crate::util::assert::error(),
             };
             if let Some(list) = existing {
@@ -1620,7 +1637,9 @@ impl Types {
         let tag = ctx.typ(t).get_tag();
         if tag == TypeTag::ERROR {
             let existing = match &ctx.typ(t).kind {
-                TypeKindData::ErrorType { interfaces_field, .. } => interfaces_field.clone(),
+                TypeKindData::ErrorType {
+                    interfaces_field, ..
+                } => interfaces_field.clone(),
                 _ => None,
             };
             if let Some(list) = existing {
@@ -1685,12 +1704,29 @@ impl Types {
         );
         if is_class_family && !self.is_compound(ctx, t) {
             let (outer, typarams) = match &ctx.typ(t).kind {
-                TypeKindData::ClassType { outer_field, typarams_field, .. }
-                | TypeKindData::ErasedClassType { outer_field, typarams_field, .. }
-                | TypeKindData::UnionClassType { outer_field, typarams_field, .. }
-                | TypeKindData::IntersectionClassType { outer_field, typarams_field, .. } => {
-                    (*outer_field, typarams_field.clone().unwrap_or_else(List::nil))
+                TypeKindData::ClassType {
+                    outer_field,
+                    typarams_field,
+                    ..
                 }
+                | TypeKindData::ErasedClassType {
+                    outer_field,
+                    typarams_field,
+                    ..
+                }
+                | TypeKindData::UnionClassType {
+                    outer_field,
+                    typarams_field,
+                    ..
+                }
+                | TypeKindData::IntersectionClassType {
+                    outer_field,
+                    typarams_field,
+                    ..
+                } => (
+                    *outer_field,
+                    typarams_field.clone().unwrap_or_else(List::nil),
+                ),
                 _ => crate::util::assert::error(),
             };
             let no_type = no_type_of(ctx, syms);
@@ -1724,7 +1760,9 @@ impl Types {
         }
         if matches!(&ctx.typ(t).kind, TypeKindData::WildcardType { .. }) {
             let (type_, kind, bound) = match &ctx.typ(t).kind {
-                TypeKindData::WildcardType { type_, kind, bound, .. } => (*type_, *kind, *bound),
+                TypeKindData::WildcardType {
+                    type_, kind, bound, ..
+                } => (*type_, *kind, *bound),
                 _ => crate::util::assert::error(),
             };
             let Some(type_) = type_ else {
@@ -1762,9 +1800,12 @@ impl Types {
             // Subst.visitMethodType (Types.StructuralTypeMapping) maps it like
             // any MethodType and rebuilds a plain MethodType.
             let (argtypes, restype, thrown) = match &ctx.typ(t).kind {
-                TypeKindData::MethodType { argtypes, restype, thrown, .. } => {
-                    (argtypes.clone(), *restype, thrown.clone())
-                }
+                TypeKindData::MethodType {
+                    argtypes,
+                    restype,
+                    thrown,
+                    ..
+                } => (argtypes.clone(), *restype, thrown.clone()),
                 TypeKindData::PartiallyInferredMethodType {
                     argtypes,
                     restype,
@@ -1797,8 +1838,7 @@ impl Types {
             let mut qtype_cur = qtype;
             if self.type_list_contains_any(ctx, syms, to, &tvars, &mut Vec::new()) {
                 let freevars = self.new_instances(ctx, syms, &tvars);
-                let substituted =
-                    self.subst_type(ctx, syms, qtype_cur, &tvars, &freevars, None);
+                let substituted = self.subst_type(ctx, syms, qtype_cur, &tvars, &freevars, None);
                 qtype_cur = substituted;
                 tvars_cur = freevars;
             }
@@ -1813,7 +1853,7 @@ impl Types {
                 self.subst_type(ctx, syms, qtype1, &tvars_cur, &tvars1, None)
             };
             let qtype_tsym = ctx.typ(new_qtype).tsym;
-            return ctx.alloc_type(crate::code::type_::Type::new(
+            return ctx.alloc_type(Type::new(
                 TypeTag::FORALL,
                 qtype_tsym,
                 TypeKindData::ForAll {
@@ -1830,13 +1870,14 @@ impl Types {
             let mut is: List<TypeId> = List::nil();
             let current = interfaces.clone();
             for interface in &current {
-            let substituted = self.subst_visit(ctx, syms, interface, from, to, attr.as_deref_mut());
-            is = is.append(substituted);
+                let substituted =
+                    self.subst_visit(ctx, syms, interface, from, to, attr.as_deref_mut());
+                is = is.append(substituted);
             }
             if st == supertype && list_same(&interfaces, &is) {
                 return t;
             }
-        let names = std::rc::Rc::clone(&self.names);
+            let names = std::rc::Rc::clone(&self.names);
             return self.make_intersection_type(ctx, syms, &names, is.prepend(st), false);
         }
         t
@@ -1853,27 +1894,27 @@ impl Types {
         let mut tvars1: List<TypeId> = List::nil();
         let current = tvars.clone();
         for tvar in &current {
-        let (bound, lower) = match &ctx.typ(tvar).kind {
-            TypeKindData::TypeVar { bound, lower } => (*bound, *lower),
-            _ => (None, None),
-        };
-        let tsym = ctx.typ(tvar).tsym;
-        let new_tvar = ctx.alloc_type(crate::code::type_::Type::new(
-            TypeTag::TYPEVAR,
-            tsym,
-            TypeKindData::TypeVar { bound, lower },
-        ));
-        tvars1 = tvars1.append(new_tvar);
+            let (bound, lower) = match &ctx.typ(tvar).kind {
+                TypeKindData::TypeVar { bound, lower } => (*bound, *lower),
+                _ => (None, None),
+            };
+            let tsym = ctx.typ(tvar).tsym;
+            let new_tvar = ctx.alloc_type(Type::new(
+                TypeTag::TYPEVAR,
+                tsym,
+                TypeKindData::TypeVar { bound, lower },
+            ));
+            tvars1 = tvars1.append(new_tvar);
         }
         let mut result: List<TypeId> = List::nil();
         let current = tvars1.clone();
         for tvar in &current {
-        let upper = ctx.upper_bound_of(tvar).expect("type var upper bound");
-        let substituted = self.subst_type(ctx, syms, upper, tvars, &tvars1, None);
-        if let TypeKindData::TypeVar { bound, .. } = &mut ctx.typ_mut(tvar).kind {
-            *bound = Some(substituted);
-        }
-        result = result.append(tvar);
+            let upper = ctx.upper_bound_of(tvar).expect("type var upper bound");
+            let substituted = self.subst_type(ctx, syms, upper, tvars, &tvars1, None);
+            if let TypeKindData::TypeVar { bound, .. } = &mut ctx.typ_mut(tvar).kind {
+                *bound = Some(substituted);
+            }
+            result = result.append(tvar);
         }
         result
     }
@@ -1897,7 +1938,7 @@ impl Types {
                 thrown,
                 recvtype,
                 ..
-            } => ctx.alloc_type(crate::code::type_::Type::new(
+            } => ctx.alloc_type(Type::new(
                 TypeTag::METHOD,
                 tsym,
                 TypeKindData::MethodType {
@@ -1912,7 +1953,7 @@ impl Types {
                 thrown,
                 recvtype,
                 ..
-            } => ctx.alloc_type(crate::code::type_::Type::new(
+            } => ctx.alloc_type(Type::new(
                 TypeTag::METHOD,
                 tsym,
                 TypeKindData::MethodType {
@@ -1925,7 +1966,7 @@ impl Types {
             TypeKindData::ForAll { tvars, qtype } => {
                 let qtype = qtype.expect("for-all qtype");
                 let new_qtype = self.create_method_type_with_return(ctx, qtype, new_return);
-                ctx.alloc_type(crate::code::type_::Type::new(
+                ctx.alloc_type(Type::new(
                     TypeTag::FORALL,
                     tsym,
                     TypeKindData::ForAll {
@@ -1955,12 +1996,12 @@ impl Types {
         let mut changed = false;
         let current = tvars.clone();
         for tvar in &current {
-        let upper = ctx.upper_bound_of(tvar).expect("type var upper bound");
-        let bound = self.subst_type(ctx, syms, upper, from, to, None);
-        if bound != upper {
-            changed = true;
-        }
-        new_bounds.push(bound);
+            let upper = ctx.upper_bound_of(tvar).expect("type var upper bound");
+            let bound = self.subst_type(ctx, syms, upper, from, to, None);
+            if bound != upper {
+                changed = true;
+            }
+            new_bounds.push(bound);
         }
         if !changed {
             return tvars.clone();
@@ -1968,16 +2009,16 @@ impl Types {
         let mut new_tvars: List<TypeId> = List::nil();
         let current = tvars.clone();
         for tvar in &current {
-        let tsym = ctx.typ(tvar).tsym;
-        let new_tvar = ctx.alloc_type(crate::code::type_::Type::new(
-            TypeTag::TYPEVAR,
-            tsym,
-            TypeKindData::TypeVar {
-                bound: None,
-                lower: Some(syms.bot_type),
-            },
-        ));
-        new_tvars = new_tvars.append(new_tvar);
+            let tsym = ctx.typ(tvar).tsym;
+            let new_tvar = ctx.alloc_type(Type::new(
+                TypeTag::TYPEVAR,
+                tsym,
+                TypeKindData::TypeVar {
+                    bound: None,
+                    lower: Some(syms.bot_type),
+                },
+            ));
+            new_tvars = new_tvars.append(new_tvar);
         }
         let mut substituted_bounds: Vec<TypeId> = Vec::new();
         for bound in &new_bounds {
@@ -1987,13 +2028,14 @@ impl Types {
         let current = new_tvars.clone();
         let mut index = 0;
         for tvar in &current {
-        let bound = substituted_bounds[index];
-        if let TypeKindData::TypeVar { bound: bound_field, .. } =
-            &mut ctx.typ_mut(tvar).kind
-        {
-            *bound_field = Some(bound);
-        }
-        index += 1;
+            let bound = substituted_bounds[index];
+            if let TypeKindData::TypeVar {
+                bound: bound_field, ..
+            } = &mut ctx.typ_mut(tvar).kind
+            {
+                *bound_field = Some(bound);
+            }
+            index += 1;
         }
         new_tvars
     }
@@ -2010,9 +2052,9 @@ impl Types {
     ) -> bool {
         let current = ts.clone();
         for t in &current {
-        if self.type_list_contains(ctx, syms, tvs, t, cache) {
-            return true;
-        }
+            if self.type_list_contains(ctx, syms, tvs, t, cache) {
+                return true;
+            }
         }
         false
     }
@@ -2028,9 +2070,9 @@ impl Types {
     ) -> bool {
         let current = ts.clone();
         for t in &current {
-        if self.type_contains(ctx, _syms, t, elem) {
-            return true;
-        }
+            if self.type_contains(ctx, _syms, t, elem) {
+                return true;
+            }
         }
         false
     }
@@ -2059,12 +2101,7 @@ impl Types {
     }
 
     /// Java: public List<Type> erasureRecursive(Type t)
-    pub fn erasure_recursive(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> TypeId {
+    pub fn erasure_recursive(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
         self.erasure_recurse(ctx, syms, t, true)
     }
 
@@ -2310,10 +2347,9 @@ impl Types {
                             let t_tsym = ctx.typ(t).tsym.expect("class type symbol");
                             let owner = ctx.sym(t_tsym).owner?;
                             match crate::comp::resolve::symbols_encl_class(ctx, owner) {
-                                Some(encl_class) => ctx
-                                    .sym(encl_class)
-                                    .ty
-                                    .expect("enclosing class type"),
+                                Some(encl_class) => {
+                                    ctx.sym(encl_class).ty.expect("enclosing class type")
+                                }
                                 None => break,
                             }
                         }
@@ -2398,18 +2434,18 @@ impl Types {
                         let owner_params = allparams_of_completed(ctx, syms, owner_type, None);
                         let base_params = allparams_of_completed(ctx, syms, base, None);
                         if owner_params.non_empty() {
-                            if base_params.is_empty() {
+                            return if base_params.is_empty() {
                                 // then base is a raw type
-                                return self.erasure(ctx, syms, sym_type);
+                                self.erasure(ctx, syms, sym_type)
                             } else {
-                                return self.subst_type(
+                                self.subst_type(
                                     ctx,
                                     syms,
                                     sym_type,
                                     &owner_params,
                                     &base_params,
                                     None,
-                                );
+                                )
                             }
                         }
                     }
@@ -2479,18 +2515,17 @@ impl Types {
                 let head_a = *current_a.head();
                 let wildcard = head_t;
                 // Ui = A.head.getUpperBound() (or Object when absent)
-                let ui = ctx.upper_bound_of(head_a)
-                    .unwrap_or(syms.object_type);
+                let ui = ctx.upper_bound_of(head_a).unwrap_or(syms.object_type);
                 let kind = match &ctx.typ(wildcard).kind {
                     TypeKindData::WildcardType { kind, .. } => *kind,
-                    _ => crate::code::bound_kind::BoundKind::UNBOUND,
+                    _ => BoundKind::UNBOUND,
                 };
                 let (upper, lower) = match kind {
-                    crate::code::bound_kind::BoundKind::UNBOUND => {
+                    BoundKind::UNBOUND => {
                         let upper = self.subst_type(ctx, syms, ui, &a_list, &s_list, None);
                         (upper, syms.bot_type)
                     }
-                    crate::code::bound_kind::BoundKind::EXTENDS => {
+                    BoundKind::EXTENDS => {
                         let extends_bound = match &ctx.typ(wildcard).kind {
                             TypeKindData::WildcardType { type_, .. } => {
                                 type_.expect("extends bound")
@@ -2501,26 +2536,24 @@ impl Types {
                         let upper = self.glb(ctx, syms, extends_bound, ui_subst);
                         (upper, syms.bot_type)
                     }
-                    crate::code::bound_kind::BoundKind::SUPER => {
+                    BoundKind::SUPER => {
                         let upper = self.subst_type(ctx, syms, ui, &a_list, &s_list, None);
                         let super_bound = match &ctx.typ(wildcard).kind {
-                            TypeKindData::WildcardType { type_, .. } => {
-                                type_.expect("super bound")
-                            }
+                            TypeKindData::WildcardType { type_, .. } => type_.expect("super bound"),
                             _ => crate::util::assert::error(),
                         };
                         (upper, super_bound)
                     }
                 };
                 // Java: Si.setUpperBound(upper); Si.lower = lower;
-                if let TypeKindData::CapturedType { bound: b, lower: l, .. } =
-                    &mut ctx.typ_mut(head_s).kind
+                if let TypeKindData::CapturedType {
+                    bound: b, lower: l, ..
+                } = &mut ctx.typ_mut(head_s).kind
                 {
                     *b = Some(upper);
                     *l = Some(lower);
                 }
-                let upper = ctx.upper_bound_of(head_s)
-                    .expect("captured upper bound");
+                let upper = ctx.upper_bound_of(head_s).expect("captured upper bound");
                 let lower = match &ctx.typ(head_s).kind {
                     TypeKindData::CapturedType { lower, .. } => {
                         lower.expect("captured lower bound")
@@ -2565,7 +2598,7 @@ impl Types {
                 .typ(cls)
                 .get_enclosing_type()
                 .filter(|enclosing| *enclosing != no_type);
-            return ctx.alloc_type(crate::code::type_::Type::new(
+            return ctx.alloc_type(Type::new(
                 TypeTag::CLASS,
                 Some(tsym),
                 TypeKindData::ClassType {
@@ -2593,24 +2626,24 @@ impl Types {
         let mut result: List<TypeId> = List::nil();
         let current = types;
         for t in &current {
-        if ctx.typ(t).has_tag(TypeTag::WILDCARD) {
-            let bound = match &ctx.typ(t).kind {
-                TypeKindData::WildcardType { type_, .. } => *type_,
-                _ => None,
+            if ctx.typ(t).has_tag(TypeTag::WILDCARD) {
+                let bound = match &ctx.typ(t).kind {
+                    TypeKindData::WildcardType { type_, .. } => *type_,
+                    _ => None,
+                }
+                .unwrap_or(syms.object_type);
+                let captured = self.new_captured_type_with_symbol(
+                    ctx,
+                    syms,
+                    captured_name.clone(),
+                    bound,
+                    syms.bot_type,
+                    t,
+                );
+                result = result.append(captured);
+            } else {
+                result = result.append(t);
             }
-            .unwrap_or(syms.object_type);
-            let captured = self.new_captured_type_with_symbol(
-                ctx,
-                syms,
-                captured_name.clone(),
-                bound,
-                syms.bot_type,
-                t,
-            );
-            result = result.append(captured);
-        } else {
-            result = result.append(t);
-        }
         }
         result
     }
@@ -2622,7 +2655,7 @@ impl Types {
         &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
-        name: crate::util::name::Name,
+        name: Name,
         bound: TypeId,
         lower: TypeId,
         wildcard: TypeId,
@@ -2635,7 +2668,7 @@ impl Types {
             Some(syms.no_symbol),
             crate::code::symbol::SymbolKind::TypeVariableSymbol,
         ));
-        let type_id = ctx.alloc_type(crate::code::type_::Type::new(
+        let type_id = ctx.alloc_type(Type::new(
             TypeTag::TYPEVAR,
             Some(symbol),
             TypeKindData::CapturedType {
@@ -2664,8 +2697,8 @@ impl Types {
                         _ => crate::util::assert::error(),
                     };
                     match kind {
-                        crate::code::bound_kind::BoundKind::UNBOUND => {}
-                        crate::code::bound_kind::BoundKind::EXTENDS => {
+                        BoundKind::UNBOUND => {}
+                        BoundKind::EXTENDS => {
                             let bound = self.wild_upper_bound(ctx, syms, s);
                             self.undet_var_add_bound(
                                 ctx,
@@ -2676,7 +2709,7 @@ impl Types {
                                 false,
                             );
                         }
-                        crate::code::bound_kind::BoundKind::SUPER => {
+                        BoundKind::SUPER => {
                             let bound = self.wild_lower_bound(ctx, syms, s);
                             self.undet_var_add_bound(
                                 ctx,
@@ -2860,11 +2893,19 @@ impl Types {
         if !ctx.typ(t).has_tag(TypeTag::UNDETVAR) && !self.is_compound(ctx, t) {
             let lower = cvar_lower_bound(ctx, self.wild_lower_bound(ctx, syms, s));
             if s != lower && !ctx.typ(lower).has_tag(TypeTag::BOT) {
-                let t2 = if capture { self.capture(ctx, syms, t) } else { t };
+                let t2 = if capture {
+                    self.capture(ctx, syms, t)
+                } else {
+                    t
+                };
                 return self.is_subtype_with_capture(ctx, syms, t2, lower, false);
             }
         }
-        let t2 = if capture { self.capture(ctx, syms, t) } else { t };
+        let t2 = if capture {
+            self.capture(ctx, syms, t)
+        } else {
+            t
+        };
         self.is_subtype_visit(ctx, syms, t2, s)
     }
 
@@ -2893,7 +2934,10 @@ impl Types {
                     !ctx.typ(s).has_tag(TypeTag::SHORT)
                         && ctx.typ(t).get_tag().is_sub_range_of(ctx.typ(s).get_tag())
                 }
-                TypeTag::SHORT | TypeTag::INT | TypeTag::LONG | TypeTag::FLOAT
+                TypeTag::SHORT
+                | TypeTag::INT
+                | TypeTag::LONG
+                | TypeTag::FLOAT
                 | TypeTag::DOUBLE => ctx.typ(t).get_tag().is_sub_range_of(ctx.typ(s).get_tag()),
                 TypeTag::BOOLEAN | TypeTag::VOID => ctx.typ(t).has_tag(ctx.typ(s).get_tag()),
                 TypeTag::BOT => {
@@ -2912,9 +2956,7 @@ impl Types {
             TypeKindData::UninitializedType { .. } => {
                 panic!("AssertionError: isSubtype UNINITIALIZED")
             }
-            TypeKindData::UndetVar { .. } => {
-                self.is_subtype_visit_undet_var(ctx, syms, t, s)
-            }
+            TypeKindData::UndetVar { .. } => self.is_subtype_visit_undet_var(ctx, syms, t, s),
             TypeKindData::Deferred { .. } => {
                 // Java: IsSubtype default branch throws AssertionError for
                 // DEFERRED (deferred types are mapped first).
@@ -2975,7 +3017,9 @@ impl Types {
                 };
                 if ctx.typ(s).has_tag(TypeTag::ARRAY) {
                     let s_elem = match &ctx.typ(s).kind {
-                        TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
+                        TypeKindData::ArrayType { elemtype, .. } => {
+                            elemtype.expect("array element")
+                        }
                         _ => crate::util::assert::error(),
                     };
                     if ctx.typ(t_elem).is_primitive() {
@@ -3071,7 +3115,6 @@ impl Types {
         ts.is_empty() && ss.is_empty()
     }
 
-
     /// Java: public boolean hasSameBounds(ForAll t, ForAll s) (the bounds slice
     /// form used by isSameType's ForAll branch).
     ///
@@ -3101,7 +3144,7 @@ impl Types {
             return t;
         }
         let tsym = ctx.typ(t).tsym;
-        let new_tvar = ctx.alloc_type(crate::code::type_::Type::new(
+        let new_tvar = ctx.alloc_type(Type::new(
             TypeTag::TYPEVAR,
             tsym,
             TypeKindData::TypeVar {
@@ -3109,14 +3152,7 @@ impl Types {
                 lower: Some(syms.bot_type),
             },
         ));
-        let new_bound = self.subst_type(
-            ctx,
-            syms,
-            bound1,
-            &List::of(t),
-            &List::of(new_tvar),
-            None,
-        );
+        let new_bound = self.subst_type(ctx, syms, bound1, &List::of(t), &List::of(new_tvar), None);
         ctx.typ_mut(new_tvar).set_upper_bound(Some(new_bound));
         new_tvar
     }
@@ -3131,9 +3167,11 @@ impl Types {
         let mut l1 = t_tvars.clone();
         let mut l2 = s_tvars.clone();
         while l1.non_empty() && l2.non_empty() {
-            let b1 = ctx.upper_bound_of(*l1.head())
+            let b1 = ctx
+                .upper_bound_of(*l1.head())
                 .expect("type var upper bound");
-            let b2 = ctx.upper_bound_of(*l2.head())
+            let b2 = ctx
+                .upper_bound_of(*l2.head())
                 .expect("type var upper bound");
             let substituted = self.subst_type(ctx, syms, b2, s_tvars, t_tvars, None);
             if !self.is_same_type(ctx, syms, b1, substituted) {
@@ -3255,11 +3293,7 @@ impl Types {
 
     /// Java: public Type cvarUpperBound(Type t) (Types.java)
     /// Java: public List<Type> cvarLowerBounds(List<Type> ts) (Types.java:1978-1980)
-    pub fn cvar_lower_bounds(
-        &self,
-        ctx: &mut CompilerContext,
-        ts: &List<TypeId>,
-    ) -> List<TypeId> {
+    pub fn cvar_lower_bounds(&self, ctx: &mut CompilerContext, ts: &List<TypeId>) -> List<TypeId> {
         let mut result = List::nil();
         for t in ts.iter() {
             result = result.append(cvar_lower_bound(ctx, t));
@@ -3291,14 +3325,14 @@ impl Types {
                 self.elemtype(ctx, syms, upper)
             }
             TypeTag::ARRAY => match &ctx.typ(t).kind {
-                crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => {
+                TypeKindData::ArrayType { elemtype, .. } => {
                     elemtype.expect("array element type")
                 }
                 _ => crate::util::assert::error(),
             },
             TypeTag::FORALL => {
                 let qtype = match &ctx.typ(t).kind {
-                    crate::code::type_::TypeKindData::ForAll { qtype, .. } => *qtype,
+                    TypeKindData::ForAll { qtype, .. } => *qtype,
                     _ => None,
                 }
                 .expect("forall qtype");
@@ -3346,17 +3380,15 @@ impl Types {
                     _ => crate::util::assert::error(),
                 };
                 let s_qtype = s_qtype.expect("for-all qtype");
-                self.has_same_bounds(ctx, syms, &t_tvars, &s_tvars)
-                    && {
-                        let substituted = self.subst_type(ctx, syms, s_qtype, &s_tvars, &t_tvars, None);
-                        let t_qtype = t_qtype.expect("for-all qtype");
-                        self.has_same_args_strict(ctx, syms, t_qtype, substituted, strict)
-                    }
+                self.has_same_bounds(ctx, syms, &t_tvars, &s_tvars) && {
+                    let substituted = self.subst_type(ctx, syms, s_qtype, &s_tvars, &t_tvars, None);
+                    let t_qtype = t_qtype.expect("for-all qtype");
+                    self.has_same_args_strict(ctx, syms, t_qtype, substituted, strict)
+                }
             }
             _ => panic!("AssertionError: hasSameArgs {:?}", ctx.typ(t).get_tag()),
         }
     }
-
 
     /// Java: public boolean isSubSignature(Type t, Type s) —
     /// hasSameArgs(t, s) || hasSameArgs(t, erasure(s)) (Types.java:2799).
@@ -3394,18 +3426,10 @@ impl Types {
     /// Java: public boolean Type.contains(Type t) — the base Type implementation
     /// is equalsIgnoreMetadata (the port maps it to isSameType); WildcardType
     /// overrides it (kind != UNBOUND && type.contains(t)).
-    pub fn contains(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-        s: TypeId,
-    ) -> bool {
-        if let crate::code::type_::TypeKindData::WildcardType {
-            type_, kind, ..
-        } = &ctx.typ(t).kind
+    pub fn contains(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, s: TypeId) -> bool {
+        if let TypeKindData::WildcardType { type_, kind, .. } = &ctx.typ(t).kind
         {
-            if *kind != crate::code::bound_kind::BoundKind::UNBOUND {
+            if *kind != BoundKind::UNBOUND {
                 let inner = type_.expect("wildcard bound type");
                 return self.contains(ctx, syms, inner, s);
             }
@@ -3417,7 +3441,7 @@ impl Types {
         // isSameTypeVisitor.visitUndetVar, which *records* an equality bound:
         // asking "does Entry<K,V> contain the capture of ? super Entry<R,V>"
         // silently bound K to that capture variable.
-        if crate::code::types::type_equals_ignore_metadata(self, ctx, t, s) {
+        if type_equals_ignore_metadata(self, ctx, t, s) {
             return true;
         }
         match ctx.typ(t).kind.clone() {
@@ -3516,9 +3540,9 @@ impl Types {
     ) -> bool {
         let current = ts.clone();
         for s in &current {
-        if self.contains(ctx, syms, t, s) {
-            return true;
-        }
+            if self.contains(ctx, syms, t, s) {
+                return true;
+            }
         }
         false
     }
@@ -3526,13 +3550,8 @@ impl Types {
     /// Java: public Type Type.withTypeVar(Type t) — the base implementation
     /// returns this; WildcardType sets its bound (the port mutates the arena
     /// value and returns the same id, like the upstream in-place mutation).
-    pub fn with_type_var(
-        &self,
-        ctx: &mut CompilerContext,
-        t: TypeId,
-        tvar: TypeId,
-    ) -> TypeId {
-        if let crate::code::type_::TypeKindData::WildcardType { bound, .. } =
+    pub fn with_type_var(&self, ctx: &mut CompilerContext, t: TypeId, tvar: TypeId) -> TypeId {
+        if let TypeKindData::WildcardType { bound, .. } =
             &mut ctx.typ_mut(t).kind
         {
             // Java: if (bound == t) return this; bound = (TypeVar)t; return this;
@@ -3583,16 +3602,10 @@ impl Types {
     /// pre-entered by Symtab (syms.boxed_class_ids, Porting rules adapter), so relation
     /// code that only holds &Symtab can obtain the symbol exactly like the
     /// upstream syms.enterClass(java_base, boxedName) call.
-    pub fn boxed_class_ro(
-        &self,
-        ctx: &CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> SymbolId {
+    pub fn boxed_class_ro(&self, ctx: &CompilerContext, syms: &Symtab, t: TypeId) -> SymbolId {
         let tag = ctx.typ(t).get_tag();
-        syms.boxed_class_ids[tag as usize].unwrap_or_else(|| {
-            panic!("AssertionError: boxed class not entered for {:?}", tag)
-        })
+        syms.boxed_class_ids[tag as usize]
+            .unwrap_or_else(|| panic!("AssertionError: boxed class not entered for {:?}", tag))
     }
 
     /// The read-only counterpart of boxedTypeOrType (Types.java:4312-4317).
@@ -3613,12 +3626,7 @@ impl Types {
     /// The read-only counterpart of unboxedType (same upstream body, using the
     /// pre-entered boxed class symbols; Porting rules adapter).
     #[allow(clippy::collapsible_if)]
-    pub fn unboxed_type_ro(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> TypeId {
+    pub fn unboxed_type_ro(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
         if ctx.typ(t).has_tag(TypeTag::ERROR) {
             return no_type_of(ctx, syms);
         }
@@ -3649,12 +3657,7 @@ impl Types {
     }
 
     /// Java: public Type unboxedType(Type t) (Types.java:4321-4334)
-    pub fn unboxed_type(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> TypeId {
+    pub fn unboxed_type(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
         if ctx.typ(t).has_tag(TypeTag::ERROR) {
             return no_type_of(ctx, syms);
         }
@@ -3663,8 +3666,7 @@ impl Types {
         let no_symbol = syms.no_symbol;
         for (index, boxed) in boxed_names.iter().enumerate() {
             if let Some(boxed) = boxed {
-                let boxed_tsym =
-                    syms.enter_class(ctx, java_base, boxed.clone(), Some(no_symbol));
+                let boxed_tsym = syms.enter_class(ctx, java_base, boxed.clone(), Some(no_symbol));
                 if self.as_super(ctx, syms, t, boxed_tsym).is_some() {
                     return syms.type_of_tag[index].expect("typeOfTag entry");
                 }
@@ -3729,9 +3731,7 @@ impl Types {
     ) -> bool {
         let mut ts = ts.clone();
         let mut ss = ss.clone();
-        while ts.non_empty()
-            && ss.non_empty()
-            && self.is_subtype(ctx, syms, *ts.head(), *ss.head())
+        while ts.non_empty() && ss.non_empty() && self.is_subtype(ctx, syms, *ts.head(), *ss.head())
         {
             ts = ts.tail();
             ss = ss.tail();
@@ -3763,12 +3763,7 @@ impl Types {
     }
 
     /// Java: public boolean isArray(Type t) (Types.java:2059-2063)
-    pub fn is_array(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> bool {
+    pub fn is_array(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> bool {
         let mut t = t;
         while ctx.typ(t).has_tag(TypeTag::WILDCARD) {
             t = self.wild_upper_bound(ctx, syms, t);
@@ -3777,12 +3772,7 @@ impl Types {
     }
 
     /// Java: public Type elemtypeOrType(Type t) (Types.java:2083-2088)
-    pub fn elemtype_or_type(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> TypeId {
+    pub fn elemtype_or_type(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
         elemtype_of(self, ctx, syms, t).unwrap_or(t)
     }
 
@@ -3979,11 +3969,15 @@ impl Types {
                 }
                 if tag == TypeTag::ARRAY {
                     let t_elem = match &ctx.typ(t).kind {
-                        TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
+                        TypeKindData::ArrayType { elemtype, .. } => {
+                            elemtype.expect("array element")
+                        }
                         _ => crate::util::assert::error(),
                     };
                     let s_elem = match &ctx.typ(s).kind {
-                        TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
+                        TypeKindData::ArrayType { elemtype, .. } => {
+                            elemtype.expect("array element")
+                        }
                         _ => crate::util::assert::error(),
                     };
                     if ctx.typ(t_elem).is_primitive() || ctx.typ(s_elem).is_primitive() {
@@ -4041,14 +4035,10 @@ impl Types {
                         let high = true;
                         let low = false;
                         let no_rewrite = false;
-                        let mut a_high =
-                            self.rewrite_quantifiers(ctx, syms, a, high, no_rewrite);
-                        let mut a_low =
-                            self.rewrite_quantifiers(ctx, syms, a, low, no_rewrite);
-                        let mut b_high =
-                            self.rewrite_quantifiers(ctx, syms, b, high, no_rewrite);
-                        let mut b_low =
-                            self.rewrite_quantifiers(ctx, syms, b, low, no_rewrite);
+                        let mut a_high = self.rewrite_quantifiers(ctx, syms, a, high, no_rewrite);
+                        let mut a_low = self.rewrite_quantifiers(ctx, syms, a, low, no_rewrite);
+                        let mut b_high = self.rewrite_quantifiers(ctx, syms, b, high, no_rewrite);
+                        let mut b_low = self.rewrite_quantifiers(ctx, syms, b, low, no_rewrite);
                         let mut low_sub = {
                             let a_low_tsym = ctx.typ(a_low).tsym.expect("rewritten symbol");
                             self.as_sub(ctx, syms, b_low, a_low_tsym)
@@ -4078,27 +4068,23 @@ impl Types {
                             let a_low_params = self.class_allparams(ctx, a_low);
                             let high_params = self.class_allparams(ctx, high_sub);
                             let low_params = self.class_allparams(ctx, low_sub);
-                            let disjoint = self.disjoint_types(
-                                ctx,
-                                syms,
-                                a_high_params.clone(),
-                                high_params.clone(),
-                            ) || self.disjoint_types(
-                                ctx,
-                                syms,
-                                a_high_params,
-                                low_params.clone(),
-                            ) || self.disjoint_types(
-                                ctx,
-                                syms,
-                                a_low_params.clone(),
-                                high_params,
-                            ) || self.disjoint_types(
-                                ctx,
-                                syms,
-                                a_low_params,
-                                low_params,
-                            );
+                            let disjoint =
+                                self.disjoint_types(
+                                    ctx,
+                                    syms,
+                                    a_high_params.clone(),
+                                    high_params.clone(),
+                                ) || self.disjoint_types(
+                                    ctx,
+                                    syms,
+                                    a_high_params,
+                                    low_params.clone(),
+                                ) || self.disjoint_types(
+                                    ctx,
+                                    syms,
+                                    a_low_params.clone(),
+                                    high_params,
+                                ) || self.disjoint_types(ctx, syms, a_low_params, low_params);
                             if !disjoint {
                                 let give_warning = if upcast {
                                     self.give_warning(ctx, syms, a, b)
@@ -4123,12 +4109,12 @@ impl Types {
                     if tag == TypeTag::CLASS {
                         let s_tsym = ctx.typ(s).tsym.expect("cast target symbol");
                         let t_tsym = ctx.typ(t).tsym.expect("cast source symbol");
-                        let s_interface =
-                            (ctx.sym(s_tsym).flags_field & crate::code::flags::INTERFACE as i64)
-                                != 0;
-                        let t_interface =
-                            (ctx.sym(t_tsym).flags_field & crate::code::flags::INTERFACE as i64)
-                                != 0;
+                        let s_interface = (ctx.sym(s_tsym).flags_field
+                            & crate::code::flags::INTERFACE as i64)
+                            != 0;
+                        let t_interface = (ctx.sym(t_tsym).flags_field
+                            & crate::code::flags::INTERFACE as i64)
+                            != 0;
                         let s_final =
                             (ctx.sym(s_tsym).flags_field & crate::code::flags::FINAL as i64) != 0;
                         let t_final =
@@ -4385,7 +4371,10 @@ pub(crate) fn allparams_of(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
                 None => params,
             }
         }
-        TypeKindData::ArrayType { elemtype: Some(elem), .. } => allparams_of(ctx, *elem),
+        TypeKindData::ArrayType {
+            elemtype: Some(elem),
+            ..
+        } => allparams_of(ctx, *elem),
         TypeKindData::ArrayType { elemtype: None, .. } => List::nil(),
         _ => List::nil(),
     }
@@ -4430,15 +4419,11 @@ pub(crate) fn allparams_of_completed(
         AllParamsView::Class(outer) => {
             let params = get_type_arguments_completed(ctx, syms, t, attr.as_deref_mut());
             match outer {
-                Some(outer) => {
-                    params.prepend_list(&allparams_of_completed(ctx, syms, outer, attr))
-                }
+                Some(outer) => params.prepend_list(&allparams_of_completed(ctx, syms, outer, attr)),
                 None => params,
             }
         }
-        AllParamsView::Array(Some(elem)) => {
-            allparams_of_completed(ctx, syms, elem, attr)
-        }
+        AllParamsView::Array(Some(elem)) => allparams_of_completed(ctx, syms, elem, attr),
         AllParamsView::Array(None) | AllParamsView::Other => List::nil(),
     }
 }
@@ -4494,7 +4479,8 @@ fn is_parameterized_type(ctx: &CompilerContext, t: TypeId) -> bool {
             }
         }
         TypeKindData::ArrayType {
-            elemtype: Some(elem), ..
+            elemtype: Some(elem),
+            ..
         } => is_parameterized_type(ctx, *elem),
         _ => false,
     }
@@ -4504,7 +4490,10 @@ fn is_parameterized_type(ctx: &CompilerContext, t: TypeId) -> bool {
 /// non-empty && this.allparams() empty; ArrayType: elemtype.isRaw()).
 fn is_raw_type(ctx: &CompilerContext, t: TypeId) -> bool {
     match &ctx.typ(t).kind {
-        TypeKindData::ArrayType { elemtype: Some(elem), .. } => is_raw_type(ctx, *elem),
+        TypeKindData::ArrayType {
+            elemtype: Some(elem),
+            ..
+        } => is_raw_type(ctx, *elem),
         TypeKindData::ArrayType { elemtype: None, .. } => false,
         TypeKindData::ClassType { .. }
         | TypeKindData::ErasedClassType { .. }
@@ -4527,8 +4516,7 @@ fn is_raw_type(ctx: &CompilerContext, t: TypeId) -> bool {
 
 /// Java: Type.hasErasedSupertypes() (ErasedClassType: true; ClassType: isRaw()).
 fn has_erased_supertypes(ctx: &CompilerContext, t: TypeId) -> bool {
-    matches!(&ctx.typ(t).kind, TypeKindData::ErasedClassType { .. })
-        || is_raw_type(ctx, t)
+    matches!(&ctx.typ(t).kind, TypeKindData::ErasedClassType { .. }) || is_raw_type(ctx, t)
 }
 
 /// Java: Type.getThrownTypes() (Type.java:549 default -> List.nil();
@@ -4569,10 +4557,18 @@ fn symbol_is_sealed(ctx: &CompilerContext, symbol: SymbolId) -> bool {
 fn class_symbol_get_superclass(ctx: &CompilerContext, symbol: SymbolId) -> Option<TypeId> {
     let tsym_type = ctx.sym(symbol).ty?;
     match &ctx.typ(tsym_type).kind {
-        TypeKindData::ClassType { supertype_field, .. }
-        | TypeKindData::ErasedClassType { supertype_field, .. }
-        | TypeKindData::UnionClassType { supertype_field, .. }
-        | TypeKindData::IntersectionClassType { supertype_field, .. } => {
+        TypeKindData::ClassType {
+            supertype_field, ..
+        }
+        | TypeKindData::ErasedClassType {
+            supertype_field, ..
+        }
+        | TypeKindData::UnionClassType {
+            supertype_field, ..
+        }
+        | TypeKindData::IntersectionClassType {
+            supertype_field, ..
+        } => {
             if symbol_is_interface(ctx, symbol) {
                 None
             } else {
@@ -4590,18 +4586,30 @@ fn class_symbol_get_interfaces(ctx: &CompilerContext, symbol: SymbolId) -> List<
         return List::nil();
     };
     match &ctx.typ(tsym_type).kind {
-        TypeKindData::ClassType { interfaces_field, .. }
-        | TypeKindData::ErasedClassType { interfaces_field, .. }
-        | TypeKindData::UnionClassType { interfaces_field, .. }
-        | TypeKindData::IntersectionClassType { interfaces_field, .. } => {
-            interfaces_field.clone().unwrap_or_else(List::nil)
+        TypeKindData::ClassType {
+            interfaces_field, ..
         }
+        | TypeKindData::ErasedClassType {
+            interfaces_field, ..
+        }
+        | TypeKindData::UnionClassType {
+            interfaces_field, ..
+        }
+        | TypeKindData::IntersectionClassType {
+            interfaces_field, ..
+        } => interfaces_field.clone().unwrap_or_else(List::nil),
         _ => List::nil(),
     }
 }
 
 /// Java: Types.classBound(Type t)
-fn class_bound(types: &Types, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, mut attr: Option<&mut crate::comp::attr::Attr>) -> TypeId {
+fn class_bound(
+    types: &Types,
+    ctx: &mut CompilerContext,
+    syms: &Symtab,
+    t: TypeId,
+    mut attr: Option<&mut crate::comp::attr::Attr>,
+) -> TypeId {
     match &ctx.typ(t).kind {
         TypeKindData::ClassType { outer_field, .. }
         | TypeKindData::ErasedClassType { outer_field, .. }
@@ -4629,12 +4637,7 @@ fn class_bound(types: &Types, ctx: &mut CompilerContext, syms: &Symtab, t: TypeI
 }
 
 /// Java: Types.elemtype(Type t)
-fn elemtype_of(
-    types: &Types,
-    ctx: &CompilerContext,
-    syms: &Symtab,
-    t: TypeId,
-) -> Option<TypeId> {
+fn elemtype_of(types: &Types, ctx: &CompilerContext, syms: &Symtab, t: TypeId) -> Option<TypeId> {
     match &ctx.typ(t).kind {
         TypeKindData::WildcardType { .. } => {
             let upper = types.wild_upper_bound(ctx, syms, t);
@@ -4727,7 +4730,7 @@ fn new_array_type(ctx: &mut CompilerContext, elemtype: TypeId, tsym: Option<Symb
         tsym,
         TypeKindData::ArrayType {
             elemtype: Some(elemtype),
-                varargs: false,
+            varargs: false,
         },
     ))
 }
@@ -4795,12 +4798,7 @@ fn new_captured_type(
 }
 
 /// Java: Type.equalsIgnoreMetadata -> Type.equals (identity except ArrayType).
-fn type_equals_ignore_metadata(
-    types: &Types,
-    ctx: &CompilerContext,
-    t: TypeId,
-    s: TypeId,
-) -> bool {
+fn type_equals_ignore_metadata(types: &Types, ctx: &CompilerContext, t: TypeId, s: TypeId) -> bool {
     types.equals_ignore_metadata(ctx, t, s)
 }
 
@@ -4843,7 +4841,6 @@ fn type_contains(
     }
     false
 }
-
 
 /// The enclosing type of the class-type family; `None` is the local
 /// `Type.noType` representation for a top-level class.
@@ -4895,10 +4892,18 @@ fn list_same(a: &List<TypeId>, b: &List<TypeId>) -> bool {
 /// Set the ClassType.supertype_field of the given type.
 fn set_class_supertype_field(ctx: &mut CompilerContext, t: TypeId, value: Option<TypeId>) {
     match &mut ctx.typ_mut(t).kind {
-        TypeKindData::ClassType { supertype_field, .. }
-        | TypeKindData::ErasedClassType { supertype_field, .. }
-        | TypeKindData::UnionClassType { supertype_field, .. }
-        | TypeKindData::IntersectionClassType { supertype_field, .. } => *supertype_field = value,
+        TypeKindData::ClassType {
+            supertype_field, ..
+        }
+        | TypeKindData::ErasedClassType {
+            supertype_field, ..
+        }
+        | TypeKindData::UnionClassType {
+            supertype_field, ..
+        }
+        | TypeKindData::IntersectionClassType {
+            supertype_field, ..
+        } => *supertype_field = value,
         _ => panic!("not a class type"),
     }
 }
@@ -4906,12 +4911,18 @@ fn set_class_supertype_field(ctx: &mut CompilerContext, t: TypeId, value: Option
 /// Set the ClassType.interfaces_field of the given type.
 fn set_class_interfaces_field(ctx: &mut CompilerContext, t: TypeId, value: Option<List<TypeId>>) {
     match &mut ctx.typ_mut(t).kind {
-        TypeKindData::ClassType { interfaces_field, .. }
-        | TypeKindData::ErasedClassType { interfaces_field, .. }
-        | TypeKindData::UnionClassType { interfaces_field, .. }
-        | TypeKindData::IntersectionClassType { interfaces_field, .. } => {
-            *interfaces_field = value
+        TypeKindData::ClassType {
+            interfaces_field, ..
         }
+        | TypeKindData::ErasedClassType {
+            interfaces_field, ..
+        }
+        | TypeKindData::UnionClassType {
+            interfaces_field, ..
+        }
+        | TypeKindData::IntersectionClassType {
+            interfaces_field, ..
+        } => *interfaces_field = value,
         _ => panic!("not a class type"),
     }
 }
@@ -4923,19 +4934,23 @@ fn class_symbol_get_interfaces_option(
 ) -> Option<List<TypeId>> {
     let tsym_type = ctx.sym(symbol).ty?;
     match &ctx.typ(tsym_type).kind {
-        TypeKindData::ClassType { interfaces_field, .. }
-        | TypeKindData::ErasedClassType { interfaces_field, .. }
-        | TypeKindData::UnionClassType { interfaces_field, .. }
-        | TypeKindData::IntersectionClassType { interfaces_field, .. } => {
-            interfaces_field.clone()
+        TypeKindData::ClassType {
+            interfaces_field, ..
         }
+        | TypeKindData::ErasedClassType {
+            interfaces_field, ..
+        }
+        | TypeKindData::UnionClassType {
+            interfaces_field, ..
+        }
+        | TypeKindData::IntersectionClassType {
+            interfaces_field, ..
+        } => interfaces_field.clone(),
         _ => None,
     }
 }
 
-
 impl Types {
-
     /// Java: public boolean isSignaturePolymorphic(MethodSymbol msym)
     pub fn is_signature_polymorphic(
         &self,
@@ -4959,18 +4974,17 @@ impl Types {
             return false;
         }
         let head = *argtypes.head();
-        if !ctx.typ(head).has_tag(crate::code::type_tag::TypeTag::ARRAY) {
+        if !ctx.typ(head).has_tag(TypeTag::ARRAY) {
             return false;
         }
         let elem = match &ctx.typ(head).kind {
-            crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => *elemtype,
+            TypeKindData::ArrayType { elemtype, .. } => *elemtype,
             _ => None,
         };
         let elem_tsym = elem.and_then(|e| ctx.typ(e).tsym);
         elem_tsym == ctx.typ(syms.object_type).tsym
     }
 }
-
 
 // ----------------------------------------------------------------------
 // Java: Types.makeIntersectionType/setBounds (Signature attribute).
@@ -4981,12 +4995,15 @@ impl Types {
     pub fn make_intersection_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         names: &crate::util::names::Names,
         bounds: List<TypeId>,
         all_interfaces: bool,
     ) -> TypeId {
-        assert!(bounds.non_empty(), "AssertionError: bounds must be non-empty");
+        assert!(
+            bounds.non_empty(),
+            "AssertionError: bounds must be non-empty"
+        );
         let first_explicit_bound = *bounds.head();
         let bounds = if all_interfaces {
             bounds.prepend(syms.object_type)
@@ -5019,11 +5036,16 @@ impl Types {
                 annotation_type_metadata: Default::default(),
             },
         ));
-        let intersection = ctx.alloc_type(
-            crate::code::type_::Type::new_intersection_class_type(bounds, bc, all_interfaces),
-        );
+        let intersection = ctx.alloc_type(Type::new_intersection_class_type(
+            bounds,
+            bc,
+            all_interfaces,
+        ));
         ctx.sym_mut(bc).ty = Some(intersection);
-        let erasure = if ctx.typ(first_explicit_bound).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
+        let erasure = if ctx
+            .typ(first_explicit_bound)
+            .has_tag(TypeTag::TYPEVAR)
+        {
             syms.object_type
         } else {
             self.erasure(ctx, syms, first_explicit_bound)
@@ -5042,20 +5064,22 @@ impl Types {
     pub fn set_bounds(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         names: &crate::util::names::Names,
         tvar: TypeId,
         bounds: List<TypeId>,
         all_interfaces: bool,
     ) {
-        assert!(bounds.non_empty(), "AssertionError: bounds must be non-empty");
+        assert!(
+            bounds.non_empty(),
+            "AssertionError: bounds must be non-empty"
+        );
         let upper = if bounds.tail().is_empty() {
             *bounds.head()
         } else {
             self.make_intersection_type(ctx, syms, names, bounds, all_interfaces)
         };
-        if let crate::code::type_::TypeKindData::TypeVar { bound, .. } =
-            &mut ctx.typ_mut(tvar).kind
+        if let TypeKindData::TypeVar { bound, .. } = &mut ctx.typ_mut(tvar).kind
         {
             *bound = Some(upper);
         } else {
@@ -5074,13 +5098,8 @@ impl Types {
 
 impl Types {
     /// Java: public ArrayType makeArrayType(Type t) (Types.java:1333-1336)
-    pub fn make_array_type(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> TypeId {
-        let array = crate::code::type_::Type::new_array_type(t, syms.array_class);
+    pub fn make_array_type(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
+        let array = Type::new_array_type(t, syms.array_class);
         ctx.alloc_type(array)
     }
 
@@ -5099,10 +5118,9 @@ impl Types {
     /// Upstream: Type.java:1399-1406.
     pub fn make_varargs(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
         match &ctx.typ(t).kind {
-            crate::code::type_::TypeKindData::ArrayType { .. } => {
+            TypeKindData::ArrayType { .. } => {
                 let mut copy = ctx.typ(t).clone();
-                if let crate::code::type_::TypeKindData::ArrayType { varargs, .. } =
-                    &mut copy.kind
+                if let TypeKindData::ArrayType { varargs, .. } = &mut copy.kind
                 {
                     *varargs = true;
                 }
@@ -5117,7 +5135,7 @@ impl Types {
         &self,
         ctx: &mut CompilerContext,
         original_type: Option<TypeId>,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
     ) -> TypeId {
         // Java: new ErrorType(originalType, syms.errSymbol)
         let original = match original_type {
@@ -5125,7 +5143,7 @@ impl Types {
             None => self.no_type(ctx),
         };
         ctx.alloc_type(Type::new(
-            crate::code::type_tag::TypeTag::ERROR,
+            TypeTag::ERROR,
             Some(syms.err_symbol),
             TypeKindData::ErrorType {
                 outer_field: None,
@@ -5146,12 +5164,12 @@ impl Types {
     pub fn create_error_type_class(
         &self,
         ctx: &mut CompilerContext,
-        class: crate::ids::SymbolId,
+        class: SymbolId,
         original_type: Option<TypeId>,
     ) -> TypeId {
         let no_type = self.no_type(ctx);
         let error_type = ctx.alloc_type(Type::new(
-            crate::code::type_tag::TypeTag::ERROR,
+            TypeTag::ERROR,
             Some(class),
             TypeKindData::ErrorType {
                 outer_field: None,
@@ -5212,7 +5230,7 @@ impl Types {
         &self,
         ctx: &mut CompilerContext,
         name: Name,
-        container: crate::ids::SymbolId,
+        container: SymbolId,
         original_type: Option<TypeId>,
     ) -> TypeId {
         let no_type = self.no_type(ctx);
@@ -5231,9 +5249,11 @@ impl Types {
     /// port allocates a JCNoType value like Symtab.noTypeId).
     pub fn no_type(&self, ctx: &mut CompilerContext) -> TypeId {
         ctx.alloc_type(Type::new(
-            crate::code::type_tag::TypeTag::NONE,
+            TypeTag::NONE,
             None,
-            TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base },
+            TypeKindData::JCNoType {
+                kind: crate::code::type_::JCNoTypeKind::Base,
+            },
         ))
     }
 }
@@ -5255,15 +5275,15 @@ fn type_arguments_list(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
         TypeKindData::ClassType { typarams_field, .. }
         | TypeKindData::ErasedClassType { typarams_field, .. }
         | TypeKindData::UnionClassType { typarams_field, .. }
-        | TypeKindData::IntersectionClassType { typarams_field, .. } => typarams_field
-            .clone()
-            .unwrap_or_else(List::nil),
+        | TypeKindData::IntersectionClassType { typarams_field, .. } => {
+            typarams_field.clone().unwrap_or_else(List::nil)
+        }
         _ => List::nil(),
     }
 }
 
 impl Types {
-   // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
     // Types relations : adapt/adaptSelf/rewriteSupers/containsTypeRecursive
     // (Types.java:4577-4700/1133-1180) — the core needed by isSubtype's
     // parameterized class-type branch.
@@ -5292,15 +5312,15 @@ impl Types {
                 typarams_field,
                 ..
             } => {
-                let own = allparams_field
-                    .clone()
-                    .or_else(|| typarams_field.clone());
+                let own = allparams_field.clone().or_else(|| typarams_field.clone());
                 // Java: ClassType.allparams() prepends the enclosing type's
                 // allparams (inner classes carry their owner's type arguments).
-                if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::CLASS)
+                if ctx.typ(t).has_tag(TypeTag::CLASS)
                     && let Some(enclosing) = ctx.typ(t).get_enclosing_type()
                     && enclosing != t
-                    && ctx.typ(enclosing).has_tag(crate::code::type_tag::TypeTag::CLASS)
+                    && ctx
+                        .typ(enclosing)
+                        .has_tag(TypeTag::CLASS)
                 {
                     let outer = self.class_allparams(ctx, enclosing);
                     if outer.non_empty() {
@@ -5309,7 +5329,7 @@ impl Types {
                 }
                 own
             }
-                .unwrap_or_else(List::nil),
+            .unwrap_or_else(List::nil),
             _ => List::nil(),
         }
     }
@@ -5318,7 +5338,7 @@ impl Types {
     fn wildcard_is_extends_bound(&self, ctx: &CompilerContext, t: TypeId) -> bool {
         match &ctx.typ(t).kind {
             TypeKindData::WildcardType { kind, .. } => {
-                *kind == crate::code::bound_kind::BoundKind::EXTENDS
+                *kind == BoundKind::EXTENDS
             }
             _ => false,
         }
@@ -5328,7 +5348,7 @@ impl Types {
     fn wildcard_is_super_bound(&self, ctx: &CompilerContext, t: TypeId) -> bool {
         match &ctx.typ(t).kind {
             TypeKindData::WildcardType { kind, .. } => {
-                *kind == crate::code::bound_kind::BoundKind::SUPER
+                *kind == BoundKind::SUPER
             }
             _ => false,
         }
@@ -5390,7 +5410,14 @@ impl Types {
                     let source_params = self.class_allparams(ctx, source);
                     let target_params = self.class_allparams(ctx, target);
                     self.adapt_recursive(
-                        ctx, syms, source_params, target_params, from, to, mapping, cache,
+                        ctx,
+                        syms,
+                        source_params,
+                        target_params,
+                        from,
+                        to,
+                        mapping,
+                        cache,
                     )?;
                 }
             }
@@ -5491,10 +5518,7 @@ impl Types {
                         target
                     }
                 };
-                if let Some(entry) = mapping
-                    .iter_mut()
-                    .find(|(sym, _)| *sym == source_tsym)
-                {
+                if let Some(entry) = mapping.iter_mut().find(|(sym, _)| *sym == source_tsym) {
                     entry.1 = value;
                 } else {
                     mapping.push((source_tsym, value));
@@ -5562,12 +5586,7 @@ impl Types {
     }
 
     /// Java: private Type rewriteSupers(Type t) (Types.java:1148-1180)
-    pub fn rewrite_supers(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> TypeId {
+    pub fn rewrite_supers(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
         if !is_parameterized_type(ctx, t) {
             return t;
         }
@@ -5580,24 +5599,28 @@ impl Types {
         for orig in &to {
             let mut s = self.rewrite_supers(ctx, syms, *orig);
             if self.wildcard_is_super_bound(ctx, s) && !self.wildcard_is_extends_bound(ctx, s) {
-                s = ctx.alloc_type(crate::code::type_::Type::new(
+                s = ctx.alloc_type(Type::new(
                     TypeTag::WILDCARD,
                     Some(syms.bound_class),
                     TypeKindData::WildcardType {
                         type_: Some(syms.object_type),
-                        kind: crate::code::bound_kind::BoundKind::UNBOUND,
-                        bound: None, is_printing_bound: std::cell::Cell::new(false), },
+                        kind: BoundKind::UNBOUND,
+                        bound: None,
+                        is_printing_bound: std::cell::Cell::new(false),
+                    },
                 ));
                 changed = true;
             } else if s != *orig {
                 let upper = self.wild_upper_bound(ctx, syms, s);
-                s = ctx.alloc_type(crate::code::type_::Type::new(
+                s = ctx.alloc_type(Type::new(
                     TypeTag::WILDCARD,
                     Some(syms.bound_class),
                     TypeKindData::WildcardType {
                         type_: Some(upper),
-                        kind: crate::code::bound_kind::BoundKind::EXTENDS,
-                        bound: None, is_printing_bound: std::cell::Cell::new(false), },
+                        kind: BoundKind::EXTENDS,
+                        bound: None,
+                        is_printing_bound: std::cell::Cell::new(false),
+                    },
                 ));
                 changed = true;
             }
@@ -5656,9 +5679,7 @@ impl Types {
             )
         }
     }
-
 }
-
 
 // ---------------------------------------------------------------------------
 // Types relations : Symbol.precedes, closure/insert/union/closureMin,
@@ -5672,7 +5693,7 @@ impl Types {
         &self,
         ctx: &CompilerContext,
         symbol: SymbolId,
-    ) -> crate::util::name::Name {
+    ) -> Name {
         match &ctx.sym(symbol).kind_data {
             crate::code::symbol::SymbolKind::ClassSymbol { fullname, .. } => fullname.clone(),
             _ => ctx.sym(symbol).name.clone(),
@@ -5683,9 +5704,7 @@ impl Types {
     fn is_interface(&self, ctx: &CompilerContext, t: TypeId) -> bool {
         ctx.typ(t)
             .tsym
-            .map(|tsym| {
-                (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0
-            })
+            .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0)
             .unwrap_or(false)
     }
 
@@ -5747,7 +5766,14 @@ impl Types {
 
     /// Java: public List<Type> union(List<Type> cl1, List<Type> cl2)
     /// (Types.java:3765-3810; basicClosureSkip = same tsym)
-    fn closure_skip(&self, ctx: &mut CompilerContext, syms: &Symtab, skip: ClosureSkip, t1: TypeId, t2: TypeId) -> bool {
+    fn closure_skip(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        skip: ClosureSkip,
+        t1: TypeId,
+        t2: TypeId,
+    ) -> bool {
         match skip {
             ClosureSkip::Basic => ctx.typ(t1).tsym == ctx.typ(t2).tsym,
             ClosureSkip::IsSameType => self.is_same_type(ctx, syms, t1, t2),
@@ -5841,17 +5867,13 @@ impl Types {
                 .closure_union(ctx, syms, cl1, cl2.tail())
                 .prepend(head2);
         }
-        self.closure_union(ctx, syms, cl1.tail(), cl2).prepend(head1)
+        self.closure_union(ctx, syms, cl1.tail(), cl2)
+            .prepend(head1)
     }
 
     /// Java: public List<Type> closure(Type t) (Types.java:3710-3736; the
     /// upstream cache is a performance optimization, omitted as equivalent)
-    pub fn closure(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> List<TypeId> {
+    pub fn closure(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> List<TypeId> {
         let depth = TYPE_RECURSION_DEPTH.with(|d| {
             let v = d.get();
             d.set(v + 1);
@@ -5861,7 +5883,13 @@ impl Types {
             let name = ctx
                 .typ(t)
                 .tsym
-                .map(|s| ctx.sym(s).name.to_java_string().to_string_lossy().to_string())
+                .map(|s| {
+                    ctx.sym(s)
+                        .name
+                        .to_java_string()
+                        .to_string_lossy()
+                        .to_string()
+                })
                 .unwrap_or_else(|| format!("{:?}", ctx.typ(t).get_tag()));
             eprintln!("[CLOSURE depth={depth}] {name}");
         }
@@ -5883,8 +5911,8 @@ impl Types {
         }
         let interfaces = self.interfaces(ctx, syms, t);
         for interface in &interfaces {
-        let interface_closure = self.closure(ctx, syms, interface);
-        cl = self.closure_union(ctx, syms, cl, interface_closure);
+            let interface_closure = self.closure(ctx, syms, interface);
+            cl = self.closure_union(ctx, syms, cl, interface_closure);
         }
         cl
     }
@@ -5903,45 +5931,40 @@ impl Types {
         let cl = cl;
         let mut rest = cl.clone();
         for current in &cl {
-        rest = rest.tail();
-        let mut keep = !to_skip.contains(&current);
-        if keep && ctx.typ(current).has_tag(TypeTag::TYPEVAR) {
-            let mut tail = rest.clone();
-            while tail.non_empty() {
-                let t = *tail.head();
-                if self.is_subtype_no_capture(ctx, syms, t, current) {
-                    keep = false;
-                    break;
+            rest = rest.tail();
+            let mut keep = !to_skip.contains(&current);
+            if keep && ctx.typ(current).has_tag(TypeTag::TYPEVAR) {
+                let mut tail = rest.clone();
+                while tail.non_empty() {
+                    let t = *tail.head();
+                    if self.is_subtype_no_capture(ctx, syms, t, current) {
+                        keep = false;
+                        break;
+                    }
+                    tail = tail.tail();
                 }
-                tail = tail.tail();
             }
-        }
-        if keep {
-            if self.is_interface(ctx, current) {
-                interfaces = interfaces.append(current);
-            } else {
-                classes = classes.append(current);
-            }
-            let mut tail = rest.clone();
-            while tail.non_empty() {
-                let t = *tail.head();
-                if self.is_subtype_no_capture(ctx, syms, current, t) {
-                    to_skip.push(t);
+            if keep {
+                if self.is_interface(ctx, current) {
+                    interfaces = interfaces.append(current);
+                } else {
+                    classes = classes.append(current);
                 }
-                tail = tail.tail();
+                let mut tail = rest.clone();
+                while tail.non_empty() {
+                    let t = *tail.head();
+                    if self.is_subtype_no_capture(ctx, syms, current, t) {
+                        to_skip.push(t);
+                    }
+                    tail = tail.tail();
+                }
             }
-        }
         }
         classes.append_list(&interfaces)
     }
 
     /// Java: public Type glb(List<Type> ts) (Types.java:4092-4100)
-    pub fn glb_list(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        ts: List<TypeId>,
-    ) -> TypeId {
+    pub fn glb_list(&self, ctx: &mut CompilerContext, syms: &Symtab, ts: List<TypeId>) -> TypeId {
         assert!(!ts.is_empty(), "AssertionError: glb of an empty list");
         let mut t1 = *ts.head();
         let mut tail = ts.tail();
@@ -5957,13 +5980,7 @@ impl Types {
     }
 
     /// Java: public Type glb(Type t, Type s) (Types.java:4102-4113)
-    pub fn glb(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-        s: TypeId,
-    ) -> TypeId {
+    pub fn glb(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, s: TypeId) -> TypeId {
         if ctx.typ(t).is_primitive() || ctx.typ(s).is_primitive() {
             return syms.err_type;
         }
@@ -6000,14 +6017,14 @@ impl Types {
         let mut lowers: Vec<TypeId> = Vec::new();
         let current = bounds.clone();
         for bound in &current {
-        if !self.is_interface(ctx, bound) {
-            class_count += 1;
-            let lower = cvar_lower_bound(ctx, bound);
-            if bound != lower && !ctx.typ(lower).has_tag(TypeTag::BOT) {
-                cvars.push(bound);
-                lowers.push(lower);
+            if !self.is_interface(ctx, bound) {
+                class_count += 1;
+                let lower = cvar_lower_bound(ctx, bound);
+                if bound != lower && !ctx.typ(lower).has_tag(TypeTag::BOT) {
+                    cvars.push(bound);
+                    lowers.push(lower);
+                }
             }
-        }
         }
         if class_count > 1 {
             if lowers.is_empty() {
@@ -6016,9 +6033,9 @@ impl Types {
             let mut new_bounds: Vec<TypeId> = Vec::new();
             let current = bounds.clone();
             for bound in &current {
-            if !cvars.contains(&bound) {
-                new_bounds.push(bound);
-            }
+                if !cvars.contains(&bound) {
+                    new_bounds.push(bound);
+                }
             }
             new_bounds.extend(lowers);
             let mut list = List::nil();
@@ -6031,7 +6048,6 @@ impl Types {
         self.make_intersection_type(ctx, syms, &names, bounds, false)
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Types relations (isCastable support): asSub, Type.contains,
@@ -6104,9 +6120,10 @@ impl Types {
         let mut open_vars: Vec<TypeId> = Vec::new();
         let params = self.class_allparams(ctx, sym_type);
         for param in &params {
-        if self.type_contains(ctx, syms, res, param) && !self.type_contains(ctx, syms, t, param) {
-            open_vars.push(param);
-        }
+            if self.type_contains(ctx, syms, res, param) && !self.type_contains(ctx, syms, t, param)
+            {
+                open_vars.push(param);
+            }
         }
         if !open_vars.is_empty() {
             if is_raw_type(ctx, t) {
@@ -6115,13 +6132,15 @@ impl Types {
                 let opens = List::from_iterable(open_vars.clone());
                 let mut wildcards: List<TypeId> = List::nil();
                 for open in &open_vars {
-                    let wildcard = ctx.alloc_type(crate::code::type_::Type::new(
+                    let wildcard = ctx.alloc_type(Type::new(
                         TypeTag::WILDCARD,
                         Some(syms.bound_class),
                         TypeKindData::WildcardType {
                             type_: Some(syms.object_type),
-                            kind: crate::code::bound_kind::BoundKind::UNBOUND,
-                            bound: Some(*open), is_printing_bound: std::cell::Cell::new(false), },
+                            kind: BoundKind::UNBOUND,
+                            bound: Some(*open),
+                            is_printing_bound: std::cell::Cell::new(false),
+                        },
                     ));
                     wildcards = wildcards.append(wildcard);
                 }
@@ -6151,12 +6170,11 @@ impl Types {
                 let mut changed = false;
                 let current = allparams;
                 for arg in &current {
-                let bound =
-                    self.rewrite_quantifiers(ctx, syms, arg, high, rewrite_type_vars);
-                if arg != bound {
-                    changed = true;
-                }
-                rewritten = rewritten.append(bound);
+                    let bound = self.rewrite_quantifiers(ctx, syms, arg, high, rewrite_type_vars);
+                    if arg != bound {
+                        changed = true;
+                    }
+                    rewritten = rewritten.append(bound);
                 }
                 if changed {
                     let tsym = ctx.typ(t).tsym.expect("class type symbol");
@@ -6175,9 +6193,7 @@ impl Types {
                     _ => crate::util::assert::error(),
                 };
                 let w_bound = match &ctx.typ(wildcard).kind {
-                    TypeKindData::WildcardType { type_, .. } => {
-                        type_.expect("wildcard bound")
-                    }
+                    TypeKindData::WildcardType { type_, .. } => type_.expect("wildcard bound"),
                     _ => crate::util::assert::error(),
                 };
                 let bound = if self.type_contains(ctx, syms, w_bound, t) {
@@ -6205,7 +6221,7 @@ impl Types {
                         syms,
                         bound,
                         Some(t),
-                        crate::code::bound_kind::BoundKind::EXTENDS,
+                        BoundKind::EXTENDS,
                         high,
                     )
                 } else {
@@ -6217,7 +6233,9 @@ impl Types {
                     TypeKindData::WildcardType {
                         type_: Some(type_),
                         bound,
-                        kind, .. } => (*type_, *bound, *kind),
+                        kind,
+                        ..
+                    } => (*type_, *bound, *kind),
                     _ => return t,
                 };
                 let bound2 = self.rewrite_quantifiers(ctx, syms, bound, high, rewrite_type_vars);
@@ -6239,7 +6257,7 @@ impl Types {
         syms: &Symtab,
         bound: TypeId,
         formal: Option<TypeId>,
-        bk: crate::code::bound_kind::BoundKind,
+        bk: BoundKind,
         high: bool,
     ) -> TypeId {
         use crate::code::bound_kind::BoundKind;
@@ -6260,20 +6278,12 @@ impl Types {
                     self.make_super_wildcard(ctx, syms, b, formal)
                 }
             }
-            BoundKind::UNBOUND => {
-                self.make_extends_wildcard(ctx, syms, syms.object_type, formal)
-            }
+            BoundKind::UNBOUND => self.make_extends_wildcard(ctx, syms, syms.object_type, formal),
         }
     }
 
     /// Java: Rewriter.B(Type t)
-    fn rewrite_b(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-        high: bool,
-    ) -> TypeId {
+    fn rewrite_b(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, high: bool) -> TypeId {
         let mut t = t;
         while ctx.typ(t).has_tag(TypeTag::WILDCARD) {
             let (type_, kind) = match &ctx.typ(t).kind {
@@ -6303,17 +6313,19 @@ impl Types {
         formal: Option<TypeId>,
     ) -> TypeId {
         let kind = if bound == syms.object_type {
-            crate::code::bound_kind::BoundKind::UNBOUND
+            BoundKind::UNBOUND
         } else {
-            crate::code::bound_kind::BoundKind::EXTENDS
+            BoundKind::EXTENDS
         };
-        ctx.alloc_type(crate::code::type_::Type::new(
+        ctx.alloc_type(Type::new(
             TypeTag::WILDCARD,
             Some(syms.bound_class),
             TypeKindData::WildcardType {
                 type_: Some(bound),
                 kind,
-                bound: formal, is_printing_bound: std::cell::Cell::new(false), },
+                bound: formal,
+                is_printing_bound: std::cell::Cell::new(false),
+            },
         ))
     }
 
@@ -6325,32 +6337,30 @@ impl Types {
         formal: Option<TypeId>,
     ) -> TypeId {
         let kind = if ctx.typ(bound).has_tag(TypeTag::BOT) {
-            crate::code::bound_kind::BoundKind::UNBOUND
+            BoundKind::UNBOUND
         } else {
-            crate::code::bound_kind::BoundKind::SUPER
+            BoundKind::SUPER
         };
-        let type_ = if kind == crate::code::bound_kind::BoundKind::UNBOUND {
+        let type_ = if kind == BoundKind::UNBOUND {
             syms.object_type
         } else {
             bound
         };
-        ctx.alloc_type(crate::code::type_::Type::new(
+        ctx.alloc_type(Type::new(
             TypeTag::WILDCARD,
             Some(syms.bound_class),
             TypeKindData::WildcardType {
                 type_: Some(type_),
                 kind,
-                bound: formal, is_printing_bound: std::cell::Cell::new(false), },
+                bound: formal,
+                is_printing_bound: std::cell::Cell::new(false),
+            },
         ))
     }
 
     /// Java: private Type arraySuperType() (Types.java:4080-4087):
     /// all arrays implement Cloneable and Serializable.
-    fn array_super_type(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-    ) -> TypeId {
+    fn array_super_type(&self, ctx: &mut CompilerContext, syms: &Symtab) -> TypeId {
         let names = std::rc::Rc::clone(&self.names);
         let bounds = List::of(syms.serializable_type).append(syms.cloneable_type);
         self.make_intersection_type(ctx, syms, &names, bounds, true)
@@ -6383,12 +6393,7 @@ impl Types {
     }
 
     /// Java: private Type relaxBound(Type t) (Types.java:2012-2016)
-    fn relax_bound(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> TypeId {
+    fn relax_bound(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
         if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
             let skipped = self.skip_type_vars(ctx, t);
             self.rewrite_quantifiers(ctx, syms, skipped, true, true)
@@ -6407,13 +6412,12 @@ fn type_list_contains(
 ) -> bool {
     let current = ts;
     for t in &current {
-    if type_equals_ignore_metadata(types, ctx, t, elem) {
-        return true;
-    }
+        if type_equals_ignore_metadata(types, ctx, t, elem) {
+            return true;
+        }
     }
     false
 }
-
 
 // ---------------------------------------------------------------------------
 // Types relations (isCastable support): disjointTypes/disjointType,
@@ -6475,14 +6479,14 @@ impl Types {
                 TypeKindData::WildcardType { type_, kind, .. } => (*type_, *kind),
                 _ => return false,
             };
-            if kind == crate::code::bound_kind::BoundKind::UNBOUND {
+            if kind == BoundKind::UNBOUND {
                 return false;
             }
             let Some(type_) = type_ else {
                 return false;
             };
             if !ctx.typ(s).has_tag(TypeTag::WILDCARD) {
-                return if kind == crate::code::bound_kind::BoundKind::EXTENDS {
+                return if kind == BoundKind::EXTENDS {
                     self.not_soft_subtype_cached(ctx, syms, s, type_, cache)
                 } else {
                     self.not_soft_subtype_cached(ctx, syms, type_, s, cache)
@@ -6492,14 +6496,14 @@ impl Types {
                 TypeKindData::WildcardType { type_, kind, .. } => (*type_, *kind),
                 _ => return false,
             };
-            if s_kind == crate::code::bound_kind::BoundKind::UNBOUND {
+            if s_kind == BoundKind::UNBOUND {
                 return false;
             }
             let Some(s_type) = s_type else {
                 return false;
             };
-            if kind == crate::code::bound_kind::BoundKind::EXTENDS {
-                if s_kind == crate::code::bound_kind::BoundKind::EXTENDS {
+            if kind == BoundKind::EXTENDS {
+                if s_kind == BoundKind::EXTENDS {
                     let upper_s = self.wild_upper_bound(ctx, syms, s);
                     let pair = (type_, upper_s);
                     if cache.contains(&pair) {
@@ -6509,12 +6513,12 @@ impl Types {
                     let result = self.is_castable(ctx, syms, type_, upper_s);
                     cache.pop();
                     return !result;
-                } else if s_kind == crate::code::bound_kind::BoundKind::SUPER {
+                } else if s_kind == BoundKind::SUPER {
                     let lower_s = self.wild_lower_bound(ctx, syms, s);
                     return self.not_soft_subtype_cached(ctx, syms, lower_s, type_, cache);
                 }
-            } else if kind == crate::code::bound_kind::BoundKind::SUPER
-                && s_kind == crate::code::bound_kind::BoundKind::EXTENDS
+            } else if kind == BoundKind::SUPER
+                && s_kind == BoundKind::EXTENDS
             {
                 let upper_s = self.wild_upper_bound(ctx, syms, s);
                 return self.not_soft_subtype_cached(ctx, syms, type_, upper_s, cache);
@@ -6560,13 +6564,13 @@ impl Types {
         let mut cl: List<TypeId> = List::nil();
         let interfaces = self.interfaces(ctx, syms, t);
         for interface in &interfaces {
-        let interface_erasure = self.erasure(ctx, syms, interface);
-        if self.is_subtype(ctx, syms, erasure_s, interface_erasure) {
-            cl = self.closure_insert(ctx, syms, cl, interface);
-        } else {
-            let sub_closure = self.super_closure(ctx, syms, interface, erasure_s);
-            cl = self.closure_union(ctx, syms, cl, sub_closure);
-        }
+            let interface_erasure = self.erasure(ctx, syms, interface);
+            if self.is_subtype(ctx, syms, erasure_s, interface_erasure) {
+                cl = self.closure_insert(ctx, syms, cl, interface);
+            } else {
+                let sub_closure = self.super_closure(ctx, syms, interface, erasure_s);
+                cl = self.closure_union(ctx, syms, cl, sub_closure);
+            }
         }
         cl
     }
@@ -6587,24 +6591,24 @@ impl Types {
         };
         let current = bounds;
         for b in &current {
-        let b_tsym = ctx.typ(b).tsym.expect("bound symbol");
-        let sub_from = self.as_sub(ctx, syms, from, b_tsym);
-        if is_parameterized_type(ctx, b)
-            && !(self.is_unbounded(ctx, syms, b)
-                || self.is_subtype(ctx, syms, from, b)
-                || sub_from
-                    .map(|sub_from| {
-                        self.contains_type_equivalent(
-                            ctx,
-                            syms,
-                            &self.class_allparams(ctx, b),
-                            &self.class_allparams(ctx, sub_from),
-                        )
-                    })
-                    .unwrap_or(false))
-        {
-            return true;
-        }
+            let b_tsym = ctx.typ(b).tsym.expect("bound symbol");
+            let sub_from = self.as_sub(ctx, syms, from, b_tsym);
+            if is_parameterized_type(ctx, b)
+                && !(self.is_unbounded(ctx, syms, b)
+                    || self.is_subtype(ctx, syms, from, b)
+                    || sub_from
+                        .map(|sub_from| {
+                            self.contains_type_equivalent(
+                                ctx,
+                                syms,
+                                &self.class_allparams(ctx, b),
+                                &self.class_allparams(ctx, sub_from),
+                            )
+                        })
+                        .unwrap_or(false))
+            {
+                return true;
+            }
         }
         false
     }
@@ -6627,10 +6631,7 @@ impl Types {
         let to_tsym = ctx.typ(to).tsym.expect("cast target symbol");
         if (ctx.sym(to_tsym).flags_field & crate::code::flags::INTERFACE as i64) == 0 {
             let from_tsym = ctx.typ(from).tsym.expect("cast source symbol");
-            assert!(
-                (ctx.sym(from_tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0,
-                "AssertionError: sideCast expects an interface"
-            );
+            assert_ne!(ctx.sym(from_tsym).flags_field & crate::code::flags::INTERFACE as i64, 0, "AssertionError: sideCast expects an interface");
             reverse = true;
             to = from;
             from = target;
@@ -6640,22 +6641,22 @@ impl Types {
         let mut give_warning = common_supers.is_empty();
         let common_supers = common_supers;
         for common in &common_supers {
-        let common_tsym = ctx.typ(common).tsym.expect("common super symbol");
-        let t1 = self.as_super(ctx, syms, from, common_tsym);
-        let t2 = common;
-        if let Some(t1) = t1 {
-            let t1_args = get_type_arguments_completed(ctx, syms, t1, None);
-            let t2_args = get_type_arguments_completed(ctx, syms, t2, None);
-            if self.disjoint_types(ctx, syms, t1_args, t2_args) {
-                return false;
+            let common_tsym = ctx.typ(common).tsym.expect("common super symbol");
+            let t1 = self.as_super(ctx, syms, from, common_tsym);
+            let t2 = common;
+            if let Some(t1) = t1 {
+                let t1_args = get_type_arguments_completed(ctx, syms, t1, None);
+                let t2_args = get_type_arguments_completed(ctx, syms, t2, None);
+                if self.disjoint_types(ctx, syms, t1_args, t2_args) {
+                    return false;
+                }
+                give_warning = give_warning
+                    || if reverse {
+                        self.give_warning(ctx, syms, t2, t1)
+                    } else {
+                        self.give_warning(ctx, syms, t1, t2)
+                    };
             }
-            give_warning = give_warning
-                || if reverse {
-                    self.give_warning(ctx, syms, t2, t1)
-                } else {
-                    self.give_warning(ctx, syms, t1, t2)
-                };
-        }
         }
         if give_warning {
             warn.warn(crate::code::lint::LintCategory::UNCHECKED);
@@ -6680,19 +6681,13 @@ impl Types {
         let to_tsym = ctx.typ(to).tsym.expect("cast target symbol");
         if (ctx.sym(to_tsym).flags_field & crate::code::flags::INTERFACE as i64) == 0 {
             let from_tsym = ctx.typ(from).tsym.expect("cast source symbol");
-            assert!(
-                (ctx.sym(from_tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0,
-                "AssertionError: sideCastFinal expects an interface"
-            );
+            assert_ne!(ctx.sym(from_tsym).flags_field & crate::code::flags::INTERFACE as i64, 0, "AssertionError: sideCastFinal expects an interface");
             reverse = true;
             to = from;
             from = target;
         }
         let from_tsym = ctx.typ(from).tsym.expect("final class symbol");
-        assert!(
-            (ctx.sym(from_tsym).flags_field & crate::code::flags::FINAL as i64) != 0,
-            "AssertionError: sideCastFinal expects a final class"
-        );
+        assert_ne!(ctx.sym(from_tsym).flags_field & crate::code::flags::FINAL as i64, 0, "AssertionError: sideCastFinal expects a final class");
         let to_tsym = ctx.typ(to).tsym.expect("cast target symbol");
         let Some(t1) = self.as_super(ctx, syms, from, to_tsym) else {
             return false;
@@ -6711,9 +6706,7 @@ impl Types {
         }
         true
     }
-
 }
-
 
 // ---------------------------------------------------------------------------
 // Infer: Type.UndetVar operations (Type.java:1892-2250) and the
@@ -6805,7 +6798,11 @@ impl Types {
         }
     }
 
-    fn undet_var_kind(&self, ctx: &CompilerContext, uv: TypeId) -> crate::code::type_::UndetVarKind {
+    fn undet_var_kind(
+        &self,
+        ctx: &CompilerContext,
+        uv: TypeId,
+    ) -> crate::code::type_::UndetVarKind {
         match &ctx.typ(uv).kind {
             TypeKindData::UndetVar { kind, .. } => *kind,
             _ => panic!("ClassCastException: not an UndetVar"),
@@ -6899,22 +6896,15 @@ impl Types {
     }
 
     /// Java: public List<Type> getDeclaredBounds()
-    pub fn undet_var_get_declared_bounds(
-        &self,
-        ctx: &CompilerContext,
-        uv: TypeId,
-    ) -> List<TypeId> {
+    pub fn undet_var_get_declared_bounds(&self, ctx: &CompilerContext, uv: TypeId) -> List<TypeId> {
         let declared_count = match &ctx.typ(uv).kind {
             TypeKindData::UndetVar { declared_count, .. } => *declared_count,
             _ => panic!("ClassCastException: not an UndetVar"),
         };
         let mut result: List<TypeId> = List::nil();
         let mut count = 0;
-        let mut current = self.undet_var_get_bounds(
-            ctx,
-            uv,
-            &[crate::code::type_::InferenceBound::UPPER],
-        );
+        let mut current =
+            self.undet_var_get_bounds(ctx, uv, &[crate::code::type_::InferenceBound::UPPER]);
         while current.non_empty() {
             if count == declared_count {
                 break;
@@ -7061,17 +7051,9 @@ impl Types {
             // If the new incoming bound is itself a (regular) inference
             // variable, then we are allowed to propagate this inference
             // variable bounds to it.
-            if ctx.typ(bound).has_tag(TypeTag::UNDETVAR)
-                && !self.undet_var_is_captured(ctx, bound)
+            if ctx.typ(bound).has_tag(TypeTag::UNDETVAR) && !self.undet_var_is_captured(ctx, bound)
             {
-                self.undet_var_add_bound_internal(
-                    ctx,
-                    syms,
-                    bound,
-                    ib.complement(),
-                    uv,
-                    false,
-                );
+                self.undet_var_add_bound_internal(ctx, syms, bound, ib.complement(), uv, false);
             }
             return;
         }
@@ -7089,9 +7071,7 @@ impl Types {
             }
             current = current.tail();
         }
-        let new_bounds = self
-            .undet_var_get_bounds(ctx, uv, &[ib])
-            .prepend(bound2);
+        let new_bounds = self.undet_var_get_bounds(ctx, uv, &[ib]).prepend(bound2);
         self.undet_var_set_bounds(ctx, uv, ib, new_bounds);
         self.undet_var_notify_bound_change(ctx, syms, uv, ib, bound2, false);
     }
@@ -7119,11 +7099,11 @@ impl Types {
                 let mut changed = false;
                 let current = typarams.clone();
                 for arg in &current {
-                let mapped = self.map_undet_vars_to_typevars(ctx, syms, arg);
-                if mapped != arg {
-                    changed = true;
-                }
-                typarams1 = typarams1.append(mapped);
+                    let mapped = self.map_undet_vars_to_typevars(ctx, syms, arg);
+                    if mapped != arg {
+                        changed = true;
+                    }
+                    typarams1 = typarams1.append(mapped);
                 }
                 let outer_changed = match (outer, outer1) {
                     (Some(original), Some(mapped)) => original != mapped,
@@ -7144,7 +7124,9 @@ impl Types {
                     new_array_type(ctx, elemtype1, tsym_opt)
                 }
             }
-            TypeKindData::WildcardType { type_, kind, bound, .. } => {
+            TypeKindData::WildcardType {
+                type_, kind, bound, ..
+            } => {
                 let Some(type_) = *type_ else {
                     return t;
                 };
@@ -7162,7 +7144,8 @@ impl Types {
                 ..
             } => {
                 let argtypes1 = self.map_undet_vars_list(ctx, syms, argtypes.clone());
-                let restype1 = restype.map(|restype| self.map_undet_vars_to_typevars(ctx, syms, restype));
+                let restype1 =
+                    restype.map(|restype| self.map_undet_vars_to_typevars(ctx, syms, restype));
                 let thrown1 = self.map_undet_vars_list(ctx, syms, thrown.clone());
                 let changed = !list_same(argtypes, &argtypes1)
                     || restype1 != *restype
@@ -7226,12 +7209,7 @@ impl Types {
     }
 
     /// Java: public UndetVar dup(Types types) (Type.java:2025-2030)
-    pub fn undet_var_dup(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        uv: TypeId,
-    ) -> TypeId {
+    pub fn undet_var_dup(&self, ctx: &mut CompilerContext, syms: &Symtab, uv: TypeId) -> TypeId {
         let qtype = self.undet_var_qtype(ctx, uv);
         let listener = match &ctx.typ(uv).kind {
             TypeKindData::UndetVar { listener, .. } => listener.clone(),
@@ -7320,11 +7298,11 @@ impl Types {
             let mut deps: Vec<TypeId> = Vec::new();
             let current = prev_bounds;
             for t in &current {
-            if !self.contains_any(ctx, syms, t, from) {
-                new_bounds = new_bounds.append(t);
-            } else {
-                deps.push(t);
-            }
+                if !self.contains_any(ctx, syms, t, from) {
+                    new_bounds = new_bounds.append(t);
+                } else {
+                    deps.push(t);
+                }
             }
             self.undet_var_set_bounds(ctx, uv, ib, new_bounds);
             for dep in deps {
@@ -7377,11 +7355,10 @@ impl crate::comp::infer::UndetVarListener for BoundsChangeRecorder {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Infer: the least-upper-bound machinery used by InferenceStep.LOWER
 // (Types.java:3792-3960/3988-4090: intersect/merge/compoundMin/
-// erasedSupertypes/lub). 
+// erasedSupertypes/lub).
 // ---------------------------------------------------------------------------
 impl Types {
     /// Java: public List<Type> intersect(List<Type> cl1, List<Type> cl2)
@@ -7473,11 +7450,9 @@ impl Types {
             } else {
                 let pair = (c1, c2);
                 let already = merges.iter().any(|(x, y)| {
-                    self.is_same_type(ctx, syms, *x, c1)
-                        && self.is_same_type(ctx, syms, *y, c2)
+                    self.is_same_type(ctx, syms, *x, c1) && self.is_same_type(ctx, syms, *y, c2)
                 }) || self.merge_cache.borrow().iter().any(|(x, y)| {
-                    self.is_same_type(ctx, syms, *x, c1)
-                        && self.is_same_type(ctx, syms, *y, c2)
+                    self.is_same_type(ctx, syms, *x, c1) && self.is_same_type(ctx, syms, *y, c2)
                 });
                 if !already {
                     merges.push(pair);
@@ -7487,22 +7462,26 @@ impl Types {
                     let lub = self.lub_pair(ctx, syms, upper1, upper2);
                     self.merge_cache.borrow_mut().pop();
                     merges.pop();
-                    ctx.alloc_type(crate::code::type_::Type::new(
+                    ctx.alloc_type(Type::new(
                         TypeTag::WILDCARD,
                         Some(syms.bound_class),
                         TypeKindData::WildcardType {
                             type_: Some(lub),
-                            kind: crate::code::bound_kind::BoundKind::EXTENDS,
-                            bound: None, is_printing_bound: std::cell::Cell::new(false), },
+                            kind: BoundKind::EXTENDS,
+                            bound: None,
+                            is_printing_bound: std::cell::Cell::new(false),
+                        },
                     ))
                 } else {
-                    ctx.alloc_type(crate::code::type_::Type::new(
+                    ctx.alloc_type(Type::new(
                         TypeTag::WILDCARD,
                         Some(syms.bound_class),
                         TypeKindData::WildcardType {
                             type_: Some(syms.object_type),
-                            kind: crate::code::bound_kind::BoundKind::UNBOUND,
-                            bound: None, is_printing_bound: std::cell::Cell::new(false), },
+                            kind: BoundKind::UNBOUND,
+                            bound: None,
+                            is_printing_bound: std::cell::Cell::new(false),
+                        },
                     ))
                 }
             };
@@ -7552,11 +7531,11 @@ impl Types {
         let mut result: List<TypeId> = List::nil();
         let sup = self.closure(ctx, syms, t);
         for sup_t in &sup {
-        if ctx.typ(sup_t).has_tag(TypeTag::TYPEVAR) {
-            result = result.append(sup_t);
-        } else {
-            result = result.append(self.erasure(ctx, syms, sup_t));
-        }
+            if ctx.typ(sup_t).has_tag(TypeTag::TYPEVAR) {
+                result = result.append(sup_t);
+            } else {
+                result = result.append(self.erasure(ctx, syms, sup_t));
+            }
         }
         result
     }
@@ -7590,7 +7569,13 @@ impl Types {
                 .map(|t| {
                     ctx.typ(*t)
                         .tsym
-                        .map(|s| ctx.sym(s).name.to_java_string().to_string_lossy().to_string())
+                        .map(|s| {
+                            ctx.sym(s)
+                                .name
+                                .to_java_string()
+                                .to_string_lossy()
+                                .to_string()
+                        })
                         .unwrap_or_else(|| format!("{:?}", ctx.typ(*t).get_tag()))
                 })
                 .collect();
@@ -7673,8 +7658,7 @@ impl Types {
                 // calculate lub(A, B)
                 let mut start_idx = 0;
                 for t in ts {
-                    if ctx.typ(*t).has_tag(TypeTag::CLASS)
-                        || ctx.typ(*t).has_tag(TypeTag::TYPEVAR)
+                    if ctx.typ(*t).has_tag(TypeTag::CLASS) || ctx.typ(*t).has_tag(TypeTag::TYPEVAR)
                     {
                         break;
                     }
@@ -7684,8 +7668,7 @@ impl Types {
                 // step 1 - compute erased candidate set (EC)
                 let mut cl = self.erased_supertypes(ctx, syms, ts[start_idx]);
                 for t in &ts[start_idx + 1..] {
-                    if ctx.typ(*t).has_tag(TypeTag::CLASS)
-                        || ctx.typ(*t).has_tag(TypeTag::TYPEVAR)
+                    if ctx.typ(*t).has_tag(TypeTag::CLASS) || ctx.typ(*t).has_tag(TypeTag::TYPEVAR)
                     {
                         let erased = self.erased_supertypes(ctx, syms, *t);
                         cl = self.intersect(ctx, syms, cl, erased);
@@ -7697,24 +7680,24 @@ impl Types {
                 let mut candidates: List<TypeId> = List::nil();
                 let mec_current = mec;
                 for erased_supertype in &mec_current {
-                let erased_tsym = ctx
-                    .typ(erased_supertype)
-                    .tsym
-                    .expect("erased supertype symbol");
-                let mut lci: List<TypeId> = List::nil();
-                if let Some(first) = self.as_super(ctx, syms, ts[start_idx], erased_tsym) {
-                    lci = List::of(first);
-                }
-                for t in &ts[start_idx + 1..] {
-                    let super_type = self.as_super(ctx, syms, *t, erased_tsym);
-                    let super_list = super_type.map(List::of).unwrap_or_else(List::nil);
-                    lci = self.intersect(ctx, syms, lci, super_list);
-                }
-                let mut lci_current = lci;
-                while lci_current.non_empty() {
-                    candidates = candidates.append(*lci_current.head());
-                    lci_current = lci_current.tail();
-                }
+                    let erased_tsym = ctx
+                        .typ(erased_supertype)
+                        .tsym
+                        .expect("erased supertype symbol");
+                    let mut lci: List<TypeId> = List::nil();
+                    if let Some(first) = self.as_super(ctx, syms, ts[start_idx], erased_tsym) {
+                        lci = List::of(first);
+                    }
+                    for t in &ts[start_idx + 1..] {
+                        let super_type = self.as_super(ctx, syms, *t, erased_tsym);
+                        let super_list = super_type.map(List::of).unwrap_or_else(List::nil);
+                        lci = self.intersect(ctx, syms, lci, super_list);
+                    }
+                    let mut lci_current = lci;
+                    while lci_current.non_empty() {
+                        candidates = candidates.append(*lci_current.head());
+                        lci_current = lci_current.tail();
+                    }
                 }
                 // step 4 - let MEC be { G1, G2... Gn }, then we have that
                 // lub = lci(Inv(G1)) & lci(Inv(G2)) &... & lci(Inv(Gn))
@@ -7722,8 +7705,7 @@ impl Types {
             }
             _ => {
                 // calculate lub(A, B[])
-                let mut classes: List<TypeId> =
-                    List::of(self.array_super_type(ctx, syms));
+                let mut classes: List<TypeId> = List::of(self.array_super_type(ctx, syms));
                 for (index, t) in ts.iter().enumerate() {
                     if kinds[index] != ARRAY_BOUND {
                         // Filter out any arrays
@@ -7738,18 +7720,11 @@ impl Types {
 
     /// Java: private Type lub(Type t, Type s) — the two-argument form used by
     /// merge (a convenience over lub(Type...)).
-    fn lub_pair(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-        s: TypeId,
-    ) -> TypeId {
+    fn lub_pair(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, s: TypeId) -> TypeId {
         let names = std::rc::Rc::clone(&self.names);
         self.lub(ctx, syms, &names, &[t, s])
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Infer: public wrappers used by comp/infer.rs (the UndetVar engine and
@@ -7759,23 +7734,19 @@ impl Types {
 impl Types {
     /// Java: MethodType.getParameterTypes() view (also for the ported
     /// PartiallyInferredMethodType, which extends MethodType upstream).
-    pub fn get_parameter_types_public(
-        &self,
-        ctx: &CompilerContext,
-        t: TypeId,
-    ) -> List<TypeId> {
+    pub fn get_parameter_types_public(&self, ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
         match &ctx.typ(t).kind {
             TypeKindData::MethodType { argtypes, .. }
             | TypeKindData::PartiallyInferredMethodType { argtypes, .. } => argtypes.clone(),
             // Java: DelegatedType.getParameterTypes() delegates to qtype.
             // Java: DelegatedType.getParameterTypes() delegates to qtype.
-            TypeKindData::ForAll { qtype: Some(qtype), .. } => {
-                match &ctx.typ(*qtype).kind {
-                    TypeKindData::MethodType { argtypes, .. }
-                    | TypeKindData::PartiallyInferredMethodType { argtypes, .. } => argtypes.clone(),
-                    _ => List::nil(),
-                }
-            }
+            TypeKindData::ForAll {
+                qtype: Some(qtype), ..
+            } => match &ctx.typ(*qtype).kind {
+                TypeKindData::MethodType { argtypes, .. }
+                | TypeKindData::PartiallyInferredMethodType { argtypes, .. } => argtypes.clone(),
+                _ => List::nil(),
+            },
             _ => List::nil(),
         }
     }
@@ -7795,17 +7766,15 @@ impl Types {
                 ..
             } => *restype,
             // Java: DelegatedType.getReturnType() delegates to qtype.
-            TypeKindData::ForAll { qtype: Some(qtype), .. } => {
-                self.get_return_type_public(ctx, *qtype)
-            }
+            TypeKindData::ForAll {
+                qtype: Some(qtype), ..
+            } => self.get_return_type_public(ctx, *qtype),
             // Java: ErrorType.getReturnType() returns this.
-            _ if ctx
-                .typ(t)
-                .has_tag(crate::code::type_tag::TypeTag::ERROR) =>
-            {
-                t
-            }
-            _ => panic!("AssertionError: no return type tag={:?}", ctx.typ(t).get_tag()),
+            _ if ctx.typ(t).has_tag(TypeTag::ERROR) => t,
+            _ => panic!(
+                "AssertionError: no return type tag={:?}",
+                ctx.typ(t).get_tag()
+            ),
         }
     }
 
@@ -7841,12 +7810,7 @@ impl Types {
     }
 
     /// Java: Type.isErroneous() view used by Infer.instantiateAsUninferredVars.
-    pub fn is_erroneous_type(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> bool {
+    pub fn is_erroneous_type(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> bool {
         self.is_erroneous(ctx, syms, t)
     }
 
@@ -7936,13 +7900,13 @@ impl Types {
         let mut closure: List<TypeId> = List::nil();
         let current = ts;
         for t in &current {
-        let t_closure = self.closure(ctx, syms, t);
-        let mut c = t_closure;
-        while c.non_empty() {
-            let x = *c.head();
-            closure = self.closure_insert_same_type(ctx, syms, closure, x);
-            c = c.tail();
-        }
+            let t_closure = self.closure(ctx, syms, t);
+            let mut c = t_closure;
+            while c.non_empty() {
+                let x = *c.head();
+                closure = self.closure_insert_same_type(ctx, syms, closure, x);
+                c = c.tail();
+            }
         }
         self.closure_min(ctx, syms, closure)
     }
@@ -7971,7 +7935,6 @@ impl Types {
             .prepend(head)
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Types : isAssignable/covariantReturnType/resultSubtype/
@@ -8027,7 +7990,7 @@ impl Types {
                     let unboxed = self.unboxed_type_ro(ctx, syms, s);
                     let unboxed = if ctx
                         .typ(unboxed)
-                        .has_tag(crate::code::type_tag::TypeTag::NONE)
+                        .has_tag(TypeTag::NONE)
                     {
                         s
                     } else {
@@ -8073,8 +8036,8 @@ impl Types {
         s: TypeId,
         warner: &crate::util::warner::Warner,
     ) -> bool {
-        let tvars = crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
-        let svars = crate::code::types::get_type_arguments_completed(ctx, syms, s, None);
+        let tvars = get_type_arguments_completed(ctx, syms, t, None);
+        let svars = get_type_arguments_completed(ctx, syms, s, None);
         let tres = method_return_type(ctx, t);
         let sres_full = method_return_type(ctx, s);
         let sres = {
@@ -8141,12 +8104,7 @@ impl Types {
     }
 
     /// Java: public boolean isDerivedRaw(Type t) (Types.java:2670-2677)
-    pub fn is_derived_raw(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> bool {
+    pub fn is_derived_raw(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> bool {
         if let Some(result) = self.is_derived_raw_cache.borrow().get(&t) {
             return *result;
         }
@@ -8186,9 +8144,9 @@ impl Types {
     ) -> bool {
         let current = ts.clone();
         for t in &current {
-        if self.is_derived_raw(ctx, syms, t) {
-            return true;
-        }
+            if self.is_derived_raw(ctx, syms, t) {
+                return true;
+            }
         }
         false
     }
@@ -8256,7 +8214,6 @@ fn method_return_type(ctx: &CompilerContext, t: TypeId) -> TypeId {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Types : membersClosure/MembersClosureCache/implementation/
 // ImplementationCache/interfaceCandidates/prune (Types.java:2931-3095,
@@ -8296,7 +8253,7 @@ impl MembersScope {
     pub fn get_symbols_by_name(
         &self,
         ctx: &mut CompilerContext,
-        name: &crate::util::name::Name,
+        name: &Name,
         lookup_kind: crate::code::scope::LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
     ) -> Vec<SymbolId> {
@@ -8357,7 +8314,8 @@ impl Types {
                 if !self.members_closure_seen.borrow_mut().insert(tsym) {
                     // Java: return new CompoundScope(t.tsym); (empty scope for a
                     // circle/multi-path visit)
-                    let scope = ctx.alloc_scope(crate::code::scope::Scope::new_compound_scope(Some(tsym)));
+                    let scope =
+                        ctx.alloc_scope(crate::code::scope::Scope::new_compound_scope(Some(tsym)));
                     return scope;
                 }
                 let cached = self.members_closure_cache.borrow().get(&tsym).copied();
@@ -8370,8 +8328,8 @@ impl Types {
                 let interfaces = self.interfaces(ctx, syms, t);
                 let current = interfaces;
                 for iface in &current {
-                let sub = self.members_closure_visit(ctx, syms, iface);
-                ctx.scope_prepend_sub_scope(closure_scope, sub);
+                    let sub = self.members_closure_visit(ctx, syms, iface);
+                    ctx.scope_prepend_sub_scope(closure_scope, sub);
                 }
                 let super_type = self.supertype(ctx, syms, t, None);
                 let super_scope = self.members_closure_visit(ctx, syms, super_type);
@@ -8397,7 +8355,9 @@ impl Types {
             }
             _ => {
                 let no_symbol = syms.no_symbol;
-                ctx.alloc_scope(crate::code::scope::Scope::new_compound_scope(Some(no_symbol)))
+                ctx.alloc_scope(crate::code::scope::Scope::new_compound_scope(Some(
+                    no_symbol,
+                )))
             }
         }
     }
@@ -8478,15 +8438,17 @@ impl Types {
         let mut t = ctx.sym(origin).ty.expect("origin type");
         loop {
             let tag = ctx.typ(t).get_tag();
-            if tag != crate::code::type_tag::TypeTag::CLASS
-                && tag != crate::code::type_tag::TypeTag::TYPEVAR
+            if tag != TypeTag::CLASS
+                && tag != TypeTag::TYPEVAR
             {
                 break;
             }
             t = self.skip_type_vars(ctx, t);
             let c = ctx.typ(t).tsym.expect("class symbol");
             let members = match &ctx.sym(c).kind_data {
-                crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+                crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => {
+                    *members_field
+                }
                 _ => None,
             };
             let mut best_so_far: Option<SymbolId> = None;
@@ -8504,7 +8466,15 @@ impl Types {
                     .filter(|sym| implementation_filter_matches(ctx, filter_kind, *sym))
                     .collect();
                 for sym in found {
-                    if crate::code::symbol::overrides(ctx, syms, self, sym, ms, origin, check_result) {
+                    if crate::code::symbol::overrides(
+                        ctx,
+                        syms,
+                        self,
+                        sym,
+                        ms,
+                        origin,
+                        check_result,
+                    ) {
                         best_so_far = Some(sym);
                         let abstract_flag = crate::code::flags::ABSTRACT as i64;
                         if (ctx.sym(sym).flags_field & abstract_flag) == 0 {
@@ -8559,16 +8529,17 @@ impl Types {
         // Java: for (Symbol s : membersClosure(site, false).getSymbols(filter))
         // The closure filter needs &mut ctx; collect candidates by iterating the
         // closure symbols through the context query.
-        let all = members.get_symbols(
-            ctx,
-            crate::code::scope::LookupKind::RECURSIVE,
-            &|_| true,
-        );
+        let all = members.get_symbols(ctx, crate::code::scope::LookupKind::RECURSIVE, &|_| true);
         for s in all {
             if !filter(ctx, syms, s) {
                 continue;
             }
-            if ctx.typ(site).tsym.map(|sym| sym != site_tsym).unwrap_or(true) {
+            if ctx
+                .typ(site)
+                .tsym
+                .map(|sym| sym != site_tsym)
+                .unwrap_or(true)
+            {
                 let _ = site_tsym;
             }
             let site_is_interface =
@@ -8576,7 +8547,9 @@ impl Types {
             let owner_is_interface = ctx
                 .sym(s)
                 .owner
-                .map(|owner| (ctx.sym(owner).flags_field & crate::code::flags::INTERFACE as i64) != 0)
+                .map(|owner| {
+                    (ctx.sym(owner).flags_field & crate::code::flags::INTERFACE as i64) != 0
+                })
                 .unwrap_or(false);
             if !site_is_interface && !owner_is_interface {
                 let result = vec![s];
@@ -8629,7 +8602,6 @@ impl Types {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Types : createMethodTypeWithThrown / MostSpecificReturnCheck /
 // mergeAbstracts (Types.java:2834-2930, 3519-3535), 1:1.
@@ -8657,8 +8629,8 @@ impl MostSpecificReturnCheck {
     ) -> bool {
         match self {
             MostSpecificReturnCheck::BASIC => {
-                let tvars = crate::code::types::get_type_arguments_completed(ctx, syms, mt1, None);
-                let svars = crate::code::types::get_type_arguments_completed(ctx, syms, mt2, None);
+                let tvars = get_type_arguments_completed(ctx, syms, mt1, None);
+                let svars = get_type_arguments_completed(ctx, syms, mt2, None);
                 let t = method_return_type(ctx, mt1);
                 let sres = method_return_type(ctx, mt2);
                 let s = {
@@ -8670,9 +8642,7 @@ impl MostSpecificReturnCheck {
                         && !ctx.typ(s).is_primitive()
                         && types.is_subtype(ctx, syms, t, s))
             }
-            MostSpecificReturnCheck::RTS => {
-                types.return_type_substitutable(ctx, syms, mt1, mt2)
-            }
+            MostSpecificReturnCheck::RTS => types.return_type_substitutable(ctx, syms, mt1, mt2),
         }
     }
 }
@@ -8702,7 +8672,7 @@ impl Types {
                 let argtypes = argtypes.clone();
                 let restype = restype.expect("method return type");
                 let method_class = ctx.typ(original).tsym.expect("method class");
-                let mt = crate::code::type_::Type::new_method_type(
+                let mt = Type::new_method_type(
                     argtypes,
                     restype,
                     new_thrown,
@@ -8714,7 +8684,7 @@ impl Types {
                 let tvars = tvars.clone();
                 let qtype = qtype.expect("forall qtype");
                 let inner = self.create_method_type_with_thrown(ctx, qtype, new_thrown);
-                ctx.alloc_type(crate::code::type_::Type::new_for_all(tvars, inner))
+                ctx.alloc_type(Type::new_for_all(tvars, inner))
             }
             _ => panic!("IllegalArgumentException: Not a method type"),
         }
@@ -8734,12 +8704,12 @@ impl Types {
         let head = *ambiguous_in_order.first().expect("ambiguous methods");
         let head_ty = ctx.sym(head).ty.expect("method type");
         let head_erasure = self.erasure(ctx, syms, head_ty);
-        let erased_params = crate::code::types::get_parameter_types(ctx, head_erasure);
+        let erased_params = get_parameter_types(ctx, head_erasure);
         let mut should_erase = false;
         for s in ambiguous_in_order.iter() {
             let s_ty = ctx.sym(*s).ty.expect("method type");
             let s_erasure = self.erasure(ctx, syms, s_ty);
-            let s_params = crate::code::types::get_parameter_types(ctx, s_erasure);
+            let s_params = get_parameter_types(ctx, s_erasure);
             if (ctx.sym(*s).flags_field & crate::code::flags::ABSTRACT as i64) == 0
                 || (sig_check && !self.is_same_types(ctx, syms, &erased_params, &s_params))
             {
@@ -8747,7 +8717,7 @@ impl Types {
             }
             if ctx
                 .typ(s_ty)
-                .has_tag(crate::code::type_tag::TypeTag::FORALL)
+                .has_tag(TypeTag::FORALL)
             {
                 should_erase = true;
             }
@@ -8756,7 +8726,7 @@ impl Types {
             'outer: for s in ambiguous_in_order.iter() {
                 let s_ty = ctx.sym(*s).ty.expect("method type");
                 let mt = self.member_type(ctx, syms, site, *s);
-                let mut all_thrown = crate::code::types::get_thrown_types(ctx, mt);
+                let mut all_thrown = get_thrown_types(ctx, mt);
                 for s2 in ambiguous_in_order.iter() {
                     if s != s2 {
                         let mt2 = self.member_type(ctx, syms, site, *s2);
@@ -8765,24 +8735,22 @@ impl Types {
                         {
                             continue 'outer;
                         }
-                        let mut thrown2 = crate::code::types::get_thrown_types(ctx, mt2);
-                        if !ctx
-                            .typ(mt)
-                            .has_tag(crate::code::type_tag::TypeTag::FORALL)
+                        let mut thrown2 = get_thrown_types(ctx, mt2);
+                        if !ctx.typ(mt).has_tag(TypeTag::FORALL)
                             && should_erase
                         {
                             thrown2 = self.erasure_list(ctx, syms, &thrown2);
-                        } else if ctx
-                            .typ(mt)
-                            .has_tag(crate::code::type_tag::TypeTag::FORALL)
-                        {
+                        } else if ctx.typ(mt).has_tag(TypeTag::FORALL) {
                             assert!(
-                                ctx.typ(mt2)
-                                    .has_tag(crate::code::type_tag::TypeTag::FORALL),
+                                ctx.typ(mt2).has_tag(TypeTag::FORALL),
                                 "AssertionError: generic merge"
                             );
-                            let mt2_args = crate::code::types::get_type_arguments_completed(ctx, syms, mt2, None);
-                            let mt_args = crate::code::types::get_type_arguments_completed(ctx, syms, mt, None);
+                            let mt2_args = get_type_arguments_completed(
+                                ctx, syms, mt2, None,
+                            );
+                            let mt_args = get_type_arguments_completed(
+                                ctx, syms, mt, None,
+                            );
                             thrown2 = self.subst(ctx, syms, &thrown2, &mt2_args, &mt_args);
                         }
                         all_thrown = chk.intersect(ctx, syms, &all_thrown, &thrown2);
@@ -8791,7 +8759,7 @@ impl Types {
                 // Java: `allThrown == mt.getThrownTypes()` is a reference
                 // comparison (Types.java:2913): intersect() builds a fresh list,
                 // so an unchanged thrown clause still yields the merged symbol.
-                if all_thrown.ptr_eq(&crate::code::types::get_thrown_types(ctx, mt)) {
+                if all_thrown.ptr_eq(&get_thrown_types(ctx, mt)) {
                     return Some(MergeAbstractsResult {
                         symbol: *s,
                         base_symbol: *s,
@@ -8830,7 +8798,6 @@ impl Types {
         None
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Types : DescriptorCache/DescriptorFilter/findDescriptorSymbol/
@@ -8946,9 +8913,7 @@ impl Types {
             );
             return Err(self.descriptor_failure(
                 diags,
-                crate::resources::compiler_properties::fragments::not_a_functional_intf(
-                    origin_arg,
-                ),
+                crate::resources::compiler_properties::fragments::not_a_functional_intf(origin_arg),
             ));
         }
         let mut abstracts: Vec<SymbolId> = Vec::new();
@@ -8968,8 +8933,7 @@ impl Types {
             } else {
                 let first = abstracts[0];
                 let first_mtype = self.member_type(ctx, syms, origin_ty, first);
-                if ctx.sym(sym).name.to_java_string()
-                    == ctx.sym(first).name.to_java_string()
+                if ctx.sym(sym).name.to_java_string() == ctx.sym(first).name.to_java_string()
                     && self.override_equivalent(ctx, syms, mtype, first_mtype)
                 {
                     // Java: if (!abstracts.stream().filter(msym ->
@@ -8981,9 +8945,9 @@ impl Types {
                     let mut found_sub = false;
                     for msym in abstracts.iter() {
                         let msym_owner = ctx.sym(*msym).owner.expect("method owner");
-                        if crate::code::symbol::is_sub_class(ctx, syms, self, msym_owner, sym_encl) {
-                            let abstract_m_type =
-                                self.member_type(ctx, syms, origin_ty, *msym);
+                        if crate::code::symbol::is_sub_class(ctx, syms, self, msym_owner, sym_encl)
+                        {
+                            let abstract_m_type = self.member_type(ctx, syms, origin_ty, *msym);
                             if self.is_sub_signature(ctx, syms, abstract_m_type, mtype) {
                                 found_sub = true;
                                 break;
@@ -9047,13 +9011,12 @@ impl Types {
                     origin_arg.clone(),
                 ),
             ));
-            let fragment =
-                crate::resources::compiler_properties::fragments::not_a_functional_intf1(
-                    origin_arg,
-                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
-                        std::rc::Rc::new(detail),
-                    ),
-                );
+            let fragment = crate::resources::compiler_properties::fragments::not_a_functional_intf1(
+                origin_arg,
+                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                    std::rc::Rc::new(detail),
+                ),
+            );
             let diag = diags.fragment(crate::util::jc_diagnostic::Fragment::from(fragment));
             return Err(FunctionDescriptorLookupError::new().set_message(diag));
         }
@@ -9086,36 +9049,34 @@ impl Types {
                         ),
                     ),
                 ));
-                let mut descriptors: crate::util::list::List<
+                let mut descriptors: List<
                     crate::util::jc_diagnostic::JCDiagnostic,
-                > = crate::util::list::List::nil();
+                > = List::nil();
                 for desc in &abstracts {
                     let desc_name = ctx.sym(*desc).name.clone();
                     let desc_ty = ctx.sym(*desc).ty.expect("descriptor method type");
                     let params = self.get_parameter_types_public(ctx, desc_ty);
                     let ret = self.get_return_type_public(ctx, desc_ty);
                     let thrown = self.get_thrown_types_public(ctx, desc_ty);
-                    let params_args: Vec<crate::resources::diagnostic_contract::TypeArg> =
-                        params
-                            .iter()
-                            .map(|p| {
-                                crate::resources::diagnostic_contract::TypeArg::placeholder(
-                                    crate::comp::attr::type_display_of(ctx, p),
-                                )
-                            })
-                            .collect();
+                    let params_args: Vec<crate::resources::diagnostic_contract::TypeArg> = params
+                        .iter()
+                        .map(|p| {
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                crate::comp::attr::type_display_of(ctx, p),
+                            )
+                        })
+                        .collect();
                     let ret_arg = crate::resources::diagnostic_contract::TypeArg::placeholder(
                         crate::comp::attr::type_display_of(ctx, ret),
                     );
-                    let thrown_args: Vec<crate::resources::diagnostic_contract::TypeArg> =
-                        thrown
-                            .iter()
-                            .map(|t| {
-                                crate::resources::diagnostic_contract::TypeArg::placeholder(
-                                    crate::comp::attr::type_display_of(ctx, t),
-                                )
-                            })
-                            .collect();
+                    let thrown_args: Vec<crate::resources::diagnostic_contract::TypeArg> = thrown
+                        .iter()
+                        .map(|t| {
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                crate::comp::attr::type_display_of(ctx, t),
+                            )
+                        })
+                        .collect();
                     let info = if thrown.is_empty() {
                         crate::resources::compiler_properties::fragments::descriptor(
                             desc_name,
@@ -9134,10 +9095,8 @@ impl Types {
                     descriptors = descriptors
                         .append(diags.fragment(crate::util::jc_diagnostic::Fragment::from(info)));
                 }
-                let multiline = crate::util::jc_diagnostic::MultilineDiagnostic::new(
-                    &msg,
-                    descriptors,
-                );
+                let multiline =
+                    crate::util::jc_diagnostic::MultilineDiagnostic::new(&msg, descriptors);
                 Err(FunctionDescriptorLookupError::new()
                     .set_message(multiline.as_diagnostic().clone()))
             }
@@ -9208,30 +9167,28 @@ impl Types {
         syms: &Symtab,
         site: TypeId,
     ) -> TypeId {
-        let actuals = crate::code::types::get_type_arguments_completed(ctx, syms, site, None);
-        let wildcard_tag = crate::code::type_tag::TypeTag::WILDCARD;
-        let has_wildcard = actuals
-            .iter()
-            .any(|t| ctx.typ(t).has_tag(wildcard_tag));
+        let actuals = get_type_arguments_completed(ctx, syms, site, None);
+        let wildcard_tag = TypeTag::WILDCARD;
+        let has_wildcard = actuals.iter().any(|t| ctx.typ(t).has_tag(wildcard_tag));
         if !has_wildcard {
             return site;
         }
         let site_tsym = ctx.typ(site).tsym.expect("site symbol");
         let site_tsym_ty = ctx.sym(site_tsym).ty.expect("site symbol type");
-        let formals = crate::code::types::get_type_arguments_completed(ctx, syms, site_tsym_ty, None);
+        let formals =
+            get_type_arguments_completed(ctx, syms, site_tsym_ty, None);
         let mut args: List<TypeId> = List::nil();
         let mut current = actuals;
         let mut formals_iter = formals.clone();
         while current.non_empty() {
             let actual = *current.head();
             let formal = *formals_iter.head();
-            let bound = ctx.upper_bound_of(formal)
-                .expect("formal upper bound");
+            let bound = ctx.upper_bound_of(formal).expect("formal upper bound");
             if ctx.typ(actual).has_tag(wildcard_tag) {
                 // Java: WildcardType wt = (WildcardType)actual;
                 let (wt_type, wt_kind) = match &ctx.typ(actual).kind {
                     TypeKindData::WildcardType { type_, kind, .. } => (*type_, *kind),
-                    _ => (None, crate::code::bound_kind::BoundKind::UNBOUND),
+                    _ => (None, BoundKind::UNBOUND),
                 };
                 let contains_formals = self.contains_any(ctx, syms, bound, &formals);
                 if contains_formals {
@@ -9241,15 +9198,15 @@ impl Types {
                     }
                 } else {
                     match wt_kind {
-                        crate::code::bound_kind::BoundKind::UNBOUND => {
+                        BoundKind::UNBOUND => {
                             args = args.append(bound);
                         }
-                        crate::code::bound_kind::BoundKind::EXTENDS => {
+                        BoundKind::EXTENDS => {
                             let wt_type = wt_type.expect("wildcard bound type");
                             let glb = self.glb(ctx, syms, bound, wt_type);
                             args = args.append(glb);
                         }
-                        crate::code::bound_kind::BoundKind::SUPER => {
+                        BoundKind::SUPER => {
                             args = args.append(wt_type.expect("wildcard lower type"));
                         }
                     }
@@ -9293,13 +9250,12 @@ impl FunctionDescriptor {
             None => Ok(mt),
             Some(merge) => {
                 let best_so_far_ty = ctx.sym(merge.best_so_far).ty.expect("merged type");
-                let best_thrown = crate::code::types::get_thrown_types(ctx, best_so_far_ty);
+                let best_thrown = get_thrown_types(ctx, best_so_far_ty);
                 Ok(types.create_method_type_with_thrown(ctx, mt, best_thrown))
             }
         }
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Types : makeFunctionalInterfaceClass / functionalInterfaceBridges /
@@ -9318,7 +9274,7 @@ impl Types {
         diags: &crate::util::jc_diagnostic::Factory,
         chk: &crate::comp::check::Check,
         env: &std::rc::Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
-        name: crate::util::name::Name,
+        name: Name,
         target: TypeId,
         cflags: i64,
     ) -> Option<SymbolId> {
@@ -9398,7 +9354,7 @@ impl Types {
             },
         ));
         ctx.scope_enter(members, inst_desc);
-        let ctype = ctx.alloc_type(crate::code::type_::Type::new_class_type(
+        let ctype = ctx.alloc_type(Type::new_class_type(
             Some(no_type),
             Some(List::nil()),
             csym,
@@ -9409,7 +9365,7 @@ impl Types {
         } else {
             List::of(target)
         };
-        if let crate::code::type_::TypeKindData::ClassType {
+        if let TypeKindData::ClassType {
             supertype_field,
             interfaces_field,
             ..
@@ -9433,11 +9389,7 @@ impl Types {
     }
 
     /// Java: private Predicate<Symbol> bridgeFilter (Types.java:948-955)
-    fn bridge_filter(
-        &self,
-        ctx: &CompilerContext,
-        sym: SymbolId,
-    ) -> bool {
+    fn bridge_filter(&self, ctx: &CompilerContext, sym: SymbolId) -> bool {
         let name = ctx.sym(sym).name.to_java_string();
         name != ctx.sym(sym).name.table.names().init.to_java_string()
             && name != ctx.sym(sym).name.table.names().clinit.to_java_string()
@@ -9495,18 +9447,17 @@ impl Types {
                 let overrides_m2 =
                     crate::code::symbol::overrides(ctx, syms, self, *m3, m2, origin, false);
                 if same_erasure
-                    || (overrides_m2
-                        && {
-                            let pending = self.pending_bridges(ctx, syms, enter, origin, m2_encl);
-                            let binary = {
-                                let m3_owner = ctx.sym(*m3).owner.expect("m3 owner");
-                                crate::code::symbol::binary_implementation(
-                                    ctx, syms, self, m2, m3_owner,
-                                )
-                                .is_some()
-                            };
-                            pending || binary
-                        })
+                    || (overrides_m2 && {
+                        let pending = self.pending_bridges(ctx, syms, enter, origin, m2_encl);
+                        let binary = {
+                            let m3_owner = ctx.sym(*m3).owner.expect("m3 owner");
+                            crate::code::symbol::binary_implementation(
+                                ctx, syms, self, m2, m3_owner,
+                            )
+                            .is_some()
+                        };
+                        pending || binary
+                    })
                 {
                     skip = true;
                     break;
@@ -9579,9 +9530,7 @@ impl Types {
             if ctx.typ(t_elem).is_primitive() {
                 return self.is_same_type(ctx, syms, t_elem, s_elem);
             }
-            return self.is_subtype_unchecked_internal_warn(
-                ctx, syms, t_elem, s_elem, false, warn,
-            );
+            return self.is_subtype_unchecked_internal_warn(ctx, syms, t_elem, s_elem, false, warn);
         }
         // Raw-to-parameterized conversion is an unchecked conversion even
         // though the erasures are subtypes; isSubtype itself rejects it.
@@ -9733,16 +9682,16 @@ impl Types {
     pub fn is_direct_super_interface(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
-        isym: crate::ids::SymbolId,
-        origin: crate::ids::SymbolId,
+        syms: &Symtab,
+        isym: SymbolId,
+        origin: SymbolId,
     ) -> bool {
         let origin_type = ctx.sym(origin).ty.expect("origin class type");
         let interfaces = self.interfaces(ctx, syms, origin_type);
         for i in &interfaces {
-        if ctx.typ(i).tsym == Some(isym) {
-            return true;
-        }
+            if ctx.typ(i).tsym == Some(isym) {
+                return true;
+            }
         }
         false
     }
@@ -9781,30 +9730,30 @@ impl Types {
     ) {
         let kind = ctx.typ(t).kind.clone();
         match &kind {
-            crate::code::type_::TypeKindData::ClassType { .. } => {
+            TypeKindData::ClassType { .. } => {
                 if self.is_compound(ctx, t) {
                     let current = self.direct_supertypes(ctx, syms, t);
                     for sup in &current {
-                    self.capture_scan_collect(ctx, syms, sup, seen, result);
+                        self.capture_scan_collect(ctx, syms, sup, seen, result);
                     }
                 } else {
-                    let current = crate::code::types::allparams_of(ctx, t);
+                    let current = allparams_of(ctx, t);
                     for param in &current {
-                    self.capture_scan_collect(ctx, syms, param, seen, result);
+                        self.capture_scan_collect(ctx, syms, param, seen, result);
                     }
                 }
             }
-            crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => {
+            TypeKindData::ArrayType { elemtype, .. } => {
                 if let Some(elemtype) = elemtype {
                     self.capture_scan_collect(ctx, syms, *elemtype, seen, result);
                 }
             }
-            crate::code::type_::TypeKindData::WildcardType { type_, .. } => {
+            TypeKindData::WildcardType { type_, .. } => {
                 if let Some(type_) = type_ {
                     self.capture_scan_collect(ctx, syms, *type_, seen, result);
                 }
             }
-            crate::code::type_::TypeKindData::TypeVar { bound, .. } => {
+            TypeKindData::TypeVar { bound, .. } => {
                 let synthetic = ctx
                     .typ(t)
                     .tsym
@@ -9820,7 +9769,7 @@ impl Types {
                     }
                 }
             }
-            crate::code::type_::TypeKindData::CapturedType { bound, lower, .. } => {
+            TypeKindData::CapturedType { bound, lower, .. } => {
                 if !seen.contains(&t) {
                     seen.push(t);
                     *result = result.prepend(t);
@@ -9873,9 +9822,9 @@ impl Types {
     ) -> TypeId {
         let tag = ctx.typ(t).get_tag();
         match tag {
-            crate::code::type_tag::TypeTag::CLASS => {
+            TypeTag::CLASS => {
                 let (outer_field, typarams_field) = match &ctx.typ(t).kind {
-                    crate::code::type_::TypeKindData::ClassType {
+                    TypeKindData::ClassType {
                         outer_field,
                         typarams_field,
                         ..
@@ -9888,12 +9837,12 @@ impl Types {
                     let current = components.clone();
                     let mut changed = false;
                     for component in &current {
-                    let projected_component =
-                        self.projection(ctx, syms, component, vars, pkind, seen);
-                    if projected_component != component {
-                        changed = true;
-                    }
-                    projected = projected.append(projected_component);
+                        let projected_component =
+                            self.projection(ctx, syms, component, vars, pkind, seen);
+                        if projected_component != component {
+                            changed = true;
+                        }
+                        projected = projected.append(projected_component);
                     }
                     if !changed {
                         return t;
@@ -9902,41 +9851,51 @@ impl Types {
                     return self.make_intersection_type(ctx, syms, &names, projected, false);
                 }
                 let outer = outer_field;
-                let outer1 = outer.map(|outer| self.projection(ctx, syms, outer, vars, pkind, seen));
+                let outer1 =
+                    outer.map(|outer| self.projection(ctx, syms, outer, vars, pkind, seen));
                 let typarams = typarams_field.unwrap_or_else(List::nil);
                 let tsym = ctx.typ(t).tsym.expect("class type symbol");
                 let formals_type = ctx.sym(tsym).ty.expect("class symbol type");
                 let mut formals =
-                    crate::code::types::get_type_arguments_completed(ctx, syms, formals_type, None);
+                    get_type_arguments_completed(ctx, syms, formals_type, None);
                 let mut typarams1: List<TypeId> = List::nil();
                 let mut changed = false;
                 let current = typarams.clone();
                 for actual in &current {
-                let declared_bound = if formals.non_empty() {
-                    let formal = *formals.head();
-                    ctx.upper_bound_of(formal).unwrap_or(syms.object_type)
-                } else {
-                    syms.object_type
-                };
-                let t2 = self.map_type_argument(ctx, syms, t, declared_bound, actual, vars, pkind, seen);
-                if ctx.typ(t2).has_tag(crate::code::type_tag::TypeTag::BOT) {
-                    return syms.bot_type;
-                }
-                if t2 != actual {
-                    changed = true;
-                }
-                typarams1 = typarams1.append(t2);
-                if formals.non_empty() {
-                    formals = formals.tail();
-                }
+                    let declared_bound = if formals.non_empty() {
+                        let formal = *formals.head();
+                        ctx.upper_bound_of(formal).unwrap_or(syms.object_type)
+                    } else {
+                        syms.object_type
+                    };
+                    let t2 = self.map_type_argument(
+                        ctx,
+                        syms,
+                        t,
+                        declared_bound,
+                        actual,
+                        vars,
+                        pkind,
+                        seen,
+                    );
+                    if ctx.typ(t2).has_tag(TypeTag::BOT) {
+                        return syms.bot_type;
+                    }
+                    if t2 != actual {
+                        changed = true;
+                    }
+                    typarams1 = typarams1.append(t2);
+                    if formals.non_empty() {
+                        formals = formals.tail();
+                    }
                 }
                 if outer1 == outer && !changed {
                     return t;
                 }
-                ctx.alloc_type(crate::code::type_::Type::new(
-                    crate::code::type_tag::TypeTag::CLASS,
+                ctx.alloc_type(Type::new(
+                    TypeTag::CLASS,
                     Some(tsym),
-                    crate::code::type_::TypeKindData::ClassType {
+                    TypeKindData::ClassType {
                         outer_field: outer1,
                         typarams_field: Some(typarams1),
                         allparams_field: None,
@@ -9946,9 +9905,9 @@ impl Types {
                     },
                 ))
             }
-            crate::code::type_tag::TypeTag::ARRAY => {
+            TypeTag::ARRAY => {
                 let elemtype = match &ctx.typ(t).kind {
-                    crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => {
+                    TypeKindData::ArrayType { elemtype, .. } => {
                         elemtype.expect("array element type")
                     }
                     _ => crate::util::assert::error(),
@@ -9957,17 +9916,20 @@ impl Types {
                 if elemtype1 == elemtype {
                     return t;
                 }
-                if ctx.typ(elemtype1).has_tag(crate::code::type_tag::TypeTag::BOT) {
+                if ctx
+                    .typ(elemtype1)
+                    .has_tag(TypeTag::BOT)
+                {
                     return syms.bot_type;
                 }
-                ctx.alloc_type(crate::code::type_::Type::new_array_type(
+                ctx.alloc_type(Type::new_array_type(
                     elemtype1,
                     syms.array_class,
                 ))
             }
-            crate::code::type_tag::TypeTag::TYPEVAR => {
+            TypeTag::TYPEVAR => {
                 let (bound, lower) = match &ctx.typ(t).kind {
-                    crate::code::type_::TypeKindData::TypeVar { bound, lower } => (*bound, *lower),
+                    TypeKindData::TypeVar { bound, lower } => (*bound, *lower),
                     _ => (None, None),
                 };
                 if !self.list_contains_type(ctx, syms, vars, t) {
@@ -10026,9 +9988,9 @@ impl Types {
         pkind: ProjectionKind,
         seen: &mut Vec<TypeId>,
     ) -> TypeId {
-        if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::WILDCARD) {
+        if ctx.typ(t).has_tag(TypeTag::WILDCARD) {
             let (wt_type, wt_kind) = match &ctx.typ(t).kind {
-                crate::code::type_::TypeKindData::WildcardType { type_, kind, .. } => {
+                TypeKindData::WildcardType { type_, kind, .. } => {
                     (*type_, *kind)
                 }
                 _ => return t,
@@ -10036,26 +9998,26 @@ impl Types {
             let mut bound = syms.bot_type;
             let mut bk = wt_kind;
             match wt_kind {
-                crate::code::bound_kind::BoundKind::EXTENDS => {
+                BoundKind::EXTENDS => {
                     if let Some(wt_type) = wt_type {
                         bound = self.projection(ctx, syms, wt_type, vars, pkind, seen);
                     }
-                    if ctx.typ(bound).has_tag(crate::code::type_tag::TypeTag::BOT) {
+                    if ctx.typ(bound).has_tag(TypeTag::BOT) {
                         return syms.bot_type;
                     }
                 }
-                crate::code::bound_kind::BoundKind::SUPER => {
+                BoundKind::SUPER => {
                     if let Some(wt_type) = wt_type {
                         bound = self.projection(ctx, syms, wt_type, vars, pkind.complement(), seen);
                     }
-                    if ctx.typ(bound).has_tag(crate::code::type_tag::TypeTag::BOT) {
+                    if ctx.typ(bound).has_tag(TypeTag::BOT) {
                         bound = syms.object_type;
-                        bk = crate::code::bound_kind::BoundKind::UNBOUND;
+                        bk = BoundKind::UNBOUND;
                     }
                 }
                 _ => {}
             }
-            return ctx.alloc_type(crate::code::type_::Type::new_wildcard_type(
+            return ctx.alloc_type(Type::new_wildcard_type(
                 bound,
                 bk,
                 syms.bound_class,
@@ -10071,19 +10033,19 @@ impl Types {
         let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
         let formals_type = ctx.sym(site_tsym).ty.expect("site symbol type");
         let formals =
-            crate::code::types::get_type_arguments_completed(ctx, syms, formals_type, None);
+            get_type_arguments_completed(ctx, syms, formals_type, None);
         let object = syms.object_type;
         let (bound, bk) = if !self.is_same_type(ctx, syms, upper, object)
             && (self.contains_any(ctx, syms, declared_bound, &formals)
                 || !self.is_subtype(ctx, syms, declared_bound, upper))
         {
-            (upper, crate::code::bound_kind::BoundKind::EXTENDS)
-        } else if !ctx.typ(lower).has_tag(crate::code::type_tag::TypeTag::BOT) {
-            (lower, crate::code::bound_kind::BoundKind::SUPER)
+            (upper, BoundKind::EXTENDS)
+        } else if !ctx.typ(lower).has_tag(TypeTag::BOT) {
+            (lower, BoundKind::SUPER)
         } else {
-            (object, crate::code::bound_kind::BoundKind::UNBOUND)
+            (object, BoundKind::UNBOUND)
         };
-        ctx.alloc_type(crate::code::type_::Type::new_wildcard_type(
+        ctx.alloc_type(Type::new_wildcard_type(
             bound,
             bk,
             syms.bound_class,
@@ -10177,11 +10139,17 @@ impl Types {
             != 0;
         if c == impl_sym || is_abstract_or_interface {
             let members = match &ctx.sym(c).kind_data {
-                crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+                crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => {
+                    *members_field
+                }
                 _ => None,
             };
             if let Some(members) = members {
-                let symbols = ctx.scope_get_symbols(members, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true);
+                let symbols = ctx.scope_get_symbols(
+                    members,
+                    crate::code::scope::LookupKind::NON_RECURSIVE,
+                    &|_| true,
+                );
                 for absmeth in symbols {
                     if ctx.sym(absmeth).kind != crate::code::kinds::Kind::MTH {
                         continue;
@@ -10190,16 +10158,13 @@ impl Types {
                     let abstract_default_private = crate::code::flags::ABSTRACT as i64
                         | crate::code::flags::DEFAULT
                         | crate::code::flags::PRIVATE as i64;
-                    if (flags_value & abstract_default_private) != crate::code::flags::ABSTRACT as i64 {
+                    if (flags_value & abstract_default_private)
+                        != crate::code::flags::ABSTRACT as i64
+                    {
                         continue;
                     }
                     let mut implmeth = crate::code::symbol::implementation(
-                        ctx,
-                        syms,
-                        self,
-                        absmeth,
-                        impl_sym,
-                        true,
+                        ctx, syms, self, absmeth, impl_sym, true,
                     );
                     if implmeth.is_none() || implmeth == Some(absmeth) {
                         if allow_default_methods {
@@ -10227,7 +10192,10 @@ impl Types {
                     None => return None,
                 };
                 let supertype = self.supertype(ctx, syms, c_type, None);
-                if ctx.typ(supertype).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+                if ctx
+                    .typ(supertype)
+                    .has_tag(TypeTag::CLASS)
+                {
                     if let Some(tsym) = ctx.typ(supertype).tsym {
                         undef = self.first_unimplemented_abstract_impl(
                             ctx,
@@ -10274,12 +10242,7 @@ impl Types {
     /// Upstream: Types.java:5024-5040.
     /// Java: public String toString(Type t) (Types.java:3648-3654) — the
     /// deprecated display uses typaramsString for ForAll types.
-    pub fn types_to_string(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> String {
+    pub fn types_to_string(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> String {
         if ctx.typ(t).has_tag(TypeTag::FORALL) {
             let tvars = match &ctx.typ(t).kind {
                 TypeKindData::ForAll { tvars, .. } => tvars.clone(),
@@ -10382,7 +10345,11 @@ impl Types {
     /// the Java Collector/Stream abstraction is not part of the
     /// port; the same builder lifecycle (supplier/add/merge/finish) is exposed
     /// explicitly by ClosureCollector (registered adapter).
-    pub fn closure_collector(&self, min_closure: bool, should_skip: ClosureSkip) -> ClosureCollector {
+    pub fn closure_collector(
+        &self,
+        min_closure: bool,
+        should_skip: ClosureSkip,
+    ) -> ClosureCollector {
         ClosureCollector {
             holder: ClosureHolder {
                 closure: List::nil(),
@@ -10415,21 +10382,22 @@ impl Types {
         };
         let current = values;
         for pair in &current {
-        if ctx.sym(pair.fst).name != names.value {
-            continue;
-        }
-        if let crate::code::attribute::AttributeKind::Enum { value: Some(enum_sym) } =
-            &ctx.attr(pair.snd).kind
-        {
-            let level = ctx.sym(*enum_sym).name.clone();
-            if level == names.SOURCE {
-                vis = RetentionPolicy::SOURCE;
-            } else if level == names.CLASS {
-                vis = RetentionPolicy::CLASS;
-            } else if level == names.RUNTIME {
-                vis = RetentionPolicy::RUNTIME;
+            if ctx.sym(pair.fst).name != names.value {
+                continue;
             }
-        }
+            if let crate::code::attribute::AttributeKind::Enum {
+                value: Some(enum_sym),
+            } = &ctx.attr(pair.snd).kind
+            {
+                let level = ctx.sym(*enum_sym).name.clone();
+                if level == names.SOURCE {
+                    vis = RetentionPolicy::SOURCE;
+                } else if level == names.CLASS {
+                    vis = RetentionPolicy::CLASS;
+                } else if level == names.RUNTIME {
+                    vis = RetentionPolicy::RUNTIME;
+                }
+            }
         }
         vis
     }
@@ -10453,8 +10421,8 @@ impl Types {
     /// Upstream: JCTree.java:775-777 (delegates to Types.findDescriptorType).
     pub fn lambda_descriptor_type(
         &self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
         diags: &crate::util::jc_diagnostic::Factory,
         chk: &crate::comp::check::Check,
         target: Option<TypeId>,
@@ -10486,7 +10454,7 @@ impl Types {
     /// Upstream: Types.java:180-188.
     pub fn skip_type_vars_public(
         &self,
-        ctx: &mut crate::compiler_context::CompilerContext,
+        ctx: &mut CompilerContext,
         t: TypeId,
     ) -> TypeId {
         self.skip_type_vars(ctx, t)
@@ -10508,7 +10476,7 @@ impl Types {
     /// Upstream: Flow.java:1302 (getThrownTypes on the member type).
     pub fn get_thrown_types_public(
         &self,
-        ctx: &crate::compiler_context::CompilerContext,
+        ctx: &CompilerContext,
         t: TypeId,
     ) -> List<TypeId> {
         get_thrown_types(ctx, t)
@@ -10586,7 +10554,7 @@ pub trait SignatureGenerator {
     /// # Panics
     ///   - none.
     ///
-    fn append_name(&mut self, name: &crate::util::name::Name);
+    fn append_name(&mut self, name: &Name);
 
     /// Hook invoked when a class name is referenced from a signature.
     ///
@@ -10629,10 +10597,7 @@ pub trait SignatureGenerator {
     /// # Panics
     ///   - none.
     ///
-    fn report_illegal_signature(
-        &mut self,
-        t: TypeId,
-    ) -> Result<(), InvalidSignatureException> {
+    fn report_illegal_signature(&mut self, t: TypeId) -> Result<(), InvalidSignatureException> {
         Err(InvalidSignatureException { type_: t })
     }
 
@@ -10653,8 +10618,8 @@ pub trait SignatureGenerator {
     ///   - an unsupported type tag reaches the assertion branch.
     fn assemble_sig(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
         t: TypeId,
     ) -> Result<(), InvalidSignatureException> {
         self.assemble_sig_default(ctx, syms, t)
@@ -10683,8 +10648,8 @@ pub trait SignatureGenerator {
     ///
     fn assemble_sig_default(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
         t: TypeId,
     ) -> Result<(), InvalidSignatureException> {
         use crate::code::type_tag::TypeTag;
@@ -10708,7 +10673,7 @@ pub trait SignatureGenerator {
             }
             TypeTag::ARRAY => {
                 let elemtype = match &ctx.typ(t).kind {
-                    crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => *elemtype,
+                    TypeKindData::ArrayType { elemtype, .. } => *elemtype,
                     _ => panic!("AssertionError: array type expected"),
                 };
                 self.append_char('[');
@@ -10718,7 +10683,7 @@ pub trait SignatureGenerator {
             }
             TypeTag::METHOD => {
                 let (argtypes, restype, thrown) = match &ctx.typ(t).kind {
-                    crate::code::type_::TypeKindData::MethodType {
+                    TypeKindData::MethodType {
                         argtypes,
                         restype,
                         thrown,
@@ -10743,25 +10708,25 @@ pub trait SignatureGenerator {
             }
             TypeTag::WILDCARD => {
                 let (kind, bounded) = match &ctx.typ(t).kind {
-                    crate::code::type_::TypeKindData::WildcardType { kind, type_, .. } => {
+                    TypeKindData::WildcardType { kind, type_, .. } => {
                         (*kind, *type_)
                     }
                     _ => panic!("AssertionError: wildcard type expected"),
                 };
                 match kind {
-                    crate::code::bound_kind::BoundKind::SUPER => {
+                    BoundKind::SUPER => {
                         self.append_char('-');
                         if let Some(bounded) = bounded {
                             self.assemble_sig(ctx, syms, bounded)?;
                         }
                     }
-                    crate::code::bound_kind::BoundKind::EXTENDS => {
+                    BoundKind::EXTENDS => {
                         self.append_char('+');
                         if let Some(bounded) = bounded {
                             self.assemble_sig(ctx, syms, bounded)?;
                         }
                     }
-                    crate::code::bound_kind::BoundKind::UNBOUND => self.append_char('*'),
+                    BoundKind::UNBOUND => self.append_char('*'),
                 }
             }
             TypeTag::TYPEVAR => {
@@ -10776,7 +10741,7 @@ pub trait SignatureGenerator {
             }
             TypeTag::FORALL => {
                 let (tvars, qtype) = match &ctx.typ(t).kind {
-                    crate::code::type_::TypeKindData::ForAll { tvars, qtype } => {
+                    TypeKindData::ForAll { tvars, qtype } => {
                         (tvars.clone(), *qtype)
                     }
                     _ => panic!("AssertionError: forall type expected"),
@@ -10808,13 +10773,13 @@ pub trait SignatureGenerator {
     ///
     fn has_type_var(
         &self,
-        ctx: &crate::compiler_context::CompilerContext,
+        ctx: &CompilerContext,
         mut l: List<TypeId>,
     ) -> bool {
         while l.non_empty() {
             if ctx
                 .typ(*l.head())
-                .has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
+                .has_tag(TypeTag::TYPEVAR)
             {
                 return true;
             }
@@ -10845,8 +10810,8 @@ pub trait SignatureGenerator {
     ///
     fn assemble_class_sig(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
         t: TypeId,
     ) -> Result<(), InvalidSignatureException> {
         let tsym = ctx.typ(t).tsym.expect("class symbol");
@@ -10855,7 +10820,7 @@ pub trait SignatureGenerator {
             .typ(t)
             .get_enclosing_type()
             .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
-        let outer_allparams = crate::code::types::allparams_of(ctx, outer);
+        let outer_allparams = allparams_of(ctx, outer);
         if !outer_allparams.is_empty() {
             let owner = ctx.sym(tsym).owner.expect("class owner");
             let empty_name = self.types().names.empty.to_java_string();
@@ -10885,7 +10850,7 @@ pub trait SignatureGenerator {
             let external = crate::jvm::class_file::externalize_name(&flatname);
             self.append_bytes(&external);
         }
-        let args = crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
+        let args = get_type_arguments_completed(ctx, syms, t, None);
         if !args.is_empty() {
             self.append_char('<');
             self.assemble_sig_list(ctx, syms, args)?;
@@ -10914,8 +10879,8 @@ pub trait SignatureGenerator {
     ///
     fn assemble_params_sig(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
         typarams: List<TypeId>,
     ) -> Result<(), InvalidSignatureException> {
         self.append_char('<');
@@ -10929,8 +10894,7 @@ pub trait SignatureGenerator {
             if !bounds.is_empty() {
                 let bounds_head = *bounds.head();
                 if let Some(bounds_tsym) = ctx.typ(bounds_head).tsym
-                    && (ctx.sym(bounds_tsym).flags_field
-                        & crate::code::flags::INTERFACE as i64)
+                    && (ctx.sym(bounds_tsym).flags_field & crate::code::flags::INTERFACE as i64)
                         != 0
                 {
                     self.append_char(':');
@@ -10967,8 +10931,8 @@ pub trait SignatureGenerator {
     ///
     fn assemble_sig_list(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
         mut types: List<TypeId>,
     ) -> Result<(), InvalidSignatureException> {
         while types.non_empty() {
@@ -10977,7 +10941,6 @@ pub trait SignatureGenerator {
         }
         Ok(())
     }
-
 }
 
 /// Return the flat name of a class symbol (Symbol.ClassSymbol.flatname).
@@ -10985,15 +10948,14 @@ pub trait SignatureGenerator {
 /// The helper mirrors the upstream field access used by the signature
 /// generator; a non-class symbol is an internal invariant violation.
 fn class_flatname(
-    ctx: &crate::compiler_context::CompilerContext,
+    ctx: &CompilerContext,
     sym: SymbolId,
-) -> crate::util::name::Name {
+) -> Name {
     match &ctx.sym(sym).kind_data {
         crate::code::symbol::SymbolKind::ClassSymbol { flatname, .. } => flatname.clone(),
         _ => panic!("ClassCastException: class symbol expected"),
     }
 }
-
 
 impl Types {
     /// Create a copy of a method type with a different parameter list.
@@ -11051,23 +11013,25 @@ mod tests {
     #[should_panic(expected = "varInstantiated must not be called")]
     fn bounds_change_recorder_rejects_instantiation() {
         let mut ctx = CompilerContext::new();
-        let names = crate::util::names::Names::new(false);
+        let names = Names::new(false);
         let syms = Symtab::new(
             &mut ctx,
-            std::rc::Rc::new(names),
-            crate::jvm::target::Target::DEFAULT,
-            crate::code::source::Source::JDK17,
+            Rc::new(names),
+            Target::DEFAULT,
+            Source::JDK17,
         );
-        let types = Types::with_names(std::rc::Rc::new(crate::util::names::Names::new(false)));
+        let types = Types::with_names(Rc::new(Names::new(false)));
         let uv = ctx.alloc_type(Type::new(
             TypeTag::NONE,
             None,
-            crate::code::type_::TypeKindData::JCNoType {
+            TypeKindData::JCNoType {
                 kind: crate::code::type_::JCNoTypeKind::Base,
             },
         ));
         let recorder = BoundsChangeRecorder::default();
-        crate::comp::infer::UndetVarListener::var_instantiated(&recorder, &mut ctx, &syms, &types, uv);
+        crate::comp::infer::UndetVarListener::var_instantiated(
+            &recorder, &mut ctx, &syms, &types, uv,
+        );
     }
     use crate::code::source::Source;
     use crate::jvm::target::Target;
@@ -11083,7 +11047,7 @@ mod tests {
         let error = ctx.alloc_type(Type::new(
             TypeTag::ERROR,
             None,
-            crate::code::type_::TypeKindData::ErrorType {
+            TypeKindData::ErrorType {
                 outer_field: None,
                 typarams_field: None,
                 allparams_field: None,
@@ -11230,7 +11194,10 @@ mod tests {
                 varargs: false,
             },
         ));
-        assert_eq!(types.hash_code(&mut ctx, &symtab, int_array_2d), 5 + 12 + 12);
+        assert_eq!(
+            types.hash_code(&mut ctx, &symtab, int_array_2d),
+            5 + 12 + 12
+        );
     }
 
     #[test]
@@ -11261,7 +11228,8 @@ mod tests {
                 elemtype: Some(symtab.string_type),
                 varargs: false,
             },
-        ));        assert!(types.is_same_type(&mut ctx, &symtab, string_array, string_array2));
+        ));
+        assert!(types.is_same_type(&mut ctx, &symtab, string_array, string_array2));
     }
 
     #[test]
@@ -11315,7 +11283,10 @@ mod tests {
     fn erasure_keeps_primitives_strings_and_arrays() {
         let (mut ctx, symtab) = build();
         let types = Types::new();
-        assert_eq!(types.erasure(&mut ctx, &symtab, symtab.int_type), symtab.int_type);
+        assert_eq!(
+            types.erasure(&mut ctx, &symtab, symtab.int_type),
+            symtab.int_type
+        );
         assert_eq!(
             types.erasure(&mut ctx, &symtab, symtab.string_type),
             symtab.string_type
@@ -11331,20 +11302,19 @@ mod tests {
         assert_eq!(types.erasure(&mut ctx, &symtab, int_array), int_array);
     }
 
-    struct CountingCompleter(std::rc::Rc<std::cell::Cell<usize>>);
+    struct CountingCompleter(Rc<std::cell::Cell<usize>>);
 
     impl crate::code::symbol::Completer for CountingCompleter {
         fn complete(
             &mut self,
             ctx: &mut CompilerContext,
             _syms: &Symtab,
-            sym: crate::ids::SymbolId,
+            sym: SymbolId,
         ) -> Result<(), crate::code::symbol::CompletionFailure> {
             self.0.set(self.0.get() + 1);
             if let Some(ty) = ctx.sym(sym).ty
-                && let crate::code::type_::TypeKindData::ClassType {
-                    typarams_field, ..
-                } = &mut ctx.typ_mut(ty).kind
+                && let TypeKindData::ClassType { typarams_field, .. } =
+                    &mut ctx.typ_mut(ty).kind
             {
                 *typarams_field = Some(List::nil());
             }
@@ -11355,7 +11325,7 @@ mod tests {
     #[test]
     fn completed_reads_call_the_completer_only_once() {
         let (mut ctx, syms) = build();
-        let names = crate::util::names::Names::new(false);
+        let names = Names::new(false);
         let no_type = ctx.no_type_id();
         let class = crate::code::symtab::new_class_symbol(
             &mut ctx,
@@ -11429,8 +11399,9 @@ mod tests {
         let symbol = ctx.sym(field);
         assert_eq!(
             symbol.flags()
-                & (crate::code::flags::STATIC | crate::code::flags::PUBLIC | crate::code::flags::FINAL)
-                    as i64,
+                & (crate::code::flags::STATIC
+                    | crate::code::flags::PUBLIC
+                    | crate::code::flags::FINAL) as i64,
             (crate::code::flags::STATIC | crate::code::flags::PUBLIC | crate::code::flags::FINAL)
                 as i64
         );
@@ -11476,13 +11447,7 @@ mod tests {
             symtab.int_type
         );
         // Java: WildcardType.type is the (upper) bound; kind=EXTENDS.
-        let wildcard = new_wildcard_type(
-            &mut ctx,
-            Some(int_array),
-            BoundKind::EXTENDS,
-            None,
-            None,
-        );
+        let wildcard = new_wildcard_type(&mut ctx, Some(int_array), BoundKind::EXTENDS, None, None);
         assert_eq!(
             elemtype_of(&types, &ctx, &symtab, wildcard).expect("array element type"),
             symtab.int_type
@@ -11554,11 +11519,7 @@ mod tests {
         let (mut ctx, symtab) = build();
         let types = Types::new();
         let list_tsym = ctx.typ(symtab.list_type).tsym.expect("list symbol");
-        let parameterized = class_type(
-            &mut ctx,
-            list_tsym,
-            &[symtab.string_type, symtab.int_type],
-        );
+        let parameterized = class_type(&mut ctx, list_tsym, &[symtab.string_type, symtab.int_type]);
         assert!(type_contains(
             &types,
             &mut ctx,
@@ -11581,9 +11542,6 @@ mod tests {
             parameterized
         ));
     }
-
-
-
 
     /// Sets java.util.List<E> type parameters (E = Object upper bound) so that
     /// the parameterized-type relation tests can build List<...> instances.
@@ -11666,8 +11624,6 @@ mod tests {
         assert!(!types.is_subtype(&mut ctx, &symtab, list_string, list_int));
     }
 
-
-
     // ------------------------------------------------------------------
     // functional interface descriptors / castable warner /
     // checkUnique MTH.
@@ -11691,7 +11647,9 @@ mod tests {
         let log = crate::util::log::Log::instance(&mut context);
         let names = Rc::new(Names::new(false));
         let messages = JavacMessages::instance(&mut context);
-        let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(messages, "compiler"));
+        let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(
+            messages, "compiler",
+        ));
         let lint = crate::code::lint::Lint::instance(&mut context);
         let deferred = Rc::new(DeferredLintHandler::new());
         let symtab = Symtab::new(&mut ctx, Rc::clone(&names), Target::DEFAULT, Source::JDK17);
@@ -11805,8 +11763,7 @@ mod tests {
                 List::nil(),
                 method_class,
             ));
-            let extra_symbol_name =
-                names.from_string(&javac_strings::JavaString::from(extra_name));
+            let extra_symbol_name = names.from_string(&javac_strings::JavaString::from(extra_name));
             let extra = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
                 crate::code::kinds::Kind::MTH,
                 mflags,
@@ -11825,7 +11782,6 @@ mod tests {
         }
         (class, class_type, method)
     }
-
 
     fn check_for_tests(
         names: &Rc<Names>,
@@ -11872,7 +11828,10 @@ mod tests {
         let desc_sym = types
             .find_descriptor_symbol(&mut ctx, &syms, &diags, &chk, interface_tsym)
             .expect("SAM descriptor");
-        assert_eq!(desc_sym, method, "the single abstract method is the descriptor");
+        assert_eq!(
+            desc_sym, method,
+            "the single abstract method is the descriptor"
+        );
         assert!(types.is_functional_interface(&mut ctx, &syms, &diags, &chk, interface_tsym));
         let interface_ty = ctx.sym(interface_tsym).ty.expect("interface type");
         let desc_ty = types
@@ -11941,7 +11900,7 @@ mod tests {
         let desc_ty = types
             .find_descriptor_type(&mut ctx, &syms, &diags, &chk, interface_ty)
             .expect("descriptor type");
-        let thrown = crate::code::types::get_thrown_types(&ctx, desc_ty);
+        let thrown = get_thrown_types(&ctx, desc_ty);
         assert_eq!(thrown.length(), 1);
         assert_eq!(*thrown.head(), exception_type);
     }
@@ -11953,13 +11912,7 @@ mod tests {
         let long_type = syms.long_type;
         let boolean_type = syms.boolean_type;
         let mut no_warn = crate::util::warner::Warner::new(None);
-        assert!(types.is_castable_with_warn(
-            &mut ctx,
-            &syms,
-            int_type,
-            long_type,
-            &mut no_warn
-        ));
+        assert!(types.is_castable_with_warn(&mut ctx, &syms, int_type, long_type, &mut no_warn));
         assert!(!types.is_castable_with_warn(
             &mut ctx,
             &syms,
@@ -11967,13 +11920,7 @@ mod tests {
             int_type,
             &mut no_warn
         ));
-        assert!(types.is_castable_with_warn(
-            &mut ctx,
-            &syms,
-            int_type,
-            int_type,
-            &mut no_warn
-        ));
+        assert!(types.is_castable_with_warn(&mut ctx, &syms, int_type, int_type, &mut no_warn));
         assert!(!no_warn.has_lint(crate::code::lint::LintCategory::UNCHECKED));
     }
 
@@ -12052,7 +11999,6 @@ mod tests {
         let _ = (int_type, java_base);
     }
 
-
     #[test]
     fn is_subtypes_and_unchecked_compare_corresponding_lists() {
         let (mut ctx, syms, types) = build_with_types();
@@ -12064,13 +12010,7 @@ mod tests {
         let mut warn = crate::util::warner::Warner::new(None);
         assert!(types.is_subtypes_unchecked(&mut ctx, &syms, &ints, &ints, &warn));
         assert!(!types.is_subtypes_unchecked(&mut ctx, &syms, &ints, &booleans, &warn));
-        assert!(!types.is_subtypes_unchecked(
-            &mut ctx,
-            &syms,
-            &List::nil(),
-            &ints,
-            &warn
-        ));
+        assert!(!types.is_subtypes_unchecked(&mut ctx, &syms, &List::nil(), &ints, &warn));
     }
 
     #[test]
@@ -12086,8 +12026,14 @@ mod tests {
         ));
         assert!(types.is_array(&mut ctx, &syms, int_array));
         assert!(!types.is_array(&mut ctx, &syms, syms.int_type));
-        assert_eq!(types.elemtype_or_type(&mut ctx, &syms, int_array), syms.int_type);
-        assert_eq!(types.elemtype_or_type(&mut ctx, &syms, syms.int_type), syms.int_type);
+        assert_eq!(
+            types.elemtype_or_type(&mut ctx, &syms, int_array),
+            syms.int_type
+        );
+        assert_eq!(
+            types.elemtype_or_type(&mut ctx, &syms, syms.int_type),
+            syms.int_type
+        );
         let lower = types.cvar_lower_bounds(&mut ctx, &List::of(syms.int_type));
         assert_eq!(*lower.head(), syms.int_type);
     }
@@ -12190,12 +12136,7 @@ impl UniqueType {
     }
 
     /// Return the hash code of the wrapped type.
-    pub fn hash_code(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        types: &Types,
-    ) -> i32 {
+    pub fn hash_code(&self, ctx: &mut CompilerContext, syms: &Symtab, types: &Types) -> i32 {
         types.hash_code(ctx, syms, self.type_)
     }
 
@@ -12227,7 +12168,7 @@ impl Types {
     pub fn constant_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         c: &crate::jvm::pool_constant::LoadableConstantRef,
     ) -> TypeId {
         use crate::jvm::pool_constant::LoadableConstantRef;
@@ -12295,8 +12236,12 @@ impl Types {
     ///
     /// # Panics
     ///   - the type is not a compile-time constant type.
-    pub fn string_value(&self, ctx: &mut CompilerContext, t: TypeId) -> crate::util::java_string::JavaString {
-        if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::BOT) {
+    pub fn string_value(
+        &self,
+        ctx: &mut CompilerContext,
+        t: TypeId,
+    ) -> crate::util::java_string::JavaString {
+        if ctx.typ(t).has_tag(TypeTag::BOT) {
             return crate::util::java_string::JavaString::from("null");
         }
         let constant = ctx
@@ -12342,10 +12287,10 @@ impl Types {
     pub fn dimensions(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         t: TypeId,
     ) -> i32 {
-        if !ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::ARRAY) {
+        if !ctx.typ(t).has_tag(TypeTag::ARRAY) {
             return 0;
         }
         let elem = self.elemtype(ctx, syms, t);

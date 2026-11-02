@@ -836,9 +836,7 @@ mod tests {
         assert!(!l.contains(&31));
         assert_eq!(l.last(), Some(20));
         assert_eq!(List::<i32>::nil().last(), None);
-        assert!(
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| l.get(-1))).is_err()
-        );
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| l.get(-1))).is_err());
         assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| l.get(4))).is_err());
     }
 

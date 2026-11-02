@@ -74,6 +74,8 @@ use crate::tree::switch_expression_tree::SwitchExpressionTree;
 use crate::tree::switch_tree::SwitchTree;
 use crate::tree::synchronized_tree::SynchronizedTree;
 use crate::tree::throw_tree::ThrowTree;
+use crate::tree::tree::Tree;
+use crate::tree::tree_visitor::TreeVisitor;
 use crate::tree::try_tree::TryTree;
 use crate::tree::type_cast_tree::TypeCastTree;
 use crate::tree::type_parameter_tree::TypeParameterTree;
@@ -84,8 +86,6 @@ use crate::tree::variable_tree::VariableTree;
 use crate::tree::while_loop_tree::WhileLoopTree;
 use crate::tree::wildcard_tree::WildcardTree;
 use crate::tree::yield_tree::YieldTree;
-use crate::tree::tree::Tree;
-use crate::tree::tree_visitor::TreeVisitor;
 use std::rc::Rc;
 
 /// A TreeVisitor that visits all the child tree nodes, and provides
@@ -200,7 +200,13 @@ pub trait TreePathScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_compilation_unit(&mut self, node: &dyn CompilationUnitTree, p: P) -> Option<R> {
-        let mut r = match node.get_package() { Some(child) => { let child: Rc<dyn Tree> = child; self.scan(child, p.clone()) }, None => None };
+        let mut r = match node.get_package() {
+            Some(child) => {
+                let child: Rc<dyn Tree> = child;
+                self.scan(child, p.clone())
+            }
+            None => None,
+        };
         for child in node.get_imports() {
             let child: Rc<dyn Tree> = child;
             r = self.scan_and_reduce(child, p.clone(), r);
@@ -392,7 +398,11 @@ pub trait TreePathScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
         r
     }
 
-    fn visit_conditional_expression(&mut self, node: &dyn ConditionalExpressionTree, p: P) -> Option<R> {
+    fn visit_conditional_expression(
+        &mut self,
+        node: &dyn ConditionalExpressionTree,
+        p: P,
+    ) -> Option<R> {
         let mut r = self.scan(node.get_condition(), p.clone());
         r = self.scan_and_reduce(node.get_true_expression(), p.clone(), r);
         r = self.scan_and_reduce(node.get_false_expression(), p.clone(), r);
@@ -409,7 +419,11 @@ pub trait TreePathScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
         r
     }
 
-    fn visit_expression_statement(&mut self, node: &dyn ExpressionStatementTree, p: P) -> Option<R> {
+    fn visit_expression_statement(
+        &mut self,
+        node: &dyn ExpressionStatementTree,
+        p: P,
+    ) -> Option<R> {
         self.scan(node.get_expression(), p.clone())
     }
 
@@ -450,7 +464,13 @@ pub trait TreePathScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
     }
 
     fn visit_new_class(&mut self, node: &dyn NewClassTree, p: P) -> Option<R> {
-        let mut r = match node.get_enclosing_expression() { Some(child) => { let child: Rc<dyn Tree> = child; self.scan(child, p.clone()) }, None => None };
+        let mut r = match node.get_enclosing_expression() {
+            Some(child) => {
+                let child: Rc<dyn Tree> = child;
+                self.scan(child, p.clone())
+            }
+            None => None,
+        };
         r = self.scan_and_reduce(node.get_identifier(), p.clone(), r);
         for child in node.get_type_arguments() {
             let child: Rc<dyn Tree> = child;
@@ -524,7 +544,11 @@ pub trait TreePathScanner<R, P: Clone>: TreeVisitor<Option<R>, P> {
         self.scan(node.get_expression(), p.clone())
     }
 
-    fn visit_parenthesized_pattern(&mut self, node: &dyn ParenthesizedPatternTree, p: P) -> Option<R> {
+    fn visit_parenthesized_pattern(
+        &mut self,
+        node: &dyn ParenthesizedPatternTree,
+        p: P,
+    ) -> Option<R> {
         self.scan(node.get_pattern(), p.clone())
     }
 

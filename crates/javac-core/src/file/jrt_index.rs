@@ -230,7 +230,6 @@ impl JRTIndex {
         Some(bytes)
     }
 
-
     /// Java: public static boolean isAvailable() — whether the jrt: file system exists.
     pub fn is_available(java_home: &FsPath) -> bool {
         JRTIndex::open(java_home).is_ok()
@@ -521,7 +520,7 @@ mod tests {
     fn is_in_jrt_uses_the_jrt_file_object_kind() {
         let manager: Rc<dyn BaseFileManagerApi> = Rc::new(BaseFileManager::new(
             None,
-            FsPath::from_path_buf(std::path::PathBuf::from(".")),
+            FsPath::from_path_buf(PathBuf::from(".")),
         ));
         let path = FsPath::new("/modules/java.base/java/lang/Object.class").expect("path");
         let jrt_file = PathFileObject::for_jrt_path(manager.clone(), &path);

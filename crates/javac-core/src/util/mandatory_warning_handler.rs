@@ -219,10 +219,12 @@ impl<L: MandatoryWarningLog> MandatoryWarningHandler<L> {
                     .any(|candidate| Self::same_file(candidate, &current_source));
                 if already_reported {
                     // more errors in a file that already has reported warnings
-                    self.deferred_diagnostic_kind.set(Some(DeferredDiagnosticKind::ADDITIONAL_IN_FILE));
+                    self.deferred_diagnostic_kind
+                        .set(Some(DeferredDiagnosticKind::ADDITIONAL_IN_FILE));
                 } else {
                     // warnings in a new source file
-                    self.deferred_diagnostic_kind.set(Some(DeferredDiagnosticKind::IN_FILE));
+                    self.deferred_diagnostic_kind
+                        .set(Some(DeferredDiagnosticKind::IN_FILE));
                 }
                 *self.deferred_diagnostic_source.borrow_mut() = current_source.clone();
                 *self.deferred_diagnostic_arg.borrow_mut() =
@@ -233,13 +235,15 @@ impl<L: MandatoryWarningLog> MandatoryWarningHandler<L> {
                 && !Self::same_file(&self.deferred_diagnostic_source.borrow(), &current_source)
             {
                 // additional errors in more than one source file
-                self.deferred_diagnostic_kind.set(Some(DeferredDiagnosticKind::ADDITIONAL_IN_FILES));
+                self.deferred_diagnostic_kind
+                    .set(Some(DeferredDiagnosticKind::ADDITIONAL_IN_FILES));
                 *self.deferred_diagnostic_arg.borrow_mut() = None;
             }
         } else {
             if self.deferred_diagnostic_kind.get().is_none() {
                 // warnings in a single source
-                self.deferred_diagnostic_kind.set(Some(DeferredDiagnosticKind::IN_FILE));
+                self.deferred_diagnostic_kind
+                    .set(Some(DeferredDiagnosticKind::IN_FILE));
                 *self.deferred_diagnostic_source.borrow_mut() = current_source.clone();
                 *self.deferred_diagnostic_arg.borrow_mut() =
                     current_source.map(|file| Rc::new(file) as DiagnosticArg);
@@ -247,7 +251,8 @@ impl<L: MandatoryWarningLog> MandatoryWarningHandler<L> {
                 && !Self::same_file(&self.deferred_diagnostic_source.borrow(), &current_source)
             {
                 // warnings in multiple source files
-                self.deferred_diagnostic_kind.set(Some(DeferredDiagnosticKind::IN_FILES));
+                self.deferred_diagnostic_kind
+                    .set(Some(DeferredDiagnosticKind::IN_FILES));
                 *self.deferred_diagnostic_arg.borrow_mut() = None;
             }
         }
@@ -345,14 +350,14 @@ impl<L: MandatoryWarningLog> MandatoryWarningHandler<L> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::jc_diagnostic::{Factory, SimpleDiagnosticPosition};
+    use crate::util::java_string::JavaString;
     use crate::util::javac_messages::JavacMessages;
+    use crate::util::jc_diagnostic::{Factory, SimpleDiagnosticPosition};
     use javac_tools::error::Error;
     use javac_tools::tools::file_object::FileObject;
     use javac_tools::tools::java_file_object::{JavaFileObject as JfoTrait, Kind};
     use javac_tools::uri::URI;
     use std::io::{Read, Write};
-    use crate::util::java_string::JavaString;
 
     struct TestFile {
         name: &'static str,
@@ -375,18 +380,18 @@ mod tests {
             Err(Error::UnsupportedOperationException)
         }
 
-        fn get_char_content(
-            &self,
-            _ignore_encoding_errors: bool,
-        ) -> Result<Option<JavaString>, Error> {
-            Ok(None)
-        }
-
         fn open_reader(
             &self,
             _ignore_encoding_errors: bool,
         ) -> Result<Box<dyn javac_tools::java_io::Reader>, Error> {
             Err(Error::UnsupportedOperationException)
+        }
+
+        fn get_char_content(
+            &self,
+            _ignore_encoding_errors: bool,
+        ) -> Result<Option<JavaString>, Error> {
+            Ok(None)
         }
 
         fn open_writer(&self) -> Result<Box<dyn javac_tools::java_io::Writer>, Error> {
@@ -430,13 +435,13 @@ mod tests {
 
     #[derive(Default)]
     struct MockLog {
-        nwarnings: std::cell::Cell<i32>,
-        max_warnings: std::cell::Cell<i32>,
-        current: std::cell::RefCell<Option<Rc<dyn JavaFileObject>>>,
-        mandatory_warnings: std::cell::RefCell<Vec<Warning>>,
-        warnings: std::cell::RefCell<Vec<Warning>>,
-        mandatory_notes: std::cell::RefCell<Vec<(Option<Rc<dyn JavaFileObject>>, Note)>>,
-        notes: std::cell::RefCell<Vec<(Option<Rc<dyn JavaFileObject>>, Note)>>,
+        nwarnings: Cell<i32>,
+        max_warnings: Cell<i32>,
+        current: RefCell<Option<Rc<dyn JavaFileObject>>>,
+        mandatory_warnings: RefCell<Vec<Warning>>,
+        warnings: RefCell<Vec<Warning>>,
+        mandatory_notes: RefCell<Vec<(Option<Rc<dyn JavaFileObject>>, Note)>>,
+        notes: RefCell<Vec<(Option<Rc<dyn JavaFileObject>>, Note)>>,
     }
 
     impl MandatoryWarningLog for MockLog {
@@ -498,13 +503,13 @@ mod tests {
 
     fn mock() -> MockLog {
         MockLog {
-            nwarnings: std::cell::Cell::new(0),
-            max_warnings: std::cell::Cell::new(100),
-            current: std::cell::RefCell::new(None),
-            mandatory_warnings: std::cell::RefCell::new(Vec::new()),
-            warnings: std::cell::RefCell::new(Vec::new()),
-            mandatory_notes: std::cell::RefCell::new(Vec::new()),
-            notes: std::cell::RefCell::new(Vec::new()),
+            nwarnings: Cell::new(0),
+            max_warnings: Cell::new(100),
+            current: RefCell::new(None),
+            mandatory_warnings: RefCell::new(Vec::new()),
+            warnings: RefCell::new(Vec::new()),
+            mandatory_notes: RefCell::new(Vec::new()),
+            notes: RefCell::new(Vec::new()),
         }
     }
 
@@ -513,8 +518,7 @@ mod tests {
         let factory = factory();
         let mut log = mock();
         *log.current.borrow_mut() = Some(file("A.java"));
-        let mut handler =
-            MandatoryWarningHandler::new(log, None, true, true, "mask", None);
+        let mut handler = MandatoryWarningHandler::new(log, None, true, true, "mask", None);
         handler.report(position(), warning_key(&factory));
         assert_eq!(handler.log.mandatory_warnings.borrow().len(), 1);
         assert!(handler.deferred_diagnostic_kind.get().is_none());
@@ -527,14 +531,8 @@ mod tests {
         let factory = factory();
         let mut log = mock();
         *log.current.borrow_mut() = Some(file("A.java"));
-        let mut handler = MandatoryWarningHandler::new(
-            log,
-            Some(Source::JDK17),
-            false,
-            true,
-            "mask",
-            None,
-        );
+        let mut handler =
+            MandatoryWarningHandler::new(log, Some(Source::JDK17), false, true, "mask", None);
         handler.report(position(), warning_key(&factory));
         assert_eq!(
             handler.deferred_diagnostic_kind.get(),
@@ -553,10 +551,7 @@ mod tests {
         // The real resources use the note kind: compiler.note.<prefix>.<suffix>.
         assert_eq!(first_note.info().key(), "compiler.note.mask.plural");
         let (_, second_note) = &notes[1];
-        assert_eq!(
-            second_note.info().key(),
-            "compiler.note.mask.recompile"
-        );
+        assert_eq!(second_note.info().key(), "compiler.note.mask.recompile");
     }
 
     #[test]
@@ -601,14 +596,7 @@ mod tests {
         let factory = factory();
         let mut log = mock();
         *log.current.borrow_mut() = Some(file("A.java"));
-        let mut handler = MandatoryWarningHandler::new(
-            log,
-            None,
-            false,
-            false,
-            "mask",
-            None,
-        );
+        let mut handler = MandatoryWarningHandler::new(log, None, false, false, "mask", None);
         handler.report(position(), warning_key(&factory));
         handler.report_deferred_diagnostic();
         assert!(handler.log.mandatory_warnings.borrow().is_empty());
@@ -622,14 +610,7 @@ mod tests {
         let factory = factory();
         let mut log = mock();
         *log.current.borrow_mut() = Some(file("A.java"));
-        let mut handler = MandatoryWarningHandler::new(
-            log,
-            None,
-            false,
-            true,
-            "mask",
-            None,
-        );
+        let mut handler = MandatoryWarningHandler::new(log, None, false, true, "mask", None);
         handler.report(position(), warning_key(&factory));
         handler.clear();
         assert!(handler.deferred_diagnostic_kind.get().is_none());

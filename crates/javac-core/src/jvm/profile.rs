@@ -211,7 +211,6 @@ mod tests {
         assert_eq!(Profile::COMPACT1.to_string(), "COMPACT1");
         assert_eq!(Profile::DEFAULT.to_string(), "DEFAULT");
     }
-
 }
 
 #[cfg(test)]

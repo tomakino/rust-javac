@@ -1,3 +1,7 @@
+use super::expression_tree::ExpressionTree;
+use super::modifiers_tree::ModifiersTree;
+use super::statement_tree::StatementTree;
+use super::tree::Tree;
 /// A tree node for a variable declaration.
 ///
 /// For example:
@@ -14,10 +18,6 @@
 /// @since 1.6
 use javac_tools::lang::model::element::Name;
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
-use super::modifiers_tree::ModifiersTree;
-use super::statement_tree::StatementTree;
-use super::tree::Tree;
 
 pub trait VariableTree: StatementTree {
     /// Returns the modifiers, including any annotations, on the declaration.
@@ -41,5 +41,4 @@ pub trait VariableTree: StatementTree {
     /// Returns the initializer for the variable, or {@code null} if none.
     /// @return the initializer
     fn get_initializer(&self) -> Option<Rc<dyn ExpressionTree>>;
-
 }

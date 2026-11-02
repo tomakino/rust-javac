@@ -18,7 +18,7 @@ use crate::util::name::Name;
 /// enclosing class); top-level classes are not entered.
 pub(crate) fn enter_inner_symbol(
     ctx: &mut CompilerContext,
-    types: &crate::code::types::Types,
+    types: &Types,
     inner_classes: &mut Vec<SymbolId>,
     c: SymbolId,
 ) {

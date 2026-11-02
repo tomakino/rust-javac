@@ -1,3 +1,6 @@
+use super::case_tree::CaseTree;
+use super::expression_tree::ExpressionTree;
+use super::statement_tree::StatementTree;
 /// A tree node for a {@code switch} statement.
 ///
 /// For example:
@@ -13,9 +16,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::case_tree::CaseTree;
-use super::expression_tree::ExpressionTree;
-use super::statement_tree::StatementTree;
 
 pub trait SwitchTree: StatementTree {
     /// Returns the expression for the {@code switch} statement.
@@ -25,5 +25,4 @@ pub trait SwitchTree: StatementTree {
     /// Returns the cases for the {@code switch} statement.
     /// @return the cases
     fn get_cases(&self) -> Vec<Rc<dyn CaseTree>>;
-
 }

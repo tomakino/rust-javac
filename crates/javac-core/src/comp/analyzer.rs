@@ -27,7 +27,7 @@ use crate::ids::{SymbolId, TreeId};
 use crate::tree::jc_tree::{ParameterKind, Tag, TreeKind};
 use crate::tree::tree_copier::{TreeCopier, TreeCopyHook};
 use crate::tree::tree_maker::TreeMaker;
-use crate::tree::tree_scanner::{tree_scanner_visitor_delegate, TreeScannerVisitor};
+use crate::tree::tree_scanner::{TreeScannerVisitor, tree_scanner_visitor_delegate};
 use crate::util::list::List;
 use crate::util::log::{DiagnosticHandler, Log};
 use crate::util::options::Options;
@@ -87,7 +87,9 @@ impl AnalyzerMode {
             method: false,
             local: false,
         };
-        let Some(opt) = opt else { return res; };
+        let Some(opt) = opt else {
+            return res;
+        };
         let modes: Vec<&'static str> = {
             let mut v = Vec::new();
             for m in opt.split(',') {
@@ -103,7 +105,12 @@ impl AnalyzerMode {
             v
         };
         if modes.contains(&"all") {
-            res = AnalyzerModes { diamond: true, lambda: true, method: true, local: true };
+            res = AnalyzerModes {
+                diamond: true,
+                lambda: true,
+                method: true,
+                local: true,
+            };
         }
         for mode in [
             AnalyzerMode::DIAMOND,
@@ -113,8 +120,7 @@ impl AnalyzerMode {
         ] {
             let name = mode.opt();
             let disabled_name = format!("-{}", name);
-            if modes.contains(&disabled_name.as_str())
-                || !mode.feature().allowed_in_source(source)
+            if modes.contains(&disabled_name.as_str()) || !mode.feature().allowed_in_source(source)
             {
                 res.set(mode, false);
             } else if modes.contains(&name) {
@@ -276,14 +282,22 @@ fn analyzer_copier_fix(ctx: &mut CompilerContext, old: TreeId, new: TreeId) -> T
     if ctx.tree(old).tag == Tag::LAMBDA && ctx.tree(new).tag == Tag::LAMBDA {
         let old_implicit = matches!(
             &ctx.tree(old).kind,
-            TreeKind::Lambda { param_kind: ParameterKind::IMPLICIT, .. }
+            TreeKind::Lambda {
+                param_kind: ParameterKind::IMPLICIT,
+                ..
+            }
         );
         if old_implicit {
             let params = match &ctx.tree(new).kind {
                 TreeKind::Lambda { params, .. } => params.clone(),
                 _ => List::nil(),
             };
-            if let TreeKind::Lambda { param_kind, params: slot, .. } = &mut ctx.tree_mut(new).kind {
+            if let TreeKind::Lambda {
+                param_kind,
+                params: slot,
+                ..
+            } = &mut ctx.tree_mut(new).kind
+            {
                 *param_kind = ParameterKind::IMPLICIT;
                 *slot = params.clone();
             }
@@ -302,9 +316,8 @@ fn analyzer_copier_fix(ctx: &mut CompilerContext, old: TreeId, new: TreeId) -> T
             TreeKind::NewClass { args, .. } => args.clone(),
             _ => List::nil(),
         };
-        let first_is_nullchk = old_args
-            .non_empty()
-            && ctx.tree(*old_args.head()).tag == Tag::NULLCHK;
+        let first_is_nullchk =
+            old_args.non_empty() && ctx.tree(*old_args.head()).tag == Tag::NULLCHK;
         if first_is_nullchk {
             let first_arg = match &ctx.tree(*old_args.head()).kind {
                 TreeKind::Unary { arg, .. } => arg.expect("NULLCHK arg"),
@@ -519,9 +532,11 @@ impl Analyzer {
         syms: &crate::code::symtab::Symtab,
         tree: TreeId,
         env: Option<&Rc<Env<AttrContext>>>,
-        attr: &mut crate::comp::attr::Attr,
+        attr: &mut Attr,
     ) {
-        let Some(env) = env else { return; };
+        let Some(env) = env else {
+            return;
+        };
         let rewritings = {
             let mut scanner = StatementScanner::new_with_attr(self, ctx, syms, tree, env, attr);
             scanner.scan_statement(ctx);
@@ -568,14 +583,20 @@ impl Analyzer {
     ///   - the queue entries are analyzed with the registered services.
     ///
     /// Upstream: Analyzer.java:585-587.
-    pub fn flush(&mut self, ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab, flush_env: &Rc<Env<AttrContext>>) {
+    pub fn flush(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        flush_env: &Rc<Env<AttrContext>>,
+    ) {
         let outermost = self.outermost_of_env(ctx, flush_env);
         let queued = match &mut self.deferred_analysis_helper {
             DeferredAnalysisHelper::Flush => None,
             DeferredAnalysisHelper::Queue { queue } => queue.remove(&outermost),
         };
-        let Some(mut queued) = queued else { return; };
+        let Some(mut queued) = queued else {
+            return;
+        };
         let prev_helper = std::mem::replace(
             &mut self.deferred_analysis_helper,
             DeferredAnalysisHelper::Flush,
@@ -614,8 +635,12 @@ impl Analyzer {
     }
 
     /// Java: void doAnalysis(RewritingContext rewriting) (Analyzer.java:553-583).
-    fn do_analysis(&mut self, ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab, rewriting: RewritingContext) {
+    fn do_analysis(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        rewriting: RewritingContext,
+    ) {
         // Java: LocalCacheContext localCacheContext =
         //     argumentAttr.withLocalCacheContext(); (Analyzer.java:555);
         // the finally leave is modelled by the Drop guard below.
@@ -645,10 +670,7 @@ impl Analyzer {
                 TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
                 _ => None,
             };
-            crate::util::abstract_log::AbstractLog::use_source(
-                &*self.log,
-                sourcefile,
-            )
+            crate::util::abstract_log::AbstractLog::use_source(&*self.log, sourcefile)
         };
         let mut tree_to_analyze = rewriting.original_tree;
         let mut wrapped_tree: Option<TreeId> = None;
@@ -686,11 +708,10 @@ impl Analyzer {
         let stat_info = attr.stat_info.clone();
         let deferred_rc = self.deferred_service();
         let deferred = deferred_rc.borrow_mut();
-        let diag_creator: Box<dyn Fn() -> DiagnosticHandler> = Box::new(move || {
-            DiagnosticHandler::Analyzer {
+        let diag_creator: Box<dyn Fn() -> DiagnosticHandler> =
+            Box::new(move || DiagnosticHandler::Analyzer {
                 erroneous: Rc::clone(&erroneous),
-            }
-        });
+            });
         // Java: deferredAttr.attribSpeculative(..., AttributionMode.ANALYZER,
         //     argumentAttr.withLocalCacheContext()); (Analyzer.java:570-571).
         let local_cache = argument_attr
@@ -717,18 +738,16 @@ impl Analyzer {
             let replacement = rewriting.replacement;
             self.process(ctx, syms, kind, old_tree, replacement, has_errors);
         }
-        crate::util::abstract_log::AbstractLog::use_source(
-            &*self.log,
-            prev_source,
-        );
+        crate::util::abstract_log::AbstractLog::use_source(&*self.log, prev_source);
     }
 
     /// Java: boolean isImplicitlyTyped(JCVariableDecl decl) (Analyzer.java:300-303).
     fn is_implicitly_typed(&self, ctx: &CompilerContext, decl: TreeId) -> bool {
         match &ctx.tree(decl).kind {
-            TreeKind::VariableDecl { vartype: Some(vartype), .. } => {
-                ctx.tree(*vartype).pos == crate::util::position::NOPOS
-            }
+            TreeKind::VariableDecl {
+                vartype: Some(vartype),
+                ..
+            } => ctx.tree(*vartype).pos == crate::util::position::NOPOS,
             TreeKind::VariableDecl { vartype: None, .. } => true,
             _ => false,
         }
@@ -737,8 +756,11 @@ impl Analyzer {
     /// Java: JCVariableDecl rewriteVarType(JCVariableDecl oldTree)
     fn rewrite_var_type(&mut self, ctx: &mut CompilerContext, old_tree: TreeId) -> TreeId {
         let new_tree = self.copier.copy(ctx, Some(old_tree)).expect("copied tree");
-        if let TreeKind::VariableDecl { vartype, declared_using_var, .. } =
-            &mut ctx.tree_mut(new_tree).kind
+        if let TreeKind::VariableDecl {
+            vartype,
+            declared_using_var,
+            ..
+        } = &mut ctx.tree_mut(new_tree).kind
         {
             // Java: newTree.vartype = null makes the declaration implicitly
             // typed. The port also carries the parser's declared-using-var
@@ -759,12 +781,12 @@ impl Analyzer {
         for t in defs.iter() {
             if ctx.tree(t).tag == Tag::METHODDEF {
                 let flags_value = match &ctx.tree(t).kind {
-                    TreeKind::MethodDecl { mods: Some(mods), .. } => {
-                        match &ctx.tree(*mods).kind {
-                            TreeKind::Modifiers { flags, .. } => *flags,
-                            _ => 0,
-                        }
-                    }
+                    TreeKind::MethodDecl {
+                        mods: Some(mods), ..
+                    } => match &ctx.tree(*mods).kind {
+                        TreeKind::Modifiers { flags, .. } => *flags,
+                        _ => 0,
+                    },
                     _ => 0,
                 };
                 if flags_value & flags::GENERATEDCONSTR == 0 {
@@ -778,9 +800,14 @@ impl Analyzer {
     }
 
     /// Java: StatementAnalyzer.isEnabled/analyzer.match dispatch.
-    fn matches(&mut self, ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab, kind: AnalyzerKind, tree: TreeId,
-        active_attr: Option<&mut crate::comp::attr::Attr>) -> bool {
+    fn matches(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        kind: AnalyzerKind,
+        tree: TreeId,
+        active_attr: Option<&mut Attr>,
+    ) -> bool {
         if !self.analyzer_modes.contains(kind.mode()) {
             return false;
         }
@@ -790,7 +817,9 @@ impl Analyzer {
                     TreeKind::NewClass { clazz, .. } => clazz.expect("new class clazz"),
                     _ => return false,
                 };
-                if ctx.tree(clazz).tag != Tag::TYPEAPPLY || crate::tree::tree_info::is_diamond(ctx, tree) {
+                if ctx.tree(clazz).tag != Tag::TYPEAPPLY
+                    || crate::tree::tree_info::is_diamond(ctx, tree)
+                {
                     return false;
                 }
                 let def = match &ctx.tree(tree).kind {
@@ -801,28 +830,41 @@ impl Analyzer {
             }
             AnalyzerKind::LambdaAnalyzer => {
                 let (def, clazz) = match &ctx.tree(tree).kind {
-                    TreeKind::NewClass { def, clazz, .. } => (*def, clazz.expect("new class clazz")),
+                    TreeKind::NewClass { def, clazz, .. } => {
+                        (*def, clazz.expect("new class clazz"))
+                    }
                     _ => return false,
                 };
-                let Some(def) = def else { return false; };
+                let Some(def) = def else {
+                    return false;
+                };
                 let clazz_type = ctx.tree(clazz).ty;
-                let Some(clazz_type) = clazz_type else { return false; };
-                if !ctx.typ(clazz_type).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+                let Some(clazz_type) = clazz_type else {
+                    return false;
+                };
+                if !ctx
+                    .typ(clazz_type)
+                    .has_tag(crate::code::type_tag::TypeTag::CLASS)
+                {
                     return false;
                 }
-                let Some(tsym) = ctx.typ(clazz_type).tsym else { return false; };
+                let Some(tsym) = ctx.typ(clazz_type).tsym else {
+                    return false;
+                };
                 let is_fi = match active_attr {
                     Some(attr) => {
                         let chk = Rc::clone(&attr.chk);
                         let diags = Rc::clone(&attr.diags);
-                        self.types.is_functional_interface(ctx, syms, &diags, &chk, tsym)
+                        self.types
+                            .is_functional_interface(ctx, syms, &diags, &chk, tsym)
                     }
                     None => {
                         let attr_rc = self.attr_service();
                         let attr = attr_rc.borrow();
                         let chk = Rc::clone(&attr.chk);
                         let diags = Rc::clone(&attr.diags);
-                        self.types.is_functional_interface(ctx, syms, &diags, &chk, tsym)
+                        self.types
+                            .is_functional_interface(ctx, syms, &diags, &chk, tsym)
                     }
                 };
                 if !is_fi {
@@ -836,18 +878,18 @@ impl Analyzer {
                 }
                 count == 1
             }
-            AnalyzerKind::RedundantTypeArgAnalyzer => {
-                match &ctx.tree(tree).kind {
-                    TreeKind::MethodInvocation { typeargs, .. } => !typeargs.is_empty(),
-                    _ => false,
-                }
-            }
+            AnalyzerKind::RedundantTypeArgAnalyzer => match &ctx.tree(tree).kind {
+                TreeKind::MethodInvocation { typeargs, .. } => !typeargs.is_empty(),
+                _ => false,
+            },
             AnalyzerKind::RedundantLocalVarTypeAnalyzer => {
                 let (sym, init) = match &ctx.tree(tree).kind {
                     TreeKind::VariableDecl { sym, init, .. } => (*sym, *init),
                     _ => return false,
                 };
-                let Some(sym) = sym else { return false; };
+                let Some(sym) = sym else {
+                    return false;
+                };
                 let owner_is_mth = ctx
                     .sym(sym)
                     .owner
@@ -880,10 +922,14 @@ impl Analyzer {
     }
 }
 
-
 impl Analyzer {
     /// Java: StatementAnalyzer.rewrite dispatch (Analyzer.java:220-430).
-    fn rewrite(&mut self, ctx: &mut CompilerContext, kind: AnalyzerKind, old_tree: TreeId) -> List<TreeId> {
+    fn rewrite(
+        &mut self,
+        ctx: &mut CompilerContext,
+        kind: AnalyzerKind,
+        old_tree: TreeId,
+    ) -> List<TreeId> {
         match kind {
             AnalyzerKind::DiamondInitializer => {
                 let clazz = match &ctx.tree(old_tree).kind {
@@ -894,7 +940,8 @@ impl Analyzer {
                     let new_tree = self.copier.copy(ctx, Some(old_tree)).expect("copied tree");
                     if let TreeKind::NewClass { clazz, .. } = &ctx.tree(new_tree).kind {
                         let clazz = clazz.expect("new class clazz");
-                        if let TreeKind::TypeApply { arguments, .. } = &mut ctx.tree_mut(clazz).kind {
+                        if let TreeKind::TypeApply { arguments, .. } = &mut ctx.tree_mut(clazz).kind
+                        {
                             *arguments = List::nil();
                         }
                     }
@@ -912,7 +959,9 @@ impl Analyzer {
                 let first = *decls.head();
                 let md = self.copier.copy(ctx, Some(first)).expect("copied method");
                 let (params, body) = match &ctx.tree(md).kind {
-                    TreeKind::MethodDecl { params, body, .. } => (params.clone(), body.expect("method body")),
+                    TreeKind::MethodDecl { params, body, .. } => {
+                        (params.clone(), body.expect("method body"))
+                    }
                     _ => return List::nil(),
                 };
                 let pos = ctx.tree(old_tree).pos;
@@ -924,7 +973,9 @@ impl Analyzer {
             }
             AnalyzerKind::RedundantTypeArgAnalyzer => {
                 let new_tree = self.copier.copy(ctx, Some(old_tree)).expect("copied tree");
-                if let TreeKind::MethodInvocation { typeargs, .. } = &mut ctx.tree_mut(new_tree).kind {
+                if let TreeKind::MethodInvocation { typeargs, .. } =
+                    &mut ctx.tree_mut(new_tree).kind
+                {
                     *typeargs = List::nil();
                 }
                 List::of(new_tree)
@@ -945,7 +996,9 @@ impl Analyzer {
                     let make = &*self.make;
                     make.at(body_pos).block_pub(ctx, 0, List::nil())
                 };
-                if let TreeKind::EnhancedForLoop { var, body, .. } = &mut ctx.tree_mut(new_tree).kind {
+                if let TreeKind::EnhancedForLoop { var, body, .. } =
+                    &mut ctx.tree_mut(new_tree).kind
+                {
                     *var = Some(new_var);
                     *body = Some(empty_block);
                 }
@@ -985,20 +1038,52 @@ impl Analyzer {
                 let explicit_args;
                 if let Some(_old_def) = old_def {
                     let (new_impl, new_ext) = match &ctx.tree(new_def.expect("new def")).kind {
-                        TreeKind::ClassDecl { implementing, extending, .. } => (implementing.clone(), *extending),
+                        TreeKind::ClassDecl {
+                            implementing,
+                            extending,
+                            ..
+                        } => (implementing.clone(), *extending),
                         _ => (List::nil(), None),
                     };
                     let (old_impl, old_ext) = match &ctx.tree(_old_def).kind {
-                        TreeKind::ClassDecl { implementing, extending, .. } => (implementing.clone(), *extending),
+                        TreeKind::ClassDecl {
+                            implementing,
+                            extending,
+                            ..
+                        } => (implementing.clone(), *extending),
                         _ => (List::nil(), None),
                     };
-                    let new_type_tree = if !new_impl.is_empty() { *new_impl.head() } else { new_ext.expect("extends") };
-                    let old_type_tree = if !old_impl.is_empty() { *old_impl.head() } else { old_ext.expect("extends") };
-                    inferred_args = ctx.tree(new_type_tree).ty.map(|t| crate::comp::attr::type_arguments(ctx, t)).unwrap_or_else(List::nil);
-                    explicit_args = ctx.tree(old_type_tree).ty.map(|t| crate::comp::attr::type_arguments(ctx, t)).unwrap_or_else(List::nil);
+                    let new_type_tree = if !new_impl.is_empty() {
+                        *new_impl.head()
+                    } else {
+                        new_ext.expect("extends")
+                    };
+                    let old_type_tree = if !old_impl.is_empty() {
+                        *old_impl.head()
+                    } else {
+                        old_ext.expect("extends")
+                    };
+                    inferred_args = ctx
+                        .tree(new_type_tree)
+                        .ty
+                        .map(|t| crate::comp::attr::type_arguments(ctx, t))
+                        .unwrap_or_else(List::nil);
+                    explicit_args = ctx
+                        .tree(old_type_tree)
+                        .ty
+                        .map(|t| crate::comp::attr::type_arguments(ctx, t))
+                        .unwrap_or_else(List::nil);
                 } else {
-                    inferred_args = ctx.tree(new_tree).ty.map(|t| crate::comp::attr::type_arguments(ctx, t)).unwrap_or_else(List::nil);
-                    explicit_args = ctx.tree(old_tree).ty.map(|t| crate::comp::attr::type_arguments(ctx, t)).unwrap_or_else(List::nil);
+                    inferred_args = ctx
+                        .tree(new_tree)
+                        .ty
+                        .map(|t| crate::comp::attr::type_arguments(ctx, t))
+                        .unwrap_or_else(List::nil);
+                    explicit_args = ctx
+                        .tree(old_tree)
+                        .ty
+                        .map(|t| crate::comp::attr::type_arguments(ctx, t))
+                        .unwrap_or_else(List::nil);
                 }
                 let mut explicit = explicit_args;
                 let mut current = inferred_args;
@@ -1057,17 +1142,23 @@ impl Analyzer {
 
     /// Java: void processVar(JCVariableDecl oldTree, JCVariableDecl newTree,
     /// boolean hasErrors) (Analyzer.java:310-318).
-    fn process_var(&mut self, ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab, old_tree: TreeId, new_tree: TreeId) {
+    fn process_var(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        old_tree: TreeId,
+        new_tree: TreeId,
+    ) {
         let (old_ty, new_ty) = (ctx.tree(old_tree).ty, ctx.tree(new_tree).ty);
         if let (Some(old_ty), Some(new_ty)) = (old_ty, new_ty)
-            && self.types.is_same_type(ctx, &syms, old_ty, new_ty) {
-                self.log_warning(
-                    ctx,
-                    ctx.tree(old_tree).pos,
-                    crate::resources::compiler_properties::warnings::local_redundant_type(),
-                );
-            }
+            && self.types.is_same_type(ctx, &syms, old_ty, new_ty)
+        {
+            self.log_warning(
+                ctx,
+                ctx.tree(old_tree).pos,
+                crate::resources::compiler_properties::warnings::local_redundant_type(),
+            );
+        }
     }
 
     /// adapter helper: log.warning(pos, Warnings.X).
@@ -1103,7 +1194,7 @@ pub struct StatementScanner<'a> {
     pub rewritings: Vec<RewritingContext>,
     /// The live Attr when the scanner is invoked from attribStat (the caller
     /// already holds the Attr RefCell mutably).
-    pub active_attr: Option<&'a mut crate::comp::attr::Attr>,
+    pub active_attr: Option<&'a mut Attr>,
 }
 
 impl<'a> StatementScanner<'a> {
@@ -1138,7 +1229,7 @@ impl<'a> StatementScanner<'a> {
         syms: &'a crate::code::symtab::Symtab,
         original_tree: TreeId,
         env: &Rc<Env<AttrContext>>,
-        attr: &'a mut crate::comp::attr::Attr,
+        attr: &'a mut Attr,
     ) -> StatementScanner<'a> {
         let copied_env = attr.copy_env(ctx, syms, &analyzer.types, env);
         StatementScanner {
@@ -1162,7 +1253,9 @@ impl TreeScannerVisitor for StatementScanner<'_> {
     /// Java: public void scan(JCTree tree) (Analyzer.java:660-680).
     #[allow(clippy::collapsible_if)]
     fn scan(&mut self, ctx: &mut CompilerContext, tree: Option<TreeId>) {
-        let Some(tree) = tree else { return; };
+        let Some(tree) = tree else {
+            return;
+        };
         for kind in [
             AnalyzerKind::DiamondInitializer,
             AnalyzerKind::LambdaAnalyzer,
@@ -1177,7 +1270,10 @@ impl TreeScannerVisitor for StatementScanner<'_> {
                 continue;
             }
             let active_attr = self.active_attr.as_deref_mut();
-            if !self.analyzer.matches(ctx, self.syms, kind, tree, active_attr) {
+            if !self
+                .analyzer
+                .matches(ctx, self.syms, kind, tree, active_attr)
+            {
                 continue;
             }
             let replacements = self.analyzer.rewrite(ctx, kind, tree);
@@ -1194,7 +1290,8 @@ impl TreeScannerVisitor for StatementScanner<'_> {
                     };
                     let env_scope = env.info.borrow().scope.expect("env scope");
                     if ctx.tree(tree).tag == Tag::VARDEF {
-                        if let TreeKind::VariableDecl { sym: Some(sym), .. } = &ctx.tree(tree).kind {
+                        if let TreeKind::VariableDecl { sym: Some(sym), .. } = &ctx.tree(tree).kind
+                        {
                             ctx.scope_remove(env_scope, *sym);
                         }
                     }
@@ -1221,16 +1318,22 @@ impl TreeScannerVisitor for StatementScanner<'_> {
     fn visit_method_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
     /// Java: public void visitBlock(JCBlock tree) — do nothing.
     fn visit_block(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
-    /// Java: public void visitLambda(JCLambda tree) — do nothing.
-    fn visit_lambda(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
-
-    /// Java: public void visitSwitch(JCSwitch tree) — scan(selector).
-    fn visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let selector = match &ctx.tree(tree).kind {
-            TreeKind::Switch { selector, .. } => *selector,
+    /// Java: public void visitDoLoop(JCDoWhileLoop tree) — scan(cond).
+    fn visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let cond = match &ctx.tree(tree).kind {
+            TreeKind::DoWhileLoop { cond, .. } => *cond,
             _ => None,
         };
-        self.scan(ctx, selector);
+        self.scan(ctx, cond);
+    }
+
+    /// Java: public void visitWhileLoop(JCWhileLoop tree) — scan(cond).
+    fn visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let cond = match &ctx.tree(tree).kind {
+            TreeKind::WhileLoop { cond, .. } => *cond,
+            _ => None,
+        };
+        self.scan(ctx, cond);
     }
 
     /// Java: public void visitForLoop(JCForLoop tree) — scan(cond/update).
@@ -1248,10 +1351,33 @@ impl TreeScannerVisitor for StatementScanner<'_> {
         }
     }
 
+    /// Java: public void visitForeachLoop(JCEnhancedForLoop tree) — scan(expr).
+    fn visit_foreach_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let expr = match &ctx.tree(tree).kind {
+            TreeKind::EnhancedForLoop { expr, .. } => *expr,
+            _ => None,
+        };
+        self.scan(ctx, expr);
+    }
+
+    /// Java: public void visitSwitch(JCSwitch tree) — scan(selector).
+    fn visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let selector = match &ctx.tree(tree).kind {
+            TreeKind::Switch { selector, .. } => *selector,
+            _ => None,
+        };
+        self.scan(ctx, selector);
+    }
+
     /// Java: public void visitTry(JCTry tree) — scan(block/catches/finally).
     fn visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (body, catchers, finalizer) = match &ctx.tree(tree).kind {
-            TreeKind::Try { body, catchers, finalizer, .. } => (*body, catchers.clone(), *finalizer),
+            TreeKind::Try {
+                body,
+                catchers,
+                finalizer,
+                ..
+            } => (*body, catchers.clone(), *finalizer),
             _ => (None, List::nil(), None),
         };
         self.scan(ctx, body);
@@ -1264,33 +1390,6 @@ impl TreeScannerVisitor for StatementScanner<'_> {
         self.scan(ctx, finalizer);
     }
 
-    /// Java: public void visitForeachLoop(JCEnhancedForLoop tree) — scan(expr).
-    fn visit_foreach_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let expr = match &ctx.tree(tree).kind {
-            TreeKind::EnhancedForLoop { expr, .. } => *expr,
-            _ => None,
-        };
-        self.scan(ctx, expr);
-    }
-
-    /// Java: public void visitWhileLoop(JCWhileLoop tree) — scan(cond).
-    fn visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let cond = match &ctx.tree(tree).kind {
-            TreeKind::WhileLoop { cond, .. } => *cond,
-            _ => None,
-        };
-        self.scan(ctx, cond);
-    }
-
-    /// Java: public void visitDoLoop(JCDoWhileLoop tree) — scan(cond).
-    fn visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let cond = match &ctx.tree(tree).kind {
-            TreeKind::DoWhileLoop { cond, .. } => *cond,
-            _ => None,
-        };
-        self.scan(ctx, cond);
-    }
-
     /// Java: public void visitIf(JCIf tree) — scan(cond).
     fn visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let cond = match &ctx.tree(tree).kind {
@@ -1299,7 +1398,9 @@ impl TreeScannerVisitor for StatementScanner<'_> {
         };
         self.scan(ctx, cond);
     }
+
+    /// Java: public void visitLambda(JCLambda tree) — do nothing.
+    fn visit_lambda(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 }
 
 tree_scanner_visitor_delegate!(StatementScanner<'a>, 'a);
-

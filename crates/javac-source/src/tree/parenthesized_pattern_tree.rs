@@ -1,3 +1,4 @@
+use super::pattern_tree::PatternTree;
 /// A tree node for a parenthesized pattern.
 ///
 /// For example:
@@ -9,11 +10,9 @@
 ///
 /// @since 17
 use std::rc::Rc;
-use super::pattern_tree::PatternTree;
 
 pub trait ParenthesizedPatternTree: PatternTree {
     /// Returns the pattern within the parentheses.
     /// @return the pattern
     fn get_pattern(&self) -> Rc<dyn PatternTree>;
-
 }

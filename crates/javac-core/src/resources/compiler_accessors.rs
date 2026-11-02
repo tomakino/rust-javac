@@ -18,15 +18,29 @@ pub mod errors {
     /// abstract {0} {1} in {2} cannot be accessed directly
     ///
     /// Java: Errors.AbstractCantBeAccessedDirectly(kind name, symbol, symbol)
-    pub fn abstract_cant_be_accessed_directly(arg0: KindNameArg, arg1: SymbolArg, arg2: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("abstract.cant.be.accessed.directly", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn abstract_cant_be_accessed_directly(
+        arg0: KindNameArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "abstract.cant.be.accessed.directly",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} is abstract; cannot be instantiated
     ///
     /// Java: Errors.AbstractCantBeInstantiated(symbol)
     pub fn abstract_cant_be_instantiated(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("abstract.cant.be.instantiated", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "abstract.cant.be.instantiated",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// abstract methods cannot have a body
@@ -61,42 +75,82 @@ pub mod errors {
     ///
     /// Java: Errors.AlreadyAnnotated(kind name, symbol)
     pub fn already_annotated(arg0: KindNameArg, arg1: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("already.annotated", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "already.annotated",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} {1} is already defined in {2} {3}
     ///
     /// Java: Errors.AlreadyDefined(kind name, symbol, kind name, symbol)
-    pub fn already_defined(arg0: KindNameArg, arg1: SymbolArg, arg2: KindNameArg, arg3: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("already.defined", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn already_defined(
+        arg0: KindNameArg,
+        arg1: SymbolArg,
+        arg2: KindNameArg,
+        arg3: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "already.defined",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} {1} is already defined in {2} of {3} {4}
     ///
     /// Java: Errors.AlreadyDefinedInClinit(kind name, symbol, kind name, kind name, symbol)
-    pub fn already_defined_in_clinit(arg0: KindNameArg, arg1: SymbolArg, arg2: KindNameArg, arg3: KindNameArg, arg4: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("already.defined.in.clinit", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg()])
+    pub fn already_defined_in_clinit(
+        arg0: KindNameArg,
+        arg1: SymbolArg,
+        arg2: KindNameArg,
+        arg3: KindNameArg,
+        arg4: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "already.defined.in.clinit",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// a type with the same simple name is already defined by the single-type-import of {0}
     ///
     /// Java: Errors.AlreadyDefinedSingleImport(symbol)
     pub fn already_defined_single_import(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("already.defined.single.import", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "already.defined.single.import",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// a type with the same simple name is already defined by the static single-type-import of {0}
     ///
     /// Java: Errors.AlreadyDefinedStaticSingleImport(symbol)
     pub fn already_defined_static_single_import(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("already.defined.static.single.import", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "already.defined.static.single.import",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// {0} is already defined in this compilation unit
     ///
     /// Java: Errors.AlreadyDefinedThisUnit(symbol)
     pub fn already_defined_this_unit(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("already.defined.this.unit", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "already.defined.this.unit",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// annotation type declaration not allowed here
@@ -110,21 +164,30 @@ pub mod errors {
     ///
     /// Java: Errors.AnnotationMissingDefaultValue(type, list of name)
     pub fn annotation_missing_default_value(arg0: TypeArg, arg1: Vec<Name>) -> ErrorInfo {
-        ErrorInfo::new("annotation.missing.default.value", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "annotation.missing.default.value",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// annotation @{0} is missing default values for elements {1}
     ///
     /// Java: Errors.AnnotationMissingDefaultValue1(type, list of name)
     pub fn annotation_missing_default_value1(arg0: TypeArg, arg1: Vec<Name>) -> ErrorInfo {
-        ErrorInfo::new("annotation.missing.default.value.1", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "annotation.missing.default.value.1",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// annotation not valid for an element of type {0}
     ///
     /// Java: Errors.AnnotationNotValidForType(type)
     pub fn annotation_not_valid_for_type(arg0: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("annotation.not.valid.for.type", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "annotation.not.valid.for.type",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// annotation type not applicable to this kind of declaration
@@ -138,7 +201,10 @@ pub mod errors {
     ///
     /// Java: Errors.AnnotationTypeNotApplicableToType(type)
     pub fn annotation_type_not_applicable_to_type(arg0: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("annotation.type.not.applicable.to.type", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "annotation.type.not.applicable.to.type",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// annotation value must be an annotation
@@ -194,7 +260,10 @@ pub mod errors {
     ///
     /// Java: Errors.AnonymousDiamondMethodDoesNotOverrideSuperclass(diagnostic or fragment)
     pub fn anonymous_diamond_method_does_not_override_superclass(arg0: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("anonymous.diamond.method.does.not.override.superclass", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "anonymous.diamond.method.does.not.override.superclass",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// =legacy array notation not allowed on receiver parameter
@@ -208,7 +277,14 @@ pub mod errors {
     ///
     /// Java: Errors.ArrayAndVarargs(symbol, symbol, symbol)
     pub fn array_and_varargs(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("array.and.varargs", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "array.and.varargs",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// array dimension missing
@@ -250,7 +326,10 @@ pub mod errors {
     ///
     /// Java: Errors.BadFunctionalIntfAnno1(diagnostic or fragment)
     pub fn bad_functional_intf_anno1(arg0: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("bad.functional.intf.anno.1", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "bad.functional.intf.anno.1",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// bad initializer for {0}
@@ -264,14 +343,20 @@ pub mod errors {
     ///
     /// Java: Errors.BadNameForOption(option name, string)
     pub fn bad_name_for_option(arg0: OptionArg, arg1: JavaString) -> ErrorInfo {
-        ErrorInfo::new("bad.name.for.option", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "bad.name.for.option",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// bad value for {0} option: ''{1}''
     ///
     /// Java: Errors.BadValueForOption(string, string)
     pub fn bad_value_for_option(arg0: JavaString, arg1: JavaString) -> ErrorInfo {
-        ErrorInfo::new("bad.value.for.option", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "bad.value.for.option",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// attempt to break out of a switch expression
@@ -292,14 +377,20 @@ pub mod errors {
     ///
     /// Java: Errors.CallMustBeFirstStmtInCtor(name)
     pub fn call_must_be_first_stmt_in_ctor(arg0: Name) -> ErrorInfo {
-        ErrorInfo::new("call.must.be.first.stmt.in.ctor", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "call.must.be.first.stmt.in.ctor",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// call to super not allowed in enum constructor
     ///
     /// Java: Errors.CallToSuperNotAllowedInEnumCtor(symbol)
     pub fn call_to_super_not_allowed_in_enum_ctor(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("call.to.super.not.allowed.in.enum.ctor", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "call.to.super.not.allowed.in.enum.ctor",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// cannot create array with ''<>''
@@ -320,49 +411,90 @@ pub mod errors {
     ///
     /// Java: Errors.CannotGenerateClass(symbol, fragment)
     pub fn cannot_generate_class(arg0: SymbolArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("cannot.generate.class", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "cannot.generate.class",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// cannot access {0}\n{1}
     ///
     /// Java: Errors.CantAccess(symbol, diagnostic or fragment)
     pub fn cant_access(arg0: SymbolArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("cant.access", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "cant.access",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// cannot infer type arguments for {0}
     ///
     /// Java: Errors.CantApplyDiamond(diagnostic or fragment, unused)
     pub fn cant_apply_diamond(arg0: DiagnosticArg, arg1: ()) -> ErrorInfo {
-        ErrorInfo::new("cant.apply.diamond", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "cant.apply.diamond",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// cannot infer type arguments for {0}\nreason: {1}
     ///
     /// Java: Errors.CantApplyDiamond1(diagnostic or fragment or type, diagnostic or fragment)
     pub fn cant_apply_diamond1(arg0: DiagnosticArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("cant.apply.diamond.1", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "cant.apply.diamond.1",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} {1} in {4} {5} cannot be applied to given types;\nrequired: {2}\nfound:    {3}\nreason: {6}
     ///
     /// Java: Errors.CantApplySymbol(symbol kind, name, list of type or diagnostic or fragment, list of type or diagnostic or fragment, symbol kind, type, diagnostic or fragment)
-    pub fn cant_apply_symbol(arg0: SymbolKindArg, arg1: Name, arg2: DiagnosticArg, arg3: DiagnosticArg, arg4: SymbolKindArg, arg5: TypeArg, arg6: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("cant.apply.symbol", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg(), arg5.into_diagnostic_arg(), arg6.into_diagnostic_arg()])
+    pub fn cant_apply_symbol(
+        arg0: SymbolKindArg,
+        arg1: Name,
+        arg2: DiagnosticArg,
+        arg3: DiagnosticArg,
+        arg4: SymbolKindArg,
+        arg5: TypeArg,
+        arg6: DiagnosticArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "cant.apply.symbol",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+                arg5.into_diagnostic_arg(),
+                arg6.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// no suitable {0} found for {1}({2})
     ///
     /// Java: Errors.CantApplySymbols(symbol kind, name, list of type)
     pub fn cant_apply_symbols(arg0: SymbolKindArg, arg1: Name, arg2: Vec<TypeArg>) -> ErrorInfo {
-        ErrorInfo::new("cant.apply.symbols", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "cant.apply.symbols",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot assign a value to final variable {0}
     ///
     /// Java: Errors.CantAssignValToFinalVar(symbol)
     pub fn cant_assign_val_to_final_var(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("cant.assign.val.to.final.var", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "cant.assign.val.to.final.var",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// cannot assign to ''this''
@@ -375,8 +507,21 @@ pub mod errors {
     /// Cannot attach type annotations {0} to {1}.{2}:\n{3}
     ///
     /// Java: Errors.CantAttachTypeAnnotations(list of annotation, symbol, name, diagnostic or fragment)
-    pub fn cant_attach_type_annotations(arg0: Vec<AnnotationArg>, arg1: SymbolArg, arg2: Name, arg3: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("cant.attach.type.annotations", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn cant_attach_type_annotations(
+        arg0: Vec<AnnotationArg>,
+        arg1: SymbolArg,
+        arg2: Name,
+        arg3: DiagnosticArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "cant.attach.type.annotations",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} cannot be dereferenced
@@ -397,14 +542,24 @@ pub mod errors {
     ///
     /// Java: Errors.CantInferLocalVarType(name, diagnostic or fragment)
     pub fn cant_infer_local_var_type(arg0: Name, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("cant.infer.local.var.type", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "cant.infer.local.var.type",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} cannot be inherited with different arguments: <{1}> and <{2}>
     ///
     /// Java: Errors.CantInheritDiffArg(symbol, string, string)
     pub fn cant_inherit_diff_arg(arg0: SymbolArg, arg1: JavaString, arg2: JavaString) -> ErrorInfo {
-        ErrorInfo::new("cant.inherit.diff.arg", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "cant.inherit.diff.arg",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot inherit from anonymous class
@@ -439,56 +594,141 @@ pub mod errors {
     ///
     /// Java: Errors.CantRefBeforeCtorCalled(symbol or string)
     pub fn cant_ref_before_ctor_called(arg0: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("cant.ref.before.ctor.called", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "cant.ref.before.ctor.called",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// local variables referenced from {1} must be final or effectively final
     ///
     /// Java: Errors.CantRefNonEffectivelyFinalVar(symbol, diagnostic or fragment)
     pub fn cant_ref_non_effectively_final_var(arg0: SymbolArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("cant.ref.non.effectively.final.var", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "cant.ref.non.effectively.final.var",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// cannot find symbol\nsymbol: {0} {1}
     ///
     /// Java: Errors.CantResolve(kind name, name, unused, unused)
     pub fn cant_resolve(arg0: KindNameArg, arg1: Name, arg2: (), arg3: ()) -> ErrorInfo {
-        ErrorInfo::new("cant.resolve", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "cant.resolve",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot find symbol\nsymbol: {0} {1}({3})
     ///
     /// Java: Errors.CantResolveArgs(kind name, name, unused, list of type)
-    pub fn cant_resolve_args(arg0: KindNameArg, arg1: Name, arg2: (), arg3: Vec<TypeArg>) -> ErrorInfo {
-        ErrorInfo::new("cant.resolve.args", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn cant_resolve_args(
+        arg0: KindNameArg,
+        arg1: Name,
+        arg2: (),
+        arg3: Vec<TypeArg>,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "cant.resolve.args",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot find symbol\nsymbol: {0} <{2}>{1}({3})
     ///
     /// Java: Errors.CantResolveArgsParams(kind name, name, list of type, list of type)
-    pub fn cant_resolve_args_params(arg0: KindNameArg, arg1: Name, arg2: Vec<TypeArg>, arg3: Vec<TypeArg>) -> ErrorInfo {
-        ErrorInfo::new("cant.resolve.args.params", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn cant_resolve_args_params(
+        arg0: KindNameArg,
+        arg1: Name,
+        arg2: Vec<TypeArg>,
+        arg3: Vec<TypeArg>,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "cant.resolve.args.params",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot find symbol\nsymbol:   {0} {1}\nlocation: {4}
     ///
     /// Java: Errors.CantResolveLocation(kind name, name, unused, unused, diagnostic or fragment)
-    pub fn cant_resolve_location(arg0: KindNameArg, arg1: Name, arg2: (), arg3: (), arg4: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("cant.resolve.location", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg()])
+    pub fn cant_resolve_location(
+        arg0: KindNameArg,
+        arg1: Name,
+        arg2: (),
+        arg3: (),
+        arg4: DiagnosticArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "cant.resolve.location",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot find symbol\nsymbol:   {0} {1}({3})\nlocation: {4}
     ///
     /// Java: Errors.CantResolveLocationArgs(kind name, name, unused, list of type, diagnostic or fragment)
-    pub fn cant_resolve_location_args(arg0: KindNameArg, arg1: Name, arg2: (), arg3: Vec<TypeArg>, arg4: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("cant.resolve.location.args", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg()])
+    pub fn cant_resolve_location_args(
+        arg0: KindNameArg,
+        arg1: Name,
+        arg2: (),
+        arg3: Vec<TypeArg>,
+        arg4: DiagnosticArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "cant.resolve.location.args",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot find symbol\nsymbol:   {0} <{2}>{1}({3})\nlocation: {4}
     ///
     /// Java: Errors.CantResolveLocationArgsParams(kind name, name, list of type, list, diagnostic or fragment)
-    pub fn cant_resolve_location_args_params(arg0: KindNameArg, arg1: Name, arg2: Vec<TypeArg>, arg3: Vec<DiagnosticArg>, arg4: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("cant.resolve.location.args.params", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg()])
+    pub fn cant_resolve_location_args_params(
+        arg0: KindNameArg,
+        arg1: Name,
+        arg2: Vec<TypeArg>,
+        arg3: Vec<DiagnosticArg>,
+        arg4: DiagnosticArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "cant.resolve.location.args.params",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot select a static class from a parameterized type
@@ -502,14 +742,20 @@ pub mod errors {
     ///
     /// Java: Errors.CantTypeAnnotateScoping(list of annotation)
     pub fn cant_type_annotate_scoping(arg0: Vec<AnnotationArg>) -> ErrorInfo {
-        ErrorInfo::new("cant.type.annotate.scoping", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "cant.type.annotate.scoping",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// scoping construct cannot be annotated with type-use annotation: {0}
     ///
     /// Java: Errors.CantTypeAnnotateScoping1(annotation)
     pub fn cant_type_annotate_scoping1(arg0: AnnotationArg) -> ErrorInfo {
-        ErrorInfo::new("cant.type.annotate.scoping.1", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "cant.type.annotate.scoping.1",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// ''catch'' without ''try''
@@ -523,28 +769,45 @@ pub mod errors {
     ///
     /// Java: Errors.ClashWithPkgOfSameName(kind name, symbol)
     pub fn clash_with_pkg_of_same_name(arg0: KindNameArg, arg1: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("clash.with.pkg.of.same.name", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "clash.with.pkg.of.same.name",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// error while writing {0}: {1}
     ///
     /// Java: Errors.ClassCantWrite(symbol, string)
     pub fn class_cant_write(arg0: SymbolArg, arg1: JavaString) -> ErrorInfo {
-        ErrorInfo::new("class.cant.write", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "class.cant.write",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// class {0} in module {1} cannot extend a sealed class in a different module
     ///
     /// Java: Errors.ClassInModuleCantExtendSealedInDiffModule(symbol, symbol)
-    pub fn class_in_module_cant_extend_sealed_in_diff_module(arg0: SymbolArg, arg1: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("class.in.module.cant.extend.sealed.in.diff.module", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn class_in_module_cant_extend_sealed_in_diff_module(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "class.in.module.cant.extend.sealed.in.diff.module",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// class {0} in unnamed module cannot extend a sealed class in a different package
     ///
     /// Java: Errors.ClassInUnnamedModuleCantExtendSealedInDiffPackage(symbol)
-    pub fn class_in_unnamed_module_cant_extend_sealed_in_diff_package(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("class.in.unnamed.module.cant.extend.sealed.in.diff.package", vec![arg0.into_diagnostic_arg()])
+    pub fn class_in_unnamed_module_cant_extend_sealed_in_diff_package(
+        arg0: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "class.in.unnamed.module.cant.extend.sealed.in.diff.package",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// class, interface or enum declaration not allowed here
@@ -558,14 +821,32 @@ pub mod errors {
     ///
     /// Java: Errors.ClassPublicShouldBeInFile(kind name, name)
     pub fn class_public_should_be_in_file(arg0: KindNameArg, arg1: Name) -> ErrorInfo {
-        ErrorInfo::new("class.public.should.be.in.file", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "class.public.should.be.in.file",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// methods {0} from {1} and {2} from {3} are inherited with the same signature
     ///
     /// Java: Errors.ConcreteInheritanceConflict(symbol, type, symbol, type, type)
-    pub fn concrete_inheritance_conflict(arg0: SymbolArg, arg1: TypeArg, arg2: SymbolArg, arg3: TypeArg, arg4: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("concrete.inheritance.conflict", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg()])
+    pub fn concrete_inheritance_conflict(
+        arg0: SymbolArg,
+        arg1: TypeArg,
+        arg2: SymbolArg,
+        arg3: TypeArg,
+        arg4: TypeArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "concrete.inheritance.conflict",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// duplicate or conflicting exports: {0}
@@ -579,7 +860,10 @@ pub mod errors {
     ///
     /// Java: Errors.ConflictingExportsToModule(symbol)
     pub fn conflicting_exports_to_module(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("conflicting.exports.to.module", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "conflicting.exports.to.module",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// duplicate or conflicting opens: {0}
@@ -593,7 +877,10 @@ pub mod errors {
     ///
     /// Java: Errors.ConflictingOpensToModule(symbol)
     pub fn conflicting_opens_to_module(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("conflicting.opens.to.module", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "conflicting.opens.to.module",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// constant expression required
@@ -607,7 +894,10 @@ pub mod errors {
     ///
     /// Java: Errors.ConstantLabelNotCompatible(type, type)
     pub fn constant_label_not_compatible(arg0: TypeArg, arg1: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("constant.label.not.compatible", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "constant.label.not.compatible",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// continue outside of loop
@@ -628,7 +918,10 @@ pub mod errors {
     ///
     /// Java: Errors.CyclicAnnotationElement(symbol)
     pub fn cyclic_annotation_element(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("cyclic.annotation.element", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "cyclic.annotation.element",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// cyclic inheritance involving {0}
@@ -767,15 +1060,37 @@ pub mod errors {
     /// default method {0} in {1} {2} overrides a member of java.lang.Object
     ///
     /// Java: Errors.DefaultOverridesObjectMember(name, kind name, symbol)
-    pub fn default_overrides_object_member(arg0: Name, arg1: KindNameArg, arg2: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("default.overrides.object.member", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn default_overrides_object_member(
+        arg0: Name,
+        arg1: KindNameArg,
+        arg2: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "default.overrides.object.member",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} is not abstract and does not override abstract method {1} in {2}
     ///
     /// Java: Errors.DoesNotOverrideAbstract(symbol, symbol, symbol)
-    pub fn does_not_override_abstract(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("does.not.override.abstract", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn does_not_override_abstract(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "does.not.override.abstract",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// package {0} does not exist
@@ -796,21 +1111,30 @@ pub mod errors {
     ///
     /// Java: Errors.DuplicateAnnotationInvalidRepeated(type)
     pub fn duplicate_annotation_invalid_repeated(arg0: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("duplicate.annotation.invalid.repeated", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "duplicate.annotation.invalid.repeated",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// duplicate element ''{0}'' in annotation @{1}.
     ///
     /// Java: Errors.DuplicateAnnotationMemberValue(name, type)
     pub fn duplicate_annotation_member_value(arg0: Name, arg1: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("duplicate.annotation.member.value", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "duplicate.annotation.member.value",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} is not a repeatable annotation type
     ///
     /// Java: Errors.DuplicateAnnotationMissingContainer(type)
     pub fn duplicate_annotation_missing_container(arg0: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("duplicate.annotation.missing.container", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "duplicate.annotation.missing.container",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// duplicate case label
@@ -845,14 +1169,20 @@ pub mod errors {
     ///
     /// Java: Errors.DuplicateModuleOnPath(fragment, name)
     pub fn duplicate_module_on_path(arg0: DiagnosticArg, arg1: Name) -> ErrorInfo {
-        ErrorInfo::new("duplicate.module.on.path", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "duplicate.module.on.path",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// duplicate provides: service {0}, implementation {1}
     ///
     /// Java: Errors.DuplicateProvides(symbol, symbol)
     pub fn duplicate_provides(arg0: SymbolArg, arg1: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("duplicate.provides", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "duplicate.provides",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// duplicate requires: {0}
@@ -967,7 +1297,7 @@ pub mod errors {
         ErrorInfo::new("enum.types.not.extensible", vec![])
     }
 
-    /// error: 
+    /// error:
     ///
     /// Java: Errors.Error()
     pub fn error() -> ErrorInfo {
@@ -978,14 +1308,20 @@ pub mod errors {
     ///
     /// Java: Errors.ErrorReadingFile(file or file object or path, string)
     pub fn error_reading_file(arg0: DiagnosticArg, arg1: JavaString) -> ErrorInfo {
-        ErrorInfo::new("error.reading.file", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "error.reading.file",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// error writing {0}; {1}
     ///
     /// Java: Errors.ErrorWritingFile(string, string)
     pub fn error_writing_file(arg0: JavaString, arg1: JavaString) -> ErrorInfo {
-        ErrorInfo::new("error.writing.file", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "error.writing.file",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// exception {0} has already been caught
@@ -999,7 +1335,10 @@ pub mod errors {
     ///
     /// Java: Errors.ExceptNeverThrownInTry(type)
     pub fn except_never_thrown_in_try(arg0: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("except.never.thrown.in.try", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "except.never.thrown.in.try",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// {0} expected
@@ -1034,21 +1373,44 @@ pub mod errors {
     ///
     /// Java: Errors.Expected2(token, token)
     pub fn expected2(arg0: TokenArg, arg1: TokenArg) -> ErrorInfo {
-        ErrorInfo::new("expected2", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "expected2",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0}, {1}, or {2} expected
     ///
     /// Java: Errors.Expected3(token, token, token)
     pub fn expected3(arg0: TokenArg, arg1: TokenArg, arg2: TokenArg) -> ErrorInfo {
-        ErrorInfo::new("expected3", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "expected3",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0}, {1}, {2}, or {3} expected
     ///
     /// Java: Errors.Expected4(token, token, token, string)
-    pub fn expected4(arg0: TokenArg, arg1: TokenArg, arg2: TokenArg, arg3: JavaString) -> ErrorInfo {
-        ErrorInfo::new("expected4", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn expected4(
+        arg0: TokenArg,
+        arg1: TokenArg,
+        arg2: TokenArg,
+        arg3: JavaString,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "expected4",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// expression not allowed as annotation value
@@ -1061,15 +1423,37 @@ pub mod errors {
     /// {0} is not supported in -source {1}\n(use -source {2} or higher to enable {0})
     ///
     /// Java: Errors.FeatureNotSupportedInSource(diagnostic or fragment, string, string)
-    pub fn feature_not_supported_in_source(arg0: DiagnosticArg, arg1: JavaString, arg2: JavaString) -> ErrorInfo {
-        ErrorInfo::new("feature.not.supported.in.source", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn feature_not_supported_in_source(
+        arg0: DiagnosticArg,
+        arg1: JavaString,
+        arg2: JavaString,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "feature.not.supported.in.source",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} are not supported in -source {1}\n(use -source {2} or higher to enable {0})
     ///
     /// Java: Errors.FeatureNotSupportedInSourcePlural(diagnostic or fragment, string, string)
-    pub fn feature_not_supported_in_source_plural(arg0: DiagnosticArg, arg1: JavaString, arg2: JavaString) -> ErrorInfo {
-        ErrorInfo::new("feature.not.supported.in.source.plural", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn feature_not_supported_in_source_plural(
+        arg0: DiagnosticArg,
+        arg1: JavaString,
+        arg2: JavaString,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "feature.not.supported.in.source.plural",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// not a directory: {0}
@@ -1097,7 +1481,10 @@ pub mod errors {
     ///
     /// Java: Errors.FilePatchedAndMsp(name, name)
     pub fn file_patched_and_msp(arg0: Name, arg1: Name) -> ErrorInfo {
-        ErrorInfo::new("file.patched.and.msp", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "file.patched.and.msp",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// file should be on source path, or on patch path for module
@@ -1111,7 +1498,10 @@ pub mod errors {
     ///
     /// Java: Errors.FinalParameterMayNotBeAssigned(symbol)
     pub fn final_parameter_may_not_be_assigned(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("final.parameter.may.not.be.assigned", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "final.parameter.may.not.be.assigned",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// ''finally'' without ''try''
@@ -1125,7 +1515,10 @@ pub mod errors {
     ///
     /// Java: Errors.FirstStatementMustBeCallToAnotherConstructor(symbol)
     pub fn first_statement_must_be_call_to_another_constructor(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("first.statement.must.be.call.to.another.constructor", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "first.statement.must.be.call.to.another.constructor",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// illegal fall-through from a pattern
@@ -1146,7 +1539,10 @@ pub mod errors {
     ///
     /// Java: Errors.ForeachNotApplicableToType(type, diagnostic or fragment)
     pub fn foreach_not_applicable_to_type(arg0: TypeArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("foreach.not.applicable.to.type", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "foreach.not.applicable.to.type",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// floating-point number too large
@@ -1181,21 +1577,30 @@ pub mod errors {
     ///
     /// Java: Errors.IclsCantHaveStaticDecl(symbol)
     pub fn icls_cant_have_static_decl(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("icls.cant.have.static.decl", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "icls.cant.have.static.decl",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// illegal argument for {0}: {1}
     ///
     /// Java: Errors.IllegalArgumentForOption(string, string)
     pub fn illegal_argument_for_option(arg0: JavaString, arg1: JavaString) -> ErrorInfo {
-        ErrorInfo::new("illegal.argument.for.option", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "illegal.argument.for.option",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// array creation with both dimension expression and initialization is illegal
     ///
     /// Java: Errors.IllegalArrayCreationBothDimensionAndInitialization()
     pub fn illegal_array_creation_both_dimension_and_initialization() -> ErrorInfo {
-        ErrorInfo::new("illegal.array.creation.both.dimension.and.initialization", vec![])
+        ErrorInfo::new(
+            "illegal.array.creation.both.dimension.and.initialization",
+            vec![],
+        )
     }
 
     /// illegal character: ''{0}''
@@ -1209,21 +1614,30 @@ pub mod errors {
     ///
     /// Java: Errors.IllegalCharForEncoding(string, string)
     pub fn illegal_char_for_encoding(arg0: JavaString, arg1: JavaString) -> ErrorInfo {
-        ErrorInfo::new("illegal.char.for.encoding", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "illegal.char.for.encoding",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// illegal combination of modifiers: {0} and {1}
     ///
     /// Java: Errors.IllegalCombinationOfModifiers(set of flag, set of flag)
     pub fn illegal_combination_of_modifiers(arg0: Vec<FlagArg>, arg1: Vec<FlagArg>) -> ErrorInfo {
-        ErrorInfo::new("illegal.combination.of.modifiers", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "illegal.combination.of.modifiers",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// bad type qualifier {0} in default super call\n{1}
     ///
     /// Java: Errors.IllegalDefaultSuperCall(symbol or type, diagnostic or fragment)
     pub fn illegal_default_super_call(arg0: DiagnosticArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("illegal.default.super.call", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "illegal.default.super.call",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// illegal ''.''
@@ -1258,7 +1672,10 @@ pub mod errors {
     ///
     /// Java: Errors.IllegalInitializerForType(type)
     pub fn illegal_initializer_for_type(arg0: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("illegal.initializer.for.type", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "illegal.initializer.for.type",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// illegal line end in character literal
@@ -1293,14 +1710,20 @@ pub mod errors {
     ///
     /// Java: Errors.IllegalRecordComponentName(symbol)
     pub fn illegal_record_component_name(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("illegal.record.component.name", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "illegal.record.component.name",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// illegal reference to restricted type ''{0}''
     ///
     /// Java: Errors.IllegalRefToRestrictedType(name)
     pub fn illegal_ref_to_restricted_type(arg0: Name) -> ErrorInfo {
-        ErrorInfo::new("illegal.ref.to.restricted.type", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "illegal.ref.to.restricted.type",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// self-reference in initializer
@@ -1335,7 +1758,10 @@ pub mod errors {
     ///
     /// Java: Errors.IllegalStaticIntfMethCall(type)
     pub fn illegal_static_intf_meth_call(arg0: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("illegal.static.intf.meth.call", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "illegal.static.intf.meth.call",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// illegal text block open delimiter sequence, missing line terminator
@@ -1363,7 +1789,10 @@ pub mod errors {
     ///
     /// Java: Errors.ImportRequiresCanonical(symbol)
     pub fn import_requires_canonical(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("import.requires.canonical", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "import.requires.canonical",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// improperly formed type, type arguments given on a raw type
@@ -1384,42 +1813,60 @@ pub mod errors {
     ///
     /// Java: Errors.IncomparableTypes(type, type)
     pub fn incomparable_types(arg0: TypeArg, arg1: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("incomparable.types", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "incomparable.types",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// incompatible thrown types {0} in functional expression
     ///
     /// Java: Errors.IncompatibleThrownTypesInMref(list of type)
     pub fn incompatible_thrown_types_in_mref(arg0: Vec<TypeArg>) -> ErrorInfo {
-        ErrorInfo::new("incompatible.thrown.types.in.mref", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "incompatible.thrown.types.in.mref",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// the receiver name does not match the enclosing outer class type\nrequired: {0}\nfound:    {1}
     ///
     /// Java: Errors.IncorrectConstructorReceiverName(type, type)
     pub fn incorrect_constructor_receiver_name(arg0: TypeArg, arg1: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("incorrect.constructor.receiver.name", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "incorrect.constructor.receiver.name",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// the receiver type does not match the enclosing outer class type\nrequired: {0}\nfound:    {1}
     ///
     /// Java: Errors.IncorrectConstructorReceiverType(type, type)
     pub fn incorrect_constructor_receiver_type(arg0: TypeArg, arg1: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("incorrect.constructor.receiver.type", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "incorrect.constructor.receiver.type",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// the receiver name does not match the enclosing class type\nrequired: {0}\nfound:    {1}
     ///
     /// Java: Errors.IncorrectReceiverName(type, type)
     pub fn incorrect_receiver_name(arg0: TypeArg, arg1: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("incorrect.receiver.name", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "incorrect.receiver.name",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// the receiver type does not match the enclosing class type\nrequired: {0}\nfound:    {1}
     ///
     /// Java: Errors.IncorrectReceiverType(type, type)
     pub fn incorrect_receiver_type(arg0: TypeArg, arg1: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("incorrect.receiver.type", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "incorrect.receiver.type",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// initializer must be able to complete normally
@@ -1447,14 +1894,20 @@ pub mod errors {
     ///
     /// Java: Errors.InstanceofPatternNoSubtype(type, type)
     pub fn instanceof_pattern_no_subtype(arg0: TypeArg, arg1: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("instanceof.pattern.no.subtype", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "instanceof.pattern.no.subtype",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} cannot be safely cast to {1}
     ///
     /// Java: Errors.InstanceofReifiableNotSafe(type, type)
     pub fn instanceof_reifiable_not_safe(arg0: TypeArg, arg1: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("instanceof.reifiable.not.safe", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "instanceof.reifiable.not.safe",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// integer number too large
@@ -1468,14 +1921,20 @@ pub mod errors {
     ///
     /// Java: Errors.IntfAnnotationCantHaveTypeParams(symbol)
     pub fn intf_annotation_cant_have_type_params(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("intf.annotation.cant.have.type.params", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "intf.annotation.cant.have.type.params",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// annotation type {1} declares an element with the same name as method {0}
     ///
     /// Java: Errors.IntfAnnotationMemberClash(symbol, type)
     pub fn intf_annotation_member_clash(arg0: SymbolArg, arg1: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("intf.annotation.member.clash", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "intf.annotation.member.clash",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// elements in annotation type declarations cannot declare formal parameters
@@ -1524,7 +1983,10 @@ pub mod errors {
     ///
     /// Java: Errors.InvalidAccessorMethodInRecord(symbol, fragment)
     pub fn invalid_accessor_method_in_record(arg0: SymbolArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.accessor.method.in.record", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "invalid.accessor.method.in.record",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// invalid type for annotation type element
@@ -1544,8 +2006,19 @@ pub mod errors {
     /// invalid {0} constructor in record {1}\n({2})
     ///
     /// Java: Errors.InvalidCanonicalConstructorInRecord(fragment, name, fragment)
-    pub fn invalid_canonical_constructor_in_record(arg0: DiagnosticArg, arg1: Name, arg2: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.canonical.constructor.in.record", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn invalid_canonical_constructor_in_record(
+        arg0: DiagnosticArg,
+        arg1: Name,
+        arg2: DiagnosticArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "invalid.canonical.constructor.in.record",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// invalid flag: {0}
@@ -1566,7 +2039,10 @@ pub mod errors {
     ///
     /// Java: Errors.InvalidLambdaParameterDeclaration(fragment)
     pub fn invalid_lambda_parameter_declaration(arg0: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.lambda.parameter.declaration", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "invalid.lambda.parameter.declaration",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// invalid method declaration; return type required
@@ -1594,7 +2070,10 @@ pub mod errors {
     ///
     /// Java: Errors.InvalidMref(kind name, diagnostic or fragment)
     pub fn invalid_mref(arg0: KindNameArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.mref", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "invalid.mref",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// Invalid filename: {0}
@@ -1622,91 +2101,165 @@ pub mod errors {
     ///
     /// Java: Errors.InvalidRepeatableAnnotation(symbol)
     pub fn invalid_repeatable_annotation(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.repeatable.annotation", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "invalid.repeatable.annotation",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// containing annotation type ({0}) does not have a default value for element {1}
     ///
     /// Java: Errors.InvalidRepeatableAnnotationElemNondefault(symbol or type, symbol)
-    pub fn invalid_repeatable_annotation_elem_nondefault(arg0: DiagnosticArg, arg1: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.repeatable.annotation.elem.nondefault", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn invalid_repeatable_annotation_elem_nondefault(
+        arg0: DiagnosticArg,
+        arg1: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "invalid.repeatable.annotation.elem.nondefault",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// containing annotation type ({0}) is applicable to more targets than repeatable annotation type ({1})
     ///
     /// Java: Errors.InvalidRepeatableAnnotationIncompatibleTarget(symbol, symbol)
-    pub fn invalid_repeatable_annotation_incompatible_target(arg0: SymbolArg, arg1: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.repeatable.annotation.incompatible.target", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn invalid_repeatable_annotation_incompatible_target(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "invalid.repeatable.annotation.incompatible.target",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} is not a valid @Repeatable: invalid value element
     ///
     /// Java: Errors.InvalidRepeatableAnnotationInvalidValue(type)
     pub fn invalid_repeatable_annotation_invalid_value(arg0: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.repeatable.annotation.invalid.value", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "invalid.repeatable.annotation.invalid.value",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// {0} is not a valid @Repeatable, {1} element methods named ''value'' declared
     ///
     /// Java: Errors.InvalidRepeatableAnnotationMultipleValues(type, number)
     pub fn invalid_repeatable_annotation_multiple_values(arg0: TypeArg, arg1: i32) -> ErrorInfo {
-        ErrorInfo::new("invalid.repeatable.annotation.multiple.values", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "invalid.repeatable.annotation.multiple.values",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} is not a valid @Repeatable, no value element method declared
     ///
     /// Java: Errors.InvalidRepeatableAnnotationNoValue(symbol or type)
     pub fn invalid_repeatable_annotation_no_value(arg0: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.repeatable.annotation.no.value", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "invalid.repeatable.annotation.no.value",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// container {0} is not applicable to element {1}
     ///
     /// Java: Errors.InvalidRepeatableAnnotationNotApplicable(type, symbol)
-    pub fn invalid_repeatable_annotation_not_applicable(arg0: TypeArg, arg1: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.repeatable.annotation.not.applicable", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn invalid_repeatable_annotation_not_applicable(
+        arg0: TypeArg,
+        arg1: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "invalid.repeatable.annotation.not.applicable",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// container {0} is not applicable in this type context
     ///
     /// Java: Errors.InvalidRepeatableAnnotationNotApplicableInContext(type)
     pub fn invalid_repeatable_annotation_not_applicable_in_context(arg0: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.repeatable.annotation.not.applicable.in.context", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "invalid.repeatable.annotation.not.applicable.in.context",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// repeatable annotation type ({1}) is @Documented while containing annotation type ({0}) is not
     ///
     /// Java: Errors.InvalidRepeatableAnnotationNotDocumented(symbol, symbol)
-    pub fn invalid_repeatable_annotation_not_documented(arg0: SymbolArg, arg1: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.repeatable.annotation.not.documented", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn invalid_repeatable_annotation_not_documented(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "invalid.repeatable.annotation.not.documented",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// repeatable annotation type ({1}) is @Inherited while containing annotation type ({0}) is not
     ///
     /// Java: Errors.InvalidRepeatableAnnotationNotInherited(symbol, symbol)
-    pub fn invalid_repeatable_annotation_not_inherited(arg0: SymbolArg, arg1: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.repeatable.annotation.not.inherited", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn invalid_repeatable_annotation_not_inherited(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "invalid.repeatable.annotation.not.inherited",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// container {0} must not be present at the same time as the element it contains
     ///
     /// Java: Errors.InvalidRepeatableAnnotationRepeatedAndContainerPresent(symbol)
-    pub fn invalid_repeatable_annotation_repeated_and_container_present(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.repeatable.annotation.repeated.and.container.present", vec![arg0.into_diagnostic_arg()])
+    pub fn invalid_repeatable_annotation_repeated_and_container_present(
+        arg0: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "invalid.repeatable.annotation.repeated.and.container.present",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// retention of containing annotation type ({0}) is shorter than the retention of repeatable annotation type ({2})
     ///
     /// Java: Errors.InvalidRepeatableAnnotationRetention(symbol, string, symbol, string)
-    pub fn invalid_repeatable_annotation_retention(arg0: SymbolArg, arg1: JavaString, arg2: SymbolArg, arg3: JavaString) -> ErrorInfo {
-        ErrorInfo::new("invalid.repeatable.annotation.retention", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn invalid_repeatable_annotation_retention(
+        arg0: SymbolArg,
+        arg1: JavaString,
+        arg2: SymbolArg,
+        arg3: JavaString,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "invalid.repeatable.annotation.retention",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// containing annotation type ({0}) must declare an element named ''value'' of type {2}
     ///
     /// Java: Errors.InvalidRepeatableAnnotationValueReturn(symbol or type, type, type)
-    pub fn invalid_repeatable_annotation_value_return(arg0: DiagnosticArg, arg1: TypeArg, arg2: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("invalid.repeatable.annotation.value.return", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn invalid_repeatable_annotation_value_return(
+        arg0: DiagnosticArg,
+        arg1: TypeArg,
+        arg2: TypeArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "invalid.repeatable.annotation.value.return",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// invalid source release: {0}
@@ -1839,7 +2392,10 @@ pub mod errors {
     ///
     /// Java: Errors.LocalClassesCantExtendSealed(fragment)
     pub fn local_classes_cant_extend_sealed(arg0: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("local.classes.cant.extend.sealed", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "local.classes.cant.extend.sealed",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// enum types must not be local
@@ -1853,7 +2409,10 @@ pub mod errors {
     ///
     /// Java: Errors.LocalVarAccessedFromIclsNeedsFinal(symbol)
     pub fn local_var_accessed_from_icls_needs_final(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("local.var.accessed.from.icls.needs.final", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "local.var.accessed.from.icls.needs.final",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// problem reading module-info.class in {0}
@@ -1867,7 +2426,10 @@ pub mod errors {
     ///
     /// Java: Errors.LocnCantGetModuleNameForJar(path)
     pub fn locn_cant_get_module_name_for_jar(arg0: PathArg) -> ErrorInfo {
-        ErrorInfo::new("locn.cant.get.module.name.for.jar", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "locn.cant.get.module.name.for.jar",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// cannot read directory {0}
@@ -1888,14 +2450,20 @@ pub mod errors {
     ///
     /// Java: Errors.LocnInvalidArgForXpatch(string)
     pub fn locn_invalid_arg_for_xpatch(arg0: JavaString) -> ErrorInfo {
-        ErrorInfo::new("locn.invalid.arg.for.xpatch", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "locn.invalid.arg.for.xpatch",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// module-info.class not allowed on patch path: {0}
     ///
     /// Java: Errors.LocnModuleInfoNotAllowedOnPatchPath(file object)
     pub fn locn_module_info_not_allowed_on_patch_path(arg0: FileObjectArg) -> ErrorInfo {
-        ErrorInfo::new("locn.module-info.not.allowed.on.patch.path", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "locn.module-info.not.allowed.on.patch.path",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// malformed floating-point literal
@@ -1944,7 +2512,10 @@ pub mod errors {
     ///
     /// Java: Errors.ModifierNotAllowedHere(name)
     pub fn modifier_not_allowed_here(arg0: Name) -> ErrorInfo {
-        ErrorInfo::new("modifier.not.allowed.here", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "modifier.not.allowed.here",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// module declarations should be in a file named module-info.java
@@ -1958,7 +2529,10 @@ pub mod errors {
     ///
     /// Java: Errors.ModuleNameMismatch(name, name)
     pub fn module_name_mismatch(arg0: Name, arg1: Name) -> ErrorInfo {
-        ErrorInfo::new("module.name.mismatch", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "module.name.mismatch",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// open module {0} has non-zero opens_count
@@ -1979,7 +2553,10 @@ pub mod errors {
     ///
     /// Java: Errors.ModuleNotFoundInModuleSourcePath(string)
     pub fn module_not_found_in_module_source_path(arg0: JavaString) -> ErrorInfo {
-        ErrorInfo::new("module.not.found.in.module.source.path", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "module.not.found.in.module.source.path",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// module not found on module source path
@@ -1993,28 +2570,40 @@ pub mod errors {
     ///
     /// Java: Errors.ModulesourcepathMustBeSpecifiedWithDashMOption()
     pub fn modulesourcepath_must_be_specified_with_dash_m_option() -> ErrorInfo {
-        ErrorInfo::new("modulesourcepath.must.be.specified.with.dash.m.option", vec![])
+        ErrorInfo::new(
+            "modulesourcepath.must.be.specified.with.dash.m.option",
+            vec![],
+        )
     }
 
     /// in multi-module mode, the output directory cannot be an exploded module: {0}
     ///
     /// Java: Errors.MultiModuleOutdirCannotBeExplodedModule(path)
     pub fn multi_module_outdir_cannot_be_exploded_module(arg0: PathArg) -> ErrorInfo {
-        ErrorInfo::new("multi-module.outdir.cannot.be.exploded.module", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "multi-module.outdir.cannot.be.exploded.module",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// multi-catch parameter {0} may not be assigned
     ///
     /// Java: Errors.MulticatchParameterMayNotBeAssigned(symbol)
     pub fn multicatch_parameter_may_not_be_assigned(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("multicatch.parameter.may.not.be.assigned", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "multicatch.parameter.may.not.be.assigned",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Alternatives in a multi-catch statement cannot be related by subclassing\nAlternative {0} is a subclass of alternative {1}
     ///
     /// Java: Errors.MulticatchTypesMustBeDisjoint(type, type)
     pub fn multicatch_types_must_be_disjoint(arg0: TypeArg, arg1: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("multicatch.types.must.be.disjoint", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "multicatch.types.must.be.disjoint",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// --module-source-path specified more than once with a pattern argument
@@ -2028,28 +2617,82 @@ pub mod errors {
     ///
     /// Java: Errors.NameClashSameErasure(symbol, symbol)
     pub fn name_clash_same_erasure(arg0: SymbolArg, arg1: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("name.clash.same.erasure", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "name.clash.same.erasure",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// name clash: {0} in {1} and {2} in {3} have the same erasure, yet neither hides the other
     ///
     /// Java: Errors.NameClashSameErasureNoHide(symbol, symbol, symbol, symbol)
-    pub fn name_clash_same_erasure_no_hide(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg, arg3: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("name.clash.same.erasure.no.hide", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn name_clash_same_erasure_no_hide(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "name.clash.same.erasure.no.hide",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// name clash: {0}({1}) in {2} and {3}({4}) in {5} have the same erasure, yet neither overrides the other
     ///
     /// Java: Errors.NameClashSameErasureNoOverride(name, list of type, symbol, name, list of type, symbol)
-    pub fn name_clash_same_erasure_no_override(arg0: Name, arg1: Vec<TypeArg>, arg2: SymbolArg, arg3: Name, arg4: Vec<TypeArg>, arg5: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("name.clash.same.erasure.no.override", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg(), arg5.into_diagnostic_arg()])
+    pub fn name_clash_same_erasure_no_override(
+        arg0: Name,
+        arg1: Vec<TypeArg>,
+        arg2: SymbolArg,
+        arg3: Name,
+        arg4: Vec<TypeArg>,
+        arg5: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "name.clash.same.erasure.no.override",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+                arg5.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// name clash: {0} {1} has two methods with the same erasure, yet neither overrides the other\nfirst method:  {2}({3}) in {4}\nsecond method: {5}({6}) in {7}
     ///
     /// Java: Errors.NameClashSameErasureNoOverride1(string, name, name, list of type, symbol, name, list of type, symbol)
-    pub fn name_clash_same_erasure_no_override1(arg0: JavaString, arg1: Name, arg2: Name, arg3: Vec<TypeArg>, arg4: SymbolArg, arg5: Name, arg6: Vec<TypeArg>, arg7: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("name.clash.same.erasure.no.override.1", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg(), arg5.into_diagnostic_arg(), arg6.into_diagnostic_arg(), arg7.into_diagnostic_arg()])
+    pub fn name_clash_same_erasure_no_override1(
+        arg0: JavaString,
+        arg1: Name,
+        arg2: Name,
+        arg3: Vec<TypeArg>,
+        arg4: SymbolArg,
+        arg5: Name,
+        arg6: Vec<TypeArg>,
+        arg7: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "name.clash.same.erasure.no.override.1",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+                arg5.into_diagnostic_arg(),
+                arg6.into_diagnostic_arg(),
+                arg7.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} is reserved for internal use
@@ -2077,7 +2720,10 @@ pub mod errors {
     ///
     /// Java: Errors.NoAnnotationMember(name, type)
     pub fn no_annotation_member(arg0: Name, arg1: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("no.annotation.member", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "no.annotation.member",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// no annotations are allowed in the type of a class literal
@@ -2091,7 +2737,10 @@ pub mod errors {
     ///
     /// Java: Errors.NoEnclInstanceOfTypeInScope(symbol)
     pub fn no_encl_instance_of_type_in_scope(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("no.encl.instance.of.type.in.scope", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "no.encl.instance.of.type.in.scope",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// no interface expected here
@@ -2182,7 +2831,10 @@ pub mod errors {
     ///
     /// Java: Errors.NonStaticCantBeRef(symbol kind, symbol)
     pub fn non_static_cant_be_ref(arg0: SymbolKindArg, arg1: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("non-static.cant.be.ref", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "non-static.cant.be.ref",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// sealed or non-sealed modifiers expected
@@ -2203,7 +2855,10 @@ pub mod errors {
     ///
     /// Java: Errors.NonSealedWithNoSealedSupertype(symbol)
     pub fn non_sealed_with_no_sealed_supertype(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("non.sealed.with.no.sealed.supertype", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "non.sealed.with.no.sealed.supertype",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// {0} is not an annotation type
@@ -2217,35 +2872,68 @@ pub mod errors {
     ///
     /// Java: Errors.NotDefAccessClassIntfCantAccess(symbol, symbol)
     pub fn not_def_access_class_intf_cant_access(arg0: SymbolArg, arg1: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("not.def.access.class.intf.cant.access", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "not.def.access.class.intf.cant.access",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {1}.{0} in package {2} is not accessible\n({3})
     ///
     /// Java: Errors.NotDefAccessClassIntfCantAccessReason(symbol, symbol, symbol, diagnostic or fragment)
-    pub fn not_def_access_class_intf_cant_access_reason(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg, arg3: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("not.def.access.class.intf.cant.access.reason", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn not_def_access_class_intf_cant_access_reason(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: DiagnosticArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "not.def.access.class.intf.cant.access.reason",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} is not visible\n({2})
     ///
     /// Java: Errors.NotDefAccessPackageCantAccess(symbol, symbol, diagnostic or fragment)
-    pub fn not_def_access_package_cant_access(arg0: SymbolArg, arg1: SymbolArg, arg2: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("not.def.access.package.cant.access", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn not_def_access_package_cant_access(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: DiagnosticArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "not.def.access.package.cant.access",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} is not public in {1}
     ///
     /// Java: Errors.NotDefPublic(symbol, symbol)
     pub fn not_def_public(arg0: SymbolArg, arg1: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("not.def.public", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "not.def.public",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} is not public in {1}; cannot be accessed from outside package
     ///
     /// Java: Errors.NotDefPublicCantAccess(symbol, symbol)
     pub fn not_def_public_cant_access(arg0: SymbolArg, arg1: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("not.def.public.cant.access", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "not.def.public.cant.access",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// not an enclosing class: {0}
@@ -2280,7 +2968,10 @@ pub mod errors {
     ///
     /// Java: Errors.NotInProfile(symbol, object)
     pub fn not_in_profile(arg0: SymbolArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("not.in.profile", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "not.in.profile",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// not a loop label: {0}
@@ -2301,42 +2992,64 @@ pub mod errors {
     ///
     /// Java: Errors.NotWithinBounds(type, type or symbol)
     pub fn not_within_bounds(arg0: TypeArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("not.within.bounds", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "not.within.bounds",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// bad operand type {1} for unary operator ''{0}''
     ///
     /// Java: Errors.OperatorCantBeApplied(name, type)
     pub fn operator_cant_be_applied(arg0: Name, arg1: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("operator.cant.be.applied", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "operator.cant.be.applied",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// bad operand types for binary operator ''{0}''\nfirst type:  {1}\nsecond type: {2}
     ///
     /// Java: Errors.OperatorCantBeApplied1(name, type, type)
     pub fn operator_cant_be_applied1(arg0: Name, arg1: TypeArg, arg2: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("operator.cant.be.applied.1", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "operator.cant.be.applied.1",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// option {0} not allowed with target {1}
     ///
     /// Java: Errors.OptionNotAllowedWithTarget(option name, target)
     pub fn option_not_allowed_with_target(arg0: OptionArg, arg1: TargetArg) -> ErrorInfo {
-        ErrorInfo::new("option.not.allowed.with.target", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "option.not.allowed.with.target",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// Source option {0} is no longer supported. Use {1} or later.
     ///
     /// Java: Errors.OptionRemovedSource(string, string)
     pub fn option_removed_source(arg0: JavaString, arg1: JavaString) -> ErrorInfo {
-        ErrorInfo::new("option.removed.source", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "option.removed.source",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// Target option {0} is no longer supported. Use {1} or later.
     ///
     /// Java: Errors.OptionRemovedTarget(target, target)
     pub fn option_removed_target(arg0: TargetArg, arg1: TargetArg) -> ErrorInfo {
-        ErrorInfo::new("option.removed.target", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "option.removed.target",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// option {0} can only be specified once
@@ -2363,22 +3076,39 @@ pub mod errors {
     /// {0}\nreturn type {1} is not compatible with {2}
     ///
     /// Java: Errors.OverrideIncompatibleRet(diagnostic or fragment, type, type)
-    pub fn override_incompatible_ret(arg0: DiagnosticArg, arg1: TypeArg, arg2: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("override.incompatible.ret", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn override_incompatible_ret(
+        arg0: DiagnosticArg,
+        arg1: TypeArg,
+        arg2: TypeArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "override.incompatible.ret",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0}\noverridden method is {1}
     ///
     /// Java: Errors.OverrideMeth(diagnostic or fragment, set of flag)
     pub fn override_meth(arg0: DiagnosticArg, arg1: Vec<FlagArg>) -> ErrorInfo {
-        ErrorInfo::new("override.meth", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "override.meth",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0}\noverridden method does not throw {1}
     ///
     /// Java: Errors.OverrideMethDoesntThrow(diagnostic or fragment, type)
     pub fn override_meth_doesnt_throw(arg0: DiagnosticArg, arg1: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("override.meth.doesnt.throw", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "override.meth.doesnt.throw",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0}\noverriding method is static
@@ -2392,28 +3122,58 @@ pub mod errors {
     ///
     /// Java: Errors.OverrideWeakerAccess(diagnostic or fragment, set of flag or string)
     pub fn override_weaker_access(arg0: DiagnosticArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("override.weaker.access", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "override.weaker.access",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// module {0} reads package {1} from both {2} and {3}
     ///
     /// Java: Errors.PackageClashFromRequires(symbol, name, symbol, symbol)
-    pub fn package_clash_from_requires(arg0: SymbolArg, arg1: Name, arg2: SymbolArg, arg3: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("package.clash.from.requires", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn package_clash_from_requires(
+        arg0: SymbolArg,
+        arg1: Name,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "package.clash.from.requires",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// the unnamed module reads package {0} from both {1} and {2}
     ///
     /// Java: Errors.PackageClashFromRequiresInUnnamed(name, symbol, symbol)
-    pub fn package_clash_from_requires_in_unnamed(arg0: Name, arg1: SymbolArg, arg2: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("package.clash.from.requires.in.unnamed", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn package_clash_from_requires_in_unnamed(
+        arg0: Name,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "package.clash.from.requires.in.unnamed",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// package is empty or does not exist: {0}
     ///
     /// Java: Errors.PackageEmptyOrNotFound(symbol)
     pub fn package_empty_or_not_found(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("package.empty.or.not.found", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "package.empty.or.not.found",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// package exists in another module: {0}
@@ -2427,7 +3187,10 @@ pub mod errors {
     ///
     /// Java: Errors.PackageNotVisible(symbol, diagnostic or fragment)
     pub fn package_not_visible(arg0: SymbolArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("package.not.visible", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "package.not.visible",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// this case label is dominated by a preceding case label
@@ -2455,7 +3218,10 @@ pub mod errors {
     ///
     /// Java: Errors.PkgClashesWithClassOfSameName(symbol)
     pub fn pkg_clashes_with_class_of_same_name(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("pkg.clashes.with.class.of.same.name", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "pkg.clashes.with.class.of.same.name",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// plug-in not found: {0}
@@ -2483,21 +3249,30 @@ pub mod errors {
     ///
     /// Java: Errors.PreviewFeatureDisabledClassfile(file object, string)
     pub fn preview_feature_disabled_classfile(arg0: FileObjectArg, arg1: JavaString) -> ErrorInfo {
-        ErrorInfo::new("preview.feature.disabled.classfile", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "preview.feature.disabled.classfile",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} are a preview feature and are disabled by default.\n(use --enable-preview to enable {0})
     ///
     /// Java: Errors.PreviewFeatureDisabledPlural(diagnostic or fragment)
     pub fn preview_feature_disabled_plural(arg0: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("preview.feature.disabled.plural", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "preview.feature.disabled.plural",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// invalid source release {0} with --enable-preview\n(preview language features are only supported for release {1})
     ///
     /// Java: Errors.PreviewNotLatest(string, source)
     pub fn preview_not_latest(arg0: JavaString, arg1: SourceArg) -> ErrorInfo {
-        ErrorInfo::new("preview.not.latest", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "preview.not.latest",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// --enable-preview must be used with either -source or --release
@@ -2525,14 +3300,24 @@ pub mod errors {
     ///
     /// Java: Errors.ProcCantAccess(symbol, diagnostic or fragment, string)
     pub fn proc_cant_access(arg0: SymbolArg, arg1: DiagnosticArg, arg2: JavaString) -> ErrorInfo {
-        ErrorInfo::new("proc.cant.access", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "proc.cant.access",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot access {0}\n{1}
     ///
     /// Java: Errors.ProcCantAccess1(symbol, diagnostic or fragment)
     pub fn proc_cant_access1(arg0: SymbolArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("proc.cant.access.1", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "proc.cant.access.1",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// Could not create class loader for annotation processors: {0}
@@ -2567,7 +3352,10 @@ pub mod errors {
     ///
     /// Java: Errors.ProcNoExplicitAnnotationProcessingRequested(collection of string)
     pub fn proc_no_explicit_annotation_processing_requested(arg0: Vec<JavaString>) -> ErrorInfo {
-        ErrorInfo::new("proc.no.explicit.annotation.processing.requested", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "proc.no.explicit.annotation.processing.requested",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// A ServiceLoader was not usable and is required for annotation processing.
@@ -2581,14 +3369,20 @@ pub mod errors {
     ///
     /// Java: Errors.ProcProcessorBadOptionName(string, string)
     pub fn proc_processor_bad_option_name(arg0: JavaString, arg1: JavaString) -> ErrorInfo {
-        ErrorInfo::new("proc.processor.bad.option.name", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "proc.processor.bad.option.name",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// Could not instantiate an instance of processor ''{0}''
     ///
     /// Java: Errors.ProcProcessorCantInstantiate(string)
     pub fn proc_processor_cant_instantiate(arg0: JavaString) -> ErrorInfo {
-        ErrorInfo::new("proc.processor.cant.instantiate", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "proc.processor.cant.instantiate",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Annotation processor ''{0}'' not found
@@ -2602,7 +3396,10 @@ pub mod errors {
     ///
     /// Java: Errors.ProcProcessorWrongType(string)
     pub fn proc_processor_wrong_type(arg0: JavaString) -> ErrorInfo {
-        ErrorInfo::new("proc.processor.wrong.type", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "proc.processor.wrong.type",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Error creating a service loader to load Processors.
@@ -2630,14 +3427,20 @@ pub mod errors {
     ///
     /// Java: Errors.QualifiedNewOfStaticClass(symbol)
     pub fn qualified_new_of_static_class(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("qualified.new.of.static.class", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "qualified.new.of.static.class",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// receiver parameter not applicable for constructor of top-level class
     ///
     /// Java: Errors.ReceiverParameterNotApplicableConstructorToplevelClass()
     pub fn receiver_parameter_not_applicable_constructor_toplevel_class() -> ErrorInfo {
-        ErrorInfo::new("receiver.parameter.not.applicable.constructor.toplevel.class", vec![])
+        ErrorInfo::new(
+            "receiver.parameter.not.applicable.constructor.toplevel.class",
+            vec![],
+        )
     }
 
     /// field declaration must be static\n(consider replacing field with record component)
@@ -2678,15 +3481,37 @@ pub mod errors {
     /// reference to {0} is ambiguous\nboth {1} {2} in {3} and {4} {5} in {6} match
     ///
     /// Java: Errors.RefAmbiguous(name, symbol kind, symbol, symbol, symbol kind, symbol, symbol)
-    pub fn ref_ambiguous(arg0: Name, arg1: SymbolKindArg, arg2: SymbolArg, arg3: SymbolArg, arg4: SymbolKindArg, arg5: SymbolArg, arg6: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("ref.ambiguous", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg(), arg5.into_diagnostic_arg(), arg6.into_diagnostic_arg()])
+    pub fn ref_ambiguous(
+        arg0: Name,
+        arg1: SymbolKindArg,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+        arg4: SymbolKindArg,
+        arg5: SymbolArg,
+        arg6: SymbolArg,
+    ) -> ErrorInfo {
+        ErrorInfo::new(
+            "ref.ambiguous",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+                arg5.into_diagnostic_arg(),
+                arg6.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// option {0} cannot be used together with --release
     ///
     /// Java: Errors.ReleaseBootclasspathConflict(option name)
     pub fn release_bootclasspath_conflict(arg0: OptionArg) -> ErrorInfo {
-        ErrorInfo::new("release.bootclasspath.conflict", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "release.bootclasspath.conflict",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// repeated annotation target
@@ -2714,28 +3539,44 @@ pub mod errors {
     ///
     /// Java: Errors.RepeatedProvidesForService(symbol)
     pub fn repeated_provides_for_service(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("repeated.provides.for.service", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "repeated.provides.for.service",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// --module-source-path specified more than once for module {0}
     ///
     /// Java: Errors.RepeatedValueForModuleSourcePath(string)
     pub fn repeated_value_for_module_source_path(arg0: JavaString) -> ErrorInfo {
-        ErrorInfo::new("repeated.value.for.module.source.path", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "repeated.value.for.module.source.path",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// --patch-module specified more than once for module {0}
     ///
     /// Java: Errors.RepeatedValueForPatchModule(string)
     pub fn repeated_value_for_patch_module(arg0: JavaString) -> ErrorInfo {
-        ErrorInfo::new("repeated.value.for.patch.module", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "repeated.value.for.patch.module",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// {0} has {1} access in {2}
     ///
     /// Java: Errors.ReportAccess(symbol, set of modifier, symbol)
     pub fn report_access(arg0: SymbolArg, arg1: Vec<ModifierArg>, arg2: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("report.access", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "report.access",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} requires an argument
@@ -2749,28 +3590,40 @@ pub mod errors {
     ///
     /// Java: Errors.RestrictedTypeNotAllowed(name, source)
     pub fn restricted_type_not_allowed(arg0: Name, arg1: SourceArg) -> ErrorInfo {
-        ErrorInfo::new("restricted.type.not.allowed", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "restricted.type.not.allowed",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// ''{0}'' is not allowed as an element type of an array
     ///
     /// Java: Errors.RestrictedTypeNotAllowedArray(name)
     pub fn restricted_type_not_allowed_array(arg0: Name) -> ErrorInfo {
-        ErrorInfo::new("restricted.type.not.allowed.array", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "restricted.type.not.allowed.array",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// ''{0}'' is not allowed in a compound declaration
     ///
     /// Java: Errors.RestrictedTypeNotAllowedCompound(name)
     pub fn restricted_type_not_allowed_compound(arg0: Name) -> ErrorInfo {
-        ErrorInfo::new("restricted.type.not.allowed.compound", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "restricted.type.not.allowed.compound",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// ''{0}'' is not allowed here
     ///
     /// Java: Errors.RestrictedTypeNotAllowedHere(name)
     pub fn restricted_type_not_allowed_here(arg0: Name) -> ErrorInfo {
-        ErrorInfo::new("restricted.type.not.allowed.here", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "restricted.type.not.allowed.here",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// return outside method
@@ -2798,7 +3651,10 @@ pub mod errors {
     ///
     /// Java: Errors.SameBinaryName(name, name)
     pub fn same_binary_name(arg0: Name, arg1: Name) -> ErrorInfo {
-        ErrorInfo::new("same.binary.name", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "same.binary.name",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// sealed class must have subclasses
@@ -2819,56 +3675,81 @@ pub mod errors {
     ///
     /// Java: Errors.ServiceDefinitionIsEnum(symbol)
     pub fn service_definition_is_enum(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("service.definition.is.enum", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "service.definition.is.enum",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// the service implementation does not have a default constructor: {0}
     ///
     /// Java: Errors.ServiceImplementationDoesntHaveANoArgsConstructor(symbol)
     pub fn service_implementation_doesnt_have_a_no_args_constructor(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("service.implementation.doesnt.have.a.no.args.constructor", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "service.implementation.doesnt.have.a.no.args.constructor",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// the service implementation is an abstract class: {0}
     ///
     /// Java: Errors.ServiceImplementationIsAbstract(symbol)
     pub fn service_implementation_is_abstract(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("service.implementation.is.abstract", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "service.implementation.is.abstract",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// the service implementation is an inner class: {0}
     ///
     /// Java: Errors.ServiceImplementationIsInner(symbol)
     pub fn service_implementation_is_inner(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("service.implementation.is.inner", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "service.implementation.is.inner",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// the service implementation type must be a subtype of the service interface type, or have a public static no-args method named "provider" returning the service implementation
     ///
     /// Java: Errors.ServiceImplementationMustBeSubtypeOfServiceInterface()
     pub fn service_implementation_must_be_subtype_of_service_interface() -> ErrorInfo {
-        ErrorInfo::new("service.implementation.must.be.subtype.of.service.interface", vec![])
+        ErrorInfo::new(
+            "service.implementation.must.be.subtype.of.service.interface",
+            vec![],
+        )
     }
 
     /// the no arguments constructor of the service implementation is not public: {0}
     ///
     /// Java: Errors.ServiceImplementationNoArgsConstructorNotPublic(symbol)
     pub fn service_implementation_no_args_constructor_not_public(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("service.implementation.no.args.constructor.not.public", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "service.implementation.no.args.constructor.not.public",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// service implementation must be defined in the same module as the provides directive
     ///
     /// Java: Errors.ServiceImplementationNotInRightModule(symbol)
     pub fn service_implementation_not_in_right_module(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("service.implementation.not.in.right.module", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "service.implementation.not.in.right.module",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// the "provider" method return type must be a subtype of the service interface type
     ///
     /// Java: Errors.ServiceImplementationProviderReturnMustBeSubtypeOfServiceInterface()
-    pub fn service_implementation_provider_return_must_be_subtype_of_service_interface() -> ErrorInfo {
-        ErrorInfo::new("service.implementation.provider.return.must.be.subtype.of.service.interface", vec![])
+    pub fn service_implementation_provider_return_must_be_subtype_of_service_interface() -> ErrorInfo
+    {
+        ErrorInfo::new(
+            "service.implementation.provider.return.must.be.subtype.of.service.interface",
+            vec![],
+        )
     }
 
     /// signature does not match {0}; incompatible interfaces
@@ -2889,7 +3770,10 @@ pub mod errors {
     ///
     /// Java: Errors.SourceCantOverwriteInputFile(file object)
     pub fn source_cant_overwrite_input_file(arg0: FileObjectArg) -> ErrorInfo {
-        ErrorInfo::new("source.cant.overwrite.input.file", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "source.cant.overwrite.input.file",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// cannot specify both --source-path and --module-source-path
@@ -3008,14 +3892,20 @@ pub mod errors {
     ///
     /// Java: Errors.TryResourceMayNotBeAssigned(symbol)
     pub fn try_resource_may_not_be_assigned(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("try.resource.may.not.be.assigned", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "try.resource.may.not.be.assigned",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// variable {0} used as a try-with-resources resource neither final nor effectively final
     ///
     /// Java: Errors.TryWithResourcesExprEffectivelyFinalVar(symbol)
     pub fn try_with_resources_expr_effectively_final_var(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("try.with.resources.expr.effectively.final.var", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "try.with.resources.expr.effectively.final.var",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// the try-with-resources resource must either be a variable declaration or an expression denoting a reference to a final or effectively final variable
@@ -3043,7 +3933,10 @@ pub mod errors {
     ///
     /// Java: Errors.TwoClassLoaders2(url, url)
     pub fn two_class_loaders2(arg0: UrlArg, arg1: UrlArg) -> ErrorInfo {
-        ErrorInfo::new("two.class.loaders.2", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "two.class.loaders.2",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// type {0} does not take parameters
@@ -3057,7 +3950,10 @@ pub mod errors {
     ///
     /// Java: Errors.TypeFoundReq(object, diagnostic or fragment)
     pub fn type_found_req(arg0: DiagnosticArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("type.found.req", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "type.found.req",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// cannot select from a type variable
@@ -3092,7 +3988,14 @@ pub mod errors {
     ///
     /// Java: Errors.TypesIncompatible(type, type, fragment)
     pub fn types_incompatible(arg0: TypeArg, arg1: TypeArg, arg2: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("types.incompatible", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "types.incompatible",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// unclosed character literal
@@ -3162,7 +4065,10 @@ pub mod errors {
     ///
     /// Java: Errors.UnexpectedType(set of kind name, set of kind name)
     pub fn unexpected_type(arg0: Vec<KindNameArg>, arg1: Vec<KindNameArg>) -> ErrorInfo {
-        ErrorInfo::new("unexpected.type", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "unexpected.type",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// unmatched quote in environment variable {0}
@@ -3190,21 +4096,30 @@ pub mod errors {
     ///
     /// Java: Errors.UnreportedExceptionDefaultConstructor(type)
     pub fn unreported_exception_default_constructor(arg0: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("unreported.exception.default.constructor", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "unreported.exception.default.constructor",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// unreported exception {0}; must be caught or declared to be thrown\nexception thrown from implicit call to close() on resource variable ''{1}''
     ///
     /// Java: Errors.UnreportedExceptionImplicitClose(type, name)
     pub fn unreported_exception_implicit_close(arg0: TypeArg, arg1: Name) -> ErrorInfo {
-        ErrorInfo::new("unreported.exception.implicit.close", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "unreported.exception.implicit.close",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// unreported exception {0}; must be caught or declared to be thrown
     ///
     /// Java: Errors.UnreportedExceptionNeedToCatchOrThrow(type)
     pub fn unreported_exception_need_to_catch_or_throw(arg0: TypeArg) -> ErrorInfo {
-        ErrorInfo::new("unreported.exception.need.to.catch.or.throw", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "unreported.exception.need.to.catch.or.throw",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// unsupported encoding: {0}
@@ -3218,35 +4133,50 @@ pub mod errors {
     ///
     /// Java: Errors.UnsupportedReleaseVersion(string)
     pub fn unsupported_release_version(arg0: JavaString) -> ErrorInfo {
-        ErrorInfo::new("unsupported.release.version", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "unsupported.release.version",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// variable {0} might already have been assigned
     ///
     /// Java: Errors.VarMightAlreadyBeAssigned(symbol)
     pub fn var_might_already_be_assigned(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("var.might.already.be.assigned", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "var.might.already.be.assigned",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// variable {0} might be assigned in loop
     ///
     /// Java: Errors.VarMightBeAssignedInLoop(symbol)
     pub fn var_might_be_assigned_in_loop(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("var.might.be.assigned.in.loop", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "var.might.be.assigned.in.loop",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// variable {0} might not have been initialized
     ///
     /// Java: Errors.VarMightNotHaveBeenInitialized(symbol)
     pub fn var_might_not_have_been_initialized(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("var.might.not.have.been.initialized", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "var.might.not.have.been.initialized",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// variable {0} not initialized in the default constructor
     ///
     /// Java: Errors.VarNotInitializedInDefaultConstructor(symbol)
     pub fn var_not_initialized_in_default_constructor(arg0: SymbolArg) -> ErrorInfo {
-        ErrorInfo::new("var.not.initialized.in.default.constructor", vec![arg0.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "var.not.initialized.in.default.constructor",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// legacy array notation not allowed on variable-arity parameter
@@ -3267,7 +4197,10 @@ pub mod errors {
     ///
     /// Java: Errors.VarargsInvalidTrustmeAnno(symbol, diagnostic or fragment)
     pub fn varargs_invalid_trustme_anno(arg0: SymbolArg, arg1: DiagnosticArg) -> ErrorInfo {
-        ErrorInfo::new("varargs.invalid.trustme.anno", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        ErrorInfo::new(
+            "varargs.invalid.trustme.anno",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// =varargs parameter must be the last parameter
@@ -3311,7 +4244,6 @@ pub mod errors {
     pub fn wrong_receiver() -> ErrorInfo {
         ErrorInfo::new("wrong.receiver", vec![])
     }
-
 }
 
 pub mod warnings {
@@ -3321,14 +4253,20 @@ pub mod warnings {
     ///
     /// Java: Warnings.AccessToMemberFromSerializableElement(symbol)
     pub fn access_to_member_from_serializable_element(arg0: SymbolArg) -> WarningInfo {
-        WarningInfo::new("access.to.member.from.serializable.element", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "access.to.member.from.serializable.element",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// access to member {0} from serializable lambda can be publicly accessible to untrusted code
     ///
     /// Java: Warnings.AccessToMemberFromSerializableLambda(symbol)
     pub fn access_to_member_from_serializable_lambda(arg0: SymbolArg) -> WarningInfo {
-        WarningInfo::new("access.to.member.from.serializable.lambda", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "access.to.member.from.serializable.lambda",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// --add-opens has no effect at compile time
@@ -3342,42 +4280,75 @@ pub mod warnings {
     ///
     /// Java: Warnings.AnnotationMethodNotFound(type, name)
     pub fn annotation_method_not_found(arg0: TypeArg, arg1: Name) -> WarningInfo {
-        WarningInfo::new("annotation.method.not.found", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "annotation.method.not.found",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// Cannot find annotation method ''{1}()'' in type ''{0}'': {2}
     ///
     /// Java: Warnings.AnnotationMethodNotFoundReason(type, name, diagnostic or fragment)
-    pub fn annotation_method_not_found_reason(arg0: TypeArg, arg1: Name, arg2: DiagnosticArg) -> WarningInfo {
-        WarningInfo::new("annotation.method.not.found.reason", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn annotation_method_not_found_reason(
+        arg0: TypeArg,
+        arg1: Name,
+        arg2: DiagnosticArg,
+    ) -> WarningInfo {
+        WarningInfo::new(
+            "annotation.method.not.found.reason",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// attempt to synchronize on an instance of a value-based class
     ///
     /// Java: Warnings.AttemptToSynchronizeOnInstanceOfValueBasedClass()
     pub fn attempt_to_synchronize_on_instance_of_value_based_class() -> WarningInfo {
-        WarningInfo::new("attempt.to.synchronize.on.instance.of.value.based.class", vec![])
+        WarningInfo::new(
+            "attempt.to.synchronize.on.instance.of.value.based.class",
+            vec![],
+        )
     }
 
     /// auxiliary class {0} in {1} should not be accessed from outside its own source file
     ///
     /// Java: Warnings.AuxiliaryClassAccessedFromOutsideOfItsSourceFile(symbol or type, file or file object or path)
-    pub fn auxiliary_class_accessed_from_outside_of_its_source_file(arg0: DiagnosticArg, arg1: DiagnosticArg) -> WarningInfo {
-        WarningInfo::new("auxiliary.class.accessed.from.outside.of.its.source.file", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn auxiliary_class_accessed_from_outside_of_its_source_file(
+        arg0: DiagnosticArg,
+        arg1: DiagnosticArg,
+    ) -> WarningInfo {
+        WarningInfo::new(
+            "auxiliary.class.accessed.from.outside.of.its.source.file",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// bad name in value for {0} option: ''{1}''
     ///
     /// Java: Warnings.BadNameForOption(option name, string)
     pub fn bad_name_for_option(arg0: OptionArg, arg1: JavaString) -> WarningInfo {
-        WarningInfo::new("bad.name.for.option", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "bad.name.for.option",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0}: major version {1} is newer than {2}, the highest major version supported by this compiler.\nIt is recommended that the compiler be upgraded.
     ///
     /// Java: Warnings.BigMajorVersion(file or file object or path, number, number)
     pub fn big_major_version(arg0: DiagnosticArg, arg1: i32, arg2: i32) -> WarningInfo {
-        WarningInfo::new("big.major.version", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        WarningInfo::new(
+            "big.major.version",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// serialVersionUID must be constant in class {0}
@@ -3391,14 +4362,20 @@ pub mod warnings {
     ///
     /// Java: Warnings.DeclaredUsingPreview(kind name, symbol)
     pub fn declared_using_preview(arg0: KindNameArg, arg1: SymbolArg) -> WarningInfo {
-        WarningInfo::new("declared.using.preview", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "declared.using.preview",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// @Deprecated annotation has no effect on this {0} declaration
     ///
     /// Java: Warnings.DeprecatedAnnotationHasNoEffect(kind name)
     pub fn deprecated_annotation_has_no_effect(arg0: KindNameArg) -> WarningInfo {
-        WarningInfo::new("deprecated.annotation.has.no.effect", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "deprecated.annotation.has.no.effect",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Redundant type arguments in new expression (use diamond operator instead).
@@ -3412,14 +4389,20 @@ pub mod warnings {
     ///
     /// Java: Warnings.DirPathElementNotDirectory(file or file object or path)
     pub fn dir_path_element_not_directory(arg0: DiagnosticArg) -> WarningInfo {
-        WarningInfo::new("dir.path.element.not.directory", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "dir.path.element.not.directory",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// bad path element "{0}": no such directory
     ///
     /// Java: Warnings.DirPathElementNotFound(path)
     pub fn dir_path_element_not_found(arg0: PathArg) -> WarningInfo {
-        WarningInfo::new("dir.path.element.not.found", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "dir.path.element.not.found",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// division by zero
@@ -3468,35 +4451,56 @@ pub mod warnings {
     ///
     /// Java: Warnings.FutureAttr(name, number, number, number, number)
     pub fn future_attr(arg0: Name, arg1: i32, arg2: i32, arg3: i32, arg4: i32) -> WarningInfo {
-        WarningInfo::new("future.attr", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg()])
+        WarningInfo::new(
+            "future.attr",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} in {1} has been deprecated
     ///
     /// Java: Warnings.HasBeenDeprecated(symbol, symbol)
     pub fn has_been_deprecated(arg0: SymbolArg, arg1: SymbolArg) -> WarningInfo {
-        WarningInfo::new("has.been.deprecated", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "has.been.deprecated",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} in {1} has been deprecated and marked for removal
     ///
     /// Java: Warnings.HasBeenDeprecatedForRemoval(symbol, symbol)
     pub fn has_been_deprecated_for_removal(arg0: SymbolArg, arg1: SymbolArg) -> WarningInfo {
-        WarningInfo::new("has.been.deprecated.for.removal", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "has.been.deprecated.for.removal",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// module {0} has been deprecated and marked for removal
     ///
     /// Java: Warnings.HasBeenDeprecatedForRemovalModule(symbol)
     pub fn has_been_deprecated_for_removal_module(arg0: SymbolArg) -> WarningInfo {
-        WarningInfo::new("has.been.deprecated.for.removal.module", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "has.been.deprecated.for.removal.module",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// module {0} has been deprecated
     ///
     /// Java: Warnings.HasBeenDeprecatedModule(symbol)
     pub fn has_been_deprecated_module(arg0: SymbolArg) -> WarningInfo {
-        WarningInfo::new("has.been.deprecated.module", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "has.been.deprecated.module",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// unmappable character for encoding {0}
@@ -3510,7 +4514,10 @@ pub mod warnings {
     ///
     /// Java: Warnings.IllegalRefToRestrictedType(name)
     pub fn illegal_ref_to_restricted_type(arg0: Name) -> WarningInfo {
-        WarningInfo::new("illegal.ref.to.restricted.type", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "illegal.ref.to.restricted.type",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// serialVersionUID must be declared static final in class {0}
@@ -3538,7 +4545,10 @@ pub mod warnings {
     ///
     /// Java: Warnings.InexactNonVarargsCall(type, type)
     pub fn inexact_non_varargs_call(arg0: TypeArg, arg1: TypeArg) -> WarningInfo {
-        WarningInfo::new("inexact.non-varargs.call", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "inexact.non-varargs.call",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// Unexpected file on path: {0}
@@ -3579,32 +4589,76 @@ pub mod warnings {
     /// {0} {1} in module {2} is not accessible to clients that require this module
     ///
     /// Java: Warnings.LeaksNotAccessible(kind name, symbol, symbol)
-    pub fn leaks_not_accessible(arg0: KindNameArg, arg1: SymbolArg, arg2: SymbolArg) -> WarningInfo {
-        WarningInfo::new("leaks.not.accessible", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn leaks_not_accessible(
+        arg0: KindNameArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+    ) -> WarningInfo {
+        WarningInfo::new(
+            "leaks.not.accessible",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} {1} in module {2} is not indirectly exported using 'requires transitive'
     ///
     /// Java: Warnings.LeaksNotAccessibleNotRequiredTransitive(kind name, symbol, symbol)
-    pub fn leaks_not_accessible_not_required_transitive(arg0: KindNameArg, arg1: SymbolArg, arg2: SymbolArg) -> WarningInfo {
-        WarningInfo::new("leaks.not.accessible.not.required.transitive", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn leaks_not_accessible_not_required_transitive(
+        arg0: KindNameArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+    ) -> WarningInfo {
+        WarningInfo::new(
+            "leaks.not.accessible.not.required.transitive",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} {1} in module {2} is not exported
     ///
     /// Java: Warnings.LeaksNotAccessibleUnexported(kind name, symbol, symbol)
-    pub fn leaks_not_accessible_unexported(arg0: KindNameArg, arg1: SymbolArg, arg2: SymbolArg) -> WarningInfo {
-        WarningInfo::new("leaks.not.accessible.unexported", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn leaks_not_accessible_unexported(
+        arg0: KindNameArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+    ) -> WarningInfo {
+        WarningInfo::new(
+            "leaks.not.accessible.unexported",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} {1} in module {2} may not be visible to all clients that require this module
     ///
     /// Java: Warnings.LeaksNotAccessibleUnexportedQualified(kind name, symbol, symbol)
-    pub fn leaks_not_accessible_unexported_qualified(arg0: KindNameArg, arg1: SymbolArg, arg2: SymbolArg) -> WarningInfo {
-        WarningInfo::new("leaks.not.accessible.unexported.qualified", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn leaks_not_accessible_unexported_qualified(
+        arg0: KindNameArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+    ) -> WarningInfo {
+        WarningInfo::new(
+            "leaks.not.accessible.unexported.qualified",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
-    /// [{0}] 
+    /// [{0}]
     ///
     /// Java: Warnings.LintOption(option name)
     pub fn lint_option(arg0: OptionArg) -> WarningInfo {
@@ -3622,7 +4676,10 @@ pub mod warnings {
     ///
     /// Java: Warnings.LocnUnknownFileOnModulePath(path)
     pub fn locn_unknown_file_on_module_path(arg0: PathArg) -> WarningInfo {
-        WarningInfo::new("locn.unknown.file.on.module.path", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "locn.unknown.file.on.module.path",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// serialVersionUID must be of type long in class {0}
@@ -3643,7 +4700,14 @@ pub mod warnings {
     ///
     /// Java: Warnings.MissingExplicitCtor(symbol, symbol, symbol)
     pub fn missing_explicit_ctor(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg) -> WarningInfo {
-        WarningInfo::new("missing-explicit-ctor", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        WarningInfo::new(
+            "missing-explicit-ctor",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// serializable class {0} has no definition of serialVersionUID
@@ -3664,7 +4728,10 @@ pub mod warnings {
     ///
     /// Java: Warnings.ModuleForOptionNotFound(option name, symbol)
     pub fn module_for_option_not_found(arg0: OptionArg, arg1: SymbolArg) -> WarningInfo {
-        WarningInfo::new("module.for.option.not.found", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "module.for.option.not.found",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// module not found: {0}
@@ -3699,14 +4766,20 @@ pub mod warnings {
     ///
     /// Java: Warnings.OptionParametersUnsupported(target, target)
     pub fn option_parameters_unsupported(arg0: TargetArg, arg1: TargetArg) -> WarningInfo {
-        WarningInfo::new("option.parameters.unsupported", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "option.parameters.unsupported",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// the output directory is within an exploded module: {0}
     ///
     /// Java: Warnings.OutdirIsInExplodedModule(path)
     pub fn outdir_is_in_exploded_module(arg0: PathArg) -> WarningInfo {
-        WarningInfo::new("outdir.is.in.exploded.module", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "outdir.is.in.exploded.module",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// {0}; overridden method is a bridge method
@@ -3720,21 +4793,38 @@ pub mod warnings {
     ///
     /// Java: Warnings.OverrideEqualsButNotHashcode(symbol)
     pub fn override_equals_but_not_hashcode(arg0: SymbolArg) -> WarningInfo {
-        WarningInfo::new("override.equals.but.not.hashcode", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "override.equals.but.not.hashcode",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// {0}\nreturn type requires unchecked conversion from {1} to {2}
     ///
     /// Java: Warnings.OverrideUncheckedRet(diagnostic or fragment, type, type)
-    pub fn override_unchecked_ret(arg0: DiagnosticArg, arg1: TypeArg, arg2: TypeArg) -> WarningInfo {
-        WarningInfo::new("override.unchecked.ret", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn override_unchecked_ret(
+        arg0: DiagnosticArg,
+        arg1: TypeArg,
+        arg2: TypeArg,
+    ) -> WarningInfo {
+        WarningInfo::new(
+            "override.unchecked.ret",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0}\noverridden method does not throw {1}
     ///
     /// Java: Warnings.OverrideUncheckedThrown(diagnostic or fragment, type)
     pub fn override_unchecked_thrown(arg0: DiagnosticArg, arg1: TypeArg) -> WarningInfo {
-        WarningInfo::new("override.unchecked.thrown", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "override.unchecked.thrown",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0}; overriding method is missing ''...''
@@ -3755,7 +4845,10 @@ pub mod warnings {
     ///
     /// Java: Warnings.PackageEmptyOrNotFound(symbol)
     pub fn package_empty_or_not_found(arg0: SymbolArg) -> WarningInfo {
-        WarningInfo::new("package.empty.or.not.found", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "package.empty.or.not.found",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// bad path element "{0}": no such file or directory
@@ -3776,7 +4869,10 @@ pub mod warnings {
     ///
     /// Java: Warnings.PoorChoiceForModuleName(name)
     pub fn poor_choice_for_module_name(arg0: Name) -> WarningInfo {
-        WarningInfo::new("poor.choice.for.module.name", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "poor.choice.for.module.name",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Position encoding overflows at line {0}
@@ -3803,8 +4899,21 @@ pub mod warnings {
     /// {0} in {1} is potentially ambiguous with {2} in {3}
     ///
     /// Java: Warnings.PotentiallyAmbiguousOverload(symbol, symbol, symbol, symbol)
-    pub fn potentially_ambiguous_overload(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg, arg3: SymbolArg) -> WarningInfo {
-        WarningInfo::new("potentially.ambiguous.overload", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn potentially_ambiguous_overload(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+    ) -> WarningInfo {
+        WarningInfo::new(
+            "potentially.ambiguous.overload",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} is a preview feature and may be removed in a future release.
@@ -3818,49 +4927,74 @@ pub mod warnings {
     ///
     /// Java: Warnings.PreviewFeatureUseClassfile(file object, string)
     pub fn preview_feature_use_classfile(arg0: FileObjectArg, arg1: JavaString) -> WarningInfo {
-        WarningInfo::new("preview.feature.use.classfile", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "preview.feature.use.classfile",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} are a preview feature and may be removed in a future release.
     ///
     /// Java: Warnings.PreviewFeatureUsePlural(diagnostic or fragment)
     pub fn preview_feature_use_plural(arg0: DiagnosticArg) -> WarningInfo {
-        WarningInfo::new("preview.feature.use.plural", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "preview.feature.use.plural",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// {0}\nrequired: {2}\nfound:    {1}
     ///
     /// Java: Warnings.ProbFoundReq(diagnostic or fragment, type, type)
     pub fn prob_found_req(arg0: DiagnosticArg, arg1: TypeArg, arg2: TypeArg) -> WarningInfo {
-        WarningInfo::new("prob.found.req", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        WarningInfo::new(
+            "prob.found.req",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// No processor claimed any of these annotations: {0}
     ///
     /// Java: Warnings.ProcAnnotationsWithoutProcessors(set of string)
     pub fn proc_annotations_without_processors(arg0: Vec<JavaString>) -> WarningInfo {
-        WarningInfo::new("proc.annotations.without.processors", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "proc.annotations.without.processors",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Duplicate supported option ''{0}'' returned by annotation processor ''{1}''
     ///
     /// Java: Warnings.ProcDuplicateOptionName(string, string)
     pub fn proc_duplicate_option_name(arg0: JavaString, arg1: JavaString) -> WarningInfo {
-        WarningInfo::new("proc.duplicate.option.name", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "proc.duplicate.option.name",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// Duplicate supported annotation type ''{0}'' returned by annotation processor ''{1}''
     ///
     /// Java: Warnings.ProcDuplicateSupportedAnnotation(string, string)
     pub fn proc_duplicate_supported_annotation(arg0: JavaString, arg1: JavaString) -> WarningInfo {
-        WarningInfo::new("proc.duplicate.supported.annotation", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "proc.duplicate.supported.annotation",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// File for type ''{0}'' created in the last round will not be subject to annotation processing.
     ///
     /// Java: Warnings.ProcFileCreateLastRound(string)
     pub fn proc_file_create_last_round(arg0: JavaString) -> WarningInfo {
-        WarningInfo::new("proc.file.create.last.round", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "proc.file.create.last.round",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Attempt to create a file for ''{0}'' multiple times
@@ -3881,7 +5015,10 @@ pub mod warnings {
     ///
     /// Java: Warnings.ProcMalformedSupportedString(string, string)
     pub fn proc_malformed_supported_string(arg0: JavaString, arg1: JavaString) -> WarningInfo {
-        WarningInfo::new("proc.malformed.supported.string", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "proc.malformed.supported.string",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0}
@@ -3895,7 +5032,10 @@ pub mod warnings {
     ///
     /// Java: Warnings.ProcPackageDoesNotExist(string)
     pub fn proc_package_does_not_exist(arg0: JavaString) -> WarningInfo {
-        WarningInfo::new("proc.package.does.not.exist", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "proc.package.does.not.exist",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Annotation processing without compilation requested but no processors were found.
@@ -3908,22 +5048,39 @@ pub mod warnings {
     /// Supported source version ''{0}'' from annotation processor ''{1}'' less than -source ''{2}''
     ///
     /// Java: Warnings.ProcProcessorIncompatibleSourceVersion(source version, string, string)
-    pub fn proc_processor_incompatible_source_version(arg0: SourceVersionArg, arg1: JavaString, arg2: JavaString) -> WarningInfo {
-        WarningInfo::new("proc.processor.incompatible.source.version", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn proc_processor_incompatible_source_version(
+        arg0: SourceVersionArg,
+        arg1: JavaString,
+        arg2: JavaString,
+    ) -> WarningInfo {
+        WarningInfo::new(
+            "proc.processor.incompatible.source.version",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// Annotation processor ''{0}'' redundantly supports both ''*'' and other annotation types
     ///
     /// Java: Warnings.ProcRedundantTypesWithWildcard(string)
     pub fn proc_redundant_types_with_wildcard(arg0: JavaString) -> WarningInfo {
-        WarningInfo::new("proc.redundant.types.with.wildcard", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "proc.redundant.types.with.wildcard",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Creating file for a type whose name ends in {1}: ''{0}''
     ///
     /// Java: Warnings.ProcSuspiciousClassName(string, string)
     pub fn proc_suspicious_class_name(arg0: JavaString, arg1: JavaString) -> WarningInfo {
-        WarningInfo::new("proc.suspicious.class.name", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "proc.suspicious.class.name",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// A file for type ''{0}'' already exists on the sourcepath or classpath
@@ -3951,7 +5108,10 @@ pub mod warnings {
     ///
     /// Java: Warnings.ProcUnmatchedProcessorOptions(string)
     pub fn proc_unmatched_processor_options(arg0: JavaString) -> WarningInfo {
-        WarningInfo::new("proc.unmatched.processor.options", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "proc.unmatched.processor.options",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Implicitly compiled files were not subject to annotation processing.\nUse -implicit to specify a policy for implicit compilation.
@@ -3972,14 +5132,20 @@ pub mod warnings {
     ///
     /// Java: Warnings.ProfileTargetConflict(profile, target)
     pub fn profile_target_conflict(arg0: ProfileArg, arg1: TargetArg) -> WarningInfo {
-        WarningInfo::new("profile.target.conflict", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "profile.target.conflict",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// found raw type: {0}\nmissing type arguments for generic class {1}
     ///
     /// Java: Warnings.RawClassUse(type, type)
     pub fn raw_class_use(arg0: TypeArg, arg1: TypeArg) -> WarningInfo {
-        WarningInfo::new("raw.class.use", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "raw.class.use",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// redundant cast to {0}
@@ -4007,14 +5173,20 @@ pub mod warnings {
     ///
     /// Java: Warnings.RestrictedTypeNotAllowed(name, source)
     pub fn restricted_type_not_allowed(arg0: Name, arg1: SourceArg) -> WarningInfo {
-        WarningInfo::new("restricted.type.not.allowed", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "restricted.type.not.allowed",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// ''{0}'' may become a restricted type name in a future release and may be unusable for type declarations or as the element type of an array
     ///
     /// Java: Warnings.RestrictedTypeNotAllowedPreview(name, source)
     pub fn restricted_type_not_allowed_preview(arg0: Name, arg1: SourceArg) -> WarningInfo {
-        WarningInfo::new("restricted.type.not.allowed.preview", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "restricted.type.not.allowed.preview",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// self-reference in initializer of variable ''{0}''
@@ -4028,7 +5200,10 @@ pub mod warnings {
     ///
     /// Java: Warnings.ServiceProvidedButNotExportedOrUsed(symbol)
     pub fn service_provided_but_not_exported_or_used(arg0: SymbolArg) -> WarningInfo {
-        WarningInfo::new("service.provided.but.not.exported.or.used", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "service.provided.but.not.exported.or.used",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// bootstrap class path not set in conjunction with -source {0}
@@ -4042,21 +5217,30 @@ pub mod warnings {
     ///
     /// Java: Warnings.SourceNoSystemModulesPath(string)
     pub fn source_no_system_modules_path(arg0: JavaString) -> WarningInfo {
-        WarningInfo::new("source.no.system.modules.path", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "source.no.system.modules.path",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// source release {0} requires target release {1}
     ///
     /// Java: Warnings.SourceTargetConflict(string, target)
     pub fn source_target_conflict(arg0: JavaString, arg1: TargetArg) -> WarningInfo {
-        WarningInfo::new("source.target.conflict", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "source.target.conflict",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// static {0} should be qualified by type name, {1}, instead of by an expression
     ///
     /// Java: Warnings.StaticNotQualifiedByType(kind name, symbol)
     pub fn static_not_qualified_by_type(arg0: KindNameArg, arg1: SymbolArg) -> WarningInfo {
-        WarningInfo::new("static.not.qualified.by.type", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "static.not.qualified.by.type",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// as of release 17, all floating-point expressions are evaluated strictly and ''strictfp'' is not required
@@ -4077,7 +5261,10 @@ pub mod warnings {
     ///
     /// Java: Warnings.TargetDefaultSourceConflict(string, target)
     pub fn target_default_source_conflict(arg0: JavaString, arg1: TargetArg) -> WarningInfo {
-        WarningInfo::new("target.default.source.conflict", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "target.default.source.conflict",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// trailing white space will be removed
@@ -4098,14 +5285,20 @@ pub mod warnings {
     ///
     /// Java: Warnings.TryResourceNotReferenced(symbol)
     pub fn try_resource_not_referenced(arg0: SymbolArg) -> WarningInfo {
-        WarningInfo::new("try.resource.not.referenced", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "try.resource.not.referenced",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// auto-closeable resource {0} has a member method close() that could throw InterruptedException
     ///
     /// Java: Warnings.TryResourceThrowsInterruptedExc(type)
     pub fn try_resource_throws_interrupted_exc(arg0: TypeArg) -> WarningInfo {
-        WarningInfo::new("try.resource.throws.interrupted.exc", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "try.resource.throws.interrupted.exc",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// unchecked assignment: {0} to {1}
@@ -4119,14 +5312,20 @@ pub mod warnings {
     ///
     /// Java: Warnings.UncheckedAssignToVar(symbol, type)
     pub fn unchecked_assign_to_var(arg0: SymbolArg, arg1: TypeArg) -> WarningInfo {
-        WarningInfo::new("unchecked.assign.to.var", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "unchecked.assign.to.var",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// unchecked call to {0} as a member of the raw type {1}
     ///
     /// Java: Warnings.UncheckedCallMbrOfRawType(symbol, type)
     pub fn unchecked_call_mbr_of_raw_type(arg0: SymbolArg, arg1: TypeArg) -> WarningInfo {
-        WarningInfo::new("unchecked.call.mbr.of.raw.type", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "unchecked.call.mbr.of.raw.type",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// unchecked cast to type {0}
@@ -4140,21 +5339,44 @@ pub mod warnings {
     ///
     /// Java: Warnings.UncheckedGenericArrayCreation(type)
     pub fn unchecked_generic_array_creation(arg0: TypeArg) -> WarningInfo {
-        WarningInfo::new("unchecked.generic.array.creation", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "unchecked.generic.array.creation",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// unchecked method invocation: {0} {1} in {4} {5} is applied to given types\nrequired: {2}\nfound:    {3}
     ///
     /// Java: Warnings.UncheckedMethInvocationApplied(kind name, name, object, object, kind name, symbol)
-    pub fn unchecked_meth_invocation_applied(arg0: KindNameArg, arg1: Name, arg2: DiagnosticArg, arg3: DiagnosticArg, arg4: KindNameArg, arg5: SymbolArg) -> WarningInfo {
-        WarningInfo::new("unchecked.meth.invocation.applied", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg(), arg5.into_diagnostic_arg()])
+    pub fn unchecked_meth_invocation_applied(
+        arg0: KindNameArg,
+        arg1: Name,
+        arg2: DiagnosticArg,
+        arg3: DiagnosticArg,
+        arg4: KindNameArg,
+        arg5: SymbolArg,
+    ) -> WarningInfo {
+        WarningInfo::new(
+            "unchecked.meth.invocation.applied",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+                arg5.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// Possible heap pollution from parameterized vararg type {0}
     ///
     /// Java: Warnings.UncheckedVarargsNonReifiableType(type)
     pub fn unchecked_varargs_non_reifiable_type(arg0: TypeArg) -> WarningInfo {
-        WarningInfo::new("unchecked.varargs.non.reifiable.type", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "unchecked.varargs.non.reifiable.type",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// as of release 9, ''_'' is a keyword, and may not be used as an identifier
@@ -4175,14 +5397,34 @@ pub mod warnings {
     ///
     /// Java: Warnings.UnknownEnumConstant(file object, symbol, name)
     pub fn unknown_enum_constant(arg0: FileObjectArg, arg1: SymbolArg, arg2: Name) -> WarningInfo {
-        WarningInfo::new("unknown.enum.constant", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        WarningInfo::new(
+            "unknown.enum.constant",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// unknown enum constant {1}.{2}\nreason: {3}
     ///
     /// Java: Warnings.UnknownEnumConstantReason(file object, symbol, name, diagnostic or fragment)
-    pub fn unknown_enum_constant_reason(arg0: FileObjectArg, arg1: SymbolArg, arg2: Name, arg3: DiagnosticArg) -> WarningInfo {
-        WarningInfo::new("unknown.enum.constant.reason", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn unknown_enum_constant_reason(
+        arg0: FileObjectArg,
+        arg1: SymbolArg,
+        arg2: Name,
+        arg3: DiagnosticArg,
+    ) -> WarningInfo {
+        WarningInfo::new(
+            "unknown.enum.constant.reason",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// unreachable catch clause\nthrown type {0} has already been caught
@@ -4203,23 +5445,28 @@ pub mod warnings {
     ///
     /// Java: Warnings.VarargsRedundantTrustmeAnno(symbol, diagnostic or fragment)
     pub fn varargs_redundant_trustme_anno(arg0: SymbolArg, arg1: DiagnosticArg) -> WarningInfo {
-        WarningInfo::new("varargs.redundant.trustme.anno", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        WarningInfo::new(
+            "varargs.redundant.trustme.anno",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// Varargs method could cause heap pollution from non-reifiable varargs parameter {0}
     ///
     /// Java: Warnings.VarargsUnsafeUseVarargsParam(symbol)
     pub fn varargs_unsafe_use_varargs_param(arg0: SymbolArg) -> WarningInfo {
-        WarningInfo::new("varargs.unsafe.use.varargs.param", vec![arg0.into_diagnostic_arg()])
+        WarningInfo::new(
+            "varargs.unsafe.use.varargs.param",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
-    /// warning: 
+    /// warning:
     ///
     /// Java: Warnings.Warning()
     pub fn warning() -> WarningInfo {
         WarningInfo::new("warning", vec![])
     }
-
 }
 
 pub mod notes {
@@ -4236,7 +5483,14 @@ pub mod notes {
     ///
     /// Java: Notes.DeferredMethodInst(symbol, type, type)
     pub fn deferred_method_inst(arg0: SymbolArg, arg1: TypeArg, arg2: TypeArg) -> NoteInfo {
-        NoteInfo::new("deferred.method.inst", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        NoteInfo::new(
+            "deferred.method.inst",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} uses or overrides a deprecated API.
@@ -4250,7 +5504,10 @@ pub mod notes {
     ///
     /// Java: Notes.DeprecatedFilenameAdditional(file or file object or path)
     pub fn deprecated_filename_additional(arg0: DiagnosticArg) -> NoteInfo {
-        NoteInfo::new("deprecated.filename.additional", vec![arg0.into_diagnostic_arg()])
+        NoteInfo::new(
+            "deprecated.filename.additional",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Some input files use or override a deprecated API.
@@ -4278,38 +5535,65 @@ pub mod notes {
     ///
     /// Java: Notes.LambdaStat(boolean, symbol)
     pub fn lambda_stat(arg0: bool, arg1: SymbolArg) -> NoteInfo {
-        NoteInfo::new("lambda.stat", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        NoteInfo::new(
+            "lambda.stat",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} search results for {1}, with most specific {2}\napplicable candidates:
     ///
     /// Java: Notes.MethodRefSearchResultsMulti(fragment, string, number)
-    pub fn method_ref_search_results_multi(arg0: DiagnosticArg, arg1: JavaString, arg2: i32) -> NoteInfo {
-        NoteInfo::new("method.ref.search.results.multi", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn method_ref_search_results_multi(
+        arg0: DiagnosticArg,
+        arg1: JavaString,
+        arg2: i32,
+    ) -> NoteInfo {
+        NoteInfo::new(
+            "method.ref.search.results.multi",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// Translating method reference\nalternate metafactory = {0}\n
     ///
     /// Java: Notes.MrefStat(boolean, unused)
     pub fn mref_stat(arg0: bool, arg1: ()) -> NoteInfo {
-        NoteInfo::new("mref.stat", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        NoteInfo::new(
+            "mref.stat",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// Translating method reference\nalternate metafactory = {0}\nbridge method = {1}
     ///
     /// Java: Notes.MrefStat1(boolean, symbol)
     pub fn mref_stat1(arg0: bool, arg1: SymbolArg) -> NoteInfo {
-        NoteInfo::new("mref.stat.1", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        NoteInfo::new(
+            "mref.stat.1",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// Multiple elements named ''{1}'' in modules ''{2}'' were found by javax.lang.model.util.Elements.{0}.
     ///
     /// Java: Notes.MultipleElements(string, string, string)
     pub fn multiple_elements(arg0: JavaString, arg1: JavaString, arg2: JavaString) -> NoteInfo {
-        NoteInfo::new("multiple.elements", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        NoteInfo::new(
+            "multiple.elements",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
-    /// Note: 
+    /// Note:
     ///
     /// Java: Notes.Note()
     pub fn note() -> NoteInfo {
@@ -4320,14 +5604,20 @@ pub mod notes {
     ///
     /// Java: Notes.PreviewFilename(file or file object or path, source)
     pub fn preview_filename(arg0: DiagnosticArg, arg1: SourceArg) -> NoteInfo {
-        NoteInfo::new("preview.filename", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        NoteInfo::new(
+            "preview.filename",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} has additional uses of preview features of Java SE {1}.
     ///
     /// Java: Notes.PreviewFilenameAdditional(file or file object or path, source)
     pub fn preview_filename_additional(arg0: DiagnosticArg, arg1: SourceArg) -> NoteInfo {
-        NoteInfo::new("preview.filename.additional", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        NoteInfo::new(
+            "preview.filename.additional",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// Some input files use preview features of Java SE {0}.
@@ -4341,7 +5631,10 @@ pub mod notes {
     ///
     /// Java: Notes.PreviewPluralAdditional(source)
     pub fn preview_plural_additional(arg0: SourceArg) -> NoteInfo {
-        NoteInfo::new("preview.plural.additional", vec![arg0.into_diagnostic_arg()])
+        NoteInfo::new(
+            "preview.plural.additional",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Recompile with -Xlint:preview for details.
@@ -4369,7 +5662,10 @@ pub mod notes {
     ///
     /// Java: Notes.RemovalFilenameAdditional(file or file object or path)
     pub fn removal_filename_additional(arg0: DiagnosticArg) -> NoteInfo {
-        NoteInfo::new("removal.filename.additional", vec![arg0.into_diagnostic_arg()])
+        NoteInfo::new(
+            "removal.filename.additional",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Some input files use or override a deprecated API that is marked for removal.
@@ -4404,7 +5700,10 @@ pub mod notes {
     ///
     /// Java: Notes.UncheckedFilenameAdditional(file or file object or path)
     pub fn unchecked_filename_additional(arg0: DiagnosticArg) -> NoteInfo {
-        NoteInfo::new("unchecked.filename.additional", vec![arg0.into_diagnostic_arg()])
+        NoteInfo::new(
+            "unchecked.filename.additional",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Some input files use unchecked or unsafe operations.
@@ -4438,17 +5737,50 @@ pub mod notes {
     /// resolving method {0} in type {1} to candidate {2}\nphase: {3}\nwith actuals: {4}\nwith type-args: {5}\ncandidates:
     ///
     /// Java: Notes.VerboseResolveMulti(name, symbol, number, string, list of type or diagnostic or fragment, list of type or diagnostic or fragment)
-    pub fn verbose_resolve_multi(arg0: Name, arg1: SymbolArg, arg2: i32, arg3: JavaString, arg4: DiagnosticArg, arg5: DiagnosticArg) -> NoteInfo {
-        NoteInfo::new("verbose.resolve.multi", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg(), arg5.into_diagnostic_arg()])
+    pub fn verbose_resolve_multi(
+        arg0: Name,
+        arg1: SymbolArg,
+        arg2: i32,
+        arg3: JavaString,
+        arg4: DiagnosticArg,
+        arg5: DiagnosticArg,
+    ) -> NoteInfo {
+        NoteInfo::new(
+            "verbose.resolve.multi",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+                arg5.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// erroneous resolution for method {0} in type {1}\nphase: {3}\nwith actuals: {4}\nwith type-args: {5}\ncandidates:
     ///
     /// Java: Notes.VerboseResolveMulti1(name, symbol, unused, string, list of type or diagnostic or fragment, list of type or diagnostic or fragment)
-    pub fn verbose_resolve_multi1(arg0: Name, arg1: SymbolArg, arg2: (), arg3: JavaString, arg4: DiagnosticArg, arg5: DiagnosticArg) -> NoteInfo {
-        NoteInfo::new("verbose.resolve.multi.1", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg(), arg5.into_diagnostic_arg()])
+    pub fn verbose_resolve_multi1(
+        arg0: Name,
+        arg1: SymbolArg,
+        arg2: (),
+        arg3: JavaString,
+        arg4: DiagnosticArg,
+        arg5: DiagnosticArg,
+    ) -> NoteInfo {
+        NoteInfo::new(
+            "verbose.resolve.multi.1",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+                arg5.into_diagnostic_arg(),
+            ],
+        )
     }
-
 }
 
 pub mod fragments {
@@ -4479,14 +5811,20 @@ pub mod fragments {
     ///
     /// Java: Fragments.AccessorReturnTypeDoesntMatch(symbol, symbol)
     pub fn accessor_return_type_doesnt_match(arg0: SymbolArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("accessor.return.type.doesnt.match", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "accessor.return.type.doesnt.match",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// module declaration found in version {0}.{1} classfile
     ///
     /// Java: Fragments.AnachronisticModuleInfo(string, string)
     pub fn anachronistic_module_info(arg0: JavaString, arg1: JavaString) -> FragmentInfo {
-        FragmentInfo::new("anachronistic.module.info", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "anachronistic.module.info",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// anonymous
@@ -4507,28 +5845,70 @@ pub mod fragments {
     ///
     /// Java: Fragments.ApplicableMethodFound(number, symbol, unused)
     pub fn applicable_method_found(arg0: i32, arg1: SymbolArg, arg2: ()) -> FragmentInfo {
-        FragmentInfo::new("applicable.method.found", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "applicable.method.found",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// #{0} applicable method found: {1}\n({2})
     ///
     /// Java: Fragments.ApplicableMethodFound1(number, symbol, diagnostic or fragment)
-    pub fn applicable_method_found1(arg0: i32, arg1: SymbolArg, arg2: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("applicable.method.found.1", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn applicable_method_found1(
+        arg0: i32,
+        arg1: SymbolArg,
+        arg2: DiagnosticArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "applicable.method.found.1",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// #{0} applicable method found: {1} {2}
     ///
     /// Java: Fragments.ApplicableMethodFound2(number, fragment, symbol)
-    pub fn applicable_method_found2(arg0: i32, arg1: DiagnosticArg, arg2: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("applicable.method.found.2", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn applicable_method_found2(
+        arg0: i32,
+        arg1: DiagnosticArg,
+        arg2: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "applicable.method.found.2",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// #{0} applicable method found: {1} {2}\n({3})
     ///
     /// Java: Fragments.ApplicableMethodFound3(number, fragment, symbol, diagnostic or fragment)
-    pub fn applicable_method_found3(arg0: i32, arg1: DiagnosticArg, arg2: SymbolArg, arg3: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("applicable.method.found.3", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn applicable_method_found3(
+        arg0: i32,
+        arg1: DiagnosticArg,
+        arg2: SymbolArg,
+        arg3: DiagnosticArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "applicable.method.found.3",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// actual and formal argument lists differ in length
@@ -4549,7 +5929,10 @@ pub mod fragments {
     ///
     /// Java: Fragments.BadClassFileHeader(file or file object or path, diagnostic or fragment)
     pub fn bad_class_file_header(arg0: DiagnosticArg, arg1: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("bad.class.file.header", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "bad.class.file.header",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// bad class signature: {0}
@@ -4563,14 +5946,28 @@ pub mod fragments {
     ///
     /// Java: Fragments.BadConstPoolEntry(file or file object or path, string, number)
     pub fn bad_const_pool_entry(arg0: DiagnosticArg, arg1: JavaString, arg2: i32) -> FragmentInfo {
-        FragmentInfo::new("bad.const.pool.entry", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "bad.const.pool.entry",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// bad constant pool index in {0}\nindex {1} is not within pool size {2}.
     ///
     /// Java: Fragments.BadConstPoolIndex(file or file object or path, number, number)
     pub fn bad_const_pool_index(arg0: DiagnosticArg, arg1: i32, arg2: i32) -> FragmentInfo {
-        FragmentInfo::new("bad.const.pool.index", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "bad.const.pool.index",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// bad constant pool tag: {0}
@@ -4591,14 +5988,28 @@ pub mod fragments {
     ///
     /// Java: Fragments.BadConstantRange(string, symbol, type)
     pub fn bad_constant_range(arg0: JavaString, arg1: SymbolArg, arg2: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("bad.constant.range", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "bad.constant.range",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// bad constant value ''{0}'' for {1}, expected {2}
     ///
     /// Java: Fragments.BadConstantValue(string, symbol, string)
     pub fn bad_constant_value(arg0: JavaString, arg1: SymbolArg, arg2: JavaString) -> FragmentInfo {
-        FragmentInfo::new("bad.constant.value", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "bad.constant.value",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// variable of type ''{0}'' cannot have a constant value, but has one specified
@@ -4625,15 +6036,24 @@ pub mod fragments {
     /// unexpected instance {0} {1} found in unbound lookup
     ///
     /// Java: Fragments.BadInstanceMethodInUnboundLookup(symbol kind, symbol)
-    pub fn bad_instance_method_in_unbound_lookup(arg0: SymbolKindArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("bad.instance.method.in.unbound.lookup", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn bad_instance_method_in_unbound_lookup(
+        arg0: SymbolKindArg,
+        arg1: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "bad.instance.method.in.unbound.lookup",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// bad intersection type target for lambda or method reference\n{0}
     ///
     /// Java: Fragments.BadIntersectionTargetForFunctionalExpr(diagnostic or fragment)
     pub fn bad_intersection_target_for_functional_expr(arg0: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("bad.intersection.target.for.functional.expr", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "bad.intersection.target.for.functional.expr",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// bad class name
@@ -4668,21 +6088,33 @@ pub mod fragments {
     ///
     /// Java: Fragments.BadSourceFileHeader(file or file object or path, diagnostic or fragment)
     pub fn bad_source_file_header(arg0: DiagnosticArg, arg1: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("bad.source.file.header", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "bad.source.file.header",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// unexpected static {0} {1} found in bound lookup
     ///
     /// Java: Fragments.BadStaticMethodInBoundLookup(symbol kind, symbol)
     pub fn bad_static_method_in_bound_lookup(arg0: SymbolKindArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("bad.static.method.in.bound.lookup", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "bad.static.method.in.bound.lookup",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// unexpected static {0} {1} found in unbound lookup
     ///
     /// Java: Fragments.BadStaticMethodInUnboundLookup(symbol kind, symbol)
-    pub fn bad_static_method_in_unbound_lookup(arg0: SymbolKindArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("bad.static.method.in.unbound.lookup", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn bad_static_method_in_unbound_lookup(
+        arg0: SymbolKindArg,
+        arg1: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "bad.static.method.in.unbound.lookup",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// bad type annotation target type value: {0}
@@ -4724,7 +6156,10 @@ pub mod fragments {
     ///
     /// Java: Fragments.CanonicalMustNotContainExplicitConstructorInvocation()
     pub fn canonical_must_not_contain_explicit_constructor_invocation() -> FragmentInfo {
-        FragmentInfo::new("canonical.must.not.contain.explicit.constructor.invocation", vec![])
+        FragmentInfo::new(
+            "canonical.must.not.contain.explicit.constructor.invocation",
+            vec![],
+        )
     }
 
     /// canonical constructor must not declare type variables
@@ -4738,7 +6173,10 @@ pub mod fragments {
     ///
     /// Java: Fragments.CanonicalMustNotHaveStrongerAccess(set of flag or string)
     pub fn canonical_must_not_have_stronger_access(arg0: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("canonical.must.not.have.stronger.access", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "canonical.must.not.have.stronger.access",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// invalid parameter names in canonical constructor
@@ -4751,71 +6189,193 @@ pub mod fragments {
     /// cannot access constructor {0}({1})\nan enclosing instance of type {2} is not in scope
     ///
     /// Java: Fragments.CantAccessInnerClsConstr(symbol, list of type, type)
-    pub fn cant_access_inner_cls_constr(arg0: SymbolArg, arg1: Vec<TypeArg>, arg2: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("cant.access.inner.cls.constr", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn cant_access_inner_cls_constr(
+        arg0: SymbolArg,
+        arg1: Vec<TypeArg>,
+        arg2: TypeArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "cant.access.inner.cls.constr",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot infer type arguments for {0}\nreason: {1}
     ///
     /// Java: Fragments.CantApplyDiamond1(diagnostic or fragment or type, diagnostic or fragment)
     pub fn cant_apply_diamond1(arg0: DiagnosticArg, arg1: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("cant.apply.diamond.1", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "cant.apply.diamond.1",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} {1} in {4} {5} cannot be applied to given types\nrequired: {2}\nfound:    {3}\nreason: {6}
     ///
     /// Java: Fragments.CantApplySymbol(symbol kind, name, list of type or diagnostic or fragment, list of type or diagnostic or fragment, symbol kind, type, diagnostic or fragment)
-    pub fn cant_apply_symbol(arg0: SymbolKindArg, arg1: Name, arg2: DiagnosticArg, arg3: DiagnosticArg, arg4: SymbolKindArg, arg5: TypeArg, arg6: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("cant.apply.symbol", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg(), arg5.into_diagnostic_arg(), arg6.into_diagnostic_arg()])
+    pub fn cant_apply_symbol(
+        arg0: SymbolKindArg,
+        arg1: Name,
+        arg2: DiagnosticArg,
+        arg3: DiagnosticArg,
+        arg4: SymbolKindArg,
+        arg5: TypeArg,
+        arg6: DiagnosticArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "cant.apply.symbol",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+                arg5.into_diagnostic_arg(),
+                arg6.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// no suitable {0} found for {1}({2})
     ///
     /// Java: Fragments.CantApplySymbols(symbol kind, name, list of type)
     pub fn cant_apply_symbols(arg0: SymbolKindArg, arg1: Name, arg2: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("cant.apply.symbols", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "cant.apply.symbols",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} in {1} cannot hide {2} in {3}
     ///
     /// Java: Fragments.CantHide(symbol, symbol, symbol, symbol)
-    pub fn cant_hide(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg, arg3: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("cant.hide", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn cant_hide(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "cant.hide",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} in {1} cannot implement {2} in {3}
     ///
     /// Java: Fragments.CantImplement(symbol, symbol, symbol, symbol)
-    pub fn cant_implement(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg, arg3: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("cant.implement", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn cant_implement(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "cant.implement",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} in {1} cannot override {2} in {3}
     ///
     /// Java: Fragments.CantOverride(symbol, symbol, symbol, symbol)
-    pub fn cant_override(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg, arg3: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("cant.override", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn cant_override(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "cant.override",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot find symbol\nsymbol: {0} {1}({3})
     ///
     /// Java: Fragments.CantResolveArgs(kind name, name, unused, list of type)
-    pub fn cant_resolve_args(arg0: KindNameArg, arg1: Name, arg2: (), arg3: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("cant.resolve.args", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn cant_resolve_args(
+        arg0: KindNameArg,
+        arg1: Name,
+        arg2: (),
+        arg3: Vec<TypeArg>,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "cant.resolve.args",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot find symbol\nsymbol:   {0} {1}({3})\nlocation: {4}
     ///
     /// Java: Fragments.CantResolveLocationArgs(kind name, name, unused, list of type, diagnostic or fragment)
-    pub fn cant_resolve_location_args(arg0: KindNameArg, arg1: Name, arg2: (), arg3: Vec<TypeArg>, arg4: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("cant.resolve.location.args", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg()])
+    pub fn cant_resolve_location_args(
+        arg0: KindNameArg,
+        arg1: Name,
+        arg2: (),
+        arg3: Vec<TypeArg>,
+        arg4: DiagnosticArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "cant.resolve.location.args",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot find symbol\nsymbol:   {0} <{2}>{1}({3})\nlocation: {4}
     ///
     /// Java: Fragments.CantResolveLocationArgsParams(kind name, name, list of type, list, diagnostic or fragment)
-    pub fn cant_resolve_location_args_params(arg0: KindNameArg, arg1: Name, arg2: Vec<TypeArg>, arg3: Vec<DiagnosticArg>, arg4: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("cant.resolve.location.args.params", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg()])
+    pub fn cant_resolve_location_args_params(
+        arg0: KindNameArg,
+        arg1: Name,
+        arg2: Vec<TypeArg>,
+        arg3: Vec<DiagnosticArg>,
+        arg4: DiagnosticArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "cant.resolve.location.args.params",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot resolve modules
@@ -4835,8 +6395,21 @@ pub mod fragments {
     /// {0} in {1} clashes with {2} in {3}
     ///
     /// Java: Fragments.ClashesWith(symbol, symbol, symbol, symbol)
-    pub fn clashes_with(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg, arg3: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("clashes.with", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn clashes_with(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "clashes.with",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// class file for {0} not found
@@ -4892,7 +6465,10 @@ pub mod fragments {
     ///
     /// Java: Fragments.CountErrorRecompile(number, number)
     pub fn count_error_recompile(arg0: i32, arg1: i32) -> FragmentInfo {
-        FragmentInfo::new("count.error.recompile", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "count.error.recompile",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} warning
@@ -4913,21 +6489,50 @@ pub mod fragments {
     ///
     /// Java: Fragments.CountWarnRecompile(number, number)
     pub fn count_warn_recompile(arg0: i32, arg1: i32) -> FragmentInfo {
-        FragmentInfo::new("count.warn.recompile", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "count.warn.recompile",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// descriptor: {2} {0}({1})
     ///
     /// Java: Fragments.Descriptor(name, list of type, type, list of type)
-    pub fn descriptor(arg0: Name, arg1: Vec<TypeArg>, arg2: TypeArg, arg3: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("descriptor", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn descriptor(
+        arg0: Name,
+        arg1: Vec<TypeArg>,
+        arg2: TypeArg,
+        arg3: Vec<TypeArg>,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "descriptor",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// descriptor: {2} {0}({1}) throws {3}
     ///
     /// Java: Fragments.DescriptorThrows(name, list of type, type, list of type)
-    pub fn descriptor_throws(arg0: Name, arg1: Vec<TypeArg>, arg2: TypeArg, arg3: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("descriptor.throws", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn descriptor_throws(
+        arg0: Name,
+        arg1: Vec<TypeArg>,
+        arg2: TypeArg,
+        arg3: Vec<TypeArg>,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "descriptor.throws",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0}<>
@@ -4941,7 +6546,10 @@ pub mod fragments {
     ///
     /// Java: Fragments.DiamondAndExplicitParams(type)
     pub fn diamond_and_explicit_params(arg0: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("diamond.and.explicit.params", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "diamond.and.explicit.params",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// (due to <>, every non-private method declared in this anonymous class must override or implement a method from a supertype)
@@ -4955,14 +6563,20 @@ pub mod fragments {
     ///
     /// Java: Fragments.DiamondInvalidArg(list of type, diagnostic or fragment)
     pub fn diamond_invalid_arg(arg0: Vec<TypeArg>, arg1: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("diamond.invalid.arg", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "diamond.invalid.arg",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// type arguments {0} inferred for {1} are not allowed in this context\ninferred arguments are not expressible in the Signature attribute
     ///
     /// Java: Fragments.DiamondInvalidArgs(list of type, diagnostic or fragment)
     pub fn diamond_invalid_args(arg0: Vec<TypeArg>, arg1: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("diamond.invalid.args", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "diamond.invalid.args",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// cannot use ''<>'' with non-generic class {0}
@@ -4996,8 +6610,14 @@ pub mod fragments {
     /// explicit type argument {0} does not conform to declared bound(s) {1}
     ///
     /// Java: Fragments.ExplicitParamDoNotConformToBounds(type, list of type)
-    pub fn explicit_param_do_not_conform_to_bounds(arg0: TypeArg, arg1: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("explicit.param.do.not.conform.to.bounds", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn explicit_param_do_not_conform_to_bounds(
+        arg0: TypeArg,
+        arg1: Vec<TypeArg>,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "explicit.param.do.not.conform.to.bounds",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// Fatal Error: Cannot close compiler resources
@@ -5011,21 +6631,30 @@ pub mod fragments {
     ///
     /// Java: Fragments.FatalErrCantLocateCtor(type)
     pub fn fatal_err_cant_locate_ctor(arg0: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("fatal.err.cant.locate.ctor", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "fatal.err.cant.locate.ctor",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Fatal Error: Unable to find field {0}
     ///
     /// Java: Fragments.FatalErrCantLocateField(name)
     pub fn fatal_err_cant_locate_field(arg0: Name) -> FragmentInfo {
-        FragmentInfo::new("fatal.err.cant.locate.field", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "fatal.err.cant.locate.field",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Fatal Error: Unable to find method {0}
     ///
     /// Java: Fragments.FatalErrCantLocateMeth(name)
     pub fn fatal_err_cant_locate_meth(arg0: Name) -> FragmentInfo {
-        FragmentInfo::new("fatal.err.cant.locate.meth", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "fatal.err.cant.locate.meth",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Fatal Error: Unable to find package java.lang in classpath or bootclasspath
@@ -5108,15 +6737,37 @@ pub mod fragments {
     /// {0} is not supported in -source {1}\n(use -source {2} or higher to enable {0})
     ///
     /// Java: Fragments.FeatureNotSupportedInSource(diagnostic or fragment, string, string)
-    pub fn feature_not_supported_in_source(arg0: DiagnosticArg, arg1: JavaString, arg2: JavaString) -> FragmentInfo {
-        FragmentInfo::new("feature.not.supported.in.source", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn feature_not_supported_in_source(
+        arg0: DiagnosticArg,
+        arg1: JavaString,
+        arg2: JavaString,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "feature.not.supported.in.source",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} are not supported in -source {1}\n(use -source {2} or higher to enable {0})
     ///
     /// Java: Fragments.FeatureNotSupportedInSourcePlural(diagnostic or fragment, string, string)
-    pub fn feature_not_supported_in_source_plural(arg0: DiagnosticArg, arg1: JavaString, arg2: JavaString) -> FragmentInfo {
-        FragmentInfo::new("feature.not.supported.in.source.plural", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn feature_not_supported_in_source_plural(
+        arg0: DiagnosticArg,
+        arg1: JavaString,
+        arg2: JavaString,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "feature.not.supported.in.source.plural",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// pattern matching in instanceof
@@ -5235,14 +6886,20 @@ pub mod fragments {
     ///
     /// Java: Fragments.FileDoesNotContainPackage(symbol)
     pub fn file_does_not_contain_package(arg0: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("file.does.not.contain.package", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "file.does.not.contain.package",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// file does not contain class {0}
     ///
     /// Java: Fragments.FileDoesntContainClass(name)
     pub fn file_doesnt_contain_class(arg0: Name) -> FragmentInfo {
-        FragmentInfo::new("file.doesnt.contain.class", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "file.doesnt.contain.class",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// a guard
@@ -5256,7 +6913,10 @@ pub mod fragments {
     ///
     /// Java: Fragments.IllegalSignature(symbol, type)
     pub fn illegal_signature(arg0: SymbolArg, arg1: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("illegal.signature", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "illegal.signature",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// illegal start of class file
@@ -5276,29 +6936,73 @@ pub mod fragments {
     /// formal varargs element type {0} is not accessible from {1} {2}
     ///
     /// Java: Fragments.InaccessibleVarargsType(type, symbol kind, symbol)
-    pub fn inaccessible_varargs_type(arg0: TypeArg, arg1: SymbolKindArg, arg2: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("inaccessible.varargs.type", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn inaccessible_varargs_type(
+        arg0: TypeArg,
+        arg1: SymbolKindArg,
+        arg2: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "inaccessible.varargs.type",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} {1}.{2} is not applicable\n({3})
     ///
     /// Java: Fragments.InapplicableMethod(kind name, symbol, symbol, diagnostic or fragment)
-    pub fn inapplicable_method(arg0: KindNameArg, arg1: SymbolArg, arg2: SymbolArg, arg3: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("inapplicable.method", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn inapplicable_method(
+        arg0: KindNameArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: DiagnosticArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "inapplicable.method",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} {1} inherits abstract and default for {2}({3}) from types {4} and {5}
     ///
     /// Java: Fragments.IncompatibleAbstractDefault(kind name, type, name, list of type, symbol, symbol)
-    pub fn incompatible_abstract_default(arg0: KindNameArg, arg1: TypeArg, arg2: Name, arg3: Vec<TypeArg>, arg4: SymbolArg, arg5: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("incompatible.abstract.default", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg(), arg5.into_diagnostic_arg()])
+    pub fn incompatible_abstract_default(
+        arg0: KindNameArg,
+        arg1: TypeArg,
+        arg2: Name,
+        arg3: Vec<TypeArg>,
+        arg4: SymbolArg,
+        arg5: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "incompatible.abstract.default",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+                arg5.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// multiple non-overriding abstract methods found in {0} {1}
     ///
     /// Java: Fragments.IncompatibleAbstracts(kind name, symbol)
     pub fn incompatible_abstracts(arg0: KindNameArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("incompatible.abstracts", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "incompatible.abstracts",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// incompatible parameter types in lambda expression
@@ -5318,127 +7022,226 @@ pub mod fragments {
     /// inference variable {0} has incompatible bounds\n{1}\n{2}
     ///
     /// Java: Fragments.IncompatibleBounds(type, fragment, fragment)
-    pub fn incompatible_bounds(arg0: TypeArg, arg1: DiagnosticArg, arg2: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("incompatible.bounds", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn incompatible_bounds(
+        arg0: TypeArg,
+        arg1: DiagnosticArg,
+        arg2: DiagnosticArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "incompatible.bounds",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// incompatible function descriptors found in {0} {1}
     ///
     /// Java: Fragments.IncompatibleDescsInFunctionalIntf(kind name, symbol)
-    pub fn incompatible_descs_in_functional_intf(arg0: KindNameArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("incompatible.descs.in.functional.intf", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn incompatible_descs_in_functional_intf(
+        arg0: KindNameArg,
+        arg1: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "incompatible.descs.in.functional.intf",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// both define {0}({1}), but with unrelated return types
     ///
     /// Java: Fragments.IncompatibleDiffRet(name, list of type)
     pub fn incompatible_diff_ret(arg0: Name, arg1: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("incompatible.diff.ret", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "incompatible.diff.ret",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// inference variable {0} has incompatible equality constraints {1}
     ///
     /// Java: Fragments.IncompatibleEqBounds(type, list of type)
     pub fn incompatible_eq_bounds(arg0: TypeArg, arg1: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("incompatible.eq.bounds", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "incompatible.eq.bounds",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// bad return type in lambda expression\n{0}
     ///
     /// Java: Fragments.IncompatibleRetTypeInLambda(diagnostic or fragment)
     pub fn incompatible_ret_type_in_lambda(arg0: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("incompatible.ret.type.in.lambda", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "incompatible.ret.type.in.lambda",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// bad return type in method reference\n{0}
     ///
     /// Java: Fragments.IncompatibleRetTypeInMref(diagnostic or fragment)
     pub fn incompatible_ret_type_in_mref(arg0: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("incompatible.ret.type.in.mref", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "incompatible.ret.type.in.mref",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// bad type in conditional expression\n{0}
     ///
     /// Java: Fragments.IncompatibleTypeInConditional(diagnostic or fragment)
     pub fn incompatible_type_in_conditional(arg0: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("incompatible.type.in.conditional", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "incompatible.type.in.conditional",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// bad type in switch expression\n{0}
     ///
     /// Java: Fragments.IncompatibleTypeInSwitchExpression(diagnostic or fragment)
     pub fn incompatible_type_in_switch_expression(arg0: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("incompatible.type.in.switch.expression", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "incompatible.type.in.switch.expression",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// {0} {1} inherits unrelated defaults for {2}({3}) from types {4} and {5}
     ///
     /// Java: Fragments.IncompatibleUnrelatedDefaults(kind name, type, name, list of type, symbol, symbol)
-    pub fn incompatible_unrelated_defaults(arg0: KindNameArg, arg1: TypeArg, arg2: Name, arg3: Vec<TypeArg>, arg4: SymbolArg, arg5: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("incompatible.unrelated.defaults", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg(), arg5.into_diagnostic_arg()])
+    pub fn incompatible_unrelated_defaults(
+        arg0: KindNameArg,
+        arg1: TypeArg,
+        arg2: Name,
+        arg3: Vec<TypeArg>,
+        arg4: SymbolArg,
+        arg5: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "incompatible.unrelated.defaults",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+                arg5.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// inference variable {0} has incompatible upper bounds {1}
     ///
     /// Java: Fragments.IncompatibleUpperBounds(type, list of type)
     pub fn incompatible_upper_bounds(arg0: TypeArg, arg1: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("incompatible.upper.bounds", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "incompatible.upper.bounds",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} cannot be converted to {1}
     ///
     /// Java: Fragments.InconvertibleTypes(type, type)
     pub fn inconvertible_types(arg0: TypeArg, arg1: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("inconvertible.types", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "inconvertible.types",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// cannot infer type-variable(s) {0}\n(actual and formal argument lists differ in length)
     ///
     /// Java: Fragments.InferArgLengthMismatch(list of type)
     pub fn infer_arg_length_mismatch(arg0: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("infer.arg.length.mismatch", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "infer.arg.length.mismatch",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// cannot infer type-variable(s) {0}\n(argument mismatch; {1})
     ///
     /// Java: Fragments.InferNoConformingAssignmentExists(list of type, diagnostic or fragment)
-    pub fn infer_no_conforming_assignment_exists(arg0: Vec<TypeArg>, arg1: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("infer.no.conforming.assignment.exists", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn infer_no_conforming_assignment_exists(
+        arg0: Vec<TypeArg>,
+        arg1: DiagnosticArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "infer.no.conforming.assignment.exists",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// no instance(s) of type variable(s) {0} exist so that {1} conforms to {2}
     ///
     /// Java: Fragments.InferNoConformingInstanceExists(list of type, type, type)
-    pub fn infer_no_conforming_instance_exists(arg0: Vec<TypeArg>, arg1: TypeArg, arg2: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("infer.no.conforming.instance.exists", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn infer_no_conforming_instance_exists(
+        arg0: Vec<TypeArg>,
+        arg1: TypeArg,
+        arg2: TypeArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "infer.no.conforming.instance.exists",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// cannot infer type-variable(s) {0}\n(varargs mismatch; {1})
     ///
     /// Java: Fragments.InferVarargsArgumentMismatch(list of type, diagnostic or fragment)
-    pub fn infer_varargs_argument_mismatch(arg0: Vec<TypeArg>, arg1: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("infer.varargs.argument.mismatch", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn infer_varargs_argument_mismatch(
+        arg0: Vec<TypeArg>,
+        arg1: DiagnosticArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "infer.varargs.argument.mismatch",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// inferred type does not conform to equality constraint(s)\ninferred: {0}\nequality constraints(s): {1}
     ///
     /// Java: Fragments.InferredDoNotConformToEqBounds(type, list of type)
     pub fn inferred_do_not_conform_to_eq_bounds(arg0: TypeArg, arg1: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("inferred.do.not.conform.to.eq.bounds", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "inferred.do.not.conform.to.eq.bounds",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// inferred type does not conform to lower bound(s)\ninferred: {0}\nlower bound(s): {1}
     ///
     /// Java: Fragments.InferredDoNotConformToLowerBounds(type, list of type)
-    pub fn inferred_do_not_conform_to_lower_bounds(arg0: TypeArg, arg1: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("inferred.do.not.conform.to.lower.bounds", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn inferred_do_not_conform_to_lower_bounds(
+        arg0: TypeArg,
+        arg1: Vec<TypeArg>,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "inferred.do.not.conform.to.lower.bounds",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// inferred type does not conform to upper bound(s)\ninferred: {0}\nupper bound(s): {1}
     ///
     /// Java: Fragments.InferredDoNotConformToUpperBounds(type, list of type)
-    pub fn inferred_do_not_conform_to_upper_bounds(arg0: TypeArg, arg1: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("inferred.do.not.conform.to.upper.bounds", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn inferred_do_not_conform_to_upper_bounds(
+        arg0: TypeArg,
+        arg1: Vec<TypeArg>,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "inferred.do.not.conform.to.upper.bounds",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// an inner class
@@ -5459,28 +7262,48 @@ pub mod fragments {
     ///
     /// Java: Fragments.InvalidDefaultInterface(string, string)
     pub fn invalid_default_interface(arg0: JavaString, arg1: JavaString) -> FragmentInfo {
-        FragmentInfo::new("invalid.default.interface", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "invalid.default.interface",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// invalid functional descriptor for lambda expression\nmethod {0} in {1} {2} is generic
     ///
     /// Java: Fragments.InvalidGenericLambdaTarget(type, kind name, symbol)
-    pub fn invalid_generic_lambda_target(arg0: TypeArg, arg1: KindNameArg, arg2: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("invalid.generic.lambda.target", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn invalid_generic_lambda_target(
+        arg0: TypeArg,
+        arg1: KindNameArg,
+        arg2: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "invalid.generic.lambda.target",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// invalid {0} reference\n{1}
     ///
     /// Java: Fragments.InvalidMref(kind name, diagnostic or fragment)
     pub fn invalid_mref(arg0: KindNameArg, arg1: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("invalid.mref", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "invalid.mref",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// static method found in version {0}.{1} classfile
     ///
     /// Java: Fragments.InvalidStaticInterface(string, string)
     pub fn invalid_static_interface(arg0: JavaString, arg1: JavaString) -> FragmentInfo {
-        FragmentInfo::new("invalid.static.interface", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "invalid.static.interface",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// must not include type variables: {0}
@@ -5683,14 +7506,28 @@ pub mod fragments {
     ///
     /// Java: Fragments.Location(kind name, type or symbol, unused)
     pub fn location(arg0: KindNameArg, arg1: DiagnosticArg, arg2: ()) -> FragmentInfo {
-        FragmentInfo::new("location", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "location",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} {1} of type {2}
     ///
     /// Java: Fragments.Location1(kind name, symbol, type)
     pub fn location1(arg0: KindNameArg, arg1: SymbolArg, arg2: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("location.1", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "location.1",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// application module path
@@ -5739,7 +7576,10 @@ pub mod fragments {
     ///
     /// Java: Fragments.MethodDescriptorInvalid(name)
     pub fn method_descriptor_invalid(arg0: Name) -> FragmentInfo {
-        FragmentInfo::new("method.descriptor.invalid", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "method.descriptor.invalid",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// accessor method must be public
@@ -5774,7 +7614,10 @@ pub mod fragments {
     ///
     /// Java: Fragments.ModuleNameMismatch(name, name)
     pub fn module_name_mismatch(arg0: Name, arg1: Name) -> FragmentInfo {
-        FragmentInfo::new("module.name.mismatch", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "module.name.mismatch",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// open module {0} has non-zero opens_count
@@ -5809,7 +7652,10 @@ pub mod fragments {
     ///
     /// Java: Fragments.NoAbstracts(kind name, symbol)
     pub fn no_abstracts(arg0: KindNameArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("no.abstracts", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "no.abstracts",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// no arguments
@@ -5823,28 +7669,40 @@ pub mod fragments {
     ///
     /// Java: Fragments.NoConformingAssignmentExists(diagnostic or fragment)
     pub fn no_conforming_assignment_exists(arg0: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("no.conforming.assignment.exists", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "no.conforming.assignment.exists",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// cannot infer functional interface descriptor for {0}
     ///
     /// Java: Fragments.NoSuitableFunctionalIntfInst(type)
     pub fn no_suitable_functional_intf_inst(arg0: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("no.suitable.functional.intf.inst", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "no.suitable.functional.intf.inst",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// no unique maximal instance exists for type variable {0} with upper bounds {1}
     ///
     /// Java: Fragments.NoUniqueMaximalInstanceExists(type, list of type)
     pub fn no_unique_maximal_instance_exists(arg0: TypeArg, arg1: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("no.unique.maximal.instance.exists", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "no.unique.maximal.instance.exists",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// no unique minimal instance exists for type variable {0} with lower bounds {1}
     ///
     /// Java: Fragments.NoUniqueMinimalInstanceExists(type, list of type)
     pub fn no_unique_minimal_instance_exists(arg0: TypeArg, arg1: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("no.unique.minimal.instance.exists", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "no.unique.minimal.instance.exists",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// non-static
@@ -5865,7 +7723,10 @@ pub mod fragments {
     ///
     /// Java: Fragments.NotAFunctionalIntf1(symbol, diagnostic or fragment)
     pub fn not_a_functional_intf1(arg0: SymbolArg, arg1: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("not.a.functional.intf.1", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "not.a.functional.intf.1",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// component type {0} is not an interface
@@ -5878,99 +7739,192 @@ pub mod fragments {
     /// #{0} not applicable method found: {1}\n({2})
     ///
     /// Java: Fragments.NotApplicableMethodFound(number, symbol, diagnostic or fragment)
-    pub fn not_applicable_method_found(arg0: i32, arg1: SymbolArg, arg2: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("not.applicable.method.found", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn not_applicable_method_found(
+        arg0: i32,
+        arg1: SymbolArg,
+        arg2: DiagnosticArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "not.applicable.method.found",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {1}.{0} is defined in an inaccessible class or interface
     ///
     /// Java: Fragments.NotDefAccessClassIntfCantAccess(symbol, symbol)
     pub fn not_def_access_class_intf_cant_access(arg0: SymbolArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("not.def.access.class.intf.cant.access", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "not.def.access.class.intf.cant.access",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {1}.{0} in package {2} is not accessible\n({3})
     ///
     /// Java: Fragments.NotDefAccessClassIntfCantAccessReason(symbol, symbol, symbol, diagnostic or fragment)
-    pub fn not_def_access_class_intf_cant_access_reason(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg, arg3: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("not.def.access.class.intf.cant.access.reason", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn not_def_access_class_intf_cant_access_reason(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: DiagnosticArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "not.def.access.class.intf.cant.access.reason",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// package {1} is declared in module {2}, but module {0} does not read it
     ///
     /// Java: Fragments.NotDefAccessDoesNotRead(symbol, symbol, symbol)
-    pub fn not_def_access_does_not_read(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("not.def.access.does.not.read", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn not_def_access_does_not_read(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "not.def.access.does.not.read",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// package {0} is declared in module {1}, which is not in the module graph
     ///
     /// Java: Fragments.NotDefAccessDoesNotReadFromUnnamed(symbol, symbol)
-    pub fn not_def_access_does_not_read_from_unnamed(arg0: SymbolArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("not.def.access.does.not.read.from.unnamed", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn not_def_access_does_not_read_from_unnamed(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "not.def.access.does.not.read.from.unnamed",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// package {0} is declared in the unnamed module, but module {1} does not read it
     ///
     /// Java: Fragments.NotDefAccessDoesNotReadUnnamed(symbol, symbol)
     pub fn not_def_access_does_not_read_unnamed(arg0: SymbolArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("not.def.access.does.not.read.unnamed", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "not.def.access.does.not.read.unnamed",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// package {0} is declared in module {1}, which does not export it
     ///
     /// Java: Fragments.NotDefAccessNotExported(symbol, symbol)
     pub fn not_def_access_not_exported(arg0: SymbolArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("not.def.access.not.exported", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "not.def.access.not.exported",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// package {0} is declared in module {1}, which does not export it
     ///
     /// Java: Fragments.NotDefAccessNotExportedFromUnnamed(symbol, symbol)
-    pub fn not_def_access_not_exported_from_unnamed(arg0: SymbolArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("not.def.access.not.exported.from.unnamed", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn not_def_access_not_exported_from_unnamed(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "not.def.access.not.exported.from.unnamed",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// package {0} is declared in module {1}, which does not export it to module {2}
     ///
     /// Java: Fragments.NotDefAccessNotExportedToModule(symbol, symbol, symbol)
-    pub fn not_def_access_not_exported_to_module(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("not.def.access.not.exported.to.module", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn not_def_access_not_exported_to_module(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "not.def.access.not.exported.to.module",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// package {0} is declared in module {1}, which does not export it to the unnamed module
     ///
     /// Java: Fragments.NotDefAccessNotExportedToModuleFromUnnamed(symbol, symbol)
-    pub fn not_def_access_not_exported_to_module_from_unnamed(arg0: SymbolArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("not.def.access.not.exported.to.module.from.unnamed", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn not_def_access_not_exported_to_module_from_unnamed(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "not.def.access.not.exported.to.module.from.unnamed",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} is not visible\n({2})
     ///
     /// Java: Fragments.NotDefAccessPackageCantAccess(symbol, symbol, diagnostic or fragment)
-    pub fn not_def_access_package_cant_access(arg0: SymbolArg, arg1: SymbolArg, arg2: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("not.def.access.package.cant.access", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+    pub fn not_def_access_package_cant_access(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: DiagnosticArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "not.def.access.package.cant.access",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} is not public in {1}; cannot be accessed from outside package
     ///
     /// Java: Fragments.NotDefPublicCantAccess(symbol, symbol)
     pub fn not_def_public_cant_access(arg0: SymbolArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("not.def.public.cant.access", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "not.def.public.cant.access",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// method {0} is overridden in {1}
     ///
     /// Java: Fragments.OverriddenDefault(symbol, type)
     pub fn overridden_default(arg0: SymbolArg, arg1: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("overridden.default", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "overridden.default",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// package {0} is not visible\n({1})
     ///
     /// Java: Fragments.PackageNotVisible(symbol, diagnostic or fragment)
     pub fn package_not_visible(arg0: SymbolArg, arg1: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("package.not.visible", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "package.not.visible",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// partially instantiated to: {0}
@@ -5984,7 +7938,10 @@ pub mod fragments {
     ///
     /// Java: Fragments.PossibleLossOfPrecision(type, type)
     pub fn possible_loss_of_precision(arg0: TypeArg, arg1: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("possible.loss.of.precision", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "possible.loss.of.precision",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// incompatible types: {0}
@@ -5998,21 +7955,50 @@ pub mod fragments {
     ///
     /// Java: Fragments.RedundantSupertype(symbol, type or symbol)
     pub fn redundant_supertype(arg0: SymbolArg, arg1: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("redundant.supertype", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "redundant.supertype",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// reference to {0} is ambiguous\nboth {1} {2} in {3} and {4} {5} in {6} match
     ///
     /// Java: Fragments.RefAmbiguous(name, symbol kind, symbol, symbol, symbol kind, symbol, symbol)
-    pub fn ref_ambiguous(arg0: Name, arg1: SymbolKindArg, arg2: SymbolArg, arg3: SymbolArg, arg4: SymbolKindArg, arg5: SymbolArg, arg6: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("ref.ambiguous", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg(), arg4.into_diagnostic_arg(), arg5.into_diagnostic_arg(), arg6.into_diagnostic_arg()])
+    pub fn ref_ambiguous(
+        arg0: Name,
+        arg1: SymbolKindArg,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+        arg4: SymbolKindArg,
+        arg5: SymbolArg,
+        arg6: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "ref.ambiguous",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+                arg4.into_diagnostic_arg(),
+                arg5.into_diagnostic_arg(),
+                arg6.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} has {1} access in {2}
     ///
     /// Java: Fragments.ReportAccess(symbol, set of modifier, symbol)
     pub fn report_access(arg0: SymbolArg, arg1: Vec<ModifierArg>, arg2: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("report.access", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "report.access",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// R)esume, A)bort>
@@ -6061,14 +8047,22 @@ pub mod fragments {
     ///
     /// Java: Fragments.SyntheticNameConflict(symbol, symbol)
     pub fn synthetic_name_conflict(arg0: SymbolArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("synthetic.name.conflict", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "synthetic.name.conflict",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// throws clause not allowed for {0} constructor
     ///
     /// Java: Fragments.ThrowsClauseNotAllowedForCanonicalConstructor(fragment)
-    pub fn throws_clause_not_allowed_for_canonical_constructor(arg0: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("throws.clause.not.allowed.for.canonical.constructor", vec![arg0.into_diagnostic_arg()])
+    pub fn throws_clause_not_allowed_for_canonical_constructor(
+        arg0: DiagnosticArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "throws.clause.not.allowed.for.canonical.constructor",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// <bad symbol>
@@ -6138,14 +8132,20 @@ pub mod fragments {
     ///
     /// Java: Fragments.TryNotApplicableToType(diagnostic or fragment)
     pub fn try_not_applicable_to_type(arg0: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("try.not.applicable.to.type", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "try.not.applicable.to.type",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// capture#{0} of {1}
     ///
     /// Java: Fragments.TypeCaptureof(name, type)
     pub fn type_captureof(arg0: Name, arg1: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("type.captureof", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "type.captureof",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// capture#{0}
@@ -6159,7 +8159,10 @@ pub mod fragments {
     ///
     /// Java: Fragments.TypeMustBeIdenticalToCorrespondingRecordComponentType()
     pub fn type_must_be_identical_to_corresponding_record_component_type() -> FragmentInfo {
-        FragmentInfo::new("type.must.be.identical.to.corresponding.record.component.type", vec![])
+        FragmentInfo::new(
+            "type.must.be.identical.to.corresponding.record.component.type",
+            vec![],
+        )
     }
 
     /// <none>
@@ -6222,7 +8225,10 @@ pub mod fragments {
     ///
     /// Java: Fragments.TypeVar(name, number)
     pub fn type_var(arg0: Name, arg1: i32) -> FragmentInfo {
-        FragmentInfo::new("type.var", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "type.var",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// unable to access file: {0}
@@ -6256,22 +8262,61 @@ pub mod fragments {
     /// {0} in {1} overrides {2} in {3}
     ///
     /// Java: Fragments.UncheckedClashWith(symbol, symbol, symbol, symbol)
-    pub fn unchecked_clash_with(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg, arg3: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("unchecked.clash.with", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn unchecked_clash_with(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "unchecked.clash.with",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} in {1} implements {2} in {3}
     ///
     /// Java: Fragments.UncheckedImplement(symbol, symbol, symbol, symbol)
-    pub fn unchecked_implement(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg, arg3: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("unchecked.implement", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn unchecked_implement(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "unchecked.implement",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} in {1} overrides {2} in {3}
     ///
     /// Java: Fragments.UncheckedOverride(symbol, symbol, symbol, symbol)
-    pub fn unchecked_override(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg, arg3: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("unchecked.override", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn unchecked_override(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "unchecked.override",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// undeclared type variable: {0}
@@ -6348,70 +8393,130 @@ pub mod fragments {
     ///
     /// Java: Fragments.VarargsArgumentMismatch(diagnostic or fragment)
     pub fn varargs_argument_mismatch(arg0: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("varargs.argument.mismatch", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "varargs.argument.mismatch",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// {0} in {1} overrides {2} in {3}
     ///
     /// Java: Fragments.VarargsClashWith(symbol, symbol, symbol, symbol)
-    pub fn varargs_clash_with(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg, arg3: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("varargs.clash.with", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn varargs_clash_with(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "varargs.clash.with",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} in {1} implements {2} in {3}
     ///
     /// Java: Fragments.VarargsImplement(symbol, symbol, symbol, symbol)
-    pub fn varargs_implement(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg, arg3: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("varargs.implement", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn varargs_implement(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "varargs.implement",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} in {1} overrides {2} in {3}
     ///
     /// Java: Fragments.VarargsOverride(symbol, symbol, symbol, symbol)
-    pub fn varargs_override(arg0: SymbolArg, arg1: SymbolArg, arg2: SymbolArg, arg3: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("varargs.override", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn varargs_override(
+        arg0: SymbolArg,
+        arg1: SymbolArg,
+        arg2: SymbolArg,
+        arg3: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "varargs.override",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// Accessor {0} is not a varargs method.
     ///
     /// Java: Fragments.VarargsTrustmeOnNonVarargsAccessor(symbol)
     pub fn varargs_trustme_on_non_varargs_accessor(arg0: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("varargs.trustme.on.non.varargs.accessor", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "varargs.trustme.on.non.varargs.accessor",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Method {0} is not a varargs method.
     ///
     /// Java: Fragments.VarargsTrustmeOnNonVarargsMeth(symbol)
     pub fn varargs_trustme_on_non_varargs_meth(arg0: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("varargs.trustme.on.non.varargs.meth", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "varargs.trustme.on.non.varargs.meth",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Varargs element type {0} is reifiable.
     ///
     /// Java: Fragments.VarargsTrustmeOnReifiableVarargs(type)
     pub fn varargs_trustme_on_reifiable_varargs(arg0: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("varargs.trustme.on.reifiable.varargs", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "varargs.trustme.on.reifiable.varargs",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Instance method {0} is neither final nor private.
     ///
     /// Java: Fragments.VarargsTrustmeOnVirtualVarargs(symbol)
     pub fn varargs_trustme_on_virtual_varargs(arg0: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("varargs.trustme.on.virtual.varargs", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "varargs.trustme.on.virtual.varargs",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// Instance method {0} is not final.
     ///
     /// Java: Fragments.VarargsTrustmeOnVirtualVarargsFinalOnly(symbol)
     pub fn varargs_trustme_on_virtual_varargs_final_only(arg0: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("varargs.trustme.on.virtual.varargs.final.only", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "varargs.trustme.on.virtual.varargs.final.only",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// [checking {0}]
     ///
     /// Java: Fragments.VerboseCheckingAttribution(symbol)
     pub fn verbose_checking_attribution(arg0: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("verbose.checking.attribution", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "verbose.checking.attribution",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// [search path for class files: {0}]
@@ -6473,15 +8578,36 @@ pub mod fragments {
     /// {0} extends {1} super: {2} from capture of {3}
     ///
     /// Java: Fragments.WhereCaptured(type, type, type, type)
-    pub fn where_captured(arg0: TypeArg, arg1: TypeArg, arg2: TypeArg, arg3: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("where.captured", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn where_captured(
+        arg0: TypeArg,
+        arg1: TypeArg,
+        arg2: TypeArg,
+        arg3: TypeArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "where.captured",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} extends {1} from capture of {3}
     ///
     /// Java: Fragments.WhereCaptured1(type, type, unused, type)
     pub fn where_captured1(arg0: TypeArg, arg1: TypeArg, arg2: (), arg3: TypeArg) -> FragmentInfo {
-        FragmentInfo::new("where.captured.1", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "where.captured.1",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// where {0} is a fresh type-variable:
@@ -6495,63 +8621,110 @@ pub mod fragments {
     ///
     /// Java: Fragments.WhereDescriptionCaptured1(set of type)
     pub fn where_description_captured1(arg0: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("where.description.captured.1", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "where.description.captured.1",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// where {0} is an intersection type:
     ///
     /// Java: Fragments.WhereDescriptionIntersection(set of type)
     pub fn where_description_intersection(arg0: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("where.description.intersection", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "where.description.intersection",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// where {0} are intersection types:
     ///
     /// Java: Fragments.WhereDescriptionIntersection1(set of type)
     pub fn where_description_intersection1(arg0: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("where.description.intersection.1", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "where.description.intersection.1",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// where {0} is a type-variable:
     ///
     /// Java: Fragments.WhereDescriptionTypevar(set of type)
     pub fn where_description_typevar(arg0: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("where.description.typevar", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "where.description.typevar",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// where {0} are type-variables:
     ///
     /// Java: Fragments.WhereDescriptionTypevar1(set of type)
     pub fn where_description_typevar1(arg0: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("where.description.typevar.1", vec![arg0.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "where.description.typevar.1",
+            vec![arg0.into_diagnostic_arg()],
+        )
     }
 
     /// {0} extends {1}
     ///
     /// Java: Fragments.WhereFreshTypevar(type, list of type)
     pub fn where_fresh_typevar(arg0: TypeArg, arg1: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("where.fresh.typevar", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "where.fresh.typevar",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} extends {1}
     ///
     /// Java: Fragments.WhereIntersection(type, list of type)
     pub fn where_intersection(arg0: TypeArg, arg1: Vec<TypeArg>) -> FragmentInfo {
-        FragmentInfo::new("where.intersection", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "where.intersection",
+            vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()],
+        )
     }
 
     /// {0} extends {1} declared in {2} {3}
     ///
     /// Java: Fragments.WhereTypevar(type, list of type, symbol kind, symbol)
-    pub fn where_typevar(arg0: TypeArg, arg1: Vec<TypeArg>, arg2: SymbolKindArg, arg3: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("where.typevar", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn where_typevar(
+        arg0: TypeArg,
+        arg1: Vec<TypeArg>,
+        arg2: SymbolKindArg,
+        arg3: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "where.typevar",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// {0} declared in {2} {3}
     ///
     /// Java: Fragments.WhereTypevar1(type, list of type, symbol kind, symbol)
-    pub fn where_typevar1(arg0: TypeArg, arg1: Vec<TypeArg>, arg2: SymbolKindArg, arg3: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("where.typevar.1", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn where_typevar1(
+        arg0: TypeArg,
+        arg1: Vec<TypeArg>,
+        arg2: SymbolKindArg,
+        arg3: SymbolArg,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "where.typevar.1",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// wrong number of type arguments; required {0}
@@ -6572,15 +8745,33 @@ pub mod fragments {
     ///
     /// Java: Fragments.XPrintProcessorInfo(string, string, boolean)
     pub fn x_print_processor_info(arg0: JavaString, arg1: JavaString, arg2: bool) -> FragmentInfo {
-        FragmentInfo::new("x.print.processor.info", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg()])
+        FragmentInfo::new(
+            "x.print.processor.info",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// Round {0}:\n\tinput files: {1}\n\tannotations: {2}\n\tlast round: {3}
     ///
     /// Java: Fragments.XPrintRounds(number, string, set of symbol, boolean)
-    pub fn x_print_rounds(arg0: i32, arg1: JavaString, arg2: Vec<SymbolArg>, arg3: bool) -> FragmentInfo {
-        FragmentInfo::new("x.print.rounds", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg(), arg2.into_diagnostic_arg(), arg3.into_diagnostic_arg()])
+    pub fn x_print_rounds(
+        arg0: i32,
+        arg1: JavaString,
+        arg2: Vec<SymbolArg>,
+        arg3: bool,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "x.print.rounds",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
-
 }
-

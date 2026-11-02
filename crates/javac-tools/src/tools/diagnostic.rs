@@ -215,9 +215,7 @@ mod tests {
 
         fn get_message(&self, locale: Option<&JavaString>) -> JavaString {
             match locale {
-                Some(tag) => js("[")
-                    .concat(tag)
-                    .concat(&js("] error")),
+                Some(tag) => js("[").concat(tag).concat(&js("] error")),
                 None => js("error"),
             }
         }

@@ -19,6 +19,8 @@ use crate::doctree::comment_tree::CommentTree;
 use crate::doctree::deprecated_tree::DeprecatedTree;
 use crate::doctree::doc_comment_tree::DocCommentTree;
 use crate::doctree::doc_root_tree::DocRootTree;
+use crate::doctree::doc_tree::DocTree;
+use crate::doctree::doc_tree_visitor::DocTreeVisitor;
 use crate::doctree::doc_type_tree::DocTypeTree;
 use crate::doctree::end_element_tree::EndElementTree;
 use crate::doctree::entity_tree::EntityTree;
@@ -48,8 +50,6 @@ use crate::doctree::unknown_inline_tag_tree::UnknownInlineTagTree;
 use crate::doctree::uses_tree::UsesTree;
 use crate::doctree::value_tree::ValueTree;
 use crate::doctree::version_tree::VersionTree;
-use crate::doctree::doc_tree::DocTree;
-use crate::doctree::doc_tree_visitor::DocTreeVisitor;
 use crate::util::dispatch::dispatch_simple_doc_tree;
 use std::rc::Rc;
 

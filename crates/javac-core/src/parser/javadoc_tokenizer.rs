@@ -52,7 +52,6 @@ impl JavadocTokenizer {
         base.javadoc_comments = true;
         JavadocTokenizer { base }
     }
-
 }
 
 impl Tokenizer for JavadocTokenizer {
@@ -345,7 +344,9 @@ struct OffsetMap {
 
 impl OffsetMap {
     fn new() -> OffsetMap {
-        OffsetMap { map: Vec::with_capacity(128) }
+        OffsetMap {
+            map: Vec::with_capacity(128),
+        }
     }
 
     /// Java: boolean shouldAdd(int sbOffset, int posOffset).

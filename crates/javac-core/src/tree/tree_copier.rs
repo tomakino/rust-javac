@@ -33,9 +33,7 @@ use std::rc::Rc;
 
 use crate::compiler_context::CompilerContext;
 use crate::ids::TreeId;
-use crate::tree::jc_tree::{
-    JCTree, PolyKind, Tag, TreeKind,
-};
+use crate::tree::jc_tree::{JCTree, PolyKind, Tag, TreeKind};
 use crate::tree::tree_maker::TreeMaker;
 use crate::util::list::List;
 use crate::util::position;
@@ -76,16 +74,16 @@ impl TreeCopier {
     ///   - none.
     ///
     /// Upstream: JCTree.java:3200.
-/// # Arguments
-///   - make: the TreeMaker cell.
-///
-/// # Returns
-///   - a plain TreeCopier.
-///
-/// # Panics
-///   - none.
-///
-/// Upstream: JCTree.java:3200.
+    /// # Arguments
+    ///   - make: the TreeMaker cell.
+    ///
+    /// # Returns
+    ///   - a plain TreeCopier.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: JCTree.java:3200.
     pub fn new(make: Rc<TreeMaker>) -> TreeCopier {
         TreeCopier {
             make,
@@ -106,16 +104,16 @@ impl TreeCopier {
     ///   - none.
     ///
     /// Upstream: DeferredAttr.java:530-560.
-/// # Arguments
-///   - make: the TreeMaker cell.
-///
-/// # Returns
-///   - a TreeCopier with the speculative diamond/member-reference behavior.
-///
-/// # Panics
-///   - none.
-///
-/// Upstream: DeferredAttr.java:530-560.
+    /// # Arguments
+    ///   - make: the TreeMaker cell.
+    ///
+    /// # Returns
+    ///   - a TreeCopier with the speculative diamond/member-reference behavior.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: DeferredAttr.java:530-560.
     pub fn new_speculative(make: Rc<TreeMaker>) -> TreeCopier {
         TreeCopier {
             make,
@@ -142,10 +140,7 @@ impl TreeCopier {
     }
 
     /// adapter helper: a copier with the Analyzer overrides installed.
-    pub fn with_hook(
-        make: Rc<TreeMaker>,
-        hook: Rc<dyn TreeCopyHook>,
-    ) -> TreeCopier {
+    pub fn with_hook(make: Rc<TreeMaker>, hook: Rc<dyn TreeCopyHook>) -> TreeCopier {
         TreeCopier {
             make,
             speculative: false,
@@ -182,12 +177,36 @@ impl TreeCopier {
             Tag::ANNOTATION | Tag::TYPE_ANNOTATION => self.visit_annotation(ctx, tree),
             Tag::ASSERT => self.visit_assert(ctx, tree),
             Tag::ASSIGN => self.visit_assignment(ctx, tree),
-            Tag::PLUS_ASG | Tag::MINUS_ASG | Tag::MUL_ASG | Tag::DIV_ASG
-            | Tag::MOD_ASG | Tag::BITAND_ASG | Tag::BITOR_ASG | Tag::BITXOR_ASG
-            | Tag::SL_ASG | Tag::SR_ASG | Tag::USR_ASG => self.visit_compound_assignment(ctx, tree),
-            Tag::AND | Tag::OR | Tag::BITAND | Tag::BITOR | Tag::BITXOR | Tag::EQ | Tag::NE | Tag::LT | Tag::GT
-            | Tag::LE | Tag::GE | Tag::SL | Tag::SR | Tag::USR | Tag::PLUS
-            | Tag::MINUS | Tag::MUL | Tag::DIV | Tag::MOD => self.visit_binary(ctx, tree),
+            Tag::PLUS_ASG
+            | Tag::MINUS_ASG
+            | Tag::MUL_ASG
+            | Tag::DIV_ASG
+            | Tag::MOD_ASG
+            | Tag::BITAND_ASG
+            | Tag::BITOR_ASG
+            | Tag::BITXOR_ASG
+            | Tag::SL_ASG
+            | Tag::SR_ASG
+            | Tag::USR_ASG => self.visit_compound_assignment(ctx, tree),
+            Tag::AND
+            | Tag::OR
+            | Tag::BITAND
+            | Tag::BITOR
+            | Tag::BITXOR
+            | Tag::EQ
+            | Tag::NE
+            | Tag::LT
+            | Tag::GT
+            | Tag::LE
+            | Tag::GE
+            | Tag::SL
+            | Tag::SR
+            | Tag::USR
+            | Tag::PLUS
+            | Tag::MINUS
+            | Tag::MUL
+            | Tag::DIV
+            | Tag::MOD => self.visit_binary(ctx, tree),
             Tag::BLOCK => self.visit_block(ctx, tree),
             Tag::BREAK => self.visit_break(ctx, tree),
             Tag::YIELD => self.visit_yield(ctx, tree),
@@ -237,8 +256,14 @@ impl TreeCopier {
             Tag::GUARDPATTERN => self.visit_guarded_pattern(ctx, tree),
             Tag::PARENTHESIZEDPATTERN => self.visit_parenthesized_pattern(ctx, tree),
             Tag::DEFAULTCASELABEL => self.visit_default_case_label(ctx, tree),
-            Tag::POS | Tag::NEG | Tag::NOT | Tag::COMPL | Tag::PREINC | Tag::PREDEC
-            | Tag::POSTINC | Tag::POSTDEC => self.visit_unary(ctx, tree),
+            Tag::POS
+            | Tag::NEG
+            | Tag::NOT
+            | Tag::COMPL
+            | Tag::PREINC
+            | Tag::PREDEC
+            | Tag::POSTINC
+            | Tag::POSTDEC => self.visit_unary(ctx, tree),
             Tag::VARDEF => self.visit_variable(ctx, tree),
             Tag::WHILELOOP => self.visit_while_loop(ctx, tree),
             Tag::WILDCARD => self.visit_wildcard(ctx, tree),
@@ -253,7 +278,6 @@ impl TreeCopier {
             other => panic!("AssertionError: unknown tree tag: {other:?}"),
         }
     }
-
 }
 
 impl TreeCopier {
@@ -268,7 +292,10 @@ impl TreeCopier {
             TreeKind::AnnotatedType {
                 annotations,
                 underlying_type,
-            } => (self.copy_list(ctx, annotations), self.copy_opt(ctx, *underlying_type)),
+            } => (
+                self.copy_list(ctx, annotations),
+                self.copy_opt(ctx, *underlying_type),
+            ),
             _ => panic!("ClassCastException: JCAnnotatedType expected"),
         };
         let pos = ctx.tree(tree).pos;
@@ -316,7 +343,9 @@ impl TreeCopier {
     fn visit_assert(&self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
         let __kind = ctx.tree(tree).kind.clone();
         let (cond, detail) = match &__kind {
-            TreeKind::Assert { cond, detail } => (self.copy_opt(ctx, *cond), self.copy_opt(ctx, *detail)),
+            TreeKind::Assert { cond, detail } => {
+                (self.copy_opt(ctx, *cond), self.copy_opt(ctx, *detail))
+            }
             _ => panic!("ClassCastException: JCAssert expected"),
         };
         let pos = ctx.tree(tree).pos;
@@ -361,7 +390,9 @@ impl TreeCopier {
     fn visit_binary(&self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
         let __kind = ctx.tree(tree).kind.clone();
         let (lhs, rhs) = match &__kind {
-            TreeKind::Binary { lhs, rhs, .. } => (self.copy_opt(ctx, *lhs), self.copy_opt(ctx, *rhs)),
+            TreeKind::Binary { lhs, rhs, .. } => {
+                (self.copy_opt(ctx, *lhs), self.copy_opt(ctx, *rhs))
+            }
             _ => panic!("ClassCastException: JCBinary expected"),
         };
         let pos = ctx.tree(tree).pos;
@@ -445,7 +476,11 @@ impl TreeCopier {
                 labels,
                 stats,
                 ..
-            } => (*case_kind, self.copy_list(ctx, labels), self.copy_list(ctx, stats)),
+            } => (
+                *case_kind,
+                self.copy_list(ctx, labels),
+                self.copy_list(ctx, stats),
+            ),
             _ => panic!("ClassCastException: JCCase expected"),
         };
         // Java: body = t.body instanceof JCExpression && t.stats.head.hasTag(YIELD)
@@ -458,7 +493,11 @@ impl TreeCopier {
             _ => None,
         };
         let body = if case_kind == javac_source::tree::case_tree::CaseKind::RULE {
-            let head = if stats.is_empty() { None } else { Some(*stats.head()) };
+            let head = if stats.is_empty() {
+                None
+            } else {
+                Some(*stats.head())
+            };
             match (original_body, head) {
                 (Some(_), Some(head)) if ctx.tree(head).tag == Tag::YIELD => {
                     match &ctx.tree(head).kind {
@@ -623,15 +662,8 @@ impl TreeCopier {
             _ => panic!("ClassCastException: JCExpressionStatement expected"),
         };
         let pos = ctx.tree(tree).pos;
-        self.mk(
-            ctx,
-            pos,
-            Tag::EXEC,
-            TreeKind::ExpressionStatement { expr },
-        )
+        self.mk(ctx, pos, Tag::EXEC, TreeKind::ExpressionStatement { expr })
     }
-
-
 }
 
 impl TreeCopier {
@@ -694,12 +726,7 @@ impl TreeCopier {
             _ => panic!("ClassCastException: JCIdent expected"),
         };
         let pos = ctx.tree(tree).pos;
-        self.mk(
-            ctx,
-            pos,
-            Tag::IDENT,
-            TreeKind::Ident { name, sym: None },
-        )
+        self.mk(ctx, pos, Tag::IDENT, TreeKind::Ident { name, sym: None })
     }
 
     /// Java: public JCTree visitIf(IfTree node, P p)
@@ -856,7 +883,10 @@ impl TreeCopier {
         let __kind = ctx.tree(tree).kind.clone();
         let (typeargs, meth, args) = match &__kind {
             TreeKind::MethodInvocation {
-                typeargs, meth, args, ..
+                typeargs,
+                meth,
+                args,
+                ..
             } => (
                 self.copy_list(ctx, typeargs),
                 self.copy_opt(ctx, *meth),
@@ -893,10 +923,7 @@ impl TreeCopier {
             ctx,
             pos,
             Tag::MODIFIERS,
-            TreeKind::Modifiers {
-                flags,
-                annotations,
-            },
+            TreeKind::Modifiers { flags, annotations },
         )
     }
 
@@ -994,8 +1021,6 @@ impl TreeCopier {
             },
         )
     }
-
-
 }
 
 impl TreeCopier {
@@ -1096,7 +1121,9 @@ impl TreeCopier {
                 *mode,
                 name.clone(),
                 self.copy_opt(ctx, *expr),
-                typeargs.as_ref().map(|typeargs| self.copy_list(ctx, typeargs)),
+                typeargs
+                    .as_ref()
+                    .map(|typeargs| self.copy_list(ctx, typeargs)),
             ),
             _ => panic!("ClassCastException: JCMemberReference expected"),
         };
@@ -1104,7 +1131,8 @@ impl TreeCopier {
         // Java: DeferredAttr's copier forwards the overload kind (setOverloadKind
         // forwards to the original tree; getOverloadKind reads the original), so
         // the speculative copy keeps the reference kind/poly kind (adapter).
-        let (kind, ref_poly_kind, owner_accessible, poly_kind, overload_kind) = if self.speculative {
+        let (kind, ref_poly_kind, owner_accessible, poly_kind, overload_kind) = if self.speculative
+        {
             match &ctx.tree(tree).kind {
                 TreeKind::MemberReference {
                     kind,
@@ -1113,11 +1141,29 @@ impl TreeCopier {
                     poly_kind,
                     overload_kind,
                     ..
-                } => (*kind, *ref_poly_kind, *owner_accessible, *poly_kind, *overload_kind),
-                _ => (None, PolyKind::STANDALONE, false, PolyKind::STANDALONE, None),
+                } => (
+                    *kind,
+                    *ref_poly_kind,
+                    *owner_accessible,
+                    *poly_kind,
+                    *overload_kind,
+                ),
+                _ => (
+                    None,
+                    PolyKind::STANDALONE,
+                    false,
+                    PolyKind::STANDALONE,
+                    None,
+                ),
             }
         } else {
-            (None, PolyKind::STANDALONE, false, PolyKind::STANDALONE, None)
+            (
+                None,
+                PolyKind::STANDALONE,
+                false,
+                PolyKind::STANDALONE,
+                None,
+            )
         };
         self.mk(
             ctx,
@@ -1152,9 +1198,9 @@ impl TreeCopier {
     fn visit_switch(&self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
         let __kind = ctx.tree(tree).kind.clone();
         let (selector, cases) = match &__kind {
-            TreeKind::Switch { selector, cases, .. } => {
-                (self.copy_opt(ctx, *selector), self.copy_list(ctx, cases))
-            }
+            TreeKind::Switch {
+                selector, cases, ..
+            } => (self.copy_opt(ctx, *selector), self.copy_list(ctx, cases)),
             _ => panic!("ClassCastException: JCSwitch expected"),
         };
         let pos = ctx.tree(tree).pos;
@@ -1176,9 +1222,9 @@ impl TreeCopier {
     fn visit_switch_expression(&self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
         let __kind = ctx.tree(tree).kind.clone();
         let (selector, cases) = match &__kind {
-            TreeKind::SwitchExpression { selector, cases, .. } => {
-                (self.copy_opt(ctx, *selector), self.copy_list(ctx, cases))
-            }
+            TreeKind::SwitchExpression {
+                selector, cases, ..
+            } => (self.copy_opt(ctx, *selector), self.copy_list(ctx, cases)),
             _ => panic!("ClassCastException: JCSwitchExpression expected"),
         };
         let pos = ctx.tree(tree).pos;
@@ -1258,9 +1304,9 @@ impl TreeCopier {
     fn visit_package(&self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
         let __kind = ctx.tree(tree).kind.clone();
         let (annotations, pid) = match &__kind {
-            TreeKind::PackageDecl { annotations, pid, .. } => {
-                (self.copy_list(ctx, annotations), self.copy_opt(ctx, *pid))
-            }
+            TreeKind::PackageDecl {
+                annotations, pid, ..
+            } => (self.copy_list(ctx, annotations), self.copy_opt(ctx, *pid)),
             _ => panic!("ClassCastException: JCPackageDecl expected"),
         };
         let pos = ctx.tree(tree).pos;
@@ -1358,8 +1404,6 @@ impl TreeCopier {
             TreeKind::TypeIntersection { bounds },
         )
     }
-
-
 }
 
 impl TreeCopier {
@@ -1462,7 +1506,12 @@ impl TreeCopier {
             _ => panic!("ClassCastException: JCBindingPattern expected"),
         };
         let pos = ctx.tree(tree).pos;
-        self.mk(ctx, pos, Tag::BINDINGPATTERN, TreeKind::BindingPattern { var })
+        self.mk(
+            ctx,
+            pos,
+            Tag::BINDINGPATTERN,
+            TreeKind::BindingPattern { var },
+        )
     }
 
     /// Java: public JCTree visitGuardedPattern(GuardedPatternTree node, P p)
@@ -1503,7 +1552,12 @@ impl TreeCopier {
     fn visit_default_case_label(&self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
         let __kind = ctx.tree(tree).kind.clone();
         let pos = ctx.tree(tree).pos;
-        self.mk(ctx, pos, Tag::DEFAULTCASELABEL, TreeKind::DefaultCaseLabel {})
+        self.mk(
+            ctx,
+            pos,
+            Tag::DEFAULTCASELABEL,
+            TreeKind::DefaultCaseLabel {},
+        )
     }
 
     /// Java: public JCTree visitUnary(UnaryTree node, P p)
@@ -1515,7 +1569,15 @@ impl TreeCopier {
         };
         let pos = ctx.tree(tree).pos;
         let tag = ctx.tree(tree).tag;
-        self.mk(ctx, pos, tag, TreeKind::Unary { arg, operator: None })
+        self.mk(
+            ctx,
+            pos,
+            tag,
+            TreeKind::Unary {
+                arg,
+                operator: None,
+            },
+        )
     }
 
     /// Java: public JCTree visitVariable(VariableTree node, P p)
@@ -1568,12 +1630,7 @@ impl TreeCopier {
             _ => panic!("ClassCastException: JCWhileLoop expected"),
         };
         let pos = ctx.tree(tree).pos;
-        self.mk(
-            ctx,
-            pos,
-            Tag::WHILELOOP,
-            TreeKind::WhileLoop { cond, body },
-        )
+        self.mk(ctx, pos, Tag::WHILELOOP, TreeKind::WhileLoop { cond, body })
     }
 
     /// Java: public JCTree visitWildcard(WildcardTree node, P p)
@@ -1596,7 +1653,12 @@ impl TreeCopier {
             _ => panic!("ClassCastException: TypeBoundKind expected"),
         };
         let pos = ctx.tree(tree).pos;
-        self.mk(ctx, pos, Tag::TYPEBOUNDKIND, TreeKind::TypeBoundKind { kind })
+        self.mk(
+            ctx,
+            pos,
+            Tag::TYPEBOUNDKIND,
+            TreeKind::TypeBoundKind { kind },
+        )
     }
 
     /// Java: public JCTree visitModule(ModuleTree node, P p)
@@ -1613,7 +1675,9 @@ impl TreeCopier {
                 self.copy_opt(ctx, *mods),
                 *kind,
                 self.copy_opt(ctx, *qual_id),
-                directives.as_ref().map(|directives| self.copy_list(ctx, directives)),
+                directives
+                    .as_ref()
+                    .map(|directives| self.copy_list(ctx, directives)),
             ),
             _ => panic!("ClassCastException: JCModuleDecl expected"),
         };
@@ -1643,7 +1707,9 @@ impl TreeCopier {
                 ..
             } => (
                 self.copy_opt(ctx, *qualid),
-                module_names.as_ref().map(|names| self.copy_list(ctx, names)),
+                module_names
+                    .as_ref()
+                    .map(|names| self.copy_list(ctx, names)),
             ),
             _ => panic!("ClassCastException: JCExports expected"),
         };
@@ -1670,7 +1736,9 @@ impl TreeCopier {
                 ..
             } => (
                 self.copy_opt(ctx, *qualid),
-                module_names.as_ref().map(|names| self.copy_list(ctx, names)),
+                module_names
+                    .as_ref()
+                    .map(|names| self.copy_list(ctx, names)),
             ),
             _ => panic!("ClassCastException: JCOpens expected"),
         };
@@ -1776,7 +1844,6 @@ impl TreeCopier {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1784,7 +1851,6 @@ mod tests {
     use crate::tree::tree_maker::TreeMaker;
     use crate::util::name::Name;
     use crate::util::name::NameTableHandle;
-    use std::cell::RefCell;
     use std::rc::Rc;
 
     fn make_name(table: &Rc<NameTableHandle>, text: &str) -> Name {
@@ -1978,7 +2044,7 @@ mod tests {
                 vartype: None,
                 init: None,
                 sym: None,
-                start_pos: crate::util::position::NOPOS,
+                start_pos: position::NOPOS,
                 declared_using_var: false,
             },
             0,

@@ -20,7 +20,6 @@
 //! lifetime of name table entries, so entries are kept until dispose(). This is
 //! a memory-management deviation with no observable compiler behavior.
 
-
 use crate::util::convert;
 use crate::util::name::NameTableHandle;
 
@@ -58,7 +57,8 @@ impl UnsharedNameTable {
 
     /// Java: public Name fromUtf(byte[] cs, int start, int len)
     pub fn from_utf(&mut self, cs: &[u8], start: i32, len: i32) -> (i32, i32) {
-        let h = (NameTableHandle::hash_value(cs, start, len) & (self.hashes.len() as i32 - 1)) as usize;
+        let h =
+            (NameTableHandle::hash_value(cs, start, len) & (self.hashes.len() as i32 - 1)) as usize;
         let mut cur = self.hashes[h];
         while let Some(node_idx) = cur {
             let node = &self.nodes[node_idx as usize];

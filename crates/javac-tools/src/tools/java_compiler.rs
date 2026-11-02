@@ -6,8 +6,8 @@ use super::java_file_manager::JavaFileObjectRef;
 use super::option_checker::OptionChecker;
 use super::standard_java_file_manager::StandardJavaFileManager;
 use super::tool::Tool;
-use crate::jdk::Processor;
 use crate::java_io::Writer;
+use crate::jdk::Processor;
 use javac_strings::JavaString;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -317,8 +317,8 @@ pub trait CompilationTask {
 #[cfg(test)]
 mod tests {
     use super::{CompilationTask, JavaCompiler};
-    use crate::jdk::Processor;
     use crate::java_io::Writer;
+    use crate::jdk::Processor;
     use crate::lang::model::source_version::SourceVersion;
     use crate::tools::diagnostic_listener::DiagnosticListener;
     use crate::tools::java_file_manager::JavaFileManager;
@@ -409,7 +409,9 @@ mod tests {
             _locale: Option<&JavaString>,
             _charset: Option<&JavaString>,
         ) -> Rc<dyn StandardJavaFileManager> {
-            panic!("UnsupportedOperationException: get_standard_file_manager: test compiler does not provide a standard file manager")
+            panic!(
+                "UnsupportedOperationException: get_standard_file_manager: test compiler does not provide a standard file manager"
+            )
         }
     }
 

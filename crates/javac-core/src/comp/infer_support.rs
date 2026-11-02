@@ -3,8 +3,8 @@
 
 use std::rc::Rc;
 
-use crate::code::symtab::Symtab;
 use crate::code::flags;
+use crate::code::symtab::Symtab;
 use crate::code::type_::{InferenceBound, TypeKindData};
 use crate::code::type_tag::TypeTag;
 use crate::code::types::Types;
@@ -27,13 +27,13 @@ pub struct ReachabilityVisitor {
 }
 
 impl ReachabilityVisitor {
-/// /// Java: ReachabilityVisitor(InferenceContext) (Infer.java:1450-1470).
-///
-/// # Panics
-///   - none.
-///
-/// Upstream: Infer.java:1450-1470.
-///
+    /// /// Java: ReachabilityVisitor(InferenceContext) (Infer.java:1450-1470).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Infer.java:1450-1470.
+    ///
     pub fn new(context: &Rc<InferenceContext>) -> ReachabilityVisitor {
         ReachabilityVisitor {
             context: Rc::clone(context),
@@ -70,9 +70,9 @@ impl ReachabilityVisitor {
             self.visit_undet_var(ctx, syms, types, t)
         } else {
             match &ctx.typ(t).kind {
-                TypeKindData::WildcardType { type_: Some(type_), .. } => {
-                    self.visit(ctx, syms, types, *type_)
-                }
+                TypeKindData::WildcardType {
+                    type_: Some(type_), ..
+                } => self.visit(ctx, syms, types, *type_),
                 TypeKindData::TypeVar { .. } => {
                     // Java: visitTypeVar -> asUndetVar; roots may contain
                     // TypeVars (constructor return CHM<K,V>), which must be
@@ -84,9 +84,10 @@ impl ReachabilityVisitor {
                         self.visit(ctx, syms, types, und)
                     }
                 }
-                TypeKindData::ArrayType { elemtype: Some(elem), .. } => {
-                    self.visit(ctx, syms, types, *elem)
-                }
+                TypeKindData::ArrayType {
+                    elemtype: Some(elem),
+                    ..
+                } => self.visit(ctx, syms, types, *elem),
                 TypeKindData::ClassType { .. }
                 | TypeKindData::ErasedClassType { .. }
                 | TypeKindData::UnionClassType { .. }
@@ -136,19 +137,19 @@ impl ReachabilityVisitor {
                 let bounds = types.undet_var_get_bounds(ctx, t, &[bound_kind]);
                 let current = bounds;
                 for b in &current {
-                let undet = self.context.as_undet_var(ctx, syms, types, b);
-                if !matches!(&ctx.typ(undet).kind, TypeKindData::UndetVar { .. }) {
-                    self.visit(ctx, syms, types, undet)?;
-                } else if self.is_equiv(ctx, syms, types, t, b, bound_kind)? {
-                    if !deps.contains(&b) {
-                        deps.push(b);
+                    let undet = self.context.as_undet_var(ctx, syms, types, b);
+                    if !matches!(&ctx.typ(undet).kind, TypeKindData::UndetVar { .. }) {
+                        self.visit(ctx, syms, types, undet)?;
+                    } else if self.is_equiv(ctx, syms, types, t, b, bound_kind)? {
+                        if !deps.contains(&b) {
+                            deps.push(b);
+                        }
+                        if !self.equiv.contains(&b) {
+                            self.equiv.push(b);
+                        }
+                    } else {
+                        self.visit(ctx, syms, types, undet)?;
                     }
-                    if !self.equiv.contains(&b) {
-                        self.equiv.push(b);
-                    }
-                } else {
-                    self.visit(ctx, syms, types, undet)?;
-                }
                 }
             }
             self.min_map.push((qtype, deps));
@@ -286,13 +287,7 @@ impl FreeTypeListener for UnreachableVarsListener {
         };
         let warn = Rc::clone(&self.warn);
         let _ = inference_context;
-        original.solve_list(
-            ctx,
-            syms,
-            types,
-            self.unreachable_vars.clone(),
-            &warn,
-        )?;
+        original.solve_list(ctx, syms, types, self.unreachable_vars.clone(), &warn)?;
         drop(warn);
         original.notify_change(ctx, syms, types)
     }
@@ -306,9 +301,9 @@ pub(crate) fn list_diff(ts: &List<TypeId>, ss: &List<TypeId>) -> List<TypeId> {
     let mut result: List<TypeId> = List::nil();
     let current = ts.clone();
     for t in &current {
-    if !ss.iter().any(|s| s == t) {
-        result = result.append(t);
-    }
+        if !ss.iter().any(|s| s == t) {
+            result = result.append(t);
+        }
     }
     result
 }
@@ -317,9 +312,9 @@ pub(crate) fn list_remove(ts: &List<TypeId>, t: TypeId) -> List<TypeId> {
     let mut result: List<TypeId> = List::nil();
     let current = ts.clone();
     for x in &current {
-    if x != t {
-        result = result.append(x);
-    }
+        if x != t {
+            result = result.append(x);
+        }
     }
     result
 }
@@ -338,17 +333,16 @@ pub(crate) fn contains_any_list(
 ) -> bool {
     let current = ts1;
     for t in &current {
-    let mut other = ts2.clone();
-    while other.non_empty() {
-        if types.contains(ctx, syms, t, *other.head()) {
-            return true;
+        let mut other = ts2.clone();
+        while other.non_empty() {
+            if types.contains(ctx, syms, t, *other.head()) {
+                return true;
+            }
+            other = other.tail();
         }
-        other = other.tail();
-    }
     }
     false
 }
-
 
 pub(crate) fn elemtype_of(ctx: &mut CompilerContext, t: TypeId) -> TypeId {
     match &ctx.typ(t).kind {
@@ -357,13 +351,17 @@ pub(crate) fn elemtype_of(ctx: &mut CompilerContext, t: TypeId) -> TypeId {
     }
 }
 
-pub(crate) fn new_array_type_ctx(ctx: &mut CompilerContext, elem: TypeId, tsym: SymbolId) -> TypeId {
+pub(crate) fn new_array_type_ctx(
+    ctx: &mut CompilerContext,
+    elem: TypeId,
+    tsym: SymbolId,
+) -> TypeId {
     ctx.alloc_type(crate::code::type_::Type::new(
         TypeTag::ARRAY,
         Some(tsym),
         TypeKindData::ArrayType {
             elemtype: Some(elem),
-                varargs: false,
+            varargs: false,
         },
     ))
 }
@@ -438,7 +436,6 @@ pub(crate) fn new_captured_type_ctx(
     type_id
 }
 
-
 // =====================================================================
 // Incorporate helpers (Infer.java:780-805, 892-910, 1247-1300)
 // =====================================================================
@@ -484,12 +481,8 @@ pub(crate) fn report_inst_error(
     let args = bounds_type_args(ctx, bounds);
     let fragment = match ib {
         InferenceBound::EQ => fragments::inferred_do_not_conform_to_eq_bounds(inst_arg, args),
-        InferenceBound::LOWER => {
-            fragments::inferred_do_not_conform_to_lower_bounds(inst_arg, args)
-        }
-        InferenceBound::UPPER => {
-            fragments::inferred_do_not_conform_to_upper_bounds(inst_arg, args)
-        }
+        InferenceBound::LOWER => fragments::inferred_do_not_conform_to_lower_bounds(inst_arg, args),
+        InferenceBound::UPPER => fragments::inferred_do_not_conform_to_upper_bounds(inst_arg, args),
     };
     let diag = infer.diags.fragment(fragment.into());
     Err(infer.error(Some(diag)))
@@ -529,17 +522,17 @@ pub(crate) fn report_bound_error_two(
     let frag1 = get_bound_fragment(ctx, types, uv, ib1);
     let frag2 = get_bound_fragment(ctx, types, uv, ib2);
     let qtype = match &ctx.typ(uv).kind {
-        crate::code::type_::TypeKindData::UndetVar { qtype, .. } => *qtype,
+        TypeKindData::UndetVar { qtype, .. } => *qtype,
         _ => uv,
     };
     let frag1_diag = infer.diags.fragment(frag1);
     let frag2_diag = infer.diags.fragment(frag2);
     let fragment = fragments::incompatible_bounds(
         crate::comp::check::type_arg_with_rich_where(ctx, qtype),
-        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
+        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(
             frag1_diag,
         )),
-        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
+        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(
             frag2_diag,
         )),
     );
@@ -594,9 +587,9 @@ pub(crate) fn check_compatible_upper_bounds(
     let mut hibounds: List<TypeId> = List::nil();
     let current = upper_bounds;
     for t in &current {
-    if bound_filter(ctx, syms, types, inference_context, t) {
-        hibounds = hibounds.append(t);
-    }
+        if bound_filter(ctx, syms, types, inference_context, t) {
+            hibounds = hibounds.append(t);
+        }
     }
     let hb = if hibounds.is_empty() {
         syms.object_type
@@ -611,12 +604,7 @@ pub(crate) fn check_compatible_upper_bounds(
     Ok(())
 }
 
-
-
-
-
 // =====================================================================
 // Infer instantiateMethod / PartiallyInferredMethodType (Infer.java:166-370,
 // 391-520)
 // =====================================================================
-

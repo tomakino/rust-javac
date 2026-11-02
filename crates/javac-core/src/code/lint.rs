@@ -40,12 +40,12 @@ use std::rc::Rc;
 
 use crate::code::attribute::{Attribute, AttributeKind};
 use crate::code::source::{Feature, Source};
-use crate::code::symtab::Symtab;
 use crate::code::symbol::Symbol;
+use crate::code::symtab::Symtab;
 use crate::compiler_context::CompilerContext;
 use crate::ids::AttributeId;
-use crate::util::constants::ConstantValue;
 use crate::main::option::Option as MainOption;
+use crate::util::constants::ConstantValue;
 use crate::util::context::Context;
 use crate::util::list::List;
 use crate::util::options::Options;
@@ -116,10 +116,8 @@ impl Lint {
         for lc in LintCategory::values() {
             if options.is_set_choice(MainOption::XLINT_CUSTOM, lc.option()) {
                 values.insert(lc);
-            } else if options.is_set_choice(
-                MainOption::XLINT_CUSTOM,
-                &format!("-{}", lc.option()),
-            ) {
+            } else if options.is_set_choice(MainOption::XLINT_CUSTOM, &format!("-{}", lc.option()))
+            {
                 values.remove(&lc);
             }
         }
@@ -157,7 +155,12 @@ impl Lint {
     /// Porting rules adapter: the upstream AugmentVisitor is a context
     /// singleton; the ported visitor takes the compiler context and symtab
     /// explicitly (ADR 0001).
-    pub fn augment_compound(&self, ctx: &CompilerContext, syms: &Symtab, attr: AttributeId) -> Lint {
+    pub fn augment_compound(
+        &self,
+        ctx: &CompilerContext,
+        syms: &Symtab,
+        attr: AttributeId,
+    ) -> Lint {
         augment_visitor_augment_compound(ctx, syms, self, attr)
     }
 
@@ -166,12 +169,8 @@ impl Lint {
     ///
     /// Java: public Lint augment(Symbol sym) (Lint.java:73-81).
     pub fn augment(&self, ctx: &CompilerContext, syms: &Symtab, sym: &Symbol) -> Lint {
-        let mut lint = augment_visitor_augment_list(
-            ctx,
-            syms,
-            self,
-            &sym.get_declaration_attributes(),
-        );
+        let mut lint =
+            augment_visitor_augment_list(ctx, syms, self, &sym.get_declaration_attributes());
         if sym.is_deprecated() {
             // Java: if (l == this) l = new Lint(this); then remove/add
             // DEPRECATION. The ported augmentor always yields a copy
@@ -463,7 +462,6 @@ impl fmt::Display for LintCategory {
     }
 }
 
-
 /// Java: protected static class Lint.AugmentVisitor implements
 /// Attribute.Visitor (Lint.java:337-445).
 struct AugmentVisitor<'a> {
@@ -522,10 +520,7 @@ impl<'a> AugmentVisitor<'a> {
             AttributeKind::Compound { values, .. } | AttributeKind::TypeCompound { values, .. } => {
                 // Java: visitCompound (Lint.java:405-418)
                 let compound_tsym = attribute.ty.and_then(|ty| self.ctx.typ(ty).tsym);
-                let suppress_warnings_tsym = self
-                    .ctx
-                    .typ(self.syms.suppress_warnings_type)
-                    .tsym;
+                let suppress_warnings_tsym = self.ctx.typ(self.syms.suppress_warnings_type).tsym;
                 if compound_tsym == suppress_warnings_tsym {
                     let values = values.clone();
                     let mut index = 0;
@@ -655,7 +650,10 @@ mod tests {
 
     #[test]
     fn is_enabled_and_is_suppressed_follow_the_sets() {
-        let lint = make_lint(&[LintCategory::CAST, LintCategory::RAW], &[LintCategory::DEPRECATION]);
+        let lint = make_lint(
+            &[LintCategory::CAST, LintCategory::RAW],
+            &[LintCategory::DEPRECATION],
+        );
         assert!(lint.is_enabled(LintCategory::CAST));
         assert!(lint.is_enabled(LintCategory::RAW));
         assert!(!lint.is_enabled(LintCategory::DEPRECATION));

@@ -2,25 +2,26 @@
 
 This file records the per-module mapping between rust-javac and OpenJDK
 javac, together with the porting registry moved out of source headers.
-Source headers are ordinary module documentation; all porting metadata
-(upstream classes, status, original registries) is recorded here.
+Source headers are ordinary module documentation; all porting metadata (upstream classes, status, original registries)
+is recorded here.
 
 ## Overview
 
-| Rust file | Upstream | Status | Original header lines |
-|---|---|---|---|
-| comp/infer.rs | com/sun/tools/javac/comp/Infer.java | ported | 48 |
-| comp/attr.rs | com/sun/tools/javac/comp/Attr.java | ported | 39 |
-| comp/check.rs | com/sun/tools/javac/comp/Check.java | ported | 26 |
-| comp/resolve.rs | com/sun/tools/javac/comp/Resolve.java | ported | 62 |
-| comp/lower.rs | com/sun/tools/javac/comp/Lower.java | ported | 14 |
-| comp/flow.rs | com/sun/tools/javac/comp/Flow.java | ported | 22 |
-| jvm/codegen.rs | com/sun/tools/javac/jvm/Gen.java | ported | 4 |
-| parser/javac_parser.rs | com/sun/tools/javac/parser/JavacParser.java | ported | 46 |
-| code/types.rs | com/sun/tools/javac/code/Types.java | ported | 134 |
-| main/mini_compiler.rs | com/sun/tools/javac/main/JavaCompiler.java | adapter | 13 |
+| Rust file              | Upstream                                    | Status  | Original header lines |
+|------------------------|---------------------------------------------|---------|-----------------------|
+| comp/infer.rs          | com/sun/tools/javac/comp/Infer.java         | ported  | 48                    |
+| comp/attr.rs           | com/sun/tools/javac/comp/Attr.java          | ported  | 39                    |
+| comp/check.rs          | com/sun/tools/javac/comp/Check.java         | ported  | 26                    |
+| comp/resolve.rs        | com/sun/tools/javac/comp/Resolve.java       | ported  | 62                    |
+| comp/lower.rs          | com/sun/tools/javac/comp/Lower.java         | ported  | 14                    |
+| comp/flow.rs           | com/sun/tools/javac/comp/Flow.java          | ported  | 22                    |
+| jvm/codegen.rs         | com/sun/tools/javac/jvm/Gen.java            | ported  | 4                     |
+| parser/javac_parser.rs | com/sun/tools/javac/parser/JavacParser.java | ported  | 46                    |
+| code/types.rs          | com/sun/tools/javac/code/Types.java         | ported  | 134                   |
+| main/mini_compiler.rs  | com/sun/tools/javac/main/JavaCompiler.java  | adapter | 13                    |
 
 Notes:
+
 - Ten representative modules are registered here; their complete original
   headers are preserved in the details blocks below.
 - Header migration is batched: infer.rs, mini_compiler.rs, and codegen.rs
@@ -86,7 +87,6 @@ Notes:
     // - Infer.instance(Context)/Infer(Context) constructor: the port uses explicit
     // service construction (ADR 0001), registered.
 
-
 </details>
 
 ## compattr
@@ -94,7 +94,8 @@ Notes:
 - Rust: crates/javac-core/src/comp/attr.rs
 - Upstream: com/sun/tools/javac/comp/Attr.java
 - Status: ported (registry below)
-- Original registry: com/sun/tools/javac/comp/Attr.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second batch))
+- Original registry: com/sun/tools/javac/comp/Attr.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second
+  batch))
 
 <details><summary>Original file header (migrated from source)</summary>
 
@@ -145,10 +146,10 @@ Notes:
 - Rust: crates/javac-core/src/comp/check.rs
 - Upstream: com/sun/tools/javac/comp/Check.java
 - Status: ported (registry below)
-- Original registry: com/sun/tools/javac/comp/Check.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second batch))
+- Original registry: com/sun/tools/javac/comp/Check.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second
+  batch))
 
 <details><summary>Original file header (migrated from source)</summary>
-
 
     // Origin: com/sun/tools/javac/comp/Check.java @ 982d53c (jdk-17.0.19-ga)
     //
@@ -175,7 +176,6 @@ Notes:
     // The ported methods keep the upstream bodies and error keys; where a dependency
     // is not ported the branch is marked REGISTERED and not executed (no substitute).
 
-
 </details>
 
 ## compresolve
@@ -183,7 +183,8 @@ Notes:
 - Rust: crates/javac-core/src/comp/resolve.rs
 - Upstream: com/sun/tools/javac/comp/Resolve.java
 - Status: ported (registry below)
-- Original registry: com/sun/tools/javac/comp/Resolve.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second batch))
+- Original registry: com/sun/tools/javac/comp/Resolve.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0
+  second batch))
 
 <details><summary>Original file header (migrated from source)</summary>
 
@@ -249,7 +250,6 @@ Notes:
     //! - MethodSymbol.implementation(hiddenIn path): Symbol;
     //! - Types.overrideEquivalent/Types.mergeAbstracts: Types.
 
-
 </details>
 
 ## complower
@@ -257,7 +257,8 @@ Notes:
 - Rust: crates/javac-core/src/comp/lower.rs
 - Upstream: com/sun/tools/javac/comp/Lower.java
 - Status: ported (registry below)
-- Original registry: com/sun/tools/javac/comp/Lower.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second batch))
+- Original registry: com/sun/tools/javac/comp/Lower.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second
+  batch))
 
 <details><summary>Original file header (migrated from source)</summary>
 
@@ -275,7 +276,6 @@ Notes:
     //! method cache, enum switch maps) on the Lower value itself, as upstream does;
     //! service handles are injected explicitly.
 
-
 </details>
 
 ## compflow
@@ -283,7 +283,8 @@ Notes:
 - Rust: crates/javac-core/src/comp/flow.rs
 - Upstream: com/sun/tools/javac/comp/Flow.java
 - Status: ported (registry below)
-- Original registry: com/sun/tools/javac/comp/Flow.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second batch))
+- Original registry: com/sun/tools/javac/comp/Flow.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second
+  batch))
 
 <details><summary>Original file header (migrated from source)</summary>
 
@@ -309,7 +310,6 @@ Notes:
     // implemented in this file on top of Factory::create + Log::report
     // (registered with the Log).
 
-
 </details>
 
 ## jvmcodegen
@@ -325,7 +325,6 @@ Notes:
 
     //! This pass maps flat Java (without inner classes) to bytecodes.
 
-
 </details>
 
 ## parserjavac-parser
@@ -333,7 +332,8 @@ Notes:
 - Rust: crates/javac-core/src/parser/javac_parser.rs
 - Upstream: com/sun/tools/javac/parser/JavacParser.java
 - Status: ported (registry below)
-- Original registry: com/sun/tools/javac/parser/JavacParser.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second batch))
+- Original registry: com/sun/tools/javac/parser/JavacParser.java @ 982d53c (jdk-17.0.19-ga) (header migration pending
+  (P0 second batch))
 
 <details><summary>Original file header (migrated from source)</summary>
 
@@ -383,7 +383,6 @@ Notes:
     //! - these are all equivalent upstream-structure ports; the remaining lint
     //!   changes are stylistic and are scheduled for the parser-wiring.
 
-
 </details>
 
 ## codetypes
@@ -391,7 +390,8 @@ Notes:
 - Rust: crates/javac-core/src/code/types.rs
 - Upstream: com/sun/tools/javac/code/Types.java
 - Status: ported (registry below)
-- Original registry: com/sun/tools/javac/code/Types.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second batch))
+- Original registry: com/sun/tools/javac/code/Types.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second
+  batch))
 
 <details><summary>Original file header (migrated from source)</summary>
 
@@ -529,7 +529,6 @@ Notes:
     //! arena index (same instance gives the same value, different instances give
     //! different values; registered).
 
-
 </details>
 
 ## mainmini-compiler
@@ -537,7 +536,8 @@ Notes:
 - Rust: crates/javac-core/src/main/mini_compiler.rs
 - Upstream: com/sun/tools/javac/main/JavaCompiler.java
 - Status: adapter (minimal driver; the full JavaCompiler port is deferred)
-- Original registry: com/sun/tools/javac/main/JavaCompiler.java (minimal wiring subset) (header migrated in P0 first batch)
+- Original registry: com/sun/tools/javac/main/JavaCompiler.java (minimal wiring subset) (header migrated in P0 first
+  batch)
 
 <details><summary>Original file header (migrated from source)</summary>
 
@@ -554,409 +554,408 @@ Notes:
     //! pattern matching, lambdas, modules or annotation processing; every phase
     //! call below is the upstream JavaCompiler call of that phase.
 
-
 </details>
 
 ## Full upstream mapping
 
-| Rust file | Upstream |
-|---|---|
-| crates/javac-core/src/api/diagnostic_formatter.rs | com/sun/tools/javac/api/DiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/api/formattable.rs | com/sun/tools/javac/api/Formattable.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/api/messages.rs | com/sun/tools/javac/api/Messages.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/attribute.rs | com/sun/tools/javac/code/Attribute.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/bound_kind.rs | com/sun/tools/javac/code/BoundKind.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/class_finder.rs | com/sun/tools/javac/code/ClassFinder.java @ 982d53c (jdk-17.0.19-ga) Gap registration (method-level audit of ClassFinder.java): |
-| crates/javac-core/src/code/deferred_completion_failure_handler.rs | com/sun/tools/javac/code/DeferredCompletionFailureHandler.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/deferred_lint_handler.rs | com/sun/tools/javac/code/DeferredLintHandler.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/dependencies.rs | com/sun/tools/javac/util/Dependencies.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/directive.rs | com/sun/tools/javac/code/Directive.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/flags.rs | com/sun/tools/javac/code/Flags.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/kinds.rs | com/sun/tools/javac/code/Kinds.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/lint.rs | com/sun/tools/javac/code/Lint.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/missing_info_handler.rs | com/sun/tools/javac/code/MissingInfoHandler.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/module_finder.rs | com/sun/tools/javac/code/ModuleFinder.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/preview.rs | com/sun/tools/javac/code/Preview.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/printer.rs | com/sun/tools/javac/code/Printer.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/scope.rs | com/sun/tools/javac/code/Scope.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/source.rs | com/sun/tools/javac/code/Source.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/symbol.rs | com/sun/tools/javac/code/Symbol.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/symbol_metadata.rs | com/sun/tools/javac/code/SymbolMetadata.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/symtab.rs | com/sun/tools/javac/code/Symtab.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/target_type.rs | com/sun/tools/javac/code/TargetType.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/type_.rs | com/sun/tools/javac/code/Type.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/type_annotation_position.rs | com/sun/tools/javac/code/TypeAnnotationPosition.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/type_annotations.rs | com/sun/tools/javac/code/TypeAnnotations.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/type_metadata.rs | com/sun/tools/javac/code/TypeMetadata.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/type_tag.rs | com/sun/tools/javac/code/TypeTag.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/code/types.rs | com/sun/tools/javac/code/Types.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/analyzer.rs | com/sun/tools/javac/comp/Analyzer.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/annotate.rs | com/sun/tools/javac/comp/Annotate.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/argument_attr.rs | com/sun/tools/javac/comp/ArgumentAttr.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/attr.rs | com/sun/tools/javac/comp/Attr.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/attr_context.rs | com/sun/tools/javac/comp/AttrContext.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/attr_recover.rs | com/sun/tools/javac/comp/AttrRecover.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/check.rs | com/sun/tools/javac/comp/Check.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/compile_states.rs | com/sun/tools/javac/comp/CompileStates.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/const_fold.rs | com/sun/tools/javac/comp/ConstFold.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/deferred_attr.rs | com/sun/tools/javac/comp/DeferredAttr.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/enter.rs | com/sun/tools/javac/comp/Enter.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/env.rs | com/sun/tools/javac/comp/Env.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/flow.rs | com/sun/tools/javac/comp/Flow.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/lambda_to_method.rs | com/sun/tools/javac/comp/LambdaToMethod.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/lower.rs | com/sun/tools/javac/comp/Lower.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/match_bindings.rs | com/sun/tools/javac/comp/MatchBindingsComputer.java @ 982d53c |
-| crates/javac-core/src/comp/member_enter.rs | com/sun/tools/javac/comp/MemberEnter.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/modules.rs | com/sun/tools/javac/comp/Modules.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/operators.rs | com/sun/tools/javac/comp/Operators.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/resolve.rs | com/sun/tools/javac/comp/Resolve.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/trans_patterns.rs | com/sun/tools/javac/comp/TransPatterns.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/trans_types.rs | com/sun/tools/javac/comp/TransTypes.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/tree_differ.rs | com/sun/tools/javac/comp/TreeDiffer.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/tree_hasher.rs | com/sun/tools/javac/comp/TreeHasher.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/type_enter.rs | com/sun/tools/javac/comp/TypeEnter.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/comp/type_envs.rs | com/sun/tools/javac/comp/TypeEnvs.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/file/base_file_manager.rs | com/sun/tools/javac/file/BaseFileManager.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/file/cache_fs_info.rs | com/sun/tools/javac/file/CacheFSInfo.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/file/fs_info.rs | com/sun/tools/javac/file/FSInfo.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/file/javac_file_manager.rs | com/sun/tools/javac/file/JavacFileManager.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/file/jrt_index.rs | com/sun/tools/javac/file/JRTIndex.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/file/locations.rs | com/sun/tools/javac/file/Locations.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/file/path_file_object.rs | com/sun/tools/javac/file/PathFileObject.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/file/relative_path.rs | com/sun/tools/javac/file/RelativePath.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/jvm/byte_codes.rs | com/sun/tools/javac/jvm/ByteCodes.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/jvm/class_file.rs | com/sun/tools/javac/jvm/ClassFile.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/jvm/class_reader.rs | com/sun/tools/javac/jvm/ClassReader.java @ 982d53c (jdk-17.0.19-ga) Gap registration (method-level audit of ClassReader.java): |
-| crates/javac-core/src/jvm/jni_writer.rs | com/sun/tools/javac/jvm/JNIWriter.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/jvm/module_name_reader.rs | com/sun/tools/javac/jvm/ModuleNameReader.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/jvm/pool_constant.rs | com/sun/tools/javac/jvm/PoolConstant.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/jvm/pool_reader.rs | com/sun/tools/javac/jvm/PoolReader.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/jvm/profile.rs | com/sun/tools/javac/jvm/Profile.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/jvm/target.rs | com/sun/tools/javac/jvm/Target.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/main/option.rs | com/sun/tools/javac/main/Option.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/main/option_helper.rs | com/sun/tools/javac/main/OptionHelper.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/model/annotation_mirrors.rs | javax/lang/model (AnnotatedConstruct.getAnnotationMirrors) and the javax.lang.model mirror objects of com.sun.tools.javac.model.JavacElements / |
-| crates/javac-core/src/model/annotation_proxy_maker.rs | com/sun/tools/javac/model/AnnotationProxyMaker.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/model/symbol_annotations.rs | com/sun/tools/javac/code/AnnoConstruct.java and the annotated API of com/sun/tools/javac/code/Symbol.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/parser/doc_comment_parser.rs | com/sun/tools/javac/parser/DocCommentParser.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/parser/java_tokenizer.rs | com/sun/tools/javac/parser/JavaTokenizer.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/parser/javac_parser.rs | com/sun/tools/javac/parser/JavacParser.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/parser/javadoc_tokenizer.rs | com/sun/tools/javac/parser/JavadocTokenizer.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/parser/lazy_doc_comment_table.rs | com/sun/tools/javac/parser/LazyDocCommentTable.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/parser/lexer.rs | com/sun/tools/javac/parser/Lexer.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/parser/parser.rs | com/sun/tools/javac/parser/Parser.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/parser/parser_factory.rs | com/sun/tools/javac/parser/ParserFactory.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/parser/reference_parser.rs | com/sun/tools/javac/parser/ReferenceParser.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/parser/scanner.rs | com/sun/tools/javac/parser/Scanner.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/parser/scanner_factory.rs | com/sun/tools/javac/parser/ScannerFactory.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/parser/text_block_support.rs | com/sun/tools/javac/parser/TextBlockSupport.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/parser/tokens.rs | com/sun/tools/javac/parser/Tokens.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/parser/unicode_reader.rs | com/sun/tools/javac/parser/UnicodeReader.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/platform/ct_sym_java_file_manager.rs | com/sun/tools/javac/platform/JDKPlatformProvider.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/platform/jdk_platform_provider.rs | com/sun/tools/javac/platform/JDKPlatformProvider.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/platform/platform_description.rs | com/sun/tools/javac/platform/PlatformDescription.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/platform/platform_provider.rs | com/sun/tools/javac/platform/PlatformProvider.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/platform/platform_utils.rs | com/sun/tools/javac/platform/PlatformUtils.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/tree/dc_tree.rs | com/sun/tools/javac/tree/DCTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/tree/doc_comment_table.rs | com/sun/tools/javac/tree/DocCommentTable.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/tree/doc_pretty.rs | com/sun/tools/javac/tree/DocPretty.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/tree/doc_tree_maker.rs | com/sun/tools/javac/tree/DocTreeMaker.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/tree/end_pos_table.rs | com/sun/tools/javac/tree/EndPosTable.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/tree/jc_tree.rs | com/sun/tools/javac/tree/JCTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/tree/pretty.rs | com/sun/tools/javac/tree/Pretty.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/tree/tree_copier.rs | com/sun/tools/javac/tree/TreeCopier.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/tree/tree_info.rs | com/sun/tools/javac/tree/TreeInfo.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/tree/tree_maker.rs | com/sun/tools/javac/tree/TreeMaker.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/tree/tree_scanner.rs | com/sun/tools/javac/tree/TreeScanner.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/tree/tree_translator.rs | com/sun/tools/javac/tree/TreeTranslator.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/abort.rs | com/sun/tools/javac/util/Abort.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/abstract_diagnostic_formatter.rs | com/sun/tools/javac/util/AbstractDiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/abstract_log.rs | com/sun/tools/javac/util/AbstractLog.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/array_utils.rs | com/sun/tools/javac/util/ArrayUtils.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/assert.rs | com/sun/tools/javac/util/Assert.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/basic_diagnostic_formatter.rs | com/sun/tools/javac/util/BasicDiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/bits.rs | com/sun/tools/javac/util/Bits.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/byte_buffer.rs | com/sun/tools/javac/util/ByteBuffer.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/client_code_exception.rs | com/sun/tools/javac/util/ClientCodeException.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/constants.rs | com/sun/tools/javac/util/Constants.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/context.rs | com/sun/tools/javac/util/Context.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/convert.rs | com/sun/tools/javac/util/Convert.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/diagnostic_source.rs | com/sun/tools/javac/util/DiagnosticSource.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/fatal_error.rs | com/sun/tools/javac/util/FatalError.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/forwarding_diagnostic_formatter.rs | com/sun/tools/javac/util/ForwardingDiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/graph_utils.rs | com/sun/tools/javac/util/GraphUtils.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/int_hash_table.rs | com/sun/tools/javac/util/IntHashTable.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/iterators.rs | com/sun/tools/javac/util/Iterators.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/javac_messages.rs | com/sun/tools/javac/util/JavacMessages.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/jc_diagnostic.rs | com/sun/tools/javac/util/JCDiagnostic.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/layout_characters.rs | com/sun/tools/javac/util/LayoutCharacters.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/list_buffer.rs | com/sun/tools/javac/util/ListBuffer.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/log.rs | com/sun/tools/javac/util/Log.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/mandatory_warning_handler.rs | com/sun/tools/javac/util/MandatoryWarningHandler.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/module_helper.rs | com/sun/tools/javac/util/ModuleHelper.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/name.rs | com/sun/tools/javac/util/Name.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/names.rs | com/sun/tools/javac/util/Names.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/options.rs | com/sun/tools/javac/util/Options.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/pair.rs | com/sun/tools/javac/util/Pair.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/position.rs | com/sun/tools/javac/util/Position.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/propagated_exception.rs | com/sun/tools/javac/util/PropagatedException.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/raw_diagnostic_formatter.rs | com/sun/tools/javac/util/RawDiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/shared_name_table.rs | com/sun/tools/javac/util/SharedNameTable.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/string_utils.rs | com/sun/tools/javac/util/StringUtils.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/unshared_name_table.rs | com/sun/tools/javac/util/UnsharedNameTable.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-core/src/util/warner.rs | com/sun/tools/javac/util/Warner.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-floating/src/big_integer.rs | java/math/BigInteger.java + java/math/BitSieve.java + java/math/SignedMutableBigInteger.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-floating/src/digit_helper.rs | java/lang/Character.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-floating/src/fdbig_integer.rs | jdk/internal/math/FDBigInteger.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-floating/src/floating_decimal.rs | jdk/internal/math/FloatingDecimal.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-floating/src/lib.rs | jdk/internal/math/FloatingDecimal.java + FDBigInteger.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-floating/src/mutable_big_integer.rs | java/math/MutableBigInteger.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-floating/src/random.rs | java/util/Random.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/attribute_tree.rs | com/sun/source/doctree/AttributeTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/author_tree.rs | com/sun/source/doctree/AuthorTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/block_tag_tree.rs | com/sun/source/doctree/BlockTagTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/comment_tree.rs | com/sun/source/doctree/CommentTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/deprecated_tree.rs | com/sun/source/doctree/DeprecatedTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/doc_comment_tree.rs | com/sun/source/doctree/DocCommentTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/doc_root_tree.rs | com/sun/source/doctree/DocRootTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/doc_tree.rs | com/sun/source/doctree/DocTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/doc_tree_visitor.rs | com/sun/source/doctree/DocTreeVisitor.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/doc_type_tree.rs | com/sun/source/doctree/DocTypeTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/end_element_tree.rs | com/sun/source/doctree/EndElementTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/entity_tree.rs | com/sun/source/doctree/EntityTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/erroneous_tree.rs | com/sun/source/doctree/ErroneousTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/hidden_tree.rs | com/sun/source/doctree/HiddenTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/identifier_tree.rs | com/sun/source/doctree/IdentifierTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/index_tree.rs | com/sun/source/doctree/IndexTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/inherit_doc_tree.rs | com/sun/source/doctree/InheritDocTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/inline_tag_tree.rs | com/sun/source/doctree/InlineTagTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/link_tree.rs | com/sun/source/doctree/LinkTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/literal_tree.rs | com/sun/source/doctree/LiteralTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/mod.rs | com/sun/source/doctree/package-info.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/param_tree.rs | com/sun/source/doctree/ParamTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/provides_tree.rs | com/sun/source/doctree/ProvidesTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/reference_tree.rs | com/sun/source/doctree/ReferenceTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/return_tree.rs | com/sun/source/doctree/ReturnTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/see_tree.rs | com/sun/source/doctree/SeeTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/serial_data_tree.rs | com/sun/source/doctree/SerialDataTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/serial_field_tree.rs | com/sun/source/doctree/SerialFieldTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/serial_tree.rs | com/sun/source/doctree/SerialTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/since_tree.rs | com/sun/source/doctree/SinceTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/start_element_tree.rs | com/sun/source/doctree/StartElementTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/summary_tree.rs | com/sun/source/doctree/SummaryTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/system_property_tree.rs | com/sun/source/doctree/SystemPropertyTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/text_tree.rs | com/sun/source/doctree/TextTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/throws_tree.rs | com/sun/source/doctree/ThrowsTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/unknown_block_tag_tree.rs | com/sun/source/doctree/UnknownBlockTagTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/unknown_inline_tag_tree.rs | com/sun/source/doctree/UnknownInlineTagTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/uses_tree.rs | com/sun/source/doctree/UsesTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/value_tree.rs | com/sun/source/doctree/ValueTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/doctree/version_tree.rs | com/sun/source/doctree/VersionTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/lib.rs | com/sun/source (module) @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/annotated_type_tree.rs | com/sun/source/tree/AnnotatedTypeTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/annotation_tree.rs | com/sun/source/tree/AnnotationTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/array_access_tree.rs | com/sun/source/tree/ArrayAccessTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/array_type_tree.rs | com/sun/source/tree/ArrayTypeTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/assert_tree.rs | com/sun/source/tree/AssertTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/assignment_tree.rs | com/sun/source/tree/AssignmentTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/binary_tree.rs | com/sun/source/tree/BinaryTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/binding_pattern_tree.rs | com/sun/source/tree/BindingPatternTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/block_tree.rs | com/sun/source/tree/BlockTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/break_tree.rs | com/sun/source/tree/BreakTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/case_label_tree.rs | com/sun/source/tree/CaseLabelTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/case_tree.rs | com/sun/source/tree/CaseTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/catch_tree.rs | com/sun/source/tree/CatchTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/class_tree.rs | com/sun/source/tree/ClassTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/compilation_unit_tree.rs | com/sun/source/tree/CompilationUnitTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/compound_assignment_tree.rs | com/sun/source/tree/CompoundAssignmentTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/conditional_expression_tree.rs | com/sun/source/tree/ConditionalExpressionTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/continue_tree.rs | com/sun/source/tree/ContinueTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/default_case_label_tree.rs | com/sun/source/tree/DefaultCaseLabelTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/directive_tree.rs | com/sun/source/tree/DirectiveTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/do_while_loop_tree.rs | com/sun/source/tree/DoWhileLoopTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/empty_statement_tree.rs | com/sun/source/tree/EmptyStatementTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/enhanced_for_loop_tree.rs | com/sun/source/tree/EnhancedForLoopTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/erroneous_tree.rs | com/sun/source/tree/ErroneousTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/exports_tree.rs | com/sun/source/tree/ExportsTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/expression_statement_tree.rs | com/sun/source/tree/ExpressionStatementTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/expression_tree.rs | com/sun/source/tree/ExpressionTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/for_loop_tree.rs | com/sun/source/tree/ForLoopTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/guarded_pattern_tree.rs | com/sun/source/tree/GuardedPatternTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/identifier_tree.rs | com/sun/source/tree/IdentifierTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/if_tree.rs | com/sun/source/tree/IfTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/import_tree.rs | com/sun/source/tree/ImportTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/instance_of_tree.rs | com/sun/source/tree/InstanceOfTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/intersection_type_tree.rs | com/sun/source/tree/IntersectionTypeTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/labeled_statement_tree.rs | com/sun/source/tree/LabeledStatementTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/lambda_expression_tree.rs | com/sun/source/tree/LambdaExpressionTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/line_map.rs | com/sun/source/tree/LineMap.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/literal_tree.rs | com/sun/source/tree/LiteralTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/member_reference_tree.rs | com/sun/source/tree/MemberReferenceTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/member_select_tree.rs | com/sun/source/tree/MemberSelectTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/method_invocation_tree.rs | com/sun/source/tree/MethodInvocationTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/method_tree.rs | com/sun/source/tree/MethodTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/mod.rs | com/sun/source/tree/package-info.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/modifiers_tree.rs | com/sun/source/tree/ModifiersTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/module_tree.rs | com/sun/source/tree/ModuleTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/new_array_tree.rs | com/sun/source/tree/NewArrayTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/new_class_tree.rs | com/sun/source/tree/NewClassTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/opens_tree.rs | com/sun/source/tree/OpensTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/package_tree.rs | com/sun/source/tree/PackageTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/parameterized_type_tree.rs | com/sun/source/tree/ParameterizedTypeTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/parenthesized_pattern_tree.rs | com/sun/source/tree/ParenthesizedPatternTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/parenthesized_tree.rs | com/sun/source/tree/ParenthesizedTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/pattern_tree.rs | com/sun/source/tree/PatternTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/primitive_type_tree.rs | com/sun/source/tree/PrimitiveTypeTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/provides_tree.rs | com/sun/source/tree/ProvidesTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/requires_tree.rs | com/sun/source/tree/RequiresTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/return_tree.rs | com/sun/source/tree/ReturnTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/scope.rs | com/sun/source/tree/Scope.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/statement_tree.rs | com/sun/source/tree/StatementTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/switch_expression_tree.rs | com/sun/source/tree/SwitchExpressionTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/switch_tree.rs | com/sun/source/tree/SwitchTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/synchronized_tree.rs | com/sun/source/tree/SynchronizedTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/throw_tree.rs | com/sun/source/tree/ThrowTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/tree.rs | com/sun/source/tree/Tree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/tree_visitor.rs | com/sun/source/tree/TreeVisitor.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/try_tree.rs | com/sun/source/tree/TryTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/type_cast_tree.rs | com/sun/source/tree/TypeCastTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/type_parameter_tree.rs | com/sun/source/tree/TypeParameterTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/unary_tree.rs | com/sun/source/tree/UnaryTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/union_type_tree.rs | com/sun/source/tree/UnionTypeTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/uses_tree.rs | com/sun/source/tree/UsesTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/variable_tree.rs | com/sun/source/tree/VariableTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/while_loop_tree.rs | com/sun/source/tree/WhileLoopTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/wildcard_tree.rs | com/sun/source/tree/WildcardTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/tree/yield_tree.rs | com/sun/source/tree/YieldTree.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/doc_source_positions.rs | com/sun/source/util/DocSourcePositions.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/doc_tree_factory.rs | com/sun/source/util/DocTreeFactory.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/doc_tree_path.rs | com/sun/source/util/DocTreePath.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/doc_tree_scanner.rs | com/sun/source/util/DocTreeScanner.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/doc_trees.rs | com/sun/source/util/DocTrees.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/javac_task.rs | com/sun/source/util/JavacTask.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/mod.rs | com/sun/source/util/package-info.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/parameter_name_provider.rs | com/sun/source/util/ParameterNameProvider.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/plugin.rs | com/sun/source/util/Plugin.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/simple_doc_tree_visitor.rs | com/sun/source/util/SimpleDocTreeVisitor.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/simple_tree_visitor.rs | com/sun/source/util/SimpleTreeVisitor.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/source_positions.rs | com/sun/source/util/SourcePositions.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/task_event.rs | com/sun/source/util/TaskEvent.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/task_listener.rs | com/sun/source/util/TaskListener.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/tree_path.rs | com/sun/source/util/TreePath.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/tree_path_scanner.rs | com/sun/source/util/TreePathScanner.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/tree_scanner.rs | com/sun/source/util/TreeScanner.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-source/src/util/trees.rs | com/sun/source/util/Trees.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/mod.rs | javax/lang (package) @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/annotated_construct.rs | javax/lang/model/AnnotatedConstruct.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/annotation_mirror.rs | javax/lang/model/element/AnnotationMirror.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/annotation_value.rs | javax/lang/model/element/AnnotationValue.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs | javax/lang/model/element/AnnotationValueVisitor.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/element.rs | javax/lang/model/element/Element.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/element_kind.rs | javax/lang/model/element/ElementKind.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/element_visitor.rs | javax/lang/model/element/ElementVisitor.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/executable_element.rs | javax/lang/model/element/ExecutableElement.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/mod.rs | javax/lang/model/element/package-info.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/modifier.rs | javax/lang/model/element/Modifier.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/module_element.rs | javax/lang/model/element/ModuleElement.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/name.rs | javax/lang/model/element/Name.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/nesting_kind.rs | javax/lang/model/element/NestingKind.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/package_element.rs | javax/lang/model/element/PackageElement.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/parameterizable.rs | javax/lang/model/element/Parameterizable.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/qualified_nameable.rs | javax/lang/model/element/QualifiedNameable.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/record_component_element.rs | javax/lang/model/element/RecordComponentElement.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/type_element.rs | javax/lang/model/element/TypeElement.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/type_parameter_element.rs | javax/lang/model/element/TypeParameterElement.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/unknown_annotation_value_exception.rs | javax/lang/model/element/UnknownAnnotationValueException.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/unknown_directive_exception.rs | javax/lang/model/element/UnknownDirectiveException.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/unknown_element_exception.rs | javax/lang/model/element/UnknownElementException.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/element/variable_element.rs | javax/lang/model/element/VariableElement.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/mod.rs | javax/lang/model/package-info.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/source_version.rs | javax/lang/model/SourceVersion.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/array_type.rs | javax/lang/model/type/ArrayType.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/declared_type.rs | javax/lang/model/type/DeclaredType.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/error_type.rs | javax/lang/model/type/ErrorType.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/executable_type.rs | javax/lang/model/type/ExecutableType.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/intersection_type.rs | javax/lang/model/type/IntersectionType.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/mirrored_type_exception.rs | javax/lang/model/type/MirroredTypeException.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/mirrored_types_exception.rs | javax/lang/model/type/MirroredTypesException.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/mod.rs | javax/lang/model/type/package-info.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/no_type.rs | javax/lang/model/type/NoType.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/null_type.rs | javax/lang/model/type/NullType.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/primitive_type.rs | javax/lang/model/type/PrimitiveType.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/reference_type.rs | javax/lang/model/type/ReferenceType.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/type_kind.rs | javax/lang/model/type/TypeKind.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/type_mirror.rs | javax/lang/model/type/TypeMirror.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/type_variable.rs | javax/lang/model/type/TypeVariable.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/type_visitor.rs | javax/lang/model/type/TypeVisitor.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/union_type.rs | javax/lang/model/type/UnionType.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/unknown_type_exception.rs | javax/lang/model/type/UnknownTypeException.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/type_/wildcard_type.rs | javax/lang/model/type/WildcardType.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/unknown_entity_exception.rs | javax/lang/model/UnknownEntityException.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_annotation_value_visitor14.rs | javax/lang/model/util/AbstractAnnotationValueVisitor14.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_annotation_value_visitor6.rs | javax/lang/model/util/AbstractAnnotationValueVisitor6.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_annotation_value_visitor7.rs | javax/lang/model/util/AbstractAnnotationValueVisitor7.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_annotation_value_visitor8.rs | javax/lang/model/util/AbstractAnnotationValueVisitor8.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_annotation_value_visitor9.rs | javax/lang/model/util/AbstractAnnotationValueVisitor9.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_element_visitor14.rs | javax/lang/model/util/AbstractElementVisitor14.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_element_visitor6.rs | javax/lang/model/util/AbstractElementVisitor6.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_element_visitor7.rs | javax/lang/model/util/AbstractElementVisitor7.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_element_visitor8.rs | javax/lang/model/util/AbstractElementVisitor8.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_element_visitor9.rs | javax/lang/model/util/AbstractElementVisitor9.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_type_visitor14.rs | javax/lang/model/util/AbstractTypeVisitor14.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_type_visitor6.rs | javax/lang/model/util/AbstractTypeVisitor6.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_type_visitor7.rs | javax/lang/model/util/AbstractTypeVisitor7.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_type_visitor8.rs | javax/lang/model/util/AbstractTypeVisitor8.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/abstract_type_visitor9.rs | javax/lang/model/util/AbstractTypeVisitor9.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/element_filter.rs | javax/lang/model/util/ElementFilter.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/element_kind_visitor14.rs | javax/lang/model/util/ElementKindVisitor14.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/element_kind_visitor6.rs | javax/lang/model/util/ElementKindVisitor6.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/element_kind_visitor7.rs | javax/lang/model/util/ElementKindVisitor7.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/element_kind_visitor8.rs | javax/lang/model/util/ElementKindVisitor8.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/element_kind_visitor9.rs | javax/lang/model/util/ElementKindVisitor9.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/element_scanner14.rs | javax/lang/model/util/ElementScanner14.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/element_scanner6.rs | javax/lang/model/util/ElementScanner6.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/element_scanner7.rs | javax/lang/model/util/ElementScanner7.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/element_scanner8.rs | javax/lang/model/util/ElementScanner8.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/element_scanner9.rs | javax/lang/model/util/ElementScanner9.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/elements.rs | javax/lang/model/util/Elements.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/mod.rs | javax/lang/model/util/package-info.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_annotation_value_visitor14.rs | javax/lang/model/util/SimpleAnnotationValueVisitor14.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_annotation_value_visitor6.rs | javax/lang/model/util/SimpleAnnotationValueVisitor6.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_annotation_value_visitor7.rs | javax/lang/model/util/SimpleAnnotationValueVisitor7.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_annotation_value_visitor8.rs | javax/lang/model/util/SimpleAnnotationValueVisitor8.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_annotation_value_visitor9.rs | javax/lang/model/util/SimpleAnnotationValueVisitor9.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_element_visitor14.rs | javax/lang/model/util/SimpleElementVisitor14.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_element_visitor6.rs | javax/lang/model/util/SimpleElementVisitor6.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_element_visitor7.rs | javax/lang/model/util/SimpleElementVisitor7.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_element_visitor8.rs | javax/lang/model/util/SimpleElementVisitor8.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_element_visitor9.rs | javax/lang/model/util/SimpleElementVisitor9.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_type_visitor14.rs | javax/lang/model/util/SimpleTypeVisitor14.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_type_visitor6.rs | javax/lang/model/util/SimpleTypeVisitor6.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_type_visitor7.rs | javax/lang/model/util/SimpleTypeVisitor7.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_type_visitor8.rs | javax/lang/model/util/SimpleTypeVisitor8.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/simple_type_visitor9.rs | javax/lang/model/util/SimpleTypeVisitor9.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/type_kind_visitor14.rs | javax/lang/model/util/TypeKindVisitor14.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/type_kind_visitor6.rs | javax/lang/model/util/TypeKindVisitor6.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/type_kind_visitor7.rs | javax/lang/model/util/TypeKindVisitor7.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/type_kind_visitor8.rs | javax/lang/model/util/TypeKindVisitor8.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/type_kind_visitor9.rs | javax/lang/model/util/TypeKindVisitor9.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lang/model/util/types.rs | javax/lang/model/util/Types.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/lib.rs | java.compiler/share/classes/javax/tools (package) @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/diagnostic.rs | javax/tools/Diagnostic.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/diagnostic_collector.rs | javax/tools/DiagnosticCollector.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/diagnostic_listener.rs | javax/tools/DiagnosticListener.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/documentation_tool.rs | javax/tools/DocumentationTool.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/file_object.rs | javax/tools/FileObject.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/forwarding_file_object.rs | javax/tools/ForwardingFileObject.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/forwarding_java_file_manager.rs | javax/tools/ForwardingJavaFileManager.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/forwarding_java_file_object.rs | javax/tools/ForwardingJavaFileObject.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/java_compiler.rs | javax/tools/JavaCompiler.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/java_file_manager.rs | javax/tools/JavaFileManager.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/java_file_object.rs | javax/tools/JavaFileObject.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/mod.rs | javax/tools/package-info.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/option_checker.rs | javax/tools/OptionChecker.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/simple_java_file_object.rs | javax/tools/SimpleJavaFileObject.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/standard_java_file_manager.rs | javax/tools/StandardJavaFileManager.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/standard_location.rs | javax/tools/StandardLocation.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/tool.rs | javax/tools/Tool.java @ 982d53c (jdk-17.0.19-ga) |
-| crates/javac-tools/src/tools/tool_provider.rs | javax/tools/ToolProvider.java @ 982d53c (jdk-17.0.19-ga) |
+| Rust file                                                                       | Upstream                                                                                                                                        |
+|---------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| crates/javac-core/src/api/diagnostic_formatter.rs                               | com/sun/tools/javac/api/DiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga)                                                                     |
+| crates/javac-core/src/api/formattable.rs                                        | com/sun/tools/javac/api/Formattable.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-core/src/api/messages.rs                                           | com/sun/tools/javac/api/Messages.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-core/src/code/attribute.rs                                         | com/sun/tools/javac/code/Attribute.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-core/src/code/bound_kind.rs                                        | com/sun/tools/javac/code/BoundKind.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-core/src/code/class_finder.rs                                      | com/sun/tools/javac/code/ClassFinder.java @ 982d53c (jdk-17.0.19-ga) Gap registration (method-level audit of ClassFinder.java):                 |
+| crates/javac-core/src/code/deferred_completion_failure_handler.rs               | com/sun/tools/javac/code/DeferredCompletionFailureHandler.java @ 982d53c (jdk-17.0.19-ga)                                                       |
+| crates/javac-core/src/code/deferred_lint_handler.rs                             | com/sun/tools/javac/code/DeferredLintHandler.java @ 982d53c (jdk-17.0.19-ga)                                                                    |
+| crates/javac-core/src/code/dependencies.rs                                      | com/sun/tools/javac/util/Dependencies.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-core/src/code/directive.rs                                         | com/sun/tools/javac/code/Directive.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-core/src/code/flags.rs                                             | com/sun/tools/javac/code/Flags.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-core/src/code/kinds.rs                                             | com/sun/tools/javac/code/Kinds.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-core/src/code/lint.rs                                              | com/sun/tools/javac/code/Lint.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-core/src/code/missing_info_handler.rs                              | com/sun/tools/javac/code/MissingInfoHandler.java @ 982d53c (jdk-17.0.19-ga)                                                                     |
+| crates/javac-core/src/code/module_finder.rs                                     | com/sun/tools/javac/code/ModuleFinder.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-core/src/code/preview.rs                                           | com/sun/tools/javac/code/Preview.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-core/src/code/printer.rs                                           | com/sun/tools/javac/code/Printer.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-core/src/code/scope.rs                                             | com/sun/tools/javac/code/Scope.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-core/src/code/source.rs                                            | com/sun/tools/javac/code/Source.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-core/src/code/symbol.rs                                            | com/sun/tools/javac/code/Symbol.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-core/src/code/symbol_metadata.rs                                   | com/sun/tools/javac/code/SymbolMetadata.java @ 982d53c (jdk-17.0.19-ga)                                                                         |
+| crates/javac-core/src/code/symtab.rs                                            | com/sun/tools/javac/code/Symtab.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-core/src/code/target_type.rs                                       | com/sun/tools/javac/code/TargetType.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-core/src/code/type_.rs                                             | com/sun/tools/javac/code/Type.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-core/src/code/type_annotation_position.rs                          | com/sun/tools/javac/code/TypeAnnotationPosition.java @ 982d53c (jdk-17.0.19-ga)                                                                 |
+| crates/javac-core/src/code/type_annotations.rs                                  | com/sun/tools/javac/code/TypeAnnotations.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-core/src/code/type_metadata.rs                                     | com/sun/tools/javac/code/TypeMetadata.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-core/src/code/type_tag.rs                                          | com/sun/tools/javac/code/TypeTag.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-core/src/code/types.rs                                             | com/sun/tools/javac/code/Types.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-core/src/comp/analyzer.rs                                          | com/sun/tools/javac/comp/Analyzer.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-core/src/comp/annotate.rs                                          | com/sun/tools/javac/comp/Annotate.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-core/src/comp/argument_attr.rs                                     | com/sun/tools/javac/comp/ArgumentAttr.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-core/src/comp/attr.rs                                              | com/sun/tools/javac/comp/Attr.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-core/src/comp/attr_context.rs                                      | com/sun/tools/javac/comp/AttrContext.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-core/src/comp/attr_recover.rs                                      | com/sun/tools/javac/comp/AttrRecover.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-core/src/comp/check.rs                                             | com/sun/tools/javac/comp/Check.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-core/src/comp/compile_states.rs                                    | com/sun/tools/javac/comp/CompileStates.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-core/src/comp/const_fold.rs                                        | com/sun/tools/javac/comp/ConstFold.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-core/src/comp/deferred_attr.rs                                     | com/sun/tools/javac/comp/DeferredAttr.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-core/src/comp/enter.rs                                             | com/sun/tools/javac/comp/Enter.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-core/src/comp/env.rs                                               | com/sun/tools/javac/comp/Env.java @ 982d53c (jdk-17.0.19-ga)                                                                                    |
+| crates/javac-core/src/comp/flow.rs                                              | com/sun/tools/javac/comp/Flow.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-core/src/comp/lambda_to_method.rs                                  | com/sun/tools/javac/comp/LambdaToMethod.java @ 982d53c (jdk-17.0.19-ga)                                                                         |
+| crates/javac-core/src/comp/lower.rs                                             | com/sun/tools/javac/comp/Lower.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-core/src/comp/match_bindings.rs                                    | com/sun/tools/javac/comp/MatchBindingsComputer.java @ 982d53c                                                                                   |
+| crates/javac-core/src/comp/member_enter.rs                                      | com/sun/tools/javac/comp/MemberEnter.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-core/src/comp/modules.rs                                           | com/sun/tools/javac/comp/Modules.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-core/src/comp/operators.rs                                         | com/sun/tools/javac/comp/Operators.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-core/src/comp/resolve.rs                                           | com/sun/tools/javac/comp/Resolve.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-core/src/comp/trans_patterns.rs                                    | com/sun/tools/javac/comp/TransPatterns.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-core/src/comp/trans_types.rs                                       | com/sun/tools/javac/comp/TransTypes.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-core/src/comp/tree_differ.rs                                       | com/sun/tools/javac/comp/TreeDiffer.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-core/src/comp/tree_hasher.rs                                       | com/sun/tools/javac/comp/TreeHasher.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-core/src/comp/type_enter.rs                                        | com/sun/tools/javac/comp/TypeEnter.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-core/src/comp/type_envs.rs                                         | com/sun/tools/javac/comp/TypeEnvs.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-core/src/file/base_file_manager.rs                                 | com/sun/tools/javac/file/BaseFileManager.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-core/src/file/cache_fs_info.rs                                     | com/sun/tools/javac/file/CacheFSInfo.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-core/src/file/fs_info.rs                                           | com/sun/tools/javac/file/FSInfo.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-core/src/file/javac_file_manager.rs                                | com/sun/tools/javac/file/JavacFileManager.java @ 982d53c (jdk-17.0.19-ga)                                                                       |
+| crates/javac-core/src/file/jrt_index.rs                                         | com/sun/tools/javac/file/JRTIndex.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-core/src/file/locations.rs                                         | com/sun/tools/javac/file/Locations.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-core/src/file/path_file_object.rs                                  | com/sun/tools/javac/file/PathFileObject.java @ 982d53c (jdk-17.0.19-ga)                                                                         |
+| crates/javac-core/src/file/relative_path.rs                                     | com/sun/tools/javac/file/RelativePath.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-core/src/jvm/byte_codes.rs                                         | com/sun/tools/javac/jvm/ByteCodes.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-core/src/jvm/class_file.rs                                         | com/sun/tools/javac/jvm/ClassFile.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-core/src/jvm/class_reader.rs                                       | com/sun/tools/javac/jvm/ClassReader.java @ 982d53c (jdk-17.0.19-ga) Gap registration (method-level audit of ClassReader.java):                  |
+| crates/javac-core/src/jvm/jni_writer.rs                                         | com/sun/tools/javac/jvm/JNIWriter.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-core/src/jvm/module_name_reader.rs                                 | com/sun/tools/javac/jvm/ModuleNameReader.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-core/src/jvm/pool_constant.rs                                      | com/sun/tools/javac/jvm/PoolConstant.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-core/src/jvm/pool_reader.rs                                        | com/sun/tools/javac/jvm/PoolReader.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-core/src/jvm/profile.rs                                            | com/sun/tools/javac/jvm/Profile.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-core/src/jvm/target.rs                                             | com/sun/tools/javac/jvm/Target.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-core/src/main/option.rs                                            | com/sun/tools/javac/main/Option.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-core/src/main/option_helper.rs                                     | com/sun/tools/javac/main/OptionHelper.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-core/src/model/annotation_mirrors.rs                               | javax/lang/model (AnnotatedConstruct.getAnnotationMirrors) and the javax.lang.model mirror objects of com.sun.tools.javac.model.JavacElements / |
+| crates/javac-core/src/model/annotation_proxy_maker.rs                           | com/sun/tools/javac/model/AnnotationProxyMaker.java @ 982d53c (jdk-17.0.19-ga)                                                                  |
+| crates/javac-core/src/model/symbol_annotations.rs                               | com/sun/tools/javac/code/AnnoConstruct.java and the annotated API of com/sun/tools/javac/code/Symbol.java @ 982d53c (jdk-17.0.19-ga)            |
+| crates/javac-core/src/parser/doc_comment_parser.rs                              | com/sun/tools/javac/parser/DocCommentParser.java @ 982d53c (jdk-17.0.19-ga)                                                                     |
+| crates/javac-core/src/parser/java_tokenizer.rs                                  | com/sun/tools/javac/parser/JavaTokenizer.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-core/src/parser/javac_parser.rs                                    | com/sun/tools/javac/parser/JavacParser.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-core/src/parser/javadoc_tokenizer.rs                               | com/sun/tools/javac/parser/JavadocTokenizer.java @ 982d53c (jdk-17.0.19-ga)                                                                     |
+| crates/javac-core/src/parser/lazy_doc_comment_table.rs                          | com/sun/tools/javac/parser/LazyDocCommentTable.java @ 982d53c (jdk-17.0.19-ga)                                                                  |
+| crates/javac-core/src/parser/lexer.rs                                           | com/sun/tools/javac/parser/Lexer.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-core/src/parser/parser.rs                                          | com/sun/tools/javac/parser/Parser.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-core/src/parser/parser_factory.rs                                  | com/sun/tools/javac/parser/ParserFactory.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-core/src/parser/reference_parser.rs                                | com/sun/tools/javac/parser/ReferenceParser.java @ 982d53c (jdk-17.0.19-ga)                                                                      |
+| crates/javac-core/src/parser/scanner.rs                                         | com/sun/tools/javac/parser/Scanner.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-core/src/parser/scanner_factory.rs                                 | com/sun/tools/javac/parser/ScannerFactory.java @ 982d53c (jdk-17.0.19-ga)                                                                       |
+| crates/javac-core/src/parser/text_block_support.rs                              | com/sun/tools/javac/parser/TextBlockSupport.java @ 982d53c (jdk-17.0.19-ga)                                                                     |
+| crates/javac-core/src/parser/tokens.rs                                          | com/sun/tools/javac/parser/Tokens.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-core/src/parser/unicode_reader.rs                                  | com/sun/tools/javac/parser/UnicodeReader.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-core/src/platform/ct_sym_java_file_manager.rs                      | com/sun/tools/javac/platform/JDKPlatformProvider.java @ 982d53c (jdk-17.0.19-ga)                                                                |
+| crates/javac-core/src/platform/jdk_platform_provider.rs                         | com/sun/tools/javac/platform/JDKPlatformProvider.java @ 982d53c (jdk-17.0.19-ga)                                                                |
+| crates/javac-core/src/platform/platform_description.rs                          | com/sun/tools/javac/platform/PlatformDescription.java @ 982d53c (jdk-17.0.19-ga)                                                                |
+| crates/javac-core/src/platform/platform_provider.rs                             | com/sun/tools/javac/platform/PlatformProvider.java @ 982d53c (jdk-17.0.19-ga)                                                                   |
+| crates/javac-core/src/platform/platform_utils.rs                                | com/sun/tools/javac/platform/PlatformUtils.java @ 982d53c (jdk-17.0.19-ga)                                                                      |
+| crates/javac-core/src/tree/dc_tree.rs                                           | com/sun/tools/javac/tree/DCTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-core/src/tree/doc_comment_table.rs                                 | com/sun/tools/javac/tree/DocCommentTable.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-core/src/tree/doc_pretty.rs                                        | com/sun/tools/javac/tree/DocPretty.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-core/src/tree/doc_tree_maker.rs                                    | com/sun/tools/javac/tree/DocTreeMaker.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-core/src/tree/end_pos_table.rs                                     | com/sun/tools/javac/tree/EndPosTable.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-core/src/tree/jc_tree.rs                                           | com/sun/tools/javac/tree/JCTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-core/src/tree/pretty.rs                                            | com/sun/tools/javac/tree/Pretty.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-core/src/tree/tree_copier.rs                                       | com/sun/tools/javac/tree/TreeCopier.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-core/src/tree/tree_info.rs                                         | com/sun/tools/javac/tree/TreeInfo.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-core/src/tree/tree_maker.rs                                        | com/sun/tools/javac/tree/TreeMaker.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-core/src/tree/tree_scanner.rs                                      | com/sun/tools/javac/tree/TreeScanner.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-core/src/tree/tree_translator.rs                                   | com/sun/tools/javac/tree/TreeTranslator.java @ 982d53c (jdk-17.0.19-ga)                                                                         |
+| crates/javac-core/src/util/abort.rs                                             | com/sun/tools/javac/util/Abort.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-core/src/util/abstract_diagnostic_formatter.rs                     | com/sun/tools/javac/util/AbstractDiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga)                                                            |
+| crates/javac-core/src/util/abstract_log.rs                                      | com/sun/tools/javac/util/AbstractLog.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-core/src/util/array_utils.rs                                       | com/sun/tools/javac/util/ArrayUtils.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-core/src/util/assert.rs                                            | com/sun/tools/javac/util/Assert.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-core/src/util/basic_diagnostic_formatter.rs                        | com/sun/tools/javac/util/BasicDiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga)                                                               |
+| crates/javac-core/src/util/bits.rs                                              | com/sun/tools/javac/util/Bits.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-core/src/util/byte_buffer.rs                                       | com/sun/tools/javac/util/ByteBuffer.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-core/src/util/client_code_exception.rs                             | com/sun/tools/javac/util/ClientCodeException.java @ 982d53c (jdk-17.0.19-ga)                                                                    |
+| crates/javac-core/src/util/constants.rs                                         | com/sun/tools/javac/util/Constants.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-core/src/util/context.rs                                           | com/sun/tools/javac/util/Context.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-core/src/util/convert.rs                                           | com/sun/tools/javac/util/Convert.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-core/src/util/diagnostic_source.rs                                 | com/sun/tools/javac/util/DiagnosticSource.java @ 982d53c (jdk-17.0.19-ga)                                                                       |
+| crates/javac-core/src/util/fatal_error.rs                                       | com/sun/tools/javac/util/FatalError.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-core/src/util/forwarding_diagnostic_formatter.rs                   | com/sun/tools/javac/util/ForwardingDiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga)                                                          |
+| crates/javac-core/src/util/graph_utils.rs                                       | com/sun/tools/javac/util/GraphUtils.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-core/src/util/int_hash_table.rs                                    | com/sun/tools/javac/util/IntHashTable.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-core/src/util/iterators.rs                                         | com/sun/tools/javac/util/Iterators.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-core/src/util/javac_messages.rs                                    | com/sun/tools/javac/util/JavacMessages.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-core/src/util/jc_diagnostic.rs                                     | com/sun/tools/javac/util/JCDiagnostic.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-core/src/util/layout_characters.rs                                 | com/sun/tools/javac/util/LayoutCharacters.java @ 982d53c (jdk-17.0.19-ga)                                                                       |
+| crates/javac-core/src/util/list_buffer.rs                                       | com/sun/tools/javac/util/ListBuffer.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-core/src/util/log.rs                                               | com/sun/tools/javac/util/Log.java @ 982d53c (jdk-17.0.19-ga)                                                                                    |
+| crates/javac-core/src/util/mandatory_warning_handler.rs                         | com/sun/tools/javac/util/MandatoryWarningHandler.java @ 982d53c (jdk-17.0.19-ga)                                                                |
+| crates/javac-core/src/util/module_helper.rs                                     | com/sun/tools/javac/util/ModuleHelper.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-core/src/util/name.rs                                              | com/sun/tools/javac/util/Name.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-core/src/util/names.rs                                             | com/sun/tools/javac/util/Names.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-core/src/util/options.rs                                           | com/sun/tools/javac/util/Options.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-core/src/util/pair.rs                                              | com/sun/tools/javac/util/Pair.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-core/src/util/position.rs                                          | com/sun/tools/javac/util/Position.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-core/src/util/propagated_exception.rs                              | com/sun/tools/javac/util/PropagatedException.java @ 982d53c (jdk-17.0.19-ga)                                                                    |
+| crates/javac-core/src/util/raw_diagnostic_formatter.rs                          | com/sun/tools/javac/util/RawDiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga)                                                                 |
+| crates/javac-core/src/util/shared_name_table.rs                                 | com/sun/tools/javac/util/SharedNameTable.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-core/src/util/string_utils.rs                                      | com/sun/tools/javac/util/StringUtils.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-core/src/util/unshared_name_table.rs                               | com/sun/tools/javac/util/UnsharedNameTable.java @ 982d53c (jdk-17.0.19-ga)                                                                      |
+| crates/javac-core/src/util/warner.rs                                            | com/sun/tools/javac/util/Warner.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-floating/src/big_integer.rs                                        | java/math/BigInteger.java + java/math/BitSieve.java + java/math/SignedMutableBigInteger.java @ 982d53c (jdk-17.0.19-ga)                         |
+| crates/javac-floating/src/digit_helper.rs                                       | java/lang/Character.java @ 982d53c (jdk-17.0.19-ga)                                                                                             |
+| crates/javac-floating/src/fdbig_integer.rs                                      | jdk/internal/math/FDBigInteger.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-floating/src/floating_decimal.rs                                   | jdk/internal/math/FloatingDecimal.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-floating/src/lib.rs                                                | jdk/internal/math/FloatingDecimal.java + FDBigInteger.java @ 982d53c (jdk-17.0.19-ga)                                                           |
+| crates/javac-floating/src/mutable_big_integer.rs                                | java/math/MutableBigInteger.java @ 982d53c (jdk-17.0.19-ga)                                                                                     |
+| crates/javac-floating/src/random.rs                                             | java/util/Random.java @ 982d53c (jdk-17.0.19-ga)                                                                                                |
+| crates/javac-source/src/doctree/attribute_tree.rs                               | com/sun/source/doctree/AttributeTree.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-source/src/doctree/author_tree.rs                                  | com/sun/source/doctree/AuthorTree.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-source/src/doctree/block_tag_tree.rs                               | com/sun/source/doctree/BlockTagTree.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-source/src/doctree/comment_tree.rs                                 | com/sun/source/doctree/CommentTree.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-source/src/doctree/deprecated_tree.rs                              | com/sun/source/doctree/DeprecatedTree.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-source/src/doctree/doc_comment_tree.rs                             | com/sun/source/doctree/DocCommentTree.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-source/src/doctree/doc_root_tree.rs                                | com/sun/source/doctree/DocRootTree.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-source/src/doctree/doc_tree.rs                                     | com/sun/source/doctree/DocTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-source/src/doctree/doc_tree_visitor.rs                             | com/sun/source/doctree/DocTreeVisitor.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-source/src/doctree/doc_type_tree.rs                                | com/sun/source/doctree/DocTypeTree.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-source/src/doctree/end_element_tree.rs                             | com/sun/source/doctree/EndElementTree.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-source/src/doctree/entity_tree.rs                                  | com/sun/source/doctree/EntityTree.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-source/src/doctree/erroneous_tree.rs                               | com/sun/source/doctree/ErroneousTree.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-source/src/doctree/hidden_tree.rs                                  | com/sun/source/doctree/HiddenTree.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-source/src/doctree/identifier_tree.rs                              | com/sun/source/doctree/IdentifierTree.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-source/src/doctree/index_tree.rs                                   | com/sun/source/doctree/IndexTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/doctree/inherit_doc_tree.rs                             | com/sun/source/doctree/InheritDocTree.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-source/src/doctree/inline_tag_tree.rs                              | com/sun/source/doctree/InlineTagTree.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-source/src/doctree/link_tree.rs                                    | com/sun/source/doctree/LinkTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-source/src/doctree/literal_tree.rs                                 | com/sun/source/doctree/LiteralTree.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-source/src/doctree/mod.rs                                          | com/sun/source/doctree/package-info.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-source/src/doctree/param_tree.rs                                   | com/sun/source/doctree/ParamTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/doctree/provides_tree.rs                                | com/sun/source/doctree/ProvidesTree.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-source/src/doctree/reference_tree.rs                               | com/sun/source/doctree/ReferenceTree.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-source/src/doctree/return_tree.rs                                  | com/sun/source/doctree/ReturnTree.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-source/src/doctree/see_tree.rs                                     | com/sun/source/doctree/SeeTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-source/src/doctree/serial_data_tree.rs                             | com/sun/source/doctree/SerialDataTree.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-source/src/doctree/serial_field_tree.rs                            | com/sun/source/doctree/SerialFieldTree.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-source/src/doctree/serial_tree.rs                                  | com/sun/source/doctree/SerialTree.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-source/src/doctree/since_tree.rs                                   | com/sun/source/doctree/SinceTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/doctree/start_element_tree.rs                           | com/sun/source/doctree/StartElementTree.java @ 982d53c (jdk-17.0.19-ga)                                                                         |
+| crates/javac-source/src/doctree/summary_tree.rs                                 | com/sun/source/doctree/SummaryTree.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-source/src/doctree/system_property_tree.rs                         | com/sun/source/doctree/SystemPropertyTree.java @ 982d53c (jdk-17.0.19-ga)                                                                       |
+| crates/javac-source/src/doctree/text_tree.rs                                    | com/sun/source/doctree/TextTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-source/src/doctree/throws_tree.rs                                  | com/sun/source/doctree/ThrowsTree.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-source/src/doctree/unknown_block_tag_tree.rs                       | com/sun/source/doctree/UnknownBlockTagTree.java @ 982d53c (jdk-17.0.19-ga)                                                                      |
+| crates/javac-source/src/doctree/unknown_inline_tag_tree.rs                      | com/sun/source/doctree/UnknownInlineTagTree.java @ 982d53c (jdk-17.0.19-ga)                                                                     |
+| crates/javac-source/src/doctree/uses_tree.rs                                    | com/sun/source/doctree/UsesTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-source/src/doctree/value_tree.rs                                   | com/sun/source/doctree/ValueTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/doctree/version_tree.rs                                 | com/sun/source/doctree/VersionTree.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-source/src/lib.rs                                                  | com/sun/source (module) @ 982d53c (jdk-17.0.19-ga)                                                                                              |
+| crates/javac-source/src/tree/annotated_type_tree.rs                             | com/sun/source/tree/AnnotatedTypeTree.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-source/src/tree/annotation_tree.rs                                 | com/sun/source/tree/AnnotationTree.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-source/src/tree/array_access_tree.rs                               | com/sun/source/tree/ArrayAccessTree.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-source/src/tree/array_type_tree.rs                                 | com/sun/source/tree/ArrayTypeTree.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-source/src/tree/assert_tree.rs                                     | com/sun/source/tree/AssertTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-source/src/tree/assignment_tree.rs                                 | com/sun/source/tree/AssignmentTree.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-source/src/tree/binary_tree.rs                                     | com/sun/source/tree/BinaryTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-source/src/tree/binding_pattern_tree.rs                            | com/sun/source/tree/BindingPatternTree.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-source/src/tree/block_tree.rs                                      | com/sun/source/tree/BlockTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-source/src/tree/break_tree.rs                                      | com/sun/source/tree/BreakTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-source/src/tree/case_label_tree.rs                                 | com/sun/source/tree/CaseLabelTree.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-source/src/tree/case_tree.rs                                       | com/sun/source/tree/CaseTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                    |
+| crates/javac-source/src/tree/catch_tree.rs                                      | com/sun/source/tree/CatchTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-source/src/tree/class_tree.rs                                      | com/sun/source/tree/ClassTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-source/src/tree/compilation_unit_tree.rs                           | com/sun/source/tree/CompilationUnitTree.java @ 982d53c (jdk-17.0.19-ga)                                                                         |
+| crates/javac-source/src/tree/compound_assignment_tree.rs                        | com/sun/source/tree/CompoundAssignmentTree.java @ 982d53c (jdk-17.0.19-ga)                                                                      |
+| crates/javac-source/src/tree/conditional_expression_tree.rs                     | com/sun/source/tree/ConditionalExpressionTree.java @ 982d53c (jdk-17.0.19-ga)                                                                   |
+| crates/javac-source/src/tree/continue_tree.rs                                   | com/sun/source/tree/ContinueTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/tree/default_case_label_tree.rs                         | com/sun/source/tree/DefaultCaseLabelTree.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-source/src/tree/directive_tree.rs                                  | com/sun/source/tree/DirectiveTree.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-source/src/tree/do_while_loop_tree.rs                              | com/sun/source/tree/DoWhileLoopTree.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-source/src/tree/empty_statement_tree.rs                            | com/sun/source/tree/EmptyStatementTree.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-source/src/tree/enhanced_for_loop_tree.rs                          | com/sun/source/tree/EnhancedForLoopTree.java @ 982d53c (jdk-17.0.19-ga)                                                                         |
+| crates/javac-source/src/tree/erroneous_tree.rs                                  | com/sun/source/tree/ErroneousTree.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-source/src/tree/exports_tree.rs                                    | com/sun/source/tree/ExportsTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-source/src/tree/expression_statement_tree.rs                       | com/sun/source/tree/ExpressionStatementTree.java @ 982d53c (jdk-17.0.19-ga)                                                                     |
+| crates/javac-source/src/tree/expression_tree.rs                                 | com/sun/source/tree/ExpressionTree.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-source/src/tree/for_loop_tree.rs                                   | com/sun/source/tree/ForLoopTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-source/src/tree/guarded_pattern_tree.rs                            | com/sun/source/tree/GuardedPatternTree.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-source/src/tree/identifier_tree.rs                                 | com/sun/source/tree/IdentifierTree.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-source/src/tree/if_tree.rs                                         | com/sun/source/tree/IfTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                      |
+| crates/javac-source/src/tree/import_tree.rs                                     | com/sun/source/tree/ImportTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-source/src/tree/instance_of_tree.rs                                | com/sun/source/tree/InstanceOfTree.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-source/src/tree/intersection_type_tree.rs                          | com/sun/source/tree/IntersectionTypeTree.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-source/src/tree/labeled_statement_tree.rs                          | com/sun/source/tree/LabeledStatementTree.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-source/src/tree/lambda_expression_tree.rs                          | com/sun/source/tree/LambdaExpressionTree.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-source/src/tree/line_map.rs                                        | com/sun/source/tree/LineMap.java @ 982d53c (jdk-17.0.19-ga)                                                                                     |
+| crates/javac-source/src/tree/literal_tree.rs                                    | com/sun/source/tree/LiteralTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-source/src/tree/member_reference_tree.rs                           | com/sun/source/tree/MemberReferenceTree.java @ 982d53c (jdk-17.0.19-ga)                                                                         |
+| crates/javac-source/src/tree/member_select_tree.rs                              | com/sun/source/tree/MemberSelectTree.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-source/src/tree/method_invocation_tree.rs                          | com/sun/source/tree/MethodInvocationTree.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-source/src/tree/method_tree.rs                                     | com/sun/source/tree/MethodTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-source/src/tree/mod.rs                                             | com/sun/source/tree/package-info.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/tree/modifiers_tree.rs                                  | com/sun/source/tree/ModifiersTree.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-source/src/tree/module_tree.rs                                     | com/sun/source/tree/ModuleTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-source/src/tree/new_array_tree.rs                                  | com/sun/source/tree/NewArrayTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/tree/new_class_tree.rs                                  | com/sun/source/tree/NewClassTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/tree/opens_tree.rs                                      | com/sun/source/tree/OpensTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-source/src/tree/package_tree.rs                                    | com/sun/source/tree/PackageTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-source/src/tree/parameterized_type_tree.rs                         | com/sun/source/tree/ParameterizedTypeTree.java @ 982d53c (jdk-17.0.19-ga)                                                                       |
+| crates/javac-source/src/tree/parenthesized_pattern_tree.rs                      | com/sun/source/tree/ParenthesizedPatternTree.java @ 982d53c (jdk-17.0.19-ga)                                                                    |
+| crates/javac-source/src/tree/parenthesized_tree.rs                              | com/sun/source/tree/ParenthesizedTree.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-source/src/tree/pattern_tree.rs                                    | com/sun/source/tree/PatternTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-source/src/tree/primitive_type_tree.rs                             | com/sun/source/tree/PrimitiveTypeTree.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-source/src/tree/provides_tree.rs                                   | com/sun/source/tree/ProvidesTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/tree/requires_tree.rs                                   | com/sun/source/tree/RequiresTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/tree/return_tree.rs                                     | com/sun/source/tree/ReturnTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-source/src/tree/scope.rs                                           | com/sun/source/tree/Scope.java @ 982d53c (jdk-17.0.19-ga)                                                                                       |
+| crates/javac-source/src/tree/statement_tree.rs                                  | com/sun/source/tree/StatementTree.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-source/src/tree/switch_expression_tree.rs                          | com/sun/source/tree/SwitchExpressionTree.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-source/src/tree/switch_tree.rs                                     | com/sun/source/tree/SwitchTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-source/src/tree/synchronized_tree.rs                               | com/sun/source/tree/SynchronizedTree.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-source/src/tree/throw_tree.rs                                      | com/sun/source/tree/ThrowTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-source/src/tree/tree.rs                                            | com/sun/source/tree/Tree.java @ 982d53c (jdk-17.0.19-ga)                                                                                        |
+| crates/javac-source/src/tree/tree_visitor.rs                                    | com/sun/source/tree/TreeVisitor.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-source/src/tree/try_tree.rs                                        | com/sun/source/tree/TryTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                     |
+| crates/javac-source/src/tree/type_cast_tree.rs                                  | com/sun/source/tree/TypeCastTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/tree/type_parameter_tree.rs                             | com/sun/source/tree/TypeParameterTree.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-source/src/tree/unary_tree.rs                                      | com/sun/source/tree/UnaryTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-source/src/tree/union_type_tree.rs                                 | com/sun/source/tree/UnionTypeTree.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-source/src/tree/uses_tree.rs                                       | com/sun/source/tree/UsesTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                    |
+| crates/javac-source/src/tree/variable_tree.rs                                   | com/sun/source/tree/VariableTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/tree/while_loop_tree.rs                                 | com/sun/source/tree/WhileLoopTree.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-source/src/tree/wildcard_tree.rs                                   | com/sun/source/tree/WildcardTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/tree/yield_tree.rs                                      | com/sun/source/tree/YieldTree.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-source/src/util/doc_source_positions.rs                            | com/sun/source/util/DocSourcePositions.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-source/src/util/doc_tree_factory.rs                                | com/sun/source/util/DocTreeFactory.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-source/src/util/doc_tree_path.rs                                   | com/sun/source/util/DocTreePath.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-source/src/util/doc_tree_scanner.rs                                | com/sun/source/util/DocTreeScanner.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-source/src/util/doc_trees.rs                                       | com/sun/source/util/DocTrees.java @ 982d53c (jdk-17.0.19-ga)                                                                                    |
+| crates/javac-source/src/util/javac_task.rs                                      | com/sun/source/util/JavacTask.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-source/src/util/mod.rs                                             | com/sun/source/util/package-info.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/util/parameter_name_provider.rs                         | com/sun/source/util/ParameterNameProvider.java @ 982d53c (jdk-17.0.19-ga)                                                                       |
+| crates/javac-source/src/util/plugin.rs                                          | com/sun/source/util/Plugin.java @ 982d53c (jdk-17.0.19-ga)                                                                                      |
+| crates/javac-source/src/util/simple_doc_tree_visitor.rs                         | com/sun/source/util/SimpleDocTreeVisitor.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-source/src/util/simple_tree_visitor.rs                             | com/sun/source/util/SimpleTreeVisitor.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-source/src/util/source_positions.rs                                | com/sun/source/util/SourcePositions.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-source/src/util/task_event.rs                                      | com/sun/source/util/TaskEvent.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-source/src/util/task_listener.rs                                   | com/sun/source/util/TaskListener.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-source/src/util/tree_path.rs                                       | com/sun/source/util/TreePath.java @ 982d53c (jdk-17.0.19-ga)                                                                                    |
+| crates/javac-source/src/util/tree_path_scanner.rs                               | com/sun/source/util/TreePathScanner.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-source/src/util/tree_scanner.rs                                    | com/sun/source/util/TreeScanner.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-source/src/util/trees.rs                                           | com/sun/source/util/Trees.java @ 982d53c (jdk-17.0.19-ga)                                                                                       |
+| crates/javac-tools/src/lang/mod.rs                                              | javax/lang (package) @ 982d53c (jdk-17.0.19-ga)                                                                                                 |
+| crates/javac-tools/src/lang/model/annotated_construct.rs                        | javax/lang/model/AnnotatedConstruct.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-tools/src/lang/model/element/annotation_mirror.rs                  | javax/lang/model/element/AnnotationMirror.java @ 982d53c (jdk-17.0.19-ga)                                                                       |
+| crates/javac-tools/src/lang/model/element/annotation_value.rs                   | javax/lang/model/element/AnnotationValue.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs           | javax/lang/model/element/AnnotationValueVisitor.java @ 982d53c (jdk-17.0.19-ga)                                                                 |
+| crates/javac-tools/src/lang/model/element/element.rs                            | javax/lang/model/element/Element.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-tools/src/lang/model/element/element_kind.rs                       | javax/lang/model/element/ElementKind.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-tools/src/lang/model/element/element_visitor.rs                    | javax/lang/model/element/ElementVisitor.java @ 982d53c (jdk-17.0.19-ga)                                                                         |
+| crates/javac-tools/src/lang/model/element/executable_element.rs                 | javax/lang/model/element/ExecutableElement.java @ 982d53c (jdk-17.0.19-ga)                                                                      |
+| crates/javac-tools/src/lang/model/element/mod.rs                                | javax/lang/model/element/package-info.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-tools/src/lang/model/element/modifier.rs                           | javax/lang/model/element/Modifier.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-tools/src/lang/model/element/module_element.rs                     | javax/lang/model/element/ModuleElement.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-tools/src/lang/model/element/name.rs                               | javax/lang/model/element/Name.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-tools/src/lang/model/element/nesting_kind.rs                       | javax/lang/model/element/NestingKind.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-tools/src/lang/model/element/package_element.rs                    | javax/lang/model/element/PackageElement.java @ 982d53c (jdk-17.0.19-ga)                                                                         |
+| crates/javac-tools/src/lang/model/element/parameterizable.rs                    | javax/lang/model/element/Parameterizable.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-tools/src/lang/model/element/qualified_nameable.rs                 | javax/lang/model/element/QualifiedNameable.java @ 982d53c (jdk-17.0.19-ga)                                                                      |
+| crates/javac-tools/src/lang/model/element/record_component_element.rs           | javax/lang/model/element/RecordComponentElement.java @ 982d53c (jdk-17.0.19-ga)                                                                 |
+| crates/javac-tools/src/lang/model/element/type_element.rs                       | javax/lang/model/element/TypeElement.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-tools/src/lang/model/element/type_parameter_element.rs             | javax/lang/model/element/TypeParameterElement.java @ 982d53c (jdk-17.0.19-ga)                                                                   |
+| crates/javac-tools/src/lang/model/element/unknown_annotation_value_exception.rs | javax/lang/model/element/UnknownAnnotationValueException.java @ 982d53c (jdk-17.0.19-ga)                                                        |
+| crates/javac-tools/src/lang/model/element/unknown_directive_exception.rs        | javax/lang/model/element/UnknownDirectiveException.java @ 982d53c (jdk-17.0.19-ga)                                                              |
+| crates/javac-tools/src/lang/model/element/unknown_element_exception.rs          | javax/lang/model/element/UnknownElementException.java @ 982d53c (jdk-17.0.19-ga)                                                                |
+| crates/javac-tools/src/lang/model/element/variable_element.rs                   | javax/lang/model/element/VariableElement.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-tools/src/lang/model/mod.rs                                        | javax/lang/model/package-info.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-tools/src/lang/model/source_version.rs                             | javax/lang/model/SourceVersion.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-tools/src/lang/model/type_/array_type.rs                           | javax/lang/model/type/ArrayType.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-tools/src/lang/model/type_/declared_type.rs                        | javax/lang/model/type/DeclaredType.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-tools/src/lang/model/type_/error_type.rs                           | javax/lang/model/type/ErrorType.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-tools/src/lang/model/type_/executable_type.rs                      | javax/lang/model/type/ExecutableType.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-tools/src/lang/model/type_/intersection_type.rs                    | javax/lang/model/type/IntersectionType.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-tools/src/lang/model/type_/mirrored_type_exception.rs              | javax/lang/model/type/MirroredTypeException.java @ 982d53c (jdk-17.0.19-ga)                                                                     |
+| crates/javac-tools/src/lang/model/type_/mirrored_types_exception.rs             | javax/lang/model/type/MirroredTypesException.java @ 982d53c (jdk-17.0.19-ga)                                                                    |
+| crates/javac-tools/src/lang/model/type_/mod.rs                                  | javax/lang/model/type/package-info.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-tools/src/lang/model/type_/no_type.rs                              | javax/lang/model/type/NoType.java @ 982d53c (jdk-17.0.19-ga)                                                                                    |
+| crates/javac-tools/src/lang/model/type_/null_type.rs                            | javax/lang/model/type/NullType.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-tools/src/lang/model/type_/primitive_type.rs                       | javax/lang/model/type/PrimitiveType.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-tools/src/lang/model/type_/reference_type.rs                       | javax/lang/model/type/ReferenceType.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-tools/src/lang/model/type_/type_kind.rs                            | javax/lang/model/type/TypeKind.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-tools/src/lang/model/type_/type_mirror.rs                          | javax/lang/model/type/TypeMirror.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-tools/src/lang/model/type_/type_variable.rs                        | javax/lang/model/type/TypeVariable.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-tools/src/lang/model/type_/type_visitor.rs                         | javax/lang/model/type/TypeVisitor.java @ 982d53c (jdk-17.0.19-ga)                                                                               |
+| crates/javac-tools/src/lang/model/type_/union_type.rs                           | javax/lang/model/type/UnionType.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-tools/src/lang/model/type_/unknown_type_exception.rs               | javax/lang/model/type/UnknownTypeException.java @ 982d53c (jdk-17.0.19-ga)                                                                      |
+| crates/javac-tools/src/lang/model/type_/wildcard_type.rs                        | javax/lang/model/type/WildcardType.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-tools/src/lang/model/unknown_entity_exception.rs                   | javax/lang/model/UnknownEntityException.java @ 982d53c (jdk-17.0.19-ga)                                                                         |
+| crates/javac-tools/src/lang/model/util/abstract_annotation_value_visitor14.rs   | javax/lang/model/util/AbstractAnnotationValueVisitor14.java @ 982d53c (jdk-17.0.19-ga)                                                          |
+| crates/javac-tools/src/lang/model/util/abstract_annotation_value_visitor6.rs    | javax/lang/model/util/AbstractAnnotationValueVisitor6.java @ 982d53c (jdk-17.0.19-ga)                                                           |
+| crates/javac-tools/src/lang/model/util/abstract_annotation_value_visitor7.rs    | javax/lang/model/util/AbstractAnnotationValueVisitor7.java @ 982d53c (jdk-17.0.19-ga)                                                           |
+| crates/javac-tools/src/lang/model/util/abstract_annotation_value_visitor8.rs    | javax/lang/model/util/AbstractAnnotationValueVisitor8.java @ 982d53c (jdk-17.0.19-ga)                                                           |
+| crates/javac-tools/src/lang/model/util/abstract_annotation_value_visitor9.rs    | javax/lang/model/util/AbstractAnnotationValueVisitor9.java @ 982d53c (jdk-17.0.19-ga)                                                           |
+| crates/javac-tools/src/lang/model/util/abstract_element_visitor14.rs            | javax/lang/model/util/AbstractElementVisitor14.java @ 982d53c (jdk-17.0.19-ga)                                                                  |
+| crates/javac-tools/src/lang/model/util/abstract_element_visitor6.rs             | javax/lang/model/util/AbstractElementVisitor6.java @ 982d53c (jdk-17.0.19-ga)                                                                   |
+| crates/javac-tools/src/lang/model/util/abstract_element_visitor7.rs             | javax/lang/model/util/AbstractElementVisitor7.java @ 982d53c (jdk-17.0.19-ga)                                                                   |
+| crates/javac-tools/src/lang/model/util/abstract_element_visitor8.rs             | javax/lang/model/util/AbstractElementVisitor8.java @ 982d53c (jdk-17.0.19-ga)                                                                   |
+| crates/javac-tools/src/lang/model/util/abstract_element_visitor9.rs             | javax/lang/model/util/AbstractElementVisitor9.java @ 982d53c (jdk-17.0.19-ga)                                                                   |
+| crates/javac-tools/src/lang/model/util/abstract_type_visitor14.rs               | javax/lang/model/util/AbstractTypeVisitor14.java @ 982d53c (jdk-17.0.19-ga)                                                                     |
+| crates/javac-tools/src/lang/model/util/abstract_type_visitor6.rs                | javax/lang/model/util/AbstractTypeVisitor6.java @ 982d53c (jdk-17.0.19-ga)                                                                      |
+| crates/javac-tools/src/lang/model/util/abstract_type_visitor7.rs                | javax/lang/model/util/AbstractTypeVisitor7.java @ 982d53c (jdk-17.0.19-ga)                                                                      |
+| crates/javac-tools/src/lang/model/util/abstract_type_visitor8.rs                | javax/lang/model/util/AbstractTypeVisitor8.java @ 982d53c (jdk-17.0.19-ga)                                                                      |
+| crates/javac-tools/src/lang/model/util/abstract_type_visitor9.rs                | javax/lang/model/util/AbstractTypeVisitor9.java @ 982d53c (jdk-17.0.19-ga)                                                                      |
+| crates/javac-tools/src/lang/model/util/element_filter.rs                        | javax/lang/model/util/ElementFilter.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-tools/src/lang/model/util/element_kind_visitor14.rs                | javax/lang/model/util/ElementKindVisitor14.java @ 982d53c (jdk-17.0.19-ga)                                                                      |
+| crates/javac-tools/src/lang/model/util/element_kind_visitor6.rs                 | javax/lang/model/util/ElementKindVisitor6.java @ 982d53c (jdk-17.0.19-ga)                                                                       |
+| crates/javac-tools/src/lang/model/util/element_kind_visitor7.rs                 | javax/lang/model/util/ElementKindVisitor7.java @ 982d53c (jdk-17.0.19-ga)                                                                       |
+| crates/javac-tools/src/lang/model/util/element_kind_visitor8.rs                 | javax/lang/model/util/ElementKindVisitor8.java @ 982d53c (jdk-17.0.19-ga)                                                                       |
+| crates/javac-tools/src/lang/model/util/element_kind_visitor9.rs                 | javax/lang/model/util/ElementKindVisitor9.java @ 982d53c (jdk-17.0.19-ga)                                                                       |
+| crates/javac-tools/src/lang/model/util/element_scanner14.rs                     | javax/lang/model/util/ElementScanner14.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-tools/src/lang/model/util/element_scanner6.rs                      | javax/lang/model/util/ElementScanner6.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-tools/src/lang/model/util/element_scanner7.rs                      | javax/lang/model/util/ElementScanner7.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-tools/src/lang/model/util/element_scanner8.rs                      | javax/lang/model/util/ElementScanner8.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-tools/src/lang/model/util/element_scanner9.rs                      | javax/lang/model/util/ElementScanner9.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-tools/src/lang/model/util/elements.rs                              | javax/lang/model/util/Elements.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-tools/src/lang/model/util/mod.rs                                   | javax/lang/model/util/package-info.java @ 982d53c (jdk-17.0.19-ga)                                                                              |
+| crates/javac-tools/src/lang/model/util/simple_annotation_value_visitor14.rs     | javax/lang/model/util/SimpleAnnotationValueVisitor14.java @ 982d53c (jdk-17.0.19-ga)                                                            |
+| crates/javac-tools/src/lang/model/util/simple_annotation_value_visitor6.rs      | javax/lang/model/util/SimpleAnnotationValueVisitor6.java @ 982d53c (jdk-17.0.19-ga)                                                             |
+| crates/javac-tools/src/lang/model/util/simple_annotation_value_visitor7.rs      | javax/lang/model/util/SimpleAnnotationValueVisitor7.java @ 982d53c (jdk-17.0.19-ga)                                                             |
+| crates/javac-tools/src/lang/model/util/simple_annotation_value_visitor8.rs      | javax/lang/model/util/SimpleAnnotationValueVisitor8.java @ 982d53c (jdk-17.0.19-ga)                                                             |
+| crates/javac-tools/src/lang/model/util/simple_annotation_value_visitor9.rs      | javax/lang/model/util/SimpleAnnotationValueVisitor9.java @ 982d53c (jdk-17.0.19-ga)                                                             |
+| crates/javac-tools/src/lang/model/util/simple_element_visitor14.rs              | javax/lang/model/util/SimpleElementVisitor14.java @ 982d53c (jdk-17.0.19-ga)                                                                    |
+| crates/javac-tools/src/lang/model/util/simple_element_visitor6.rs               | javax/lang/model/util/SimpleElementVisitor6.java @ 982d53c (jdk-17.0.19-ga)                                                                     |
+| crates/javac-tools/src/lang/model/util/simple_element_visitor7.rs               | javax/lang/model/util/SimpleElementVisitor7.java @ 982d53c (jdk-17.0.19-ga)                                                                     |
+| crates/javac-tools/src/lang/model/util/simple_element_visitor8.rs               | javax/lang/model/util/SimpleElementVisitor8.java @ 982d53c (jdk-17.0.19-ga)                                                                     |
+| crates/javac-tools/src/lang/model/util/simple_element_visitor9.rs               | javax/lang/model/util/SimpleElementVisitor9.java @ 982d53c (jdk-17.0.19-ga)                                                                     |
+| crates/javac-tools/src/lang/model/util/simple_type_visitor14.rs                 | javax/lang/model/util/SimpleTypeVisitor14.java @ 982d53c (jdk-17.0.19-ga)                                                                       |
+| crates/javac-tools/src/lang/model/util/simple_type_visitor6.rs                  | javax/lang/model/util/SimpleTypeVisitor6.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-tools/src/lang/model/util/simple_type_visitor7.rs                  | javax/lang/model/util/SimpleTypeVisitor7.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-tools/src/lang/model/util/simple_type_visitor8.rs                  | javax/lang/model/util/SimpleTypeVisitor8.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-tools/src/lang/model/util/simple_type_visitor9.rs                  | javax/lang/model/util/SimpleTypeVisitor9.java @ 982d53c (jdk-17.0.19-ga)                                                                        |
+| crates/javac-tools/src/lang/model/util/type_kind_visitor14.rs                   | javax/lang/model/util/TypeKindVisitor14.java @ 982d53c (jdk-17.0.19-ga)                                                                         |
+| crates/javac-tools/src/lang/model/util/type_kind_visitor6.rs                    | javax/lang/model/util/TypeKindVisitor6.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-tools/src/lang/model/util/type_kind_visitor7.rs                    | javax/lang/model/util/TypeKindVisitor7.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-tools/src/lang/model/util/type_kind_visitor8.rs                    | javax/lang/model/util/TypeKindVisitor8.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-tools/src/lang/model/util/type_kind_visitor9.rs                    | javax/lang/model/util/TypeKindVisitor9.java @ 982d53c (jdk-17.0.19-ga)                                                                          |
+| crates/javac-tools/src/lang/model/util/types.rs                                 | javax/lang/model/util/Types.java @ 982d53c (jdk-17.0.19-ga)                                                                                     |
+| crates/javac-tools/src/lib.rs                                                   | java.compiler/share/classes/javax/tools (package) @ 982d53c (jdk-17.0.19-ga)                                                                    |
+| crates/javac-tools/src/tools/diagnostic.rs                                      | javax/tools/Diagnostic.java @ 982d53c (jdk-17.0.19-ga)                                                                                          |
+| crates/javac-tools/src/tools/diagnostic_collector.rs                            | javax/tools/DiagnosticCollector.java @ 982d53c (jdk-17.0.19-ga)                                                                                 |
+| crates/javac-tools/src/tools/diagnostic_listener.rs                             | javax/tools/DiagnosticListener.java @ 982d53c (jdk-17.0.19-ga)                                                                                  |
+| crates/javac-tools/src/tools/documentation_tool.rs                              | javax/tools/DocumentationTool.java @ 982d53c (jdk-17.0.19-ga)                                                                                   |
+| crates/javac-tools/src/tools/file_object.rs                                     | javax/tools/FileObject.java @ 982d53c (jdk-17.0.19-ga)                                                                                          |
+| crates/javac-tools/src/tools/forwarding_file_object.rs                          | javax/tools/ForwardingFileObject.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-tools/src/tools/forwarding_java_file_manager.rs                    | javax/tools/ForwardingJavaFileManager.java @ 982d53c (jdk-17.0.19-ga)                                                                           |
+| crates/javac-tools/src/tools/forwarding_java_file_object.rs                     | javax/tools/ForwardingJavaFileObject.java @ 982d53c (jdk-17.0.19-ga)                                                                            |
+| crates/javac-tools/src/tools/java_compiler.rs                                   | javax/tools/JavaCompiler.java @ 982d53c (jdk-17.0.19-ga)                                                                                        |
+| crates/javac-tools/src/tools/java_file_manager.rs                               | javax/tools/JavaFileManager.java @ 982d53c (jdk-17.0.19-ga)                                                                                     |
+| crates/javac-tools/src/tools/java_file_object.rs                                | javax/tools/JavaFileObject.java @ 982d53c (jdk-17.0.19-ga)                                                                                      |
+| crates/javac-tools/src/tools/mod.rs                                             | javax/tools/package-info.java @ 982d53c (jdk-17.0.19-ga)                                                                                        |
+| crates/javac-tools/src/tools/option_checker.rs                                  | javax/tools/OptionChecker.java @ 982d53c (jdk-17.0.19-ga)                                                                                       |
+| crates/javac-tools/src/tools/simple_java_file_object.rs                         | javax/tools/SimpleJavaFileObject.java @ 982d53c (jdk-17.0.19-ga)                                                                                |
+| crates/javac-tools/src/tools/standard_java_file_manager.rs                      | javax/tools/StandardJavaFileManager.java @ 982d53c (jdk-17.0.19-ga)                                                                             |
+| crates/javac-tools/src/tools/standard_location.rs                               | javax/tools/StandardLocation.java @ 982d53c (jdk-17.0.19-ga)                                                                                    |
+| crates/javac-tools/src/tools/tool.rs                                            | javax/tools/Tool.java @ 982d53c (jdk-17.0.19-ga)                                                                                                |
+| crates/javac-tools/src/tools/tool_provider.rs                                   | javax/tools/ToolProvider.java @ 982d53c (jdk-17.0.19-ga)                                                                                        |

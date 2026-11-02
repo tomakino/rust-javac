@@ -13,9 +13,7 @@
 //! * `visitUnknown` throws `UnknownAnnotationValueException` upstream; the Rust
 //!   default panics with the same exception message.
 
-use crate::lang::model::element::{
-    AnnotationValue, AnnotationValueVisitor, Value,
-};
+use crate::lang::model::element::{AnnotationValue, AnnotationValueVisitor, Value};
 
 /// A skeletal visitor for annotation values with default behavior
 /// appropriate for the RELEASE_6 source version.
@@ -105,7 +103,9 @@ mod tests {
 
     impl TestVisitor {
         fn new() -> TestVisitor {
-            TestVisitor { visited: Vec::new() }
+            TestVisitor {
+                visited: Vec::new(),
+            }
         }
     }
 
@@ -126,9 +126,13 @@ mod tests {
     #[test]
     fn dispatch_uses_the_value_shape() {
         let mut v = TestVisitor::new();
-        let int = ValueFixture { value: Value::Integer(42) };
+        let int = ValueFixture {
+            value: Value::Integer(42),
+        };
         AbstractAnnotationValueVisitor6::visit(&mut v, &int, ());
-        let string = ValueFixture { value: Value::String(javac_strings::JavaString::from("s")) };
+        let string = ValueFixture {
+            value: Value::String(javac_strings::JavaString::from("s")),
+        };
         AbstractAnnotationValueVisitor6::visit(&mut v, &string, ());
         assert_eq!(v.visited, vec![42, -3]);
     }
@@ -136,7 +140,9 @@ mod tests {
     #[test]
     fn visitor_is_object_safe() {
         let v: &mut dyn AbstractAnnotationValueVisitor6<(), ()> = &mut TestVisitor::new();
-        let int = ValueFixture { value: Value::Integer(1) };
+        let int = ValueFixture {
+            value: Value::Integer(1),
+        };
         AbstractAnnotationValueVisitor6::visit(v, &int, ());
     }
 }

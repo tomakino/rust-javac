@@ -74,7 +74,12 @@ impl TaskEvent {
         unit: Option<Rc<dyn CompilationUnitTree>>,
         clazz: Option<Rc<dyn TypeElement>>,
     ) -> TaskEvent {
-        TaskEvent { kind, file, unit, clazz }
+        TaskEvent {
+            kind,
+            file,
+            unit,
+            clazz,
+        }
     }
 
     /// Returns the kind for this event.
@@ -193,7 +198,10 @@ mod tests {
         assert_eq!(values.len(), 7);
         assert_eq!(values[0], Kind::PARSE);
         assert_eq!(values[6], Kind::COMPILATION);
-        assert_eq!(Kind::ANNOTATION_PROCESSING_ROUND.name().to_string_lossy(), "ANNOTATION_PROCESSING_ROUND");
+        assert_eq!(
+            Kind::ANNOTATION_PROCESSING_ROUND.name().to_string_lossy(),
+            "ANNOTATION_PROCESSING_ROUND"
+        );
     }
 
     #[test]

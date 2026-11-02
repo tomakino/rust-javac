@@ -1,3 +1,4 @@
+use super::tree::Tree;
 /// A tree node for a type expression involving type parameters.
 ///
 /// For example:
@@ -11,7 +12,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::tree::Tree;
 
 pub trait ParameterizedTypeTree: Tree {
     /// Returns the base type.
@@ -21,5 +21,4 @@ pub trait ParameterizedTypeTree: Tree {
     /// Returns the type arguments.
     /// @return the type arguments
     fn get_type_arguments(&self) -> Vec<Rc<dyn Tree>>;
-
 }

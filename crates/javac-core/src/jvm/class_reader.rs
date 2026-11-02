@@ -178,8 +178,8 @@ pub struct ClassReader {
     /// Java: public boolean filling = false
     pub filling: bool,
     /// Java: List<Type> missingTypeVariables / foundTypeVariables
-    missing_type_variables: List<crate::ids::TypeId>,
-    found_type_variables: List<crate::ids::TypeId>,
+    missing_type_variables: List<TypeId>,
+    found_type_variables: List<TypeId>,
     /// Java: protected Map<Name, AttributeReader> attributeReaders
     attribute_readers: Vec<AttributeReaderDef>,
     /// Java: int[] parameterNameIndices (MethodParameters/LVT)
@@ -229,7 +229,7 @@ impl ClassReader {
             .sym(method)
             .ty
             .map(|ty| ctx.typ(ty).get_parameter_types(ctx))
-            .unwrap_or_else(crate::util::list::List::nil);
+            .unwrap_or_else(List::nil);
         let mut expected = EXCESS_SLOTS as i32;
         for ty in parameter_types.iter() {
             expected += jvm_type_width(ctx, ty);
@@ -687,7 +687,7 @@ impl ClassReader {
                         .has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
                         && let Some(tsym) = ctx.typ(head).tsym
                     {
-                        ctx.sym_mut(tsym).flags_field |= crate::code::flags::THROWS;
+                        ctx.sym_mut(tsym).flags_field |= flags::THROWS;
                     }
                 }
                 Ok(ctx.alloc_type(crate::code::type_::Type::new_method_type(
@@ -1251,24 +1251,22 @@ impl ClassReader {
         // else c.setAnnotationTypeMetadata(AnnotationTypeMetadata.notAnAnnotationType());
         // (ClassReader.java:2988-2995)
         if (ctx.sym(c).flags_field & flags::ANNOTATION as i64) != 0 {
-            let completer: Rc<dyn AnnotationTypeCompleter> =
-                Rc::new(CompleterDeproxy::new(
-                    c,
-                    self.target.clone(),
-                    self.repeatable.clone(),
-                    Rc::clone(&self.names),
-                    self.reader_handle.clone(),
-                ));
+            let completer: Rc<dyn AnnotationTypeCompleter> = Rc::new(CompleterDeproxy::new(
+                c,
+                self.target.clone(),
+                self.repeatable.clone(),
+                Rc::clone(&self.names),
+                self.reader_handle.clone(),
+            ));
             ctx.sym_mut(c)
                 .set_annotation_type_metadata(Rc::new(AnnotationTypeMetadata::new(
                     c,
                     Some(completer),
                 )));
         } else {
-            ctx.sym_mut(c)
-                .set_annotation_type_metadata(Rc::new(
-                    AnnotationTypeMetadata::not_an_annotation_type(),
-                ));
+            ctx.sym_mut(c).set_annotation_type_metadata(Rc::new(
+                AnnotationTypeMetadata::not_an_annotation_type(),
+            ));
         }
 
         // Java: if (c == currentModule.module_info) {
@@ -1374,8 +1372,7 @@ impl ClassReader {
                     self.major_version,
                     max_major,
                 );
-                self.log
-                    .warning(None, None, warning_from_info(info));
+                self.log.warning(None, None, warning_from_info(info));
             } else {
                 // Java: badClassFile("wrong.version", major, minor, maxMajor, maxMinor);
                 // The generated accessor takes the four version strings (P4 contract).
@@ -1527,7 +1524,7 @@ impl ClassReader {
             _ => false,
         };
         if has_permitted {
-            ctx.sym_mut(c).flags_field |= crate::code::flags::SEALED;
+            ctx.sym_mut(c).flags_field |= flags::SEALED;
         }
 
         // reset and read rest of classinfo
@@ -1585,12 +1582,12 @@ impl ClassReader {
             *interfaces_field = Some(is.reverse());
         }
 
-        assert!(field_count as i32 == self.next_char() as i32);
+        assert_eq!(field_count as i32, self.next_char() as i32);
         for _ in 0..field_count {
             let field = self.read_field(ctx, syms)?;
             self.enter_member(ctx, c, field);
         }
-        assert!(method_count as i32 == self.next_char() as i32);
+        assert_eq!(method_count as i32, self.next_char() as i32);
         for _ in 0..method_count {
             let method = self.read_method(ctx, syms)?;
             self.enter_member(ctx, c, method);
@@ -1655,17 +1652,17 @@ impl ClassReader {
         let owner = self.current_owner.expect("currentOwner");
         let owner_is_interface = ctx.sym(owner).is_interface();
         let is_clinit = name.to_java_string() == self.names.clinit.to_java_string();
-        if owner_is_interface && (flags & crate::code::flags::ABSTRACT as i64) == 0 && !is_clinit {
+        if owner_is_interface && (flags & flags::ABSTRACT as i64) == 0 && !is_clinit {
             if self.major_version > Version::V52.major()
                 || (self.major_version == Version::V52.major()
                     && self.minor_version >= Version::V52.minor())
             {
                 if (flags
-                    & (crate::code::flags::STATIC as i64 | crate::code::flags::PRIVATE as i64))
+                    & (flags::STATIC as i64 | flags::PRIVATE as i64))
                     == 0
                 {
-                    ctx.sym_mut(owner).flags_field |= crate::code::flags::DEFAULT;
-                    flags |= crate::code::flags::DEFAULT | crate::code::flags::ABSTRACT as i64;
+                    ctx.sym_mut(owner).flags_field |= flags::DEFAULT;
+                    flags |= flags::DEFAULT | flags::ABSTRACT as i64;
                 }
             } else {
                 // protect against ill-formed classfiles
@@ -1705,8 +1702,8 @@ impl ClassReader {
                 use crate::code::type_::TypeKindData;
                 use crate::code::type_tag::TypeTag;
                 let argtypes = ctx.typ(ty).get_parameter_types(ctx);
-                let is_varargs = (flags & crate::code::flags::VARARGS) != 0;
-                let mut adjusted: crate::util::list::List<TypeId> = crate::util::list::List::nil();
+                let is_varargs = (flags & flags::VARARGS) != 0;
+                let mut adjusted: List<TypeId> = List::nil();
                 if is_varargs && !argtypes.is_empty() {
                     let mut items: Vec<TypeId> = argtypes.iter().collect();
                     let last_index = items.len() - 1;
@@ -1761,7 +1758,7 @@ impl ClassReader {
             owner,
         ));
         if self.types.is_signature_polymorphic(ctx, syms, method) {
-            ctx.sym_mut(method).flags_field |= crate::code::flags::SIGNATURE_POLYMORPHIC;
+            ctx.sym_mut(method).flags_field |= flags::SIGNATURE_POLYMORPHIC;
         }
         if self.save_parameter_names {
             self.init_parameter_names(ctx, method);
@@ -1776,7 +1773,7 @@ impl ClassReader {
             ctx.sym(method).ty.expect("method type"),
         )?;
         self.set_parameters(ctx, syms, method, ty)?;
-        if (flags & crate::code::flags::VARARGS) != 0 {
+        if (flags & flags::VARARGS) != 0 {
             let params = ctx
                 .typ(ctx.sym(method).ty.expect("method type"))
                 .get_parameter_types(ctx);
@@ -1790,7 +1787,7 @@ impl ClassReader {
                 .map(|t| ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::ARRAY))
                 .unwrap_or(false);
             if !is_array {
-                ctx.sym_mut(method).flags_field &= !crate::code::flags::VARARGS;
+                ctx.sym_mut(method).flags_field &= !flags::VARARGS;
                 let key = Fragment::from(
                     crate::resources::compiler_properties::fragments::malformed_vararg_method(),
                 );
@@ -2547,10 +2544,7 @@ impl ClassReader {
                     ctx.sym_mut(sym).flags_field |= flags::PREVIEW_REFLECTIVE;
                 }
             } else if internal_type_matches(ctx, syms.value_based_internal_type, proxy_tsym) {
-                assert!(
-                    ctx.sym(sym).kind == crate::code::kinds::Kind::TYP,
-                    "AssertionError: value-based internal annotation on a non-type"
-                );
+                assert_eq!(ctx.sym(sym).kind, crate::code::kinds::Kind::TYP, "AssertionError: value-based internal annotation on a non-type");
                 ctx.sym_mut(sym).flags_field |= flags::VALUE_BASED;
             } else {
                 let target_tsym = ctx.typ(syms.annotation_target_type).tsym;
@@ -2752,14 +2746,14 @@ impl ClassReader {
                                         .map(|owner| {
                                             crate::code::printer::visit_symbol(
                                                 ctx,
-                                                &crate::util::names::Names::new(false),
+                                                &Names::new(false),
                                                 owner,
                                             )
                                         })
                                         .unwrap_or_default();
                                     let detail = match failure.get_detail_value() {
                                         Some(diag) => crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
-                                            std::rc::Rc::new(diag),
+                                            Rc::new(diag),
                                         ),
                                         None => crate::resources::diagnostic_contract::DiagnosticArg::from_display("null"),
                                     };
@@ -3221,22 +3215,22 @@ impl ClassReader {
                 } else {
                     sym
                 };
-                ctx.sym_mut(target).flags_field |= crate::code::flags::DEPRECATED as i64;
+                ctx.sym_mut(target).flags_field |= flags::DEPRECATED as i64;
             }
             AttributeReaderKind::Synthetic => {
-                ctx.sym_mut(sym).flags_field |= crate::code::flags::SYNTHETIC as i64;
+                ctx.sym_mut(sym).flags_field |= flags::SYNTHETIC as i64;
             }
             AttributeReaderKind::Annotation => {
-                ctx.sym_mut(sym).flags_field |= crate::code::flags::ANNOTATION as i64;
+                ctx.sym_mut(sym).flags_field |= flags::ANNOTATION as i64;
             }
             AttributeReaderKind::Bridge => {
-                ctx.sym_mut(sym).flags_field |= crate::code::flags::BRIDGE;
+                ctx.sym_mut(sym).flags_field |= flags::BRIDGE;
             }
             AttributeReaderKind::Enum => {
-                ctx.sym_mut(sym).flags_field |= crate::code::flags::ENUM as i64;
+                ctx.sym_mut(sym).flags_field |= flags::ENUM as i64;
             }
             AttributeReaderKind::Varargs => {
-                ctx.sym_mut(sym).flags_field |= crate::code::flags::VARARGS;
+                ctx.sym_mut(sym).flags_field |= flags::VARARGS;
             }
             AttributeReaderKind::Exceptions => {
                 let n = self.next_char();
@@ -3288,7 +3282,7 @@ impl ClassReader {
                         let name_index = self.next_char() as i32;
                         let flags_value = self.next_char() as i32;
                         if (flags_value
-                            & (crate::code::flags::MANDATED | crate::code::flags::SYNTHETIC))
+                            & (flags::MANDATED | flags::SYNTHETIC))
                             != 0
                         {
                             continue;
@@ -3419,7 +3413,7 @@ impl ClassReader {
             _ => panic!("unexpected constant pool value for ConstantValue"),
         };
         // Ignore ConstantValue attribute if field not final.
-        if (ctx.sym(sym).flags_field & crate::code::flags::FINAL as i64) == 0 {
+        if (ctx.sym(sym).flags_field & flags::FINAL as i64) == 0 {
             return Ok(());
         }
         let ty = ctx.sym(sym).ty.expect("variable type");
@@ -3593,7 +3587,7 @@ impl ClassReader {
                     name,
                     Some(outer),
                 );
-                if (flags & crate::code::flags::STATIC as i64) == 0 {
+                if (flags & flags::STATIC as i64) == 0 {
                     let outer_ty = ctx.sym(outer).ty.expect("outer type");
                     let member_ty = ctx.sym(member).ty.expect("member type");
                     ctx.typ_mut(member_ty).set_enclosing_type(Some(outer_ty));
@@ -3667,7 +3661,7 @@ impl ClassReader {
         if let Some(m) = m {
             let m_ty = ctx.sym(m).ty.expect("method type");
             ctx.typ_mut(self_ty).set_enclosing_type(Some(m_ty));
-        } else if (self_flags & crate::code::flags::STATIC as i64) == 0 {
+        } else if (self_flags & flags::STATIC as i64) == 0 {
             let c_ty = ctx.sym(c).ty.expect("enclosing class type");
             ctx.typ_mut(self_ty).set_enclosing_type(Some(c_ty));
         } else {
@@ -3754,7 +3748,7 @@ impl ClassReader {
         if nt_name.to_java_string() != self.names.init.to_java_string() {
             return None;
         }
-        if (flags & crate::code::flags::INTERFACE as i64) != 0 {
+        if (flags & flags::INTERFACE as i64) != 0 {
             return None;
         }
         let nt_params = ctx.typ(*nt_type).get_parameter_types(ctx);
@@ -3810,7 +3804,7 @@ impl ClassReader {
             && sn.ends_with(".java")
             && sn != format!("{}.java", ctx.sym(sym).name.to_java_string())
         {
-            ctx.sym_mut(sym).flags_field |= crate::code::flags::AUXILIARY;
+            ctx.sym_mut(sym).flags_field |= flags::AUXILIARY;
         }
     }
     /// Java: void readClassAttrs(ClassSymbol c)
@@ -3915,7 +3909,7 @@ impl ClassReader {
         syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
-        ctx.sym_mut(sym).flags_field |= crate::code::flags::RECORD;
+        ctx.sym_mut(sym).flags_field |= flags::RECORD;
         let component_count = self.next_char();
         let mut components = List::nil();
         for _ in 0..component_count {
@@ -3949,7 +3943,7 @@ impl ClassReader {
         let saw_method_parameters = self.saw_method_parameters;
         let mut first_param: i32 = 0;
         if !saw_method_parameters {
-            let static_flag = ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64;
+            let static_flag = ctx.sym(sym).flags_field & flags::STATIC as i64;
             first_param = if static_flag == 0 { 1 } else { 0 };
             let current_owner = self.current_owner.expect("currentOwner");
             if ctx.sym(sym).name.to_java_string() == self.names.init.to_java_string()
@@ -4021,7 +4015,7 @@ impl ClassReader {
         owner: SymbolId,
         exclude: &mut HashSet<Name>,
     ) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
-        let mut flags = crate::code::flags::PARAMETER;
+        let mut flags = flags::PARAMETER;
         if let Some(access_flags) = &self.parameter_access_flags
             && index >= 0
             && (index as usize) < access_flags.len()
@@ -4041,7 +4035,7 @@ impl ClassReader {
             })
             .filter(|index| *index != 0);
         let arg_name = if let Some(name_index) = name_index {
-            flags |= crate::code::flags::NAME_FILLED;
+            flags |= flags::NAME_FILLED;
             match self.get_name(name_index) {
                 Ok(name) => name,
                 Err(_) => self.names.empty.clone(),
@@ -4080,7 +4074,7 @@ impl ClassReader {
     ///   - the reader has no current class file (upstream invariant: completing a symbol).
     pub fn bad_enclosing_method(
         &self,
-        ctx: &crate::compiler_context::CompilerContext,
+        ctx: &CompilerContext,
         sym: SymbolId,
     ) -> crate::code::class_finder::BadEnclosingMethodAttr {
         let file = self
@@ -4441,13 +4435,13 @@ fn rewrite_type_parameters(
         // Java: bound.isCompound() (Type.java): true for an intersection and for
         // a union whose lub is an intersection.
         let is_compound = match &ctx.typ(bound).kind {
-            crate::code::type_::TypeKindData::IntersectionClassType { .. } => true,
-            crate::code::type_::TypeKindData::UnionClassType { .. } => {
+            TypeKindData::IntersectionClassType { .. } => true,
+            TypeKindData::UnionClassType { .. } => {
                 let tsym = ctx.typ(bound).tsym.expect("union class symbol");
                 let lub = ctx.sym(tsym).ty.expect("union lub type");
                 matches!(
                     &ctx.typ(lub).kind,
-                    crate::code::type_::TypeKindData::IntersectionClassType { .. }
+                    TypeKindData::IntersectionClassType { .. }
                 )
             }
             _ => false,
@@ -4530,7 +4524,7 @@ fn rewrite_type_parameters(
             let is_interface = ctx
                 .typ(bound)
                 .tsym
-                .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0)
+                .map(|tsym| (ctx.sym(tsym).flags_field & flags::INTERFACE as i64) != 0)
                 .unwrap_or(false);
             bound = add_type_annotations_to_type(
                 ctx,
@@ -4977,7 +4971,7 @@ impl javac_tools::tools::file_object::FileObject for SourceFileObject {
     }
 }
 
-impl javac_tools::tools::java_file_object::JavaFileObject for SourceFileObject {
+impl JavaFileObject for SourceFileObject {
     fn get_kind(&self) -> javac_tools::tools::java_file_object::Kind {
         // Java: BaseFileManager.getKind(getName()).
         javac_tools::tools::java_file_object::Kind::SOURCE
@@ -5293,8 +5287,7 @@ fn find_access_method(
         && deprox.lint_classfile
     {
         {
-            let prev =
-                AbstractLog::use_source(&*deprox.log, deprox.current_file.clone());
+            let prev = AbstractLog::use_source(&*deprox.log, deprox.current_file.clone());
             let info = warnings::annotation_method_not_found(
                 crate::resources::diagnostic_contract::TypeArg::placeholder(
                     crate::code::printer::visit_type(ctx, container),
@@ -5432,14 +5425,12 @@ fn find_enum_constant(
         let enum_sym = crate::resources::diagnostic_contract::SymbolArg::placeholder(
             crate::code::printer::visit_symbol(
                 ctx,
-                &crate::util::names::Names::new(false),
+                &Names::new(false),
                 enum_tsym,
             ),
         );
         let info = warnings::unknown_enum_constant(file_arg, enum_sym, enumerator.clone());
-        deprox
-            .log
-            .warning(None, None, warning_from_info(info));
+        deprox.log.warning(None, None, warning_from_info(info));
     }
     let bot_type = syms.bot_type;
     Ok(ctx.alloc_symbol(crate::code::symbol::Symbol::new(
@@ -5640,8 +5631,8 @@ mod tests {
     }
 
     fn type_var_name(
-        ctx: &crate::compiler_context::CompilerContext,
-        ty: crate::ids::TypeId,
+        ctx: &CompilerContext,
+        ty: TypeId,
     ) -> String {
         ctx.typ(ty)
             .tsym
@@ -5651,8 +5642,8 @@ mod tests {
 
     /// Test-side type summary used to compare the Signature view with javap -v.
     fn type_summary(
-        ctx: &crate::compiler_context::CompilerContext,
-        ty: crate::ids::TypeId,
+        ctx: &CompilerContext,
+        ty: TypeId,
     ) -> String {
         use crate::code::type_::TypeKindData;
         match &ctx.typ(ty).kind {
@@ -5749,7 +5740,7 @@ mod tests {
             source,
             Rc::new(RefCell::new(None)),
         );
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let class_name = names.from_string(&javac_strings::JavaString::from(binary_name));
         let java_base = syms.java_base;
@@ -5848,7 +5839,7 @@ mod tests {
         // javap -private java.lang.Object: public class; no supertype entry;
         // 12 members (constructor, getClass, hashCode, equals, clone, toString,
         // notify, notifyAll, wait x3, finalize).
-        assert_eq!(summary.flags & crate::code::flags::PUBLIC as i64, 1);
+        assert_eq!(summary.flags & flags::PUBLIC as i64, 1);
         assert!(summary.super_is_none, "Object has no supertype");
         assert!(summary.interfaces.is_empty());
         assert_eq!(
@@ -5890,8 +5881,8 @@ mod tests {
         // javap -private java.util.List: public interface, extends
         // java.util.Collection, 41 members (the descriptor-erased view; the
         // Signature attribute is read by the S2 attribute).
-        assert_ne!(summary.flags & crate::code::flags::INTERFACE as i64, 0);
-        assert_ne!(summary.flags & crate::code::flags::ABSTRACT as i64, 0);
+        assert_ne!(summary.flags & flags::INTERFACE as i64, 0);
+        assert_ne!(summary.flags & flags::ABSTRACT as i64, 0);
         assert_eq!(
             summary.interfaces,
             vec!["java.util.Collection<TV:E>".to_string()]
@@ -5919,8 +5910,8 @@ mod tests {
         };
         // javap -private java.lang.String: public final class, 5 interfaces,
         // 171 members (11 fields + 160 methods/constructors).
-        assert_ne!(summary.flags & crate::code::flags::PUBLIC as i64, 0);
-        assert_ne!(summary.flags & crate::code::flags::FINAL as i64, 0);
+        assert_ne!(summary.flags & flags::PUBLIC as i64, 0);
+        assert_ne!(summary.flags & flags::FINAL as i64, 0);
         let mut interfaces = summary.interfaces.clone();
         interfaces.sort();
         assert_eq!(
@@ -5989,7 +5980,7 @@ mod tests {
             source,
             Rc::new(RefCell::new(None)),
         );
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let class_name = names.from_string(&javac_strings::JavaString::from(binary_name));
         let java_base = syms.java_base;
@@ -6107,7 +6098,7 @@ mod tests {
             source,
             Rc::new(RefCell::new(None)),
         );
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let class_name = names.from_string(&javac_strings::JavaString::from(binary_name));
         let java_base = syms.java_base;
@@ -6213,7 +6204,7 @@ mod tests {
             source,
             Rc::new(RefCell::new(None)),
         );
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let class_name = names.from_string(&javac_strings::JavaString::from("Fixtures"));
         let java_base = syms.java_base;
@@ -6320,7 +6311,7 @@ mod tests {
             source,
             Rc::new(RefCell::new(None)),
         );
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let java_base = syms.java_base;
         // 1) read the outer class.
@@ -6369,7 +6360,7 @@ mod tests {
         let Some(record) = parse_fixture("RecordFixture", "RecordFixture.class", false) else {
             return;
         };
-        assert_ne!(record.flags & crate::code::flags::RECORD, 0);
+        assert_ne!(record.flags & flags::RECORD, 0);
         let names: Vec<&str> = record
             .members
             .iter()
@@ -6384,7 +6375,7 @@ mod tests {
         // The permitted list is asserted via the interface type's member list:
         // read_attribute stores the class symbols in ClassSymbol.permitted; the
         // summary does not expose it, so the flag/interface check follows.
-        assert_ne!(sealed.flags & crate::code::flags::INTERFACE as i64, 0);
+        assert_ne!(sealed.flags & flags::INTERFACE as i64, 0);
         let Some(circle) = parse_fixture("Circle", "Circle.class", false) else {
             return;
         };
@@ -6398,8 +6389,8 @@ mod tests {
 
     fn read_fixture_with_reader(
         reader: &mut ClassReader,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
         names: &Rc<Names>,
         binary_name: &str,
         file_name: &str,
@@ -6446,7 +6437,7 @@ mod tests {
             source,
             Rc::new(RefCell::new(None)),
         );
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let record = read_fixture_with_reader(
             &mut reader,
@@ -6525,7 +6516,7 @@ mod tests {
             source,
             Rc::new(RefCell::new(None)),
         );
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let module_name = names.from_string(&javac_strings::JavaString::from("fixtures.mod"));
         let module = syms.enter_module(&mut ctx, module_name);
@@ -6549,7 +6540,7 @@ mod tests {
         reader
             .read_class_file(&mut ctx, &syms, c)
             .expect("module-info readClassFile");
-        assert_ne!(ctx.sym(c).flags_field & crate::code::flags::MODULE, 0);
+        assert_ne!(ctx.sym(c).flags_field & flags::MODULE, 0);
         let (requires, exports, uses, provides) = match &ctx.sym(module).kind_data {
             crate::code::symbol::SymbolKind::ModuleSymbol {
                 requires,
@@ -6660,7 +6651,7 @@ mod tests {
             source,
             Rc::new(RefCell::new(None)),
         );
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let java_base = syms.java_base;
         let class_name = names.from_string(&javac_strings::JavaString::from("MyAnno"));
@@ -6710,7 +6701,7 @@ mod tests {
         let mut _context = Context::new();
         let names = Rc::new(Names::new(false));
         let source = Source::JDK17;
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let types = crate::code::types::Types::with_names(Rc::clone(&names));
         let value_name = names.value.clone();
@@ -6794,7 +6785,7 @@ mod tests {
             source,
             Rc::new(RefCell::new(None)),
         );
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let java_base = syms.java_base;
         let class_name = names.from_string(&javac_strings::JavaString::from("AnnotatedFixture"));
@@ -6889,7 +6880,7 @@ mod tests {
             source,
             Rc::new(RefCell::new(None)),
         );
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let java_base = syms.java_base;
         let class_name = names.from_string(&javac_strings::JavaString::from("MyAnno"));
@@ -6970,7 +6961,7 @@ mod tests {
             source,
             Rc::new(RefCell::new(None)),
         );
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let java_base = syms.java_base;
         let class_name = names.from_string(&javac_strings::JavaString::from("TypeAnnotated"));
@@ -7099,7 +7090,7 @@ mod tests {
             source,
             Rc::new(RefCell::new(None)),
         );
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let class_name = names.from_string(&javac_strings::JavaString::from(binary_name));
         let java_base = syms.java_base;
@@ -7364,11 +7355,11 @@ mod tests {
     fn d5_reader(
         lint_option: Option<&str>,
     ) -> (
-        std::rc::Rc<Log>,
+        Rc<Log>,
         CompilerContext,
         Symtab,
         ClassReader,
-        std::rc::Rc<Names>,
+        Rc<Names>,
     ) {
         let mut context = Context::new();
         let log = Log::instance(&mut context);
@@ -7384,20 +7375,20 @@ mod tests {
         }
         let source = Source::JDK17;
         let reader = ClassReader::new(
-            std::rc::Rc::clone(&log),
-            std::rc::Rc::clone(&names),
+            Rc::clone(&log),
+            Rc::clone(&names),
             factory,
             dcfh,
             preview,
             profile,
             &options,
             source,
-            Rc::new(std::cell::RefCell::new(None)),
+            Rc::new(RefCell::new(None)),
         );
         let mut ctx = CompilerContext::new();
         let syms = Symtab::new(
             &mut ctx,
-            std::rc::Rc::clone(&names),
+            Rc::clone(&names),
             Target::JDK1_17,
             source,
         );
@@ -7416,7 +7407,7 @@ mod tests {
             .from_string(&javac_strings::JavaString::from(name));
         let c = syms.enter_class_flat(ctx, syms.unnamed_module, class_name);
         let file_name = javac_strings::JavaString::from(format!("{name}.class").as_str());
-        let file = std::rc::Rc::new(D5ClassFile {
+        let file = Rc::new(D5ClassFile {
             name: file_name,
             bytes,
         });
@@ -7443,7 +7434,7 @@ mod tests {
             .from_string(&javac_strings::JavaString::from(name));
         let c = syms.enter_class_flat(ctx, syms.unnamed_module, class_name);
         let file_name = javac_strings::JavaString::from(format!("{name}.class").as_str());
-        let file = std::rc::Rc::new(D5ClassFile {
+        let file = Rc::new(D5ClassFile {
             name: file_name,
             bytes,
         });
@@ -7457,13 +7448,11 @@ mod tests {
     #[test]
     fn class_reader_reports_annotation_method_not_found() {
         let (log, mut ctx, syms, mut reader, names) = d5_reader(Some("Xlint:all"));
-        log.install_diagnostic_handler(
-            crate::util::log::DiagnosticHandler::Deferred {
-                prev: None,
-                deferred: std::collections::VecDeque::new(),
-                filter: None,
-            },
-        );
+        log.install_diagnostic_handler(crate::util::log::DiagnosticHandler::Deferred {
+            prev: None,
+            deferred: std::collections::VecDeque::new(),
+            filter: None,
+        });
         let _a = d5_register(&mut ctx, &syms, &mut reader, "A", hex_bytes(D5_A_NOMETHOD));
         let c = d5_register(&mut ctx, &syms, &mut reader, "C", hex_bytes(D5_C1));
         let proxies = reader
@@ -7477,11 +7466,11 @@ mod tests {
             _ => None,
         };
         let deprox = DeproxyContext {
-            log: std::rc::Rc::clone(&log),
+            log: Rc::clone(&log),
             lint_classfile: true,
             current_file: class_file,
         };
-        let types = crate::code::types::Types::with_names(std::rc::Rc::clone(&names));
+        let types = crate::code::types::Types::with_names(Rc::clone(&names));
         deproxy_compound_list(
             &mut ctx,
             &syms,
@@ -7534,13 +7523,11 @@ mod tests {
     #[test]
     fn class_reader_reports_unknown_enum_constant() {
         let (log, mut ctx, syms, mut reader, names) = d5_reader(None);
-        log.install_diagnostic_handler(
-            crate::util::log::DiagnosticHandler::Deferred {
-                prev: None,
-                deferred: std::collections::VecDeque::new(),
-                filter: None,
-            },
-        );
+        log.install_diagnostic_handler(crate::util::log::DiagnosticHandler::Deferred {
+            prev: None,
+            deferred: std::collections::VecDeque::new(),
+            filter: None,
+        });
         let _e = d5_enter(&mut ctx, &syms, &mut reader, "E", hex_bytes(D5_E));
         let _a = d5_register(&mut ctx, &syms, &mut reader, "A", hex_bytes(D5_A2));
         let c = d5_register(&mut ctx, &syms, &mut reader, "C", hex_bytes(D5_C2_BAD));
@@ -7555,11 +7542,11 @@ mod tests {
             _ => None,
         };
         let deprox = DeproxyContext {
-            log: std::rc::Rc::clone(&log),
+            log: Rc::clone(&log),
             lint_classfile: false,
             current_file: class_file,
         };
-        let types = crate::code::types::Types::with_names(std::rc::Rc::clone(&names));
+        let types = crate::code::types::Types::with_names(Rc::clone(&names));
         deproxy_compound_list(
             &mut ctx,
             &syms,
@@ -7621,14 +7608,14 @@ mod tests {
 
     #[test]
     fn proxy_type_resolves_signature_name() {
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let mut reader = reader();
         let names = Rc::clone(&reader.names);
-        let syms = crate::code::symtab::Symtab::new(
+        let syms = Symtab::new(
             &mut ctx,
             Rc::clone(&names),
-            crate::jvm::target::Target::JDK1_17,
-            crate::code::source::Source::JDK17,
+            Target::JDK1_17,
+            Source::JDK17,
         );
         reader.current_module = Some(syms.java_base);
         let sig = names.from_string(&javac_strings::JavaString::from("Ljava/lang/Object;"));
@@ -7681,11 +7668,11 @@ mod tests {
     #[allow(clippy::mutable_key_type)]
     fn parameter_names_are_synthesized_and_access_flags_are_applied() {
         let mut reader = reader();
-        let mut ctx = crate::compiler_context::CompilerContext::new();
-        let syms = crate::code::symtab::Symtab::new(
+        let mut ctx = CompilerContext::new();
+        let syms = Symtab::new(
             &mut ctx,
             Rc::clone(&reader.names),
-            crate::jvm::target::Target::JDK1_17,
+            Target::JDK1_17,
             Source::JDK17,
         );
         let names = Rc::clone(&reader.names);
@@ -7704,20 +7691,20 @@ mod tests {
             "Java: names.fromString(prefix + exclude.size())"
         );
         assert_eq!(
-            ctx.sym(first).flags_field & crate::code::flags::PARAMETER,
-            crate::code::flags::PARAMETER,
+            ctx.sym(first).flags_field & flags::PARAMETER,
+            flags::PARAMETER,
             "Parameter flag"
         );
         let second = reader
             .parameter(&mut ctx, 1, syms.int_type, owner, &mut exclude)
             .expect("second parameter");
         assert_eq!(ctx.sym(second).name.to_java_string().to_string(), "arg1");
-        reader.parameter_access_flags = Some(vec![0, crate::code::flags::FINAL]);
+        reader.parameter_access_flags = Some(vec![0, flags::FINAL]);
         let third = reader
             .parameter(&mut ctx, 1, syms.int_type, owner, &mut exclude)
             .expect("parameter with access flags");
         assert_ne!(
-            ctx.sym(third).flags_field & crate::code::flags::FINAL as i64,
+            ctx.sym(third).flags_field & flags::FINAL as i64,
             0,
             "MethodParameters access flag applied"
         );

@@ -87,11 +87,7 @@ pub trait Trees {
     /// @param unit the compilation unit
     /// @param node the tree node
     /// @return the tree path
-    fn get_path(
-        &self,
-        unit: &dyn CompilationUnitTree,
-        node: &dyn Tree,
-    ) -> Option<Rc<TreePath>>;
+    fn get_path(&self, unit: &dyn CompilationUnitTree, node: &dyn Tree) -> Option<Rc<TreePath>>;
 
     /// Returns the TreePath node for a given Element.
     /// Returns {@code null} if the node can not be found.

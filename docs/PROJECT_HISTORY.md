@@ -9,8 +9,8 @@
 - **Acceptance**: byte-identical `.class` files, line-identical
   `-XDrawDiagnostics` output (content, position, count, order), and identical
   CLI output and exit codes.
-- **Single source of truth**: the official JDK 17 sources
-  (`internal/reference/jdk17u`). No approximations, fallbacks, or special
+- **Single source of truth**: the official JDK 17 sources (`internal/reference/jdk17u`). No approximations, fallbacks,
+  or special
   cases; any deviation found in the port is corrected against the official
   source.
 - **Do not reproduce deprecated or incorrect upstream paths**: `-profile`
@@ -95,8 +95,7 @@
 
 - Expressions: Ident/Select/Apply/NewArray/Assert/Conditional/Assignop/
   Unary/Binary/TypeCast/Lambda/Reference/NewClass/anonymous classes.
-- Statements: Block/loops/Try/synchronized/Switch/SwitchExpr/patterns
-  (type test/binding/guard)/Return/Throw/Yield.
+- Statements: Block/loops/Try/synchronized/Switch/SwitchExpr/patterns (type test/binding/guard)/Return/Throw/Yield.
 - Types: attribClass/attribClassBody, visitTypeParameter/checkIntersection,
   type-annotation validation.
 - Supporting families: `checkAllDefined`/`nonCyclic`/cyclic constructors,
@@ -145,8 +144,8 @@
 - **Gson 2.10.1 (80 sources)**: from 161 diagnostics/0 classes to 13 -> 10 ->
   **0 errors and 207 byte-identical classes**; the Gson JUnit suite then
   reported 1258/2, matching javac.
-- **OkHttp 3.14.9 (229 sources)**: 0 errors; the official JUnit suites passed
-  (4 classes / 416 tests; internal 15 classes / 256 tests).
+- **OkHttp 3.14.9 (229 sources)**: 0 errors; the official JUnit suites passed (4 classes / 416 tests; internal 15
+  classes / 256 tests).
 - Root causes: the extra parameter check in `Infer.instantiateMethod`, the
   `finishImports` ordering, the non-upstream `ResolvedConstructorType.
   overloadCheck` special case, `InferenceException` catching, and the
@@ -184,16 +183,15 @@
   Result-based inapplicable channel (-17.5%), `javac-zip` whole-file
   residency + rawzip slice + zlib-rs (-16 to -21%).
 - Results (2026-10-31): Gson release 0.973 s (javac 2.40 s); OkHttp release
-  24.28 s (javac 8.17 s). The E2E plan records a Gson release median of
-  **0.82 s vs javac 2.44 s**.
+  24.28 s (javac 8.17 s). The E2E plan records a Gson release median of **0.82 s vs javac 2.44 s**.
 - Infeasible approaches: PGO (missing `profiler_builtins`), mimalloc (needs
   a full MinGW/Windows SDK), samply (ETW GBK crash; local patch not
   committed).
 
 ### 2.16 Byte-parity effort (OkHttp 69 -> 0)
 
-- `InnerClasses` missing referenced member classes
-  (`SignatureGenerator.classReference` -> `enterInner`, merging signature
+- `InnerClasses` missing referenced member classes (`SignatureGenerator.classReference` -> `enterInner`, merging
+  signature
   class references).
 - Lambda synthetic methods' `LineNumberTable` (lambda body positioned at the
   lambda expression; upstream dedup disabled by default).
@@ -219,8 +217,7 @@ warnings were ordered differently (`RecordedRequest.java:139:17`,
 `FakeSSLSession.java:73:10`). The earlier "HashMap iteration order"
 conclusion was wrong; the real causes were:
 
-1. The port lacked the `TypeEnter` phase-queue semantics
-   (`Phase.completeEnvs` `firstToComplete`, `AbstractMembersPhase`
+1. The port lacked the `TypeEnter` phase-queue semantics (`Phase.completeEnvs` `firstToComplete`, `AbstractMembersPhase`
    `todo/completing`, `HierarchyPhase` as class completer, `TypeEnter.java:
    249-1022`); the `Phase` structure, `topLevelPhase`, and
    `HierarchyCompleter` were added.
@@ -228,10 +225,9 @@ conclusion was wrong; the real causes were:
    `Http2Reader` was appended late (port #153 vs javac #73).
 3. `TypeEnter.complete` did not reinstall the completer when completion was
    closed (upstream `sym.completer = this`).
-4. `MemberEnter` did not complete classes referenced by member types
-   (upstream `attribType` completion side effect).
-5. The deferred lint queue must be keyed by the `JCTree` object identity
-   (`tree.pos()`), not by a numeric position; the port merged or flushed
+4. `MemberEnter` did not complete classes referenced by member types (upstream `attribType` completion side effect).
+5. The deferred lint queue must be keyed by the `JCTree` object identity (`tree.pos()`), not by a numeric position; the
+   port merged or flushed
    same-offset trees across files (a spurious `FileSystem.java:57:9`).
 6. `Check.checkDeprecated` must be deferred; `Attr.visitMethodDef`/
    `visitVarDef` must `setPos(tree.pos())` at declaration and `flush(tree.
@@ -245,30 +241,30 @@ lib 846, and E2E 8/8 preserved.
 
 ## 3. Key technical decisions
 
-| Decision | Content | Rationale |
-|---|---|---|
-| arena ids | `TreeId`/`SymbolId`/`TypeId` instead of object references | ADR 0001 |
-| explicit services | no global context; key services passed explicitly | ADR 0001 |
-| diagnostic resources | upstream `.properties` embedded with `include_str!` plus typed factories | `compiler.properties` |
-| Chinese patches | 24 entries appended to `compiler_zh_CN.properties`, 936/936 coverage | localization |
+| Decision              | Content                                                                                      | Rationale                                     |
+|-----------------------|----------------------------------------------------------------------------------------------|-----------------------------------------------|
+| arena ids             | `TreeId`/`SymbolId`/`TypeId` instead of object references                                    | ADR 0001                                      |
+| explicit services     | no global context; key services passed explicitly                                            | ADR 0001                                      |
+| diagnostic resources  | upstream `.properties` embedded with `include_str!` plus typed factories                     | `compiler.properties`                         |
+| Chinese patches       | 24 entries appended to `compiler_zh_CN.properties`, 936/936 coverage                         | localization                                  |
 | reentrancy adaptation | field-level `Cell`/`RefCell` with short borrows; `complete_with_attr` through the Attr chain | Java single-thread reentrancy vs Rust borrows |
-| traceability | per-file registry in `docs/PORTING_MAP.md` (headers are ordinary module docs) | auditability |
-| resource reads | JRT/ct.sym/jmod/zip resident in memory with indexes | performance |
+| traceability          | per-file registry in `docs/PORTING_MAP.md` (headers are ordinary module docs)                | auditability                                  |
+| resource reads        | JRT/ct.sym/jmod/zip resident in memory with indexes                                          | performance                                   |
 
 ## 4. Verification matrix (current)
 
-| Area | Result |
-|---|---|
-| Gson bytes | **208/208** |
-| OkHttp bytes | **542/542** |
-| Guava bytes | **1970/1970** |
-| OkHttp `-XDrawDiagnostics` | 11 lines, positionally identical |
-| OkHttp append order (probe) | 229/229 |
-| `javac-core --lib` | **743 passed, 0 failed** |
-| Java 9-17 feature matrix | **43/43** |
-| CLI integration | 5/5 |
-| diag-corpus | **588 pass, 14 fail, 67 skip** (602 comparable) |
-| Gson release performance | ~0.82 s vs javac ~2.44 s (median of 5) |
+| Area                        | Result                                          |
+|-----------------------------|-------------------------------------------------|
+| Gson bytes                  | **208/208**                                     |
+| OkHttp bytes                | **542/542**                                     |
+| Guava bytes                 | **1970/1970**                                   |
+| OkHttp `-XDrawDiagnostics`  | 11 lines, positionally identical                |
+| OkHttp append order (probe) | 229/229                                         |
+| `javac-core --lib`          | **743 passed, 0 failed**                        |
+| Java 9-17 feature matrix    | **43/43**                                       |
+| CLI integration             | 5/5                                             |
+| diag-corpus                 | **588 pass, 14 fail, 67 skip** (602 comparable) |
+| Gson release performance    | ~0.82 s vs javac ~2.44 s (median of 5)          |
 
 ## 5. Known gaps
 
@@ -305,25 +301,25 @@ lib 846, and E2E 8/8 preserved.
 
 ## 7. Commit index (by topic)
 
-| Topic | Representative commits |
-|---|---|
-| P0 infrastructure | `4b08a1e` |
-| parser/tree oracle | `fe31f28`, `9a04e88` |
-| ClassReader/ClassFinder | `76d0437`, `4972554`, `ac2da35` |
-| Enter/TypeEnter | `c242a3c`, `50aedec`, `4af90e3` |
-| Resolve/Types/Infer | `1be2159`, `62a76ec`, `ff75f6d` |
-| Flow/Lint/Annotate | `b2d12f2`, `66cfcbe`, `a66c58c` |
-| full Attr | `3c17e8e`, `68eefac` |
-| backend | `b34ebd2`, `5778054`, `d7650b7`, `2f8f51d` |
-| debt cleanup | `f496fe9`, `5b664fe` |
-| lambda/patterns | `4973fa9`, `9356682` |
-| Gson byte parity | `b979d25` |
-| OkHttp green | `e0a5d1f`, `f0f0894` |
-| CLI | `3758e21`, `ce38d06` |
-| performance | `393a588`, `b9a47e5`, `b34685e` |
-| byte-diff effort | `77dac48`, `b4eb1f4`, `b02f67a` |
-| diagnostic order | `8459da1`, `0e16acd` |
-| test harness | `8486e92` |
+| Topic                   | Representative commits                     |
+|-------------------------|--------------------------------------------|
+| P0 infrastructure       | `4b08a1e`                                  |
+| parser/tree oracle      | `fe31f28`, `9a04e88`                       |
+| ClassReader/ClassFinder | `76d0437`, `4972554`, `ac2da35`            |
+| Enter/TypeEnter         | `c242a3c`, `50aedec`, `4af90e3`            |
+| Resolve/Types/Infer     | `1be2159`, `62a76ec`, `ff75f6d`            |
+| Flow/Lint/Annotate      | `b2d12f2`, `66cfcbe`, `a66c58c`            |
+| full Attr               | `3c17e8e`, `68eefac`                       |
+| backend                 | `b34ebd2`, `5778054`, `d7650b7`, `2f8f51d` |
+| debt cleanup            | `f496fe9`, `5b664fe`                       |
+| lambda/patterns         | `4973fa9`, `9356682`                       |
+| Gson byte parity        | `b979d25`                                  |
+| OkHttp green            | `e0a5d1f`, `f0f0894`                       |
+| CLI                     | `3758e21`, `ce38d06`                       |
+| performance             | `393a588`, `b9a47e5`, `b34685e`            |
+| byte-diff effort        | `77dac48`, `b4eb1f4`, `b02f67a`            |
+| diagnostic order        | `8459da1`, `0e16acd`                       |
+| test harness            | `8486e92`                                  |
 
 ## 8. Next steps (not commitments)
 

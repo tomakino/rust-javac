@@ -11,11 +11,6 @@
 //!   accessors (as_xxx, §13 contract).
 //! * the Java `@since` tags are kept as comment text.
 
-/// Common interface for all nodes in a documentation syntax tree.
-///
-/// @since 1.8
-use super::doc_tree_visitor::DocTreeVisitor;
-use javac_strings::JavaString;
 use super::attribute_tree::AttributeTree;
 use super::author_tree::AuthorTree;
 use super::block_tag_tree::BlockTagTree;
@@ -23,6 +18,10 @@ use super::comment_tree::CommentTree;
 use super::deprecated_tree::DeprecatedTree;
 use super::doc_comment_tree::DocCommentTree;
 use super::doc_root_tree::DocRootTree;
+/// Common interface for all nodes in a documentation syntax tree.
+///
+/// @since 1.8
+use super::doc_tree_visitor::DocTreeVisitor;
 use super::doc_type_tree::DocTypeTree;
 use super::end_element_tree::EndElementTree;
 use super::entity_tree::EntityTree;
@@ -53,6 +52,7 @@ use super::unknown_inline_tag_tree::UnknownInlineTagTree;
 use super::uses_tree::UsesTree;
 use super::value_tree::ValueTree;
 use super::version_tree::VersionTree;
+use javac_strings::JavaString;
 
 pub trait DocTree {
     /// Returns the kind of this tree.
@@ -423,7 +423,6 @@ pub enum Kind {
     /// An implementation-reserved node. This is the not the node
     /// you are looking for.
     OTHER,
-
 }
 
 impl Kind {
@@ -604,16 +603,27 @@ mod tests {
     #[test]
     fn kind_tag_names() {
         // Java: public final String tagName; null for kinds without a tag.
-        assert_eq!(Kind::AUTHOR.tag_name().map(|s| s.to_string_lossy()), Some("author".to_string()));
-        assert_eq!(Kind::CODE.tag_name().map(|s| s.to_string_lossy()), Some("code".to_string()));
-        assert_eq!(Kind::DOC_ROOT.tag_name().map(|s| s.to_string_lossy()), Some("docRoot".to_string()));
+        assert_eq!(
+            Kind::AUTHOR.tag_name().map(|s| s.to_string_lossy()),
+            Some("author".to_string())
+        );
+        assert_eq!(
+            Kind::CODE.tag_name().map(|s| s.to_string_lossy()),
+            Some("code".to_string())
+        );
+        assert_eq!(
+            Kind::DOC_ROOT.tag_name().map(|s| s.to_string_lossy()),
+            Some("docRoot".to_string())
+        );
         assert_eq!(Kind::ATTRIBUTE.tag_name(), None);
         assert_eq!(Kind::OTHER.tag_name(), None);
     }
 
     #[test]
     fn doc_tree_is_object_safe_with_conversion_accessors() {
-        let leaf = Leaf { kind: Kind::ATTRIBUTE };
+        let leaf = Leaf {
+            kind: Kind::ATTRIBUTE,
+        };
         let tree: &dyn DocTree = &leaf;
         assert_eq!(tree.get_kind(), Kind::ATTRIBUTE);
         assert!(tree.as_attribute_tree().is_none());

@@ -239,7 +239,9 @@ impl Type {
         &self,
         kind: crate::code::type_metadata::EntryKind,
     ) -> Option<&crate::code::type_metadata::Entry> {
-        self.metadata.as_ref().and_then(|metadata| metadata.get(kind))
+        self.metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get(kind))
     }
 
     // Java: protected Type typeNoMetadata() (Type.java:347-349) lives on
@@ -250,10 +252,7 @@ impl Type {
 
     /// Java: public abstract Type cloneWithMetadata(TypeMetadata metadata)
     /// (Type.java:354-356).
-    pub fn clone_with_metadata(
-        &self,
-        metadata: crate::code::type_metadata::TypeMetadata,
-    ) -> Type {
+    pub fn clone_with_metadata(&self, metadata: crate::code::type_metadata::TypeMetadata) -> Type {
         let mut cloned = self.clone();
         cloned.metadata = Some(metadata);
         cloned
@@ -355,8 +354,8 @@ impl Type {
     pub fn is_false(&self) -> bool {
         self.tag == TypeTag::BOOLEAN
             && match self.const_value.as_ref() {
-                Some(crate::util::constants::ConstantValue::Boolean(value)) => !*value,
-                Some(crate::util::constants::ConstantValue::Integer(value)) => *value == 0,
+                Some(ConstantValue::Boolean(value)) => !*value,
+                Some(ConstantValue::Integer(value)) => *value == 0,
                 _ => false,
             }
     }
@@ -365,8 +364,8 @@ impl Type {
     pub fn is_true(&self) -> bool {
         self.tag == TypeTag::BOOLEAN
             && match self.const_value.as_ref() {
-                Some(crate::util::constants::ConstantValue::Boolean(value)) => *value,
-                Some(crate::util::constants::ConstantValue::Integer(value)) => *value != 0,
+                Some(ConstantValue::Boolean(value)) => *value,
+                Some(ConstantValue::Integer(value)) => *value != 0,
                 _ => false,
             }
     }
@@ -506,7 +505,9 @@ impl Type {
     /// override is not ported yet because it needs the arena).
     pub fn get_upper_bound(&self) -> Option<TypeId> {
         match &self.kind {
-            TypeKindData::TypeVar { bound, .. } | TypeKindData::CapturedType { bound, .. } => *bound,
+            TypeKindData::TypeVar { bound, .. } | TypeKindData::CapturedType { bound, .. } => {
+                *bound
+            }
             _ => None,
         }
     }
@@ -785,7 +786,11 @@ pub enum TypeKindData {
         /// ErrorType.getModelType override (TypeEnter.java:555-569).
         model_type_provider: Option<
             std::rc::Rc<
-                dyn Fn(&mut crate::compiler_context::CompilerContext, &crate::code::symtab::Symtab, &crate::code::types::Types) -> TypeId,
+                dyn Fn(
+                    &mut CompilerContext,
+                    &crate::code::symtab::Symtab,
+                    &crate::code::types::Types,
+                ) -> TypeId,
             >,
         >,
     },
@@ -833,9 +838,7 @@ pub enum TypeKindData {
         /// Java: JCExpression tree
         tree: TreeId,
         /// Java: Env<AttrContext> env
-        env: std::rc::Rc<
-            crate::comp::env::Env<crate::comp::attr_context::AttrContext>,
-        >,
+        env: std::rc::Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         /// Java: AttrMode mode
         mode: Option<crate::comp::deferred_attr::AttrMode>,
         /// Java: Set<Symbol> notPertinentToApplicability
@@ -857,7 +860,6 @@ pub enum TypeKindData {
         name: crate::util::name::Name,
     },
 }
-
 
 /// Java: the JCNoType display identity: the base class ("<none>") and the three
 /// anonymous subclasses in Type.java:99-121.
@@ -942,7 +944,10 @@ impl Type {
         Type::new(
             TypeTag::TYPEVAR,
             Some(tsym),
-            TypeKindData::TypeVar { bound, lower: Some(lower) },
+            TypeKindData::TypeVar {
+                bound,
+                lower: Some(lower),
+            },
         )
     }
 
@@ -951,7 +956,10 @@ impl Type {
         Type::new(
             TypeTag::FORALL,
             None,
-            TypeKindData::ForAll { tvars, qtype: Some(qtype) },
+            TypeKindData::ForAll {
+                tvars,
+                qtype: Some(qtype),
+            },
         )
     }
 
@@ -965,7 +973,12 @@ impl Type {
         Type::new(
             TypeTag::WILDCARD,
             Some(tsym),
-            TypeKindData::WildcardType { type_: Some(type_), kind, bound, is_printing_bound: std::cell::Cell::new(false), },
+            TypeKindData::WildcardType {
+                type_: Some(type_),
+                kind,
+                bound,
+                is_printing_bound: std::cell::Cell::new(false),
+            },
         )
     }
 
@@ -977,32 +990,42 @@ impl Type {
 
     /// Java: public List<Type> getParameterTypes() (base returns List.nil();
     /// MethodType overrides; ForAll delegates to qtype).
-    pub fn get_parameter_types(&self, ctx: &crate::compiler_context::CompilerContext) -> List<TypeId> {
+    pub fn get_parameter_types(
+        &self,
+        ctx: &CompilerContext,
+    ) -> List<TypeId> {
         match &self.kind {
             TypeKindData::MethodType { argtypes, .. } => argtypes.clone(),
-            TypeKindData::ForAll { qtype: Some(qtype), .. } => {
-                ctx.typ(*qtype).get_parameter_types(ctx)
-            }
+            TypeKindData::ForAll {
+                qtype: Some(qtype), ..
+            } => ctx.typ(*qtype).get_parameter_types(ctx),
             _ => List::nil(),
         }
     }
 
     /// Java: public Type getReturnType() (base returns Type.noType -> None;
     /// MethodType overrides; ForAll delegates to qtype).
-    pub fn get_return_type(&self, ctx: &crate::compiler_context::CompilerContext) -> Option<TypeId> {
+    pub fn get_return_type(
+        &self,
+        ctx: &CompilerContext,
+    ) -> Option<TypeId> {
         match &self.kind {
             TypeKindData::MethodType { restype, .. } => *restype,
-            TypeKindData::ForAll { qtype: Some(qtype), .. } => ctx.typ(*qtype).get_return_type(ctx),
+            TypeKindData::ForAll {
+                qtype: Some(qtype), ..
+            } => ctx.typ(*qtype).get_return_type(ctx),
             _ => None,
         }
     }
 
     /// Java: public List<Type> getThrownTypes() (base returns List.nil();
     /// MethodType overrides; ForAll delegates to qtype).
-    pub fn get_thrown_types(&self, ctx: &crate::compiler_context::CompilerContext) -> List<TypeId> {
+    pub fn get_thrown_types(&self, ctx: &CompilerContext) -> List<TypeId> {
         match &self.kind {
             TypeKindData::MethodType { thrown, .. } => thrown.clone(),
-            TypeKindData::ForAll { qtype: Some(qtype), .. } => ctx.typ(*qtype).get_thrown_types(ctx),
+            TypeKindData::ForAll {
+                qtype: Some(qtype), ..
+            } => ctx.typ(*qtype).get_thrown_types(ctx),
             _ => List::nil(),
         }
     }
@@ -1036,7 +1059,6 @@ impl Type {
         }
     }
 }
-
 
 // Type constructors needed by the Signature/attribute.
 impl Type {
@@ -1109,12 +1131,7 @@ fn push_name(sb: &mut String, name: &crate::util::name::Name) {
 
 /// Java: Type.appendAnnotationsString(StringBuilder[, boolean prefix])
 /// (Type.java:447-460).
-fn push_annotations(
-    ctx: &CompilerContext,
-    ty: TypeId,
-    sb: &mut String,
-    prefix: bool,
-) {
+fn push_annotations(ctx: &CompilerContext, ty: TypeId, sb: &mut String, prefix: bool) {
     if ctx.typ(ty).is_annotated() {
         if prefix {
             sb.push(' ');
@@ -1169,34 +1186,67 @@ pub fn type_list_to_string(ctx: &CompilerContext, list: &List<TypeId>) -> String
     sb
 }
 
-fn class_type_parts(
-    ctx: &CompilerContext,
-    ty: TypeId,
-) -> (Option<TypeId>, Option<List<TypeId>>) {
+fn class_type_parts(ctx: &CompilerContext, ty: TypeId) -> (Option<TypeId>, Option<List<TypeId>>) {
     match &ctx.typ(ty).kind {
-        TypeKindData::ClassType { outer_field, typarams_field, .. }
-        | TypeKindData::ErasedClassType { outer_field, typarams_field, .. }
-        | TypeKindData::UnionClassType { outer_field, typarams_field, .. }
-        | TypeKindData::IntersectionClassType { outer_field, typarams_field, .. }
-        | TypeKindData::ErrorType { outer_field, typarams_field, .. } => {
-            (*outer_field, typarams_field.clone())
+        TypeKindData::ClassType {
+            outer_field,
+            typarams_field,
+            ..
         }
+        | TypeKindData::ErasedClassType {
+            outer_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::UnionClassType {
+            outer_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::IntersectionClassType {
+            outer_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::ErrorType {
+            outer_field,
+            typarams_field,
+            ..
+        } => (*outer_field, typarams_field.clone()),
         _ => panic!("ClassCastException: ClassType expected"),
     }
 }
 
-fn class_type_fields(
-    ctx: &CompilerContext,
-    ty: TypeId,
-) -> (Option<TypeId>, List<TypeId>) {
+fn class_type_fields(ctx: &CompilerContext, ty: TypeId) -> (Option<TypeId>, List<TypeId>) {
     match &ctx.typ(ty).kind {
-        TypeKindData::ClassType { supertype_field, interfaces_field, .. }
-        | TypeKindData::ErasedClassType { supertype_field, interfaces_field, .. }
-        | TypeKindData::UnionClassType { supertype_field, interfaces_field, .. }
-        | TypeKindData::IntersectionClassType { supertype_field, interfaces_field, .. }
-        | TypeKindData::ErrorType { supertype_field, interfaces_field, .. } => {
-            (*supertype_field, interfaces_field.clone().unwrap_or_else(List::nil))
+        TypeKindData::ClassType {
+            supertype_field,
+            interfaces_field,
+            ..
         }
+        | TypeKindData::ErasedClassType {
+            supertype_field,
+            interfaces_field,
+            ..
+        }
+        | TypeKindData::UnionClassType {
+            supertype_field,
+            interfaces_field,
+            ..
+        }
+        | TypeKindData::IntersectionClassType {
+            supertype_field,
+            interfaces_field,
+            ..
+        }
+        | TypeKindData::ErrorType {
+            supertype_field,
+            interfaces_field,
+            ..
+        } => (
+            *supertype_field,
+            interfaces_field.clone().unwrap_or_else(List::nil),
+        ),
         _ => panic!("ClassCastException: ClassType expected"),
     }
 }
@@ -1229,8 +1279,7 @@ fn class_name(ctx: &CompilerContext, ty: TypeId, sym: SymbolId, longform: bool) 
         let messages = crate::util::javac_messages::JavacMessages::new(
             crate::util::javac_messages::DEFAULT_BUNDLE_NAME,
         );
-        let mut sb = messages
-            .get_localized_string("compiler.misc.anonymous.class", &[arg_text]);
+        let mut sb = messages.get_localized_string("compiler.misc.anonymous.class", &[arg_text]);
         if more_info() {
             // Java: className anonymous branch appends sym.hashCode(); the port
             // uses the symbol's stable arena identity (registered adapter).
@@ -1263,7 +1312,7 @@ fn type_to_string_into(ctx: &CompilerContext, ty: TypeId, sb: &mut String) {
                 Some(sym) => push_name(sb, &ctx.sym(sym).name),
                 None => sb.push_str("<none>"),
             }
-            if more_info() && t.has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
+            if more_info() && t.has_tag(TypeTag::TYPEVAR) {
                 sb.push_str(&stable_type_id(ty).to_string());
             }
         }
@@ -1279,11 +1328,16 @@ fn type_to_string_into(ctx: &CompilerContext, ty: TypeId, sb: &mut String) {
             JCNoTypeKind::Recovery => sb.push_str("recovery"),
             JCNoTypeKind::Stuck => sb.push_str("stuck"),
         },
-        TypeKindData::WildcardType { type_, kind, bound, is_printing_bound } => {
+        TypeKindData::WildcardType {
+            type_,
+            kind,
+            bound,
+            is_printing_bound,
+        } => {
             // Java: WildcardType.toString() (Type.java:904-917).
             push_annotations(ctx, ty, sb, false);
             sb.push_str(&kind.to_string());
-            if !matches!(kind, crate::code::bound_kind::BoundKind::UNBOUND)
+            if !matches!(kind, BoundKind::UNBOUND)
                 && let Some(type_) = type_
             {
                 type_to_string_into(ctx, *type_, sb);
@@ -1309,7 +1363,10 @@ fn type_to_string_into(ctx: &CompilerContext, ty: TypeId, sb: &mut String) {
             let tsym = t.tsym.expect("ClassType.tsym");
             let (outer, typarams) = class_type_parts(ctx, ty);
             let enclosing_is_class = outer
-                .map(|outer| ctx.typ(outer).has_tag(crate::code::type_tag::TypeTag::CLASS))
+                .map(|outer| {
+                    ctx.typ(outer)
+                        .has_tag(TypeTag::CLASS)
+                })
                 .unwrap_or(false)
                 && ctx
                     .sym(tsym)
@@ -1339,7 +1396,11 @@ fn type_to_string_into(ctx: &CompilerContext, ty: TypeId, sb: &mut String) {
                 return;
             };
             let mut root = *elemtype;
-            while let TypeKindData::ArrayType { elemtype: Some(inner), .. } = &ctx.typ(root).kind {
+            while let TypeKindData::ArrayType {
+                elemtype: Some(inner),
+                ..
+            } = &ctx.typ(root).kind
+            {
                 root = *inner;
             }
             type_to_string_into(ctx, root, sb);
@@ -1348,31 +1409,44 @@ fn type_to_string_into(ctx: &CompilerContext, ty: TypeId, sb: &mut String) {
                 push_annotations(ctx, current, sb, true);
                 sb.push_str("[]");
                 match &ctx.typ(current).kind {
-                    TypeKindData::ArrayType { elemtype: Some(elemtype), .. }
-                        if ctx
-                            .typ(*elemtype)
-                            .has_tag(crate::code::type_tag::TypeTag::ARRAY) => {
+                    TypeKindData::ArrayType {
+                        elemtype: Some(elemtype),
+                        ..
+                    } if ctx
+                        .typ(*elemtype)
+                        .has_tag(TypeTag::ARRAY) =>
+                    {
                         current = *elemtype;
                     }
                     _ => break,
                 }
             }
         }
-        TypeKindData::MethodType { argtypes, restype, .. } => {
+        TypeKindData::MethodType {
+            argtypes, restype, ..
+        } => {
             // Java: MethodType.toString() (Type.java:1474-1482).
             push_annotations(ctx, ty, sb, false);
             sb.push('(');
-            sb.push_str(&{ let args = argtypes.clone(); type_list_to_string(ctx, &args) });
+            sb.push_str(&{
+                let args = argtypes.clone();
+                type_list_to_string(ctx, &args)
+            });
             sb.push(')');
             if let Some(restype) = restype {
                 type_to_string_into(ctx, *restype, sb);
             }
         }
-        TypeKindData::PartiallyInferredMethodType { argtypes, restype, .. } => {
+        TypeKindData::PartiallyInferredMethodType {
+            argtypes, restype, ..
+        } => {
             // The upstream JDK 17 has no such class (registered legacy port);
             // printed like the underlying MethodType.
             sb.push('(');
-            sb.push_str(&{ let args = argtypes.clone(); type_list_to_string(ctx, &args) });
+            sb.push_str(&{
+                let args = argtypes.clone();
+                type_list_to_string(ctx, &args)
+            });
             sb.push(')');
             if let Some(restype) = restype {
                 type_to_string_into(ctx, *restype, sb);
@@ -1391,7 +1465,10 @@ fn type_to_string_into(ctx: &CompilerContext, ty: TypeId, sb: &mut String) {
             // Java: ForAll.toString() (Type.java:1838-1845).
             push_annotations(ctx, ty, sb, false);
             sb.push('<');
-            sb.push_str(&{ let args = tvars.clone(); type_list_to_string(ctx, &args) });
+            sb.push_str(&{
+                let args = tvars.clone();
+                type_list_to_string(ctx, &args)
+            });
             sb.push('>');
             if let Some(qtype) = qtype {
                 type_to_string_into(ctx, *qtype, sb);
@@ -1459,12 +1536,12 @@ mod tests {
 
     #[test]
     fn display_layer_matches_upstream_rules() {
-        use super::{type_to_string, Type, TypeKindData, JCNoTypeKind};
+        use super::{JCNoTypeKind, Type, TypeKindData, type_to_string};
         use crate::code::bound_kind::BoundKind;
         use crate::code::type_tag::TypeTag;
         use crate::util::list::List;
 
-        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut ctx = CompilerContext::new();
         let names = std::rc::Rc::new(crate::util::names::Names::new(false));
         let syms = crate::code::symtab::Symtab::new(
             &mut ctx,
@@ -1500,17 +1577,23 @@ mod tests {
         let no_type = ctx.alloc_type(Type::new(
             TypeTag::NONE,
             None,
-            TypeKindData::JCNoType { kind: JCNoTypeKind::NoType },
+            TypeKindData::JCNoType {
+                kind: JCNoTypeKind::NoType,
+            },
         ));
         let recovery = ctx.alloc_type(Type::new(
             TypeTag::NONE,
             None,
-            TypeKindData::JCNoType { kind: JCNoTypeKind::Recovery },
+            TypeKindData::JCNoType {
+                kind: JCNoTypeKind::Recovery,
+            },
         ));
         let stuck = ctx.alloc_type(Type::new(
             TypeTag::NONE,
             None,
-            TypeKindData::JCNoType { kind: JCNoTypeKind::Stuck },
+            TypeKindData::JCNoType {
+                kind: JCNoTypeKind::Stuck,
+            },
         ));
         assert_eq!(type_to_string(&ctx, no_type), "none");
         assert_eq!(type_to_string(&ctx, recovery), "recovery");
@@ -1530,13 +1613,11 @@ mod tests {
         // Java: Type.appendAnnotationsString + ClassType.toString (the
         // annotated-class path: "<annotations> <class name>" with the
         // annotations printed by Attribute.toString and "," separated).
-        let annotation = ctx.alloc_attribute(
-            crate::code::attribute::Attribute::new_type_compound(
-                Some(syms.string_type),
-                List::nil(),
-                None,
-            ),
-        );
+        let annotation = ctx.alloc_attribute(crate::code::attribute::Attribute::new_type_compound(
+            Some(syms.string_type),
+            List::nil(),
+            None,
+        ));
         let plain = ctx.alloc_type(Type::new(
             TypeTag::CLASS,
             ctx.typ(syms.string_type).tsym,
@@ -1617,7 +1698,11 @@ mod tests {
     }
 
     fn type_var(bound: Option<TypeId>, lower: Option<TypeId>) -> Type {
-        Type::new(TypeTag::TYPEVAR, None, TypeKindData::TypeVar { bound, lower })
+        Type::new(
+            TypeTag::TYPEVAR,
+            None,
+            TypeKindData::TypeVar { bound, lower },
+        )
     }
 
     #[test]
@@ -1669,7 +1754,9 @@ mod tests {
                 TypeKindData::WildcardType {
                     type_: None,
                     kind: BoundKind::UNBOUND,
-                    bound: None, is_printing_bound: std::cell::Cell::new(false), },
+                    bound: None,
+                    is_printing_bound: std::cell::Cell::new(false),
+                },
             )
             .is_reference()
         );
@@ -1708,7 +1795,9 @@ mod tests {
         let no_type = Type::new(
             TypeTag::NONE,
             None,
-            TypeKindData::JCNoType { kind: JCNoTypeKind::Base },
+            TypeKindData::JCNoType {
+                kind: JCNoTypeKind::Base,
+            },
         );
         assert!(!no_type.is_reference());
         assert!(!no_type.is_primitive_or_void());
@@ -1722,7 +1811,9 @@ mod tests {
             TypeKindData::WildcardType {
                 type_: Some(TypeId::new(7)),
                 kind: BoundKind::EXTENDS,
-                bound: None, is_printing_bound: std::cell::Cell::new(false), },
+                bound: None,
+                is_printing_bound: std::cell::Cell::new(false),
+            },
         );
         assert!(extends.is_extends_bound());
         assert!(!extends.is_super_bound());
@@ -1736,7 +1827,9 @@ mod tests {
             TypeKindData::WildcardType {
                 type_: Some(TypeId::new(8)),
                 kind: BoundKind::SUPER,
-                bound: None, is_printing_bound: std::cell::Cell::new(false), },
+                bound: None,
+                is_printing_bound: std::cell::Cell::new(false),
+            },
         );
         assert!(super_.is_super_bound());
         // Java: WildcardType.isExtendsBound() is true only for EXTENDS/UNBOUND.
@@ -1750,7 +1843,9 @@ mod tests {
             TypeKindData::WildcardType {
                 type_: Some(TypeId::new(9)),
                 kind: BoundKind::UNBOUND,
-                bound: None, is_printing_bound: std::cell::Cell::new(false), },
+                bound: None,
+                is_printing_bound: std::cell::Cell::new(false),
+            },
         );
         assert!(unbound.is_unbound());
         assert!(unbound.is_super_bound());
@@ -1809,9 +1904,7 @@ mod tests {
         assert_eq!(explicit.length(), 3);
         assert_eq!(intersection.get_bounds().length(), 3);
 
-        if let TypeKindData::IntersectionClassType { all_interfaces, .. } =
-            &mut intersection.kind
-        {
+        if let TypeKindData::IntersectionClassType { all_interfaces, .. } = &mut intersection.kind {
             *all_interfaces = true;
         }
         let explicit = intersection.get_explicit_components();
@@ -1949,10 +2042,14 @@ mod tests {
             },
         );
         assert_eq!(class.as_element(), Some(SymbolId::new(9)));
-        let array = Type::new(TypeTag::ARRAY, None, TypeKindData::ArrayType {
-            elemtype: None,
-            varargs: false,
-        });
+        let array = Type::new(
+            TypeTag::ARRAY,
+            None,
+            TypeKindData::ArrayType {
+                elemtype: None,
+                varargs: false,
+            },
+        );
         assert_eq!(array.as_element(), None);
     }
 

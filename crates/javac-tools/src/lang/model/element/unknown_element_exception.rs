@@ -62,9 +62,9 @@ impl UnknownElementException {
     }
 }
 
-impl std::fmt::Display for UnknownElementException {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.super_, f)
+impl fmt::Display for UnknownElementException {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.super_, f)
     }
 }
 

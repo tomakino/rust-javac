@@ -49,11 +49,11 @@ use crate::tree::tree_translator::TreeTranslator;
 use crate::util::list::List;
 use crate::util::name::Name;
 use crate::util::names::Names;
-    /// The altMetafactory flag that marks a serializable lambda.
+/// The altMetafactory flag that marks a serializable lambda.
 pub const FLAG_SERIALIZABLE: i32 = 1 << 0;
-    /// The altMetafactory flag that is followed by the number of marker interfaces.
+/// The altMetafactory flag that is followed by the number of marker interfaces.
 pub const FLAG_MARKERS: i32 = 1 << 1;
-    /// The altMetafactory flag that is followed by the number of bridge methods.
+/// The altMetafactory flag that is followed by the number of bridge methods.
 pub const FLAG_BRIDGES: i32 = 1 << 2;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 /// Port note: the upstream enum constants keep their Java spelling.
@@ -88,15 +88,15 @@ impl LambdaSymbolKind {
     }
 }
 #[derive(Clone)]
-    /// One deduplicated lambda body: its method symbol, its body tree and its
-    /// hash code.
+/// One deduplicated lambda body: its method symbol, its body tree and its
+/// hash code.
 pub struct DedupedLambda {
     pub symbol: SymbolId,
     pub tree: TreeId,
     pub hash_code: i32,
 }
-    /// The per-class translation state (upstream KlassInfo): the methods appended
-    /// to the class, the deduplicated lambdas and the deserialization state.
+/// The per-class translation state (upstream KlassInfo): the methods appended
+/// to the class, the deduplicated lambdas and the deserialization state.
 pub struct KlassInfo {
     pub appended_method_list: Vec<TreeId>,
     pub deduped_lambdas: Vec<DedupedLambda>,
@@ -107,8 +107,8 @@ pub struct KlassInfo {
     pub clazz: TreeId,
 }
 #[derive(Clone)]
-    /// One navigation frame of the analyzer (upstream Frame): the tree being
-    /// visited and the local variable symbols declared so far.
+/// One navigation frame of the analyzer (upstream Frame): the tree being
+/// visited and the local variable symbols declared so far.
 pub struct Frame {
     pub tree: TreeId,
     pub locals: Vec<SymbolId>,
@@ -131,9 +131,9 @@ impl Frame {
         self.locals.contains(&sym)
     }
 }
-    /// The translation context of one lambda (upstream
-    /// LambdaTranslationContext): its target type, the synthetic method it is
-    /// translated to and the symbol mapping of its captured variables.
+/// The translation context of one lambda (upstream
+/// LambdaTranslationContext): its target type, the synthetic method it is
+/// translated to and the symbol mapping of its captured variables.
 pub struct LambdaTranslationContext {
     pub target: TypeId,
     /// Whether this lambda was synthesized from a member reference
@@ -148,16 +148,16 @@ pub struct LambdaTranslationContext {
     pub free_var_processed_local_classes: HashSet<SymbolId>,
     pub method_reference_receiver: Option<TreeId>,
 }
-    /// The translation context of one member reference (upstream
-    /// ReferenceTranslationContext): whether it is a super reference and its
-    /// target type.
+/// The translation context of one member reference (upstream
+/// ReferenceTranslationContext): whether it is a super reference and its
+/// target type.
 pub struct ReferenceTranslationContext {
     pub is_super: bool,
     pub target: TypeId,
 }
-    /// The context of one translated lambda or member reference (upstream
-    /// TranslationContext): the tree, its owning symbol, the capture depth, the
-    /// bridge method symbols and the subclass payload.
+/// The context of one translated lambda or member reference (upstream
+/// TranslationContext): the tree, its owning symbol, the capture depth, the
+/// bridge method symbols and the subclass payload.
 pub struct TranslationContext {
     pub tree: TreeId,
     pub owner: SymbolId,
@@ -166,17 +166,17 @@ pub struct TranslationContext {
     pub prev_context: Option<TreeId>,
     pub kind: TranslationContextKind,
 }
-    /// The kind discriminator of a translation context (registration adapter for
-    /// the upstream generic TranslationContext family).
+/// The kind discriminator of a translation context (registration adapter for
+/// the upstream generic TranslationContext family).
 pub enum TranslationContextKind {
     Lambda(LambdaTranslationContext),
     Reference(ReferenceTranslationContext),
 }
-    /// This pass desugars lambda expressions into static methods.
-    ///
-    /// The Rust port keeps the upstream TreeTranslator shape: a TreeVisitor whose
-    /// default navigation descends into every child and whose overridden visitors
-    /// replace lambda and member reference trees with invokedynamic calls.
+/// This pass desugars lambda expressions into static methods.
+///
+/// The Rust port keeps the upstream TreeTranslator shape: a TreeVisitor whose
+/// default navigation descends into every child and whose overridden visitors
+/// replace lambda and member reference trees with invokedynamic calls.
 pub struct LambdaToMethod {
     pub attr: Rc<RefCell<Attr>>,
     pub diags: Rc<crate::util::jc_diagnostic::Factory>,
@@ -376,7 +376,6 @@ impl LambdaToMethod {
     }
 }
 
-
 impl LambdaToMethod {
     fn visit_class_def_l2m(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let mut tree = tree;
@@ -421,7 +420,11 @@ impl LambdaToMethod {
             *slot = slot.append_list(&List::from_iterable(new_methods.clone()));
         }
         for lambda in &new_methods {
-            if let TreeKind::MethodDecl { sym: Some(method_sym), .. } = &ctx.tree(*lambda).kind {
+            if let TreeKind::MethodDecl {
+                sym: Some(method_sym),
+                ..
+            } = &ctx.tree(*lambda).kind
+            {
                 let members = match &ctx.sym(class_sym).kind_data {
                     SymbolKind::ClassSymbol { members_field, .. } => *members_field,
                     _ => None,
@@ -434,7 +437,12 @@ impl LambdaToMethod {
         self.result = Some(translated);
         self.k_info = previous_klass_info;
     }
-    fn new_klass_info(&mut self, ctx: &mut CompilerContext, clazz: TreeId, class_sym: SymbolId) -> KlassInfo {
+    fn new_klass_info(
+        &mut self,
+        ctx: &mut CompilerContext,
+        clazz: TreeId,
+        class_sym: SymbolId,
+    ) -> KlassInfo {
         let serialized_lambda_type = self.syms.serialized_lambda_type;
         let object_type = self.syms.object_type;
         let method_class = self.syms.method_class;
@@ -451,7 +459,9 @@ impl LambdaToMethod {
             Some(method_type),
             class_sym,
         );
-        let lambda_name = self.names.from_string(&javac_strings::JavaString::from("lambda"));
+        let lambda_name = self
+            .names
+            .from_string(&javac_strings::JavaString::from("lambda"));
         let deser_param_sym = self.new_var_symbol(
             ctx,
             flags::FINAL as i64,
@@ -470,9 +480,7 @@ impl LambdaToMethod {
         }
     }
     fn visit_lambda_l2m(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        if self.context.is_none()
-            && std::env::var_os("DSH_DEBUG_L2M").is_some()
-        {
+        if self.context.is_none() && std::env::var_os("DSH_DEBUG_L2M").is_some() {
             let pos = ctx.tree(tree).pos;
             let keys: Vec<(i32, u32)> = self
                 .context_map
@@ -492,8 +500,7 @@ impl LambdaToMethod {
                 // source position. Prefer the Lambda context; matching the
                 // first context by position picked the Reference context and
                 // visit_lambda_l2m panicked with "expected a lambda context".
-                let candidates: Vec<TreeId> =
-                    self.context_map.borrow().keys().copied().collect();
+                let candidates: Vec<TreeId> = self.context_map.borrow().keys().copied().collect();
                 let found = candidates.into_iter().find(|candidate| {
                     ctx.tree(*candidate).pos == pos
                         && matches!(
@@ -566,26 +573,17 @@ impl LambdaToMethod {
             );
             // The note points at the rewritten lambda; ensure the enclosing
             // class source is active so the diagnostic carries file:line.
-            let owner = crate::code::symbol::encl_class(ctx, sym);
+            let owner = symbol::encl_class(ctx, sym);
             let sourcefile = owner.and_then(|owner| match &ctx.sym(owner).kind_data {
-                crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => {
+                SymbolKind::ClassSymbol { sourcefile, .. } => {
                     sourcefile.clone()
                 }
                 _ => None,
             });
-            let prev_source = crate::util::abstract_log::AbstractLog::use_source(
-                &*self.log,
-                sourcefile,
-            );
-            crate::util::abstract_log::AbstractLog::note_at(
-                &*self.log,
-                ctx.tree(tree).pos,
-                note,
-            );
-            crate::util::abstract_log::AbstractLog::use_source(
-                &*self.log,
-                prev_source,
-            );
+            let prev_source =
+                crate::util::abstract_log::AbstractLog::use_source(&*self.log, sourcefile);
+            crate::util::abstract_log::AbstractLog::note_at(&*self.log, ctx.tree(tree).pos, note);
+            crate::util::abstract_log::AbstractLog::use_source(&*self.log, prev_source);
         }
         if !dedupe {
             if let Some(info) = self.k_info.as_mut() {
@@ -601,7 +599,11 @@ impl LambdaToMethod {
                 let sym_encl = symbol::encl_class(ctx, sym)
                     .and_then(|class| ctx.sym(class).ty)
                     .expect("enclosing class of lambda method");
-                synthetic_inits.push(self.make_this(ctx, sym_encl, crate::code::symbol::encl_class(ctx, owner).expect("owner class")));
+                synthetic_inits.push(self.make_this(
+                    ctx,
+                    sym_encl,
+                    symbol::encl_class(ctx, owner).expect("owner class"),
+                ));
             }
         }
         {
@@ -633,8 +635,11 @@ impl LambdaToMethod {
                 synthetic_inits.push(captured);
             }
         }
-        let indy_args =
-            self.translate_list_with_context(ctx, &List::from_iterable(synthetic_inits), prev_context);
+        let indy_args = self.translate_list_with_context(
+            ctx,
+            &List::from_iterable(synthetic_inits),
+            prev_context,
+        );
         let handle = symbol::as_method_handle(ctx, sym, false);
         let result = self.make_metafactory_indy_call(ctx, context_tree, handle, indy_args);
         let from_member_reference = self
@@ -654,26 +659,17 @@ impl LambdaToMethod {
                     crate::resources::diagnostic_contract::SymbolArg::placeholder(name),
                 ),
             );
-            let owner = crate::code::symbol::encl_class(ctx, sym);
+            let owner = symbol::encl_class(ctx, sym);
             let sourcefile = owner.and_then(|owner| match &ctx.sym(owner).kind_data {
-                crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => {
+                SymbolKind::ClassSymbol { sourcefile, .. } => {
                     sourcefile.clone()
                 }
                 _ => None,
             });
-            let prev_source = crate::util::abstract_log::AbstractLog::use_source(
-                &*self.log,
-                sourcefile,
-            );
-            crate::util::abstract_log::AbstractLog::note_at(
-                &*self.log,
-                ctx.tree(tree).pos,
-                note,
-            );
-            crate::util::abstract_log::AbstractLog::use_source(
-                &*self.log,
-                prev_source,
-            );
+            let prev_source =
+                crate::util::abstract_log::AbstractLog::use_source(&*self.log, sourcefile);
+            crate::util::abstract_log::AbstractLog::note_at(&*self.log, ctx.tree(tree).pos, note);
+            crate::util::abstract_log::AbstractLog::use_source(&*self.log, prev_source);
         }
         self.result = Some(result);
     }
@@ -729,16 +725,31 @@ impl LambdaToMethod {
             _ => panic!("ClassCastException: JCMemberReference expected"),
         };
         let init: Option<TreeId> = match (mode, kind) {
-            (crate::tree::jc_tree::ReferenceMode::INVOKE, Some(crate::tree::jc_tree::ReferenceKind::IMPLICIT_INNER))
-            | (crate::tree::jc_tree::ReferenceMode::INVOKE, Some(crate::tree::jc_tree::ReferenceKind::SUPER)) => {
+            (
+                crate::tree::jc_tree::ReferenceMode::INVOKE,
+                Some(crate::tree::jc_tree::ReferenceKind::IMPLICIT_INNER),
+            )
+            | (
+                crate::tree::jc_tree::ReferenceMode::INVOKE,
+                Some(crate::tree::jc_tree::ReferenceKind::SUPER),
+            ) => {
                 let owner_encl = symbol::encl_class(ctx, owner)
                     .and_then(|class| ctx.sym(class).ty)
                     .expect("enclosing class of reference owner");
-                Some(self.make_this(ctx, owner_encl, crate::code::symbol::encl_class(ctx, owner).expect("owner class")))
+                Some(self.make_this(
+                    ctx,
+                    owner_encl,
+                    symbol::encl_class(ctx, owner).expect("owner class"),
+                ))
             }
-            (crate::tree::jc_tree::ReferenceMode::INVOKE, Some(crate::tree::jc_tree::ReferenceKind::BOUND)) => {
+            (
+                crate::tree::jc_tree::ReferenceMode::INVOKE,
+                Some(crate::tree::jc_tree::ReferenceKind::BOUND),
+            ) => {
                 let qualifier = match &ctx.tree(tree).kind {
-                    TreeKind::MemberReference { expr: Some(expr), .. } => *expr,
+                    TreeKind::MemberReference {
+                        expr: Some(expr), ..
+                    } => *expr,
                     _ => panic!("bound member reference without qualifier"),
                 };
                 let sym_owner = ctx.sym(ref_sym).owner.expect("reference symbol owner");
@@ -778,11 +789,11 @@ impl LambdaToMethod {
             None => (Vec::new(), false),
         };
         let super_qualifier = match &ctx.tree(tree).kind {
-            TreeKind::MemberReference { expr: Some(expr), .. } => {
-                crate::tree::tree_info::symbol(ctx, *expr)
-                    .map(|symbol| ctx.sym(symbol).name == self.names._super)
-                    .unwrap_or(false)
-            }
+            TreeKind::MemberReference {
+                expr: Some(expr), ..
+            } => tree_info::symbol(ctx, *expr)
+                .map(|symbol| ctx.sym(symbol).name == self.names._super)
+                .unwrap_or(false),
             _ => false,
         };
         let _ = is_super;
@@ -796,26 +807,17 @@ impl LambdaToMethod {
             let note = crate::util::jc_diagnostic::Note::from(
                 crate::resources::compiler_properties::notes::mref_stat(false, ()),
             );
-            let owner = crate::code::symbol::encl_class(ctx, ref_sym);
+            let owner = symbol::encl_class(ctx, ref_sym);
             let sourcefile = owner.and_then(|owner| match &ctx.sym(owner).kind_data {
-                crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => {
+                SymbolKind::ClassSymbol { sourcefile, .. } => {
                     sourcefile.clone()
                 }
                 _ => None,
             });
-            let prev_source = crate::util::abstract_log::AbstractLog::use_source(
-                &*self.log,
-                sourcefile,
-            );
-            crate::util::abstract_log::AbstractLog::note_at(
-                &*self.log,
-                ctx.tree(tree).pos,
-                note,
-            );
-            crate::util::abstract_log::AbstractLog::use_source(
-                &*self.log,
-                prev_source,
-            );
+            let prev_source =
+                crate::util::abstract_log::AbstractLog::use_source(&*self.log, sourcefile);
+            crate::util::abstract_log::AbstractLog::note_at(&*self.log, ctx.tree(tree).pos, note);
+            crate::util::abstract_log::AbstractLog::use_source(&*self.log, prev_source);
         }
         self.result = Some(result);
     }
@@ -921,7 +923,9 @@ impl LambdaToMethod {
             if let Some(context) = context_map.get(&context_tree) {
                 if let TranslationContextKind::Lambda(lambda) = &context.kind {
                     if let TreeKind::VariableDecl { sym: Some(sym), .. } = &ctx.tree(tree).kind {
-                        if let Some(mapped) = context_symbol(lambda, LambdaSymbolKind::LOCAL_VAR, *sym) {
+                        if let Some(mapped) =
+                            context_symbol(lambda, LambdaSymbolKind::LOCAL_VAR, *sym)
+                        {
                             translated = Some((mapped, *sym));
                         }
                     }
@@ -947,7 +951,10 @@ impl LambdaToMethod {
             ),
             None => None,
         };
-        if let TreeKind::VariableDecl { init: slot, sym, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::VariableDecl {
+            init: slot, sym, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *slot = translated_init;
             *sym = Some(mapped_sym);
         }
@@ -987,7 +994,11 @@ pub struct LambdaAnalyzerPreprocessor {
 
 impl LambdaToMethod {
     /// Translates a list of trees (TreeTranslator view of the pass).
-    pub fn translate_list(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_list(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         // Each element may be a nested lambda with its own context; translate()
         // picks it up from context_map, so a plain translate_list_with_context
         // (which reuses the enclosing context) would lose it.
@@ -999,30 +1010,54 @@ impl LambdaToMethod {
         translated
     }
     /// Translates a list of variable declarations.
-    pub fn translate_var_defs(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_var_defs(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
     /// Translates a list of type parameters.
-    pub fn translate_type_params(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_type_params(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
     /// Translates a list of switch cases.
-    pub fn translate_cases(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_cases(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
     /// Translates a list of catch clauses.
-    pub fn translate_catchers(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_catchers(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
     /// Translates a list of annotations.
-    pub fn translate_annotations(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_annotations(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
 }
 
 impl LambdaAnalyzerPreprocessor {
     /// Translates a list of trees (analyzer view of the pass).
-    pub fn translate_list(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_list(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         let mut result: List<TreeId> = List::nil();
         for tree in trees.iter() {
             let translated = self.translate(ctx, Some(tree)).expect("translated tree");
@@ -1031,23 +1066,43 @@ impl LambdaAnalyzerPreprocessor {
         result
     }
     /// Translates a list of variable declarations (analyzer view).
-    pub fn translate_var_defs(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_var_defs(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
     /// Translates a list of type parameters (analyzer view).
-    pub fn translate_type_params(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_type_params(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
     /// Translates a list of switch cases (analyzer view).
-    pub fn translate_cases(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_cases(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
     /// Translates a list of catch clauses (analyzer view).
-    pub fn translate_catchers(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_catchers(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
     /// Translates a list of annotations (analyzer view).
-    pub fn translate_annotations(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_annotations(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
     /// # Arguments
@@ -1134,7 +1189,9 @@ impl LambdaAnalyzerPreprocessor {
     fn analyzer_visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let previous_nascent_types = self.types_under_construction.clone();
         let meth_name = match &ctx.tree(tree).kind {
-            TreeKind::MethodInvocation { meth: Some(meth), .. } => tree_info::name(ctx, *meth),
+            TreeKind::MethodInvocation {
+                meth: Some(meth), ..
+            } => tree_info::name(ctx, *meth),
             _ => None,
         };
         if let Some(name) = meth_name {
@@ -1174,13 +1231,19 @@ impl LambdaAnalyzerPreprocessor {
         }
         if let Some(enclosing_lambda) = self.directly_enclosing_lambda(ctx) {
             let owner = self.owner(ctx, false).expect("owner");
-            if let TreeKind::ClassDecl { sym: Some(slot), .. } = &mut ctx.tree_mut(tree).kind {
+            if let TreeKind::ClassDecl {
+                sym: Some(slot), ..
+            } = &mut ctx.tree_mut(tree).kind
+            {
                 let _ = slot;
             }
             self.set_class_owner(ctx, class_sym, owner);
             if ctx.sym(class_sym).has_outer_instance(ctx) {
                 let class_ty = ctx.sym(class_sym).ty.expect("class type");
-                let outer_instance_symbol = ctx.typ(class_ty).get_enclosing_type().and_then(|encl| ctx.typ(encl).tsym);
+                let outer_instance_symbol = ctx
+                    .typ(class_ty)
+                    .get_enclosing_type()
+                    .and_then(|encl| ctx.typ(encl).tsym);
                 let mut local_context = self.context_key(ctx);
                 while let Some(context_tree) = local_context {
                     let context_owner = self
@@ -1203,7 +1266,12 @@ impl LambdaAnalyzerPreprocessor {
                             if self.captured_decl(ctx, depth, outer).is_none() {
                                 break;
                             }
-                            self.add_lambda_symbol(ctx, context_tree, outer, LambdaSymbolKind::CAPTURED_THIS);
+                            self.add_lambda_symbol(
+                                ctx,
+                                context_tree,
+                                outer,
+                                LambdaSymbolKind::CAPTURED_THIS,
+                            );
                         }
                     }
                     local_context = self
@@ -1265,8 +1333,8 @@ impl LambdaAnalyzerPreprocessor {
         tree: TreeId,
         method_reference_receiver: Option<TreeId>,
     ) {
-        let receiver = method_reference_receiver
-            .and_then(|receiver| self.translate(ctx, Some(receiver)));
+        let receiver =
+            method_reference_receiver.and_then(|receiver| self.translate(ctx, Some(receiver)));
         let context = self.analyze_lambda(ctx, tree, receiver);
         let _ = context;
         if let Some(TranslationContext {
@@ -1307,26 +1375,15 @@ impl LambdaAnalyzerPreprocessor {
                 crate::resources::diagnostic_contract::SymbolArg::placeholder(name),
             ),
         );
-        let owner = crate::code::symbol::encl_class(ctx, translated_sym);
+        let owner = symbol::encl_class(ctx, translated_sym);
         let sourcefile = owner.and_then(|owner| match &ctx.sym(owner).kind_data {
-            crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => {
-                sourcefile.clone()
-            }
+            SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile.clone(),
             _ => None,
         });
-        let prev_source = crate::util::abstract_log::AbstractLog::use_source(
-            &*self.log,
-            sourcefile,
-        );
-        crate::util::abstract_log::AbstractLog::note_at(
-            &*self.log,
-            ctx.tree(tree).pos,
-            note,
-        );
-        crate::util::abstract_log::AbstractLog::use_source(
-            &*self.log,
-            prev_source,
-        );
+        let prev_source =
+            crate::util::abstract_log::AbstractLog::use_source(&*self.log, sourcefile);
+        crate::util::abstract_log::AbstractLog::note_at(&*self.log, ctx.tree(tree).pos, note);
+        crate::util::abstract_log::AbstractLog::use_source(&*self.log, prev_source);
     }
     fn analyze_lambda(
         &mut self,
@@ -1369,12 +1426,20 @@ impl LambdaAnalyzerPreprocessor {
         let class_ty = ctx.tree(tree).ty.expect("new class type");
         let def = ctx.typ(class_ty).tsym.expect("new class symbol");
         let in_referenced_class = self.currently_in_class(ctx, def);
-        let is_local = crate::code::symbol::Symbol::is_directly_or_indirectly_local(ctx, def);
+        let is_local = Symbol::is_directly_or_indirectly_local(ctx, def);
         if std::env::var_os("DSH_DEBUG_ANON").is_some() {
             eprintln!(
                 "[ANON] new_pos={} ty_sym={} def={} def_kind={:?} is_local={} in_ref={} has_def={}",
                 ctx.tree(tree).pos,
-                ctx.typ(class_ty).tsym.map(|s| ctx.sym(s).name.to_java_string().to_string_lossy().to_string()).unwrap_or_default(),
+                ctx.typ(class_ty)
+                    .tsym
+                    .map(|s| ctx
+                        .sym(s)
+                        .name
+                        .to_java_string()
+                        .to_string_lossy()
+                        .to_string())
+                    .unwrap_or_default(),
                 ctx.sym(def).name.to_java_string().to_string_lossy(),
                 ctx.sym(def).kind,
                 is_local,
@@ -1403,7 +1468,12 @@ impl LambdaAnalyzerPreprocessor {
                     // lookup is involved, so an inner-class creation always
                     // captures the outer instance.
                     if let Some(outer) = outer_instance_symbol {
-                        self.add_lambda_symbol(ctx, context_tree, outer, LambdaSymbolKind::CAPTURED_THIS);
+                        self.add_lambda_symbol(
+                            ctx,
+                            context_tree,
+                            outer,
+                            LambdaSymbolKind::CAPTURED_THIS,
+                        );
                     }
                 }
                 local_context = self
@@ -1460,7 +1530,11 @@ impl LambdaAnalyzerPreprocessor {
             if !ctx.tree(frame.tree).has_tag(Tag::CLASSDEF) {
                 continue;
             }
-            if let TreeKind::ClassDecl { sym: Some(class_sym), .. } = &ctx.tree(frame.tree).kind {
+            if let TreeKind::ClassDecl {
+                sym: Some(class_sym),
+                ..
+            } = &ctx.tree(frame.tree).kind
+            {
                 if *class_sym == csym {
                     return true;
                 }
@@ -1474,12 +1548,18 @@ impl LambdaAnalyzerPreprocessor {
         let depth = self.frame_stack.len() as i32 - 1;
         let prev_context = self.context_key(ctx);
         let target = match &ctx.tree(tree).kind {
-            TreeKind::MemberReference { target: Some(target), .. } => *target,
+            TreeKind::MemberReference {
+                target: Some(target),
+                ..
+            } => *target,
             _ => panic!("expected an attributed member reference"),
         };
         let is_super = matches!(
             &ctx.tree(tree).kind,
-            TreeKind::MemberReference { kind: Some(crate::tree::jc_tree::ReferenceKind::SUPER), .. }
+            TreeKind::MemberReference {
+                kind: Some(crate::tree::jc_tree::ReferenceKind::SUPER),
+                ..
+            }
         );
         let context = TranslationContext {
             tree,
@@ -1534,10 +1614,18 @@ impl LambdaAnalyzerPreprocessor {
                         break;
                     };
                     let class_sym = match &ctx.tree(decl).kind {
-                        TreeKind::ClassDecl { sym: Some(class_sym), .. } => *class_sym,
+                        TreeKind::ClassDecl {
+                            sym: Some(class_sym),
+                            ..
+                        } => *class_sym,
                         _ => break,
                     };
-                    self.add_lambda_symbol(ctx, context_tree, class_sym, LambdaSymbolKind::CAPTURED_THIS);
+                    self.add_lambda_symbol(
+                        ctx,
+                        context_tree,
+                        class_sym,
+                        LambdaSymbolKind::CAPTURED_THIS,
+                    );
                 }
                 local_context = self
                     .context_map
@@ -1556,7 +1644,10 @@ impl LambdaAnalyzerPreprocessor {
         };
         if let Some(context_tree) = context {
             let is_lambda = matches!(
-                self.context_map.borrow().get(&context_tree).map(|context| &context.kind),
+                self.context_map
+                    .borrow()
+                    .get(&context_tree)
+                    .map(|context| &context.kind),
                 Some(TranslationContextKind::Lambda(_))
             );
             if is_lambda {
@@ -1566,7 +1657,12 @@ impl LambdaAnalyzerPreprocessor {
                         if ctx.tree(frame.tree).has_tag(Tag::VARDEF) {
                             continue;
                         } else if ctx.tree(frame.tree).has_tag(Tag::LAMBDA) {
-                            self.add_lambda_symbol(ctx, frame.tree, sym, LambdaSymbolKind::LOCAL_VAR);
+                            self.add_lambda_symbol(
+                                ctx,
+                                frame.tree,
+                                sym,
+                                LambdaSymbolKind::LOCAL_VAR,
+                            );
                         } else {
                             break;
                         }
@@ -1615,7 +1711,7 @@ impl LambdaAnalyzerPreprocessor {
                         TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
                         _ => panic!("expected a variable declaration"),
                     };
-                    if crate::code::symbol::Symbol::is_directly_or_indirectly_local(ctx, var_sym) {
+                    if Symbol::is_directly_or_indirectly_local(ctx, var_sym) {
                         index += 1;
                         continue;
                     }
@@ -1624,7 +1720,11 @@ impl LambdaAnalyzerPreprocessor {
                         TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
                         _ => panic!("expected a class declaration"),
                     };
-                    return Some(self.init_sym(ctx, class_sym, ctx.sym(var_sym).flags_field & flags::STATIC as i64));
+                    return Some(self.init_sym(
+                        ctx,
+                        class_sym,
+                        ctx.sym(var_sym).flags_field & flags::STATIC as i64,
+                    ));
                 }
                 Tag::BLOCK => {
                     let class_tree = self.frame_stack[index + 1].tree;
@@ -1662,7 +1762,12 @@ impl LambdaAnalyzerPreprocessor {
         }
         panic!("AssertionError: owner not found")
     }
-    fn init_sym(&mut self, ctx: &mut CompilerContext, class_sym: SymbolId, class_flags: i64) -> SymbolId {
+    fn init_sym(
+        &mut self,
+        ctx: &mut CompilerContext,
+        class_sym: SymbolId,
+        class_flags: i64,
+    ) -> SymbolId {
         if class_flags & flags::STATIC as i64 != 0 {
             let attr = Rc::clone(&self.attr);
             let attr = attr.borrow();
@@ -1737,7 +1842,12 @@ impl LambdaAnalyzerPreprocessor {
     /// Return the declaration corresponding to a symbol in the enclosing
     /// scope; the depth parameter is used to filter out symbols defined
     /// in nested scopes (which do not need to undergo capture).
-    fn captured_decl(&self, ctx: &mut CompilerContext, depth: i32, sym: SymbolId) -> Option<TreeId> {
+    fn captured_decl(
+        &self,
+        ctx: &mut CompilerContext,
+        depth: i32,
+        sym: SymbolId,
+    ) -> Option<TreeId> {
         let total = self.frame_stack.len() as i32;
         for (index, frame) in self.frame_stack.iter().enumerate() {
             // Depth grows outwards from the class (index len-1) towards the
@@ -1754,7 +1864,7 @@ impl LambdaAnalyzerPreprocessor {
                     // superclass still counts as a member of this class --
                     // an implicit `this.field` access must capture `this`.
                     let syms = &*self.syms;
-                    let is_member = crate::code::symbol::symbol_is_member_of(
+                    let is_member = symbol::symbol_is_member_of(
                         ctx,
                         &self.types,
                         &syms,
@@ -1763,7 +1873,11 @@ impl LambdaAnalyzerPreprocessor {
                     );
                     let _ = syms;
                     if is_member {
-                        return if current_depth > depth { None } else { Some(frame.tree) };
+                        return if current_depth > depth {
+                            None
+                        } else {
+                            Some(frame.tree)
+                        };
                     }
                 }
                 Tag::VARDEF => {
@@ -1771,15 +1885,24 @@ impl LambdaAnalyzerPreprocessor {
                         TreeKind::VariableDecl { sym, .. } => *sym,
                         _ => None,
                     };
-                    if (var_sym == Some(sym) && ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::MTH))
+                    if (var_sym == Some(sym)
+                        && ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::MTH))
                         || frame.contains(sym)
                     {
-                        return if current_depth > depth { None } else { Some(frame.tree) };
+                        return if current_depth > depth {
+                            None
+                        } else {
+                            Some(frame.tree)
+                        };
                     }
                 }
                 Tag::BLOCK | Tag::METHODDEF | Tag::LAMBDA => {
                     if frame.contains(sym) {
-                        return if current_depth > depth { None } else { Some(frame.tree) };
+                        return if current_depth > depth {
+                            None
+                        } else {
+                            Some(frame.tree)
+                        };
                     }
                 }
                 _ => panic!("AssertionError: bad decl kind"),
@@ -1821,7 +1944,10 @@ impl LambdaAnalyzerPreprocessor {
             .context_key(ctx)
             .map(|context| {
                 matches!(
-                    self.context_map.borrow().get(&context).map(|context| &context.kind),
+                    self.context_map
+                        .borrow()
+                        .get(&context)
+                        .map(|context| &context.kind),
                     Some(TranslationContextKind::Lambda(_))
                 )
             })
@@ -1846,7 +1972,13 @@ impl LambdaAnalyzerPreprocessor {
             return false;
         }
         let context = self.context_key(ctx).expect("context");
-        let outer_count = match &self.context_map.borrow().get(&context).expect("context").kind {
+        let outer_count = match &self
+            .context_map
+            .borrow()
+            .get(&context)
+            .expect("context")
+            .kind
+        {
             TranslationContextKind::Lambda(lambda) => lambda
                 .translated_symbols
                 .get(&LambdaSymbolKind::CAPTURED_OUTER_THIS)
@@ -1869,7 +2001,10 @@ impl LambdaAnalyzerPreprocessor {
             .get(&context)
             .map(|context| context.owner)
             .expect("context owner");
-        let TreeKind::NewClass { encl, def, clazz, .. } = &ctx.tree(tree).kind else {
+        let TreeKind::NewClass {
+            encl, def, clazz, ..
+        } = &ctx.tree(tree).kind
+        else {
             return false;
         };
         if encl.is_some() || def.is_some() {
@@ -1893,7 +2028,13 @@ impl LambdaAnalyzerPreprocessor {
             let enclosing_tsym = ctx.typ(enclosing).tsym;
             let current_tsym = ctx.typ(current).tsym;
             if let (Some(current_tsym), Some(enclosing_tsym)) = (current_tsym, enclosing_tsym) {
-                if crate::code::symbol::is_sub_class(ctx, &*self.syms, &self.types, current_tsym, enclosing_tsym) {
+                if symbol::is_sub_class(
+                    ctx,
+                    &*self.syms,
+                    &self.types,
+                    current_tsym,
+                    enclosing_tsym,
+                ) {
                     return true;
                 }
             }
@@ -1905,11 +2046,15 @@ impl LambdaAnalyzerPreprocessor {
     }
 }
 
-
 impl LambdaAnalyzerPreprocessor {
     /// Completes the translated lambda method symbol: flags, synthetic
     /// parameters, name and signature (upstream LambdaTranslationContext.complete).
-    fn complete_lambda_context(&mut self, ctx: &mut CompilerContext, tree: TreeId, method_reference_receiver: Option<TreeId>) {
+    fn complete_lambda_context(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        method_reference_receiver: Option<TreeId>,
+    ) {
         let (owner, translated_sym, target, assigned_to, self_sym, already, mut_receiver) = {
             let contexts = self.context_map.borrow();
             let Some(TranslationContext {
@@ -1942,11 +2087,23 @@ impl LambdaAnalyzerPreprocessor {
                     captured_symbols(lambda, LambdaSymbolKind::PARAM),
                     captured_symbols(lambda, LambdaSymbolKind::CAPTURED_VAR)
                         .into_iter()
-                        .map(|sym| (sym, context_symbol(lambda, LambdaSymbolKind::CAPTURED_VAR, sym).expect("captured var")))
+                        .map(|sym| {
+                            (
+                                sym,
+                                context_symbol(lambda, LambdaSymbolKind::CAPTURED_VAR, sym)
+                                    .expect("captured var"),
+                            )
+                        })
                         .collect::<Vec<(SymbolId, SymbolId)>>(),
                     captured_symbols(lambda, LambdaSymbolKind::CAPTURED_OUTER_THIS)
                         .into_iter()
-                        .map(|sym| (sym, context_symbol(lambda, LambdaSymbolKind::CAPTURED_OUTER_THIS, sym).expect("outer this")))
+                        .map(|sym| {
+                            (
+                                sym,
+                                context_symbol(lambda, LambdaSymbolKind::CAPTURED_OUTER_THIS, sym)
+                                    .expect("outer this"),
+                            )
+                        })
                         .collect::<Vec<(SymbolId, SymbolId)>>(),
                     captured_symbols(lambda, LambdaSymbolKind::CAPTURED_THIS),
                 )
@@ -1961,7 +2118,11 @@ impl LambdaAnalyzerPreprocessor {
                 );
             }
             let owner_flags = ctx.sym(owner).flags_field;
-            let owner_owner_flags = ctx.sym(owner).owner.map(|encl| ctx.sym(encl).flags_field).unwrap_or(0);
+            let owner_owner_flags = ctx
+                .sym(owner)
+                .owner
+                .map(|encl| ctx.sym(encl).flags_field)
+                .unwrap_or(0);
             let in_interface = owner_flags & flags::INTERFACE as i64 != 0;
             let this_referenced = !this_orig.is_empty();
             let mut new_flags = flags::SYNTHETIC as i64
@@ -1988,13 +2149,17 @@ impl LambdaAnalyzerPreprocessor {
                 };
                 param_defs = param_defs.append(var_def);
                 param_symbols = param_symbols.append(*translated);
-                param_types = param_types.append(ctx.sym(*translated).ty.expect("synthetic param type"));
+                param_types =
+                    param_types.append(ctx.sym(*translated).ty.expect("synthetic param type"));
             }
             for sym in param_orig.iter() {
                 let translated = {
                     let contexts = self.context_map.borrow();
                     match contexts.get(&tree).map(|context| &context.kind) {
-                        Some(TranslationContextKind::Lambda(lambda)) => context_symbol(lambda, LambdaSymbolKind::PARAM, *sym).expect("translated param"),
+                        Some(TranslationContextKind::Lambda(lambda)) => {
+                            context_symbol(lambda, LambdaSymbolKind::PARAM, *sym)
+                                .expect("translated param")
+                        }
                         _ => continue,
                     }
                 };
@@ -2005,16 +2170,27 @@ impl LambdaAnalyzerPreprocessor {
                 };
                 param_defs = param_defs.append(var_def);
                 param_symbols = param_symbols.append(translated);
-                param_types = param_types.append(ctx.sym(translated).ty.expect("synthetic param type"));
+                param_types =
+                    param_types.append(ctx.sym(translated).ty.expect("synthetic param type"));
             }
             let serializable = self.lambda_context_is_serializable(ctx, target);
             let name = if serializable {
-                self.serialized_lambda_name(ctx, tree, owner, target, assigned_to, self_sym, &captured_orig)
+                self.serialized_lambda_name(
+                    ctx,
+                    tree,
+                    owner,
+                    target,
+                    assigned_to,
+                    self_sym,
+                    &captured_orig,
+                )
             } else {
                 self.lambda_name(ctx, owner)
             };
             ctx.sym_mut(translated_sym).name = name;
-            if let SymbolKind::MethodSymbol { params: slot, .. } = &mut ctx.sym_mut(translated_sym).kind_data {
+            if let SymbolKind::MethodSymbol { params: slot, .. } =
+                &mut ctx.sym_mut(translated_sym).kind_data
+            {
                 *slot = param_symbols;
             }
             let descriptor = self
@@ -2024,9 +2200,9 @@ impl LambdaAnalyzerPreprocessor {
                 let syms = &*self.syms;
                 self.types.erasure(ctx, &syms, descriptor)
             };
-            let new_type = self
-                .types
-                .create_method_type_with_parameters(ctx, generated, param_types);
+            let new_type =
+                self.types
+                    .create_method_type_with_parameters(ctx, generated, param_types);
             ctx.sym_mut(translated_sym).ty = Some(new_type);
             if let Some(context) = self.context_map.borrow_mut().get_mut(&tree) {
                 if let TranslationContextKind::Lambda(lambda) = &mut context.kind {
@@ -2049,9 +2225,14 @@ impl LambdaAnalyzerPreprocessor {
             return true;
         }
         let serializable_tsym = self.syms.serializable_type;
-        let serializable_tsym = ctx.typ(serializable_tsym).tsym.expect("serializable type symbol");
+        let serializable_tsym = ctx
+            .typ(serializable_tsym)
+            .tsym
+            .expect("serializable type symbol");
         let syms = &*self.syms;
-        self.types.as_super(ctx, &syms, target, serializable_tsym).is_some()
+        self.types
+            .as_super(ctx, &syms, target, serializable_tsym)
+            .is_some()
     }
 
     /// The name of the enclosing method folded into synthetic lambda names.
@@ -2062,7 +2243,14 @@ impl LambdaAnalyzerPreprocessor {
     /// Method name in a form that can be folded into a synthetic method name.
     fn synthetic_method_name_component(&self, _ctx: &CompilerContext, name: Name) -> String {
         let method_name = name.to_java_string().to_string_lossy().to_string();
-        if method_name == self.names.clinit.to_java_string().to_string_lossy().as_ref() {
+        if method_name
+            == self
+                .names
+                .clinit
+                .to_java_string()
+                .to_string_lossy()
+                .as_ref()
+        {
             "static".to_string()
         } else if method_name == self.names.init.to_java_string().to_string_lossy().as_ref() {
             "new".to_string()
@@ -2073,7 +2261,10 @@ impl LambdaAnalyzerPreprocessor {
 
     /// Increments and returns the per-prefix synthetic method name count.
     fn synthetic_method_name_index(&mut self, key: &str) -> i32 {
-        let index = self.synthetic_method_name_counts.entry(key.to_string()).or_insert(0);
+        let index = self
+            .synthetic_method_name_counts
+            .entry(key.to_string())
+            .or_insert(0);
         let result = *index;
         *index += 1;
         result
@@ -2120,10 +2311,20 @@ impl LambdaAnalyzerPreprocessor {
             .find_descriptor_symbol_checked(ctx, target_tsym)
             .expect("descriptor symbol");
         let descriptor_owner = ctx.sym(descriptor).owner.expect("descriptor owner");
-        buffer.push_str(&ctx.sym(descriptor_owner).flat_name().to_java_string().to_string_lossy());
+        buffer.push_str(
+            &ctx.sym(descriptor_owner)
+                .flat_name()
+                .to_java_string()
+                .to_string_lossy(),
+        );
         buffer.push(' ');
         if let Some(assigned_to) = assigned_to {
-            buffer.push_str(&ctx.sym(assigned_to).flat_name().to_java_string().to_string_lossy());
+            buffer.push_str(
+                &ctx.sym(assigned_to)
+                    .flat_name()
+                    .to_java_string()
+                    .to_string_lossy(),
+            );
             buffer.push('=');
         }
         for (original, _) in captured_vars {
@@ -2134,7 +2335,12 @@ impl LambdaAnalyzerPreprocessor {
                 buffer.push_str(&self.type_sig(ctx, type_, true));
                 buffer.push(' ');
             }
-            buffer.push_str(&ctx.sym(*original).flat_name().to_java_string().to_string_lossy());
+            buffer.push_str(
+                &ctx.sym(*original)
+                    .flat_name()
+                    .to_java_string()
+                    .to_string_lossy(),
+            );
             buffer.push(',');
         }
         let _ = tree;
@@ -2153,7 +2359,12 @@ impl LambdaAnalyzerPreprocessor {
         self_sym: Option<SymbolId>,
         captured_vars: &[(SymbolId, SymbolId)],
     ) -> Name {
-        let mut buffer = self.names.lambda.to_java_string().to_string_lossy().to_string();
+        let mut buffer = self
+            .names
+            .lambda
+            .to_java_string()
+            .to_string_lossy()
+            .to_string();
         buffer.push_str(&self.enclosing_method_name(ctx, owner));
         buffer.push('$');
         let disambiguation = self.serialized_lambda_disambiguation(
@@ -2165,19 +2376,25 @@ impl LambdaAnalyzerPreprocessor {
             self_sym,
             captured_vars,
         );
-        let hash = disambiguation
-            .encode_utf16()
-            .fold(0i32, |hash, unit| hash.wrapping_mul(31).wrapping_add(unit as i32));
+        let hash = disambiguation.encode_utf16().fold(0i32, |hash, unit| {
+            hash.wrapping_mul(31).wrapping_add(unit as i32)
+        });
         buffer.push_str(&format!("{:x}", hash as u32));
         buffer.push('$');
         let index = self.synthetic_method_name_index(&buffer);
         buffer.push_str(&format!("{}", index));
-        self.names.from_string(&javac_strings::JavaString::from(buffer.as_str()))
+        self.names
+            .from_string(&javac_strings::JavaString::from(buffer.as_str()))
     }
 
     /// Translates an identifier inside a lambda to the mapped identifier
     /// (upstream LambdaTranslationContext.translate(JCIdent)).
-    fn translate_lambda_ident(&mut self, ctx: &mut CompilerContext, context_tree: TreeId, tree: TreeId) -> Option<TreeId> {
+    fn translate_lambda_ident(
+        &mut self,
+        ctx: &mut CompilerContext,
+        context_tree: TreeId,
+        tree: TreeId,
+    ) -> Option<TreeId> {
         let (sym, ty) = match &ctx.tree(tree).kind {
             TreeKind::Ident { sym: Some(sym), .. } => (*sym, ctx.tree(tree).ty),
             _ => return None,
@@ -2195,20 +2412,39 @@ impl LambdaAnalyzerPreprocessor {
         };
         for (kind, map) in symbols {
             if kind == LambdaSymbolKind::CAPTURED_OUTER_THIS {
-                let target_tsym = ctx.typ(ctx.sym(sym).owner.and_then(|owner| ctx.sym(owner).ty).expect("identifier owner type"))
+                let target_tsym = ctx
+                    .typ(
+                        ctx.sym(sym)
+                            .owner
+                            .and_then(|owner| ctx.sym(owner).ty)
+                            .expect("identifier owner type"),
+                    )
                     .tsym;
                 let mut proxy: Option<SymbolId> = None;
                 for (original, _) in map.iter() {
-                    let out_tsym = ctx.typ(ctx.sym(*original).ty.expect("outer this type")).tsym;
+                    let out_tsym = ctx
+                        .typ(ctx.sym(*original).ty.expect("outer this type"))
+                        .tsym;
                     if let (Some(target_tsym), Some(out_tsym)) = (target_tsym, out_tsym) {
-                        if crate::code::symbol::is_member_of(ctx, &*self.syms, &self.types, sym, out_tsym) {
+                        if symbol::is_member_of(
+                            ctx,
+                            &*self.syms,
+                            &self.types,
+                            sym,
+                            out_tsym,
+                        ) {
                             proxy = match proxy {
                                 None => Some(*original),
                                 Some(current) => {
-                                    let current_tsym = ctx.typ(ctx.sym(current).ty.expect("outer this type")).tsym;
+                                    let current_tsym =
+                                        ctx.typ(ctx.sym(current).ty.expect("outer this type")).tsym;
                                     match current_tsym {
                                         Some(current_tsym) => {
-                                            if crate::code::symbol::is_enclosed_by(ctx, *original, current_tsym) {
+                                            if symbol::is_enclosed_by(
+                                                ctx,
+                                                *original,
+                                                current_tsym,
+                                            ) {
                                                 Some(*original)
                                             } else {
                                                 Some(current)
@@ -2223,8 +2459,16 @@ impl LambdaAnalyzerPreprocessor {
                     }
                 }
                 if let Some(proxy) = proxy {
-                    let translated = map.iter().find(|(original, _)| *original == proxy).map(|(_, translated)| *translated).expect("translated outer this");
-                    let owner_ty = ctx.sym(sym).owner.and_then(|owner| ctx.sym(owner).ty).expect("identifier owner type");
+                    let translated = map
+                        .iter()
+                        .find(|(original, _)| *original == proxy)
+                        .map(|(_, translated)| *translated)
+                        .expect("translated outer this");
+                    let owner_ty = ctx
+                        .sym(sym)
+                        .owner
+                        .and_then(|owner| ctx.sym(owner).ty)
+                        .expect("identifier owner type");
                     let outer = {
                         let make = &*self.make;
                         let mut ident = make.ident_symbol(ctx, translated);
@@ -2242,7 +2486,8 @@ impl LambdaAnalyzerPreprocessor {
                     }
                     return Some(outer);
                 }
-            } else if let Some((_, translated)) = map.iter().find(|(original, _)| *original == sym) {
+            } else if let Some((_, translated)) = map.iter().find(|(original, _)| *original == sym)
+            {
                 // Java: LambdaAnalyzerPreprocessor.translateLambdaIdent ends with
                 // make.at(tree.pos).Ident(sym), so the replacement keeps the
                 // reference's position instead of the maker's stale one.
@@ -2260,7 +2505,12 @@ impl LambdaAnalyzerPreprocessor {
 
     /// Translates qualified this references to the captured outer instance
     /// (upstream LambdaTranslationContext.translate(JCFieldAccess)).
-    fn translate_lambda_select(&mut self, ctx: &mut CompilerContext, context_tree: TreeId, tree: TreeId) -> Option<TreeId> {
+    fn translate_lambda_select(
+        &mut self,
+        ctx: &mut CompilerContext,
+        context_tree: TreeId,
+        tree: TreeId,
+    ) -> Option<TreeId> {
         let sym = match &ctx.tree(tree).kind {
             TreeKind::FieldAccess { sym: Some(sym), .. } => *sym,
             _ => return None,
@@ -2269,7 +2519,7 @@ impl LambdaAnalyzerPreprocessor {
             TreeKind::FieldAccess { name, .. } => name.clone(),
             _ => return None,
         };
-        assert!(name == self.names._this, "AssertionError: qualified this expected");
+        assert_eq!(name, self.names._this, "AssertionError: qualified this expected");
         let owner = ctx.sym(sym).owner.expect("qualified this owner");
         let translated = {
             let contexts = self.context_map.borrow();
@@ -2291,19 +2541,30 @@ impl LambdaAnalyzerPreprocessor {
 
     /// Anchors an instance creation with an implicit enclosing instance to the
     /// captured outer this (upstream LambdaTranslationContext.translate(JCNewClass)).
-    fn translate_lambda_new_class(&mut self, ctx: &mut CompilerContext, context_tree: TreeId, tree: TreeId) -> TreeId {
+    fn translate_lambda_new_class(
+        &mut self,
+        ctx: &mut CompilerContext,
+        context_tree: TreeId,
+        tree: TreeId,
+    ) -> TreeId {
         let (clazz, encl) = match &ctx.tree(tree).kind {
             TreeKind::NewClass { clazz, encl, .. } => (*clazz, *encl),
             _ => panic!("expected an instance creation"),
         };
         let clazz = clazz.expect("instance creation class");
         let clazz_ty = ctx.tree(clazz).ty.expect("instance creation class type");
-        let clazz_tsym = ctx.typ(clazz_ty).tsym.expect("instance creation class symbol");
+        let clazz_tsym = ctx
+            .typ(clazz_ty)
+            .tsym
+            .expect("instance creation class symbol");
         assert!(
             ctx.sym(clazz_tsym).has_outer_instance(ctx) && encl.is_none(),
             "AssertionError: implicit enclosing instance expected"
         );
-        let enclosing = ctx.typ(clazz_ty).get_enclosing_type().expect("enclosing type");
+        let enclosing = ctx
+            .typ(clazz_ty)
+            .get_enclosing_type()
+            .expect("enclosing type");
         let enclosing_tsym = ctx.typ(enclosing).tsym.expect("enclosing type symbol");
         let translated = {
             let contexts = self.context_map.borrow();
@@ -2311,7 +2572,11 @@ impl LambdaAnalyzerPreprocessor {
                 Some(TranslationContextKind::Lambda(lambda)) => lambda,
                 _ => return tree,
             };
-            context_symbol(lambda, LambdaSymbolKind::CAPTURED_OUTER_THIS, enclosing_tsym)
+            context_symbol(
+                lambda,
+                LambdaSymbolKind::CAPTURED_OUTER_THIS,
+                enclosing_tsym,
+            )
         };
         if let Some(translated) = translated {
             let ident = {
@@ -2375,7 +2640,9 @@ impl LambdaAnalyzerPreprocessor {
             LambdaSymbolKind::CAPTURED_THIS => sym,
             LambdaSymbolKind::CAPTURED_VAR => {
                 let syms = &*self.syms;
-                let erased = self.types.erasure(ctx, &syms, ctx.sym(sym).ty.expect("captured var type"));
+                let erased =
+                    self.types
+                        .erasure(ctx, &syms, ctx.sym(sym).ty.expect("captured var type"));
                 let _ = syms;
                 self.new_var_symbol(
                     ctx,
@@ -2388,10 +2655,17 @@ impl LambdaAnalyzerPreprocessor {
             LambdaSymbolKind::CAPTURED_OUTER_THIS => {
                 let flat = ctx.sym(sym).flat_name();
                 let name = self.names.from_string(&javac_strings::JavaString::from(
-                    format!("{}{}", flat.to_java_string().to_string_lossy().replace('.', "$"), self.names.dollarThis.to_java_string().to_string_lossy()).as_str(),
+                    format!(
+                        "{}{}",
+                        flat.to_java_string().to_string_lossy().replace('.', "$"),
+                        self.names.dollarThis.to_java_string().to_string_lossy()
+                    )
+                    .as_str(),
                 ));
                 let syms = &*self.syms;
-                let erased = self.types.erasure(ctx, &syms, ctx.sym(sym).ty.expect("outer this type"));
+                let erased =
+                    self.types
+                        .erasure(ctx, &syms, ctx.sym(sym).ty.expect("outer this type"));
                 let _ = syms;
                 self.new_var_symbol(
                     ctx,
@@ -2403,7 +2677,9 @@ impl LambdaAnalyzerPreprocessor {
             }
             LambdaSymbolKind::LOCAL_VAR => {
                 let syms = &*self.syms;
-                let erased = self.types.erasure(ctx, &syms, ctx.sym(sym).ty.expect("local var type"));
+                let erased =
+                    self.types
+                        .erasure(ctx, &syms, ctx.sym(sym).ty.expect("local var type"));
                 let _ = syms;
                 let var = self.new_var_symbol(
                     ctx,
@@ -2419,7 +2695,9 @@ impl LambdaAnalyzerPreprocessor {
             }
             LambdaSymbolKind::PARAM => {
                 let syms = &*self.syms;
-                let erased = self.types.erasure(ctx, &syms, ctx.sym(sym).ty.expect("param type"));
+                let erased = self
+                    .types
+                    .erasure(ctx, &syms, ctx.sym(sym).ty.expect("param type"));
                 let _ = syms;
                 let var = self.new_var_symbol(
                     ctx,
@@ -2466,7 +2744,12 @@ impl LambdaAnalyzerPreprocessor {
             self.add_symbol_to_context(ctx, context_tree, sym, skind);
         }
     }
-    fn capture_symbol(&mut self, ctx: &mut CompilerContext, sym: SymbolId, skind: LambdaSymbolKind) {
+    fn capture_symbol(
+        &mut self,
+        ctx: &mut CompilerContext,
+        sym: SymbolId,
+        skind: LambdaSymbolKind,
+    ) {
         let mut local_context = self.context_key(ctx);
         while let Some(context_tree) = local_context {
             if ctx.tree(context_tree).has_tag(Tag::LAMBDA) {
@@ -2524,10 +2807,18 @@ impl LambdaAnalyzerPreprocessor {
                     break;
                 };
                 let class_sym = match &ctx.tree(decl).kind {
-                    TreeKind::ClassDecl { sym: Some(class_sym), .. } => *class_sym,
+                    TreeKind::ClassDecl {
+                        sym: Some(class_sym),
+                        ..
+                    } => *class_sym,
                     _ => break,
                 };
-                self.add_lambda_symbol(ctx, context_tree, class_sym, LambdaSymbolKind::CAPTURED_THIS);
+                self.add_lambda_symbol(
+                    ctx,
+                    context_tree,
+                    class_sym,
+                    LambdaSymbolKind::CAPTURED_THIS,
+                );
             }
             local_context = self
                 .context_map
@@ -2542,13 +2833,20 @@ impl LambdaAnalyzerPreprocessor {
         symbol.id.set(Some(class_sym));
         *ctx.sym_mut(class_sym) = symbol;
     }
-    fn new_lambda_context(&mut self, ctx: &mut CompilerContext, tree: TreeId) -> TranslationContext {
+    fn new_lambda_context(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) -> TranslationContext {
         let owner = self.owner(ctx, true).expect("owner");
         let depth = self.frame_stack.len() as i32 - 1;
         let prev_context = self.context_key(ctx);
         let attr_env = self.attr_env.clone().expect("attrEnv");
         let target = match &ctx.tree(tree).kind {
-            TreeKind::Lambda { target: Some(target), .. } => *target,
+            TreeKind::Lambda {
+                target: Some(target),
+                ..
+            } => *target,
             _ => panic!("expected an attributed lambda"),
         };
         let (mut syms, chk, diags) = {
@@ -2605,7 +2903,8 @@ impl LambdaAnalyzerPreprocessor {
         } else {
             self.make_private_synthetic_method(ctx, 0, self.names.empty.clone(), None, class_sym)
         };
-        let mut translated_symbols: HashMap<LambdaSymbolKind, Vec<(SymbolId, SymbolId)>> = HashMap::new();
+        let mut translated_symbols: HashMap<LambdaSymbolKind, Vec<(SymbolId, SymbolId)>> =
+            HashMap::new();
         for kind in LambdaSymbolKind::values() {
             translated_symbols.insert(kind, Vec::new());
         }
@@ -2645,7 +2944,6 @@ impl LambdaAnalyzerPreprocessor {
         }
     }
 }
-
 
 /// Creates a synthetic variable symbol with the given services (static
 /// capture adapter for newVarSymbol).
@@ -2712,7 +3010,11 @@ fn add_lambda_symbol_ro(
         LambdaSymbolKind::CAPTURED_VAR => {
             let erased = {
                 let syms_borrow = &*syms;
-                types.erasure(ctx, &syms_borrow, ctx.sym(sym).ty.expect("captured var type"))
+                types.erasure(
+                    ctx,
+                    &syms_borrow,
+                    ctx.sym(sym).ty.expect("captured var type"),
+                )
             };
             new_var_symbol_static(
                 ctx,
@@ -2726,7 +3028,12 @@ fn add_lambda_symbol_ro(
             let flat = ctx.sym(sym).flat_name();
             let flat_name = flat.to_java_string().to_string_lossy().replace('.', "$");
             let name = names.from_string(&javac_strings::JavaString::from(
-                format!("{}{}", flat_name, names.dollarThis.to_java_string().to_string_lossy()).as_str(),
+                format!(
+                    "{}{}",
+                    flat_name,
+                    names.dollarThis.to_java_string().to_string_lossy()
+                )
+                .as_str(),
             ));
             let erased = {
                 let syms_borrow = &*syms;
@@ -2894,7 +3201,14 @@ fn capture_local_class_defs_static(
         frame_stack,
         lambda_context,
     };
-    lower::collect_free_vars(ctx, &lower_borrow, class_sym, owner, local_cdef, &mut visitor);
+    lower::collect_free_vars(
+        ctx,
+        &lower_borrow,
+        class_sym,
+        owner,
+        local_cdef,
+        &mut visitor,
+    );
 }
 
 fn context_key_ro(
@@ -2935,7 +3249,11 @@ fn captured_decl_ro(
                     .map(|owner| owner == class_sym)
                     .unwrap_or(false);
                 if is_member {
-                    return if current_depth > depth { None } else { Some(frame.tree) };
+                    return if current_depth > depth {
+                        None
+                    } else {
+                        Some(frame.tree)
+                    };
                 }
             }
             Tag::VARDEF => {
@@ -2943,15 +3261,24 @@ fn captured_decl_ro(
                     TreeKind::VariableDecl { sym, .. } => *sym,
                     _ => None,
                 };
-                if (var_sym == Some(sym) && ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::MTH))
+                if (var_sym == Some(sym)
+                    && ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::MTH))
                     || frame.contains(sym)
                 {
-                    return if current_depth > depth { None } else { Some(frame.tree) };
+                    return if current_depth > depth {
+                        None
+                    } else {
+                        Some(frame.tree)
+                    };
                 }
             }
             Tag::BLOCK | Tag::METHODDEF | Tag::LAMBDA => {
                 if frame.contains(sym) {
-                    return if current_depth > depth { None } else { Some(frame.tree) };
+                    return if current_depth > depth {
+                        None
+                    } else {
+                        Some(frame.tree)
+                    };
                 }
             }
             _ => {}
@@ -2962,10 +3289,16 @@ fn captured_decl_ro(
 }
 
 impl LambdaAnalyzerPreprocessor {
-
-    fn interface_parameter_is_intersection_or_union_type(&self, ctx: &mut CompilerContext, tree: TreeId) -> bool {
+    fn interface_parameter_is_intersection_or_union_type(
+        &self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) -> bool {
         let target = match &ctx.tree(tree).kind {
-            TreeKind::MemberReference { target: Some(target), .. } => *target,
+            TreeKind::MemberReference {
+                target: Some(target),
+                ..
+            } => *target,
             _ => return false,
         };
         let Some(descriptor) = self.find_descriptor_type_checked(ctx, target) else {
@@ -2986,7 +3319,9 @@ impl LambdaAnalyzerPreprocessor {
             }
             TypeTag::TYPEVAR => {
                 let upper = ctx.upper_bound_of(ty);
-                upper.map(|upper| self.is_intersection_or_union_type(ctx, upper)).unwrap_or(false)
+                upper
+                    .map(|upper| self.is_intersection_or_union_type(ctx, upper))
+                    .unwrap_or(false)
             }
             _ => false,
         }
@@ -2994,17 +3329,28 @@ impl LambdaAnalyzerPreprocessor {
 }
 
 impl LambdaToMethod {
-    fn translate_ident_in_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) -> Option<TreeId> {
+    fn translate_ident_in_lambda(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) -> Option<TreeId> {
         let context_tree = self.context?;
-        self.analyzer.translate_lambda_ident(ctx, context_tree, tree)
+        self.analyzer
+            .translate_lambda_ident(ctx, context_tree, tree)
     }
-    fn translate_select_in_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) -> Option<TreeId> {
+    fn translate_select_in_lambda(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) -> Option<TreeId> {
         let context_tree = self.context?;
-        self.analyzer.translate_lambda_select(ctx, context_tree, tree)
+        self.analyzer
+            .translate_lambda_select(ctx, context_tree, tree)
     }
     fn translate_new_class_in_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
         let context_tree = self.context.expect("current context");
-        self.analyzer.translate_lambda_new_class(ctx, context_tree, tree)
+        self.analyzer
+            .translate_lambda_new_class(ctx, context_tree, tree)
     }
     /// Supplier<List<Attribute.TypeCompound>> source, Consumer owner,
     fn apportion_type_annotations_lambda(
@@ -3015,7 +3361,16 @@ impl LambdaToMethod {
         lambda_sym: SymbolId,
     ) {
         let source = ctx.sym(owner).get_raw_attributes();
-        self.apportion_type_annotations(ctx, tree, &source, owner, TypeAttrKind::Raw, false, lambda_sym, false);
+        self.apportion_type_annotations(
+            ctx,
+            tree,
+            &source,
+            owner,
+            TypeAttrKind::Raw,
+            false,
+            lambda_sym,
+            false,
+        );
     }
     fn apportion_type_annotations_owner(
         &mut self,
@@ -3030,7 +3385,11 @@ impl LambdaToMethod {
         } else {
             ctx.sym(owner).get_class_init_type_attributes()
         };
-        let kind = if init { TypeAttrKind::Init } else { TypeAttrKind::ClassInit };
+        let kind = if init {
+            TypeAttrKind::Init
+        } else {
+            TypeAttrKind::ClassInit
+        };
         self.apportion_type_annotations(ctx, tree, &source, owner, kind, true, lambda_sym, true);
     }
     #[allow(clippy::too_many_arguments)]
@@ -3048,9 +3407,7 @@ impl LambdaToMethod {
         let mut owner_attrs: List<crate::ids::AttributeId> = List::nil();
         let mut lambda_attrs: List<crate::ids::AttributeId> = List::nil();
         for attribute in source.iter() {
-            let on_lambda = ctx
-                .attr(attribute)
-                .type_compound_on_lambda();
+            let on_lambda = ctx.attr(attribute).type_compound_on_lambda();
             if on_lambda == Some(tree) {
                 lambda_attrs = lambda_attrs.append(attribute);
             } else {
@@ -3063,7 +3420,8 @@ impl LambdaToMethod {
         match owner_kind {
             TypeAttrKind::Raw => {
                 if owner_append_unique {
-                    ctx.sym_mut(owner).append_unique_type_attributes(owner_attrs);
+                    ctx.sym_mut(owner)
+                        .append_unique_type_attributes(owner_attrs);
                 } else {
                     ctx.sym_mut(owner).set_type_attributes(owner_attrs);
                 }
@@ -3071,7 +3429,8 @@ impl LambdaToMethod {
             TypeAttrKind::Init => {
                 if owner_append_unique {
                     let existing = ctx.sym(owner).get_init_type_attributes();
-                    ctx.sym_mut(owner).set_init_type_attributes(existing.append_list(&owner_attrs));
+                    ctx.sym_mut(owner)
+                        .set_init_type_attributes(existing.append_list(&owner_attrs));
                 } else {
                     ctx.sym_mut(owner).set_init_type_attributes(owner_attrs);
                 }
@@ -3079,21 +3438,29 @@ impl LambdaToMethod {
             TypeAttrKind::ClassInit => {
                 if owner_append_unique {
                     let existing = ctx.sym(owner).get_class_init_type_attributes();
-                    ctx.sym_mut(owner).set_class_init_type_attributes(existing.append_list(&owner_attrs));
+                    ctx.sym_mut(owner)
+                        .set_class_init_type_attributes(existing.append_list(&owner_attrs));
                 } else {
-                    ctx.sym_mut(owner).set_class_init_type_attributes(owner_attrs);
+                    ctx.sym_mut(owner)
+                        .set_class_init_type_attributes(owner_attrs);
                 }
             }
         }
         if lambda_append_unique {
-            ctx.sym_mut(lambda_sym).append_unique_type_attributes(lambda_attrs);
+            ctx.sym_mut(lambda_sym)
+                .append_unique_type_attributes(lambda_attrs);
         } else {
             ctx.sym_mut(lambda_sym).set_type_attributes(lambda_attrs);
         }
     }
     fn map_prev_context(&self, _ctx: &mut CompilerContext) -> Option<TreeId> {
         self.context
-            .and_then(|context| self.context_map.borrow().get(&context).map(|context| context.prev_context))
+            .and_then(|context| {
+                self.context_map
+                    .borrow()
+                    .get(&context)
+                    .map(|context| context.prev_context)
+            })
             .flatten()
     }
 }
@@ -3143,9 +3510,13 @@ impl LambdaToMethod {
             .find_descriptor_type_checked(ctx, target)
             .expect("descriptor type");
         let mut static_args: Vec<LoadableConstantRef> = Vec::new();
-        static_args.push(LoadableConstantRef::MethodType(self.type_to_method_type(ctx, sam_type)));
+        static_args.push(LoadableConstantRef::MethodType(
+            self.type_to_method_type(ctx, sam_type),
+        ));
         static_args.push(LoadableConstantRef::MethodHandle(ref_sym));
-        static_args.push(LoadableConstantRef::MethodType(self.type_to_method_type(ctx, descriptor)));
+        static_args.push(LoadableConstantRef::MethodType(
+            self.type_to_method_type(ctx, descriptor),
+        ));
         let _ = ref_type;
         let mut indy_arg_types: List<TypeId> = List::nil();
         for arg in indy_args.iter() {
@@ -3154,10 +3525,14 @@ impl LambdaToMethod {
             }
         }
         let method_class = self.syms.method_class;
-        let indy_type = ctx.alloc_type(Type::new_method_type(indy_arg_types, target_type, List::nil(), method_class));
-        let needs_alt = target_tsym_is_intersection(ctx, target)
-            || is_serializable
-            || bridges.len() > 1;
+        let indy_type = ctx.alloc_type(Type::new_method_type(
+            indy_arg_types,
+            target_type,
+            List::nil(),
+            method_class,
+        ));
+        let needs_alt =
+            target_tsym_is_intersection(ctx, target) || is_serializable || bridges.len() > 1;
         let metafactory_name = if needs_alt {
             self.names.altMetafactory.clone()
         } else {
@@ -3180,11 +3555,18 @@ impl LambdaToMethod {
                 let erased = self.types.erasure(ctx, &syms, marker);
                 let _ = syms;
                 let marker_tsym = ctx.typ(erased).tsym;
-                if marker_tsym != serializable_tsym && marker_tsym != target_tsym2 && marker_tsym != object_tsym {
+                if marker_tsym != serializable_tsym
+                    && marker_tsym != target_tsym2
+                    && marker_tsym != object_tsym
+                {
                     markers.push(erased);
                 }
             }
-            let mut flags_value = if is_serializable { FLAG_SERIALIZABLE } else { 0 };
+            let mut flags_value = if is_serializable {
+                FLAG_SERIALIZABLE
+            } else {
+                0
+            };
             let has_markers = !markers.is_empty();
             let has_bridges = !bridges.is_empty();
             if has_markers {
@@ -3195,13 +3577,17 @@ impl LambdaToMethod {
             }
             static_args.push(LoadableConstantRef::Basic(BasicConstant::int(flags_value)));
             if has_markers {
-                static_args.push(LoadableConstantRef::Basic(BasicConstant::int(markers.len() as i32)));
+                static_args.push(LoadableConstantRef::Basic(BasicConstant::int(
+                    markers.len() as i32,
+                )));
                 for marker in &markers {
                     static_args.push(LoadableConstantRef::Class(*marker));
                 }
             }
             if has_bridges {
-                static_args.push(LoadableConstantRef::Basic(BasicConstant::int(bridges.len() as i32 - 1)));
+                static_args.push(LoadableConstantRef::Basic(BasicConstant::int(
+                    bridges.len() as i32 - 1,
+                )));
                 let sam_erasure = {
                     let syms = &*self.syms;
                     self.types.erasure(ctx, &syms, sam_type)
@@ -3213,10 +3599,14 @@ impl LambdaToMethod {
                         self.types.erasure(ctx, &syms, bridge_ty)
                     };
                     let syms = &*self.syms;
-                    let same = self.types.is_same_type(ctx, &syms, bridge_erasure, sam_erasure);
+                    let same = self
+                        .types
+                        .is_same_type(ctx, &syms, bridge_erasure, sam_erasure);
                     let _ = syms;
                     if !same {
-                        static_args.push(LoadableConstantRef::MethodType(self.type_to_method_type(ctx, bridge_erasure)));
+                        static_args.push(LoadableConstantRef::MethodType(
+                            self.type_to_method_type(ctx, bridge_erasure),
+                        ));
                     }
                 }
             }
@@ -3228,7 +3618,15 @@ impl LambdaToMethod {
                         let make = &*self.make;
                         make.at(ctx.tree(clazz).pos);
                     }
-                    self.add_deserialization_case(ctx, ref_sym, target_type, sam_sym, tree, &static_args, indy_type);
+                    self.add_deserialization_case(
+                        ctx,
+                        ref_sym,
+                        target_type,
+                        sam_sym,
+                        tree,
+                        &static_args,
+                        indy_type,
+                    );
                     {
                         let make = &*self.make;
                         make.at(previous_pos);
@@ -3239,7 +3637,16 @@ impl LambdaToMethod {
         let _ = is_reference;
         let sam_name = ctx.sym(sam_sym).name.clone();
         let lambda_metafactory = self.syms.lambda_metafactory;
-        self.make_indy_call(ctx, tree, lambda_metafactory, metafactory_name, static_args, indy_type, indy_args, sam_name)
+        self.make_indy_call(
+            ctx,
+            tree,
+            lambda_metafactory,
+            metafactory_name,
+            static_args,
+            indy_type,
+            indy_args,
+            sam_name,
+        )
     }
     /// Name bsmName, List<LoadableConstant> staticArgs, MethodType indyType,
     /// Generate an indy method call with given name, type and static bootstrap
@@ -3310,10 +3717,12 @@ impl LambdaToMethod {
             static_args.clone(),
         );
         let key = (bsm, static_args.clone());
-        let existing = self
-            .k_info
-            .as_ref()
-            .and_then(|info| info.dyn_meth_syms.iter().find(|(candidate, _)| *candidate == key).map(|(_, sym)| *sym));
+        let existing = self.k_info.as_ref().and_then(|info| {
+            info.dyn_meth_syms
+                .iter()
+                .find(|(candidate, _)| *candidate == key)
+                .map(|(_, sym)| *sym)
+        });
         let sym_to_use = if let Some(existing) = existing {
             existing
         } else {
@@ -3336,7 +3745,10 @@ impl LambdaToMethod {
         if let TreeKind::FieldAccess { sym: slot, .. } = &mut ctx.tree_mut(qualifier).kind {
             *slot = Some(sym_to_use);
         }
-        let return_type = ctx.typ(indy_type).get_return_type(ctx).expect("indy return type");
+        let return_type = ctx
+            .typ(indy_type)
+            .get_return_type(ctx)
+            .expect("indy return type");
         ctx.tree_mut(qualifier).ty = Some(return_type);
         let proxy_call = {
             let make = &*self.make;
@@ -3358,7 +3770,11 @@ fn target_tsym_is_intersection(ctx: &CompilerContext, target: TypeId) -> bool {
 }
 
 impl LambdaToMethod {
-    fn make_deserialize_method(&mut self, ctx: &mut CompilerContext, class_sym: SymbolId) -> TreeId {
+    fn make_deserialize_method(
+        &mut self,
+        ctx: &mut CompilerContext,
+        class_sym: SymbolId,
+    ) -> TreeId {
         let (deser_method_sym, deser_param_sym) = self
             .k_info
             .as_ref()
@@ -3383,7 +3799,13 @@ impl LambdaToMethod {
             let stats = List::from_iterable(statements.iter().copied().chain(std::iter::once(br)));
             let label = {
                 let make = &*self.make;
-                make.literal(ctx, TypeTag::CLASS, Some(LiteralValue::String(javac_strings::JavaString::from(key.as_str()))))
+                make.literal(
+                    ctx,
+                    TypeTag::CLASS,
+                    Some(LiteralValue::String(javac_strings::JavaString::from(
+                        key.as_str(),
+                    ))),
+                )
             };
             {
                 let label_const = crate::util::constants::ConstantValue::String(
@@ -3421,7 +3843,13 @@ impl LambdaToMethod {
         let illegal_argument_exception_type = self.syms.illegal_argument_exception_type;
         let invalid_message = {
             let make = &*self.make;
-            make.literal(ctx, TypeTag::CLASS, Some(LiteralValue::String(javac_strings::JavaString::from("Invalid lambda deserialization"))))
+            make.literal(
+                ctx,
+                TypeTag::CLASS,
+                Some(LiteralValue::String(javac_strings::JavaString::from(
+                    "Invalid lambda deserialization",
+                ))),
+            )
         };
         ctx.tree_mut(invalid_message).ty = Some(self.syms.string_type);
         let throw = {
@@ -3447,7 +3875,10 @@ impl LambdaToMethod {
             .ty
             .and_then(|ty| ctx.typ(ty).get_return_type(ctx))
             .expect("deserialize method return type");
-        let restype_tsym = ctx.typ(restype).tsym.expect("deserialize return type symbol");
+        let restype_tsym = ctx
+            .typ(restype)
+            .tsym
+            .expect("deserialize return type symbol");
         let qual_ident = {
             let make = &*self.make;
             make.qual_ident(ctx, &*self.syms, restype_tsym)
@@ -3531,7 +3962,10 @@ impl LambdaToMethod {
                 ))
             }
         };
-        if let TreeKind::NewClass { constructor: slot, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::NewClass {
+            constructor: slot, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *slot = constructor;
         }
         ctx.tree_mut(tree).ty = Some(ctype);
@@ -3550,7 +3984,12 @@ impl LambdaToMethod {
         indy_type: TypeId,
     ) {
         let functional_interface_class = self.class_sig_of_type(ctx, target_type);
-        let functional_interface_method_name = ctx.sym(sam_sym).name.to_java_string().to_string_lossy().to_string();
+        let functional_interface_method_name = ctx
+            .sym(sam_sym)
+            .name
+            .to_java_string()
+            .to_string_lossy()
+            .to_string();
         let sam_ty = ctx.sym(sam_sym).ty.expect("sam type");
         let sam_erasure = {
             let syms = &*self.syms;
@@ -3560,14 +3999,23 @@ impl LambdaToMethod {
         let impl_owner = ctx.sym(ref_sym).owner.expect("impl owner");
         let impl_owner_ty = ctx.sym(impl_owner).ty.expect("impl owner type");
         let impl_class = self.class_sig_of_type(ctx, impl_owner_ty);
-        let impl_method_name = ctx.sym(ref_sym).name.to_java_string().to_string_lossy().to_string();
+        let impl_method_name = ctx
+            .sym(ref_sym)
+            .name
+            .to_java_string()
+            .to_string_lossy()
+            .to_string();
         let ref_ty = ctx.sym(ref_sym).ty.expect("ref type");
         let impl_method_signature = self.type_sig(ctx, ref_ty, false);
         let int_type = self.syms.int_type;
         let method_kind_getter = self.deser_getter(ctx, "getImplMethodKind", int_type);
         let kind_literal = {
             let make = &*self.make;
-            make.literal(ctx, TypeTag::INT, Some(LiteralValue::Integer(reference_kind_of(ctx, pos_tree))))
+            make.literal(
+                ctx,
+                TypeTag::INT,
+                Some(LiteralValue::Integer(reference_kind_of(ctx, pos_tree))),
+            )
         };
         ctx.tree_mut(kind_literal).ty = Some(int_type);
         let kind_test = self.eq_test(ctx, int_type, method_kind_getter, kind_literal);
@@ -3622,9 +4070,24 @@ impl LambdaToMethod {
             make.return_(ctx, Some(indy_call))
         };
         let mut test = kind_test;
-        test = self.deser_test(ctx, test, "getFunctionalInterfaceClass", &functional_interface_class);
-        test = self.deser_test(ctx, test, "getFunctionalInterfaceMethodName", &functional_interface_method_name);
-        test = self.deser_test(ctx, test, "getFunctionalInterfaceMethodSignature", &functional_interface_method_signature);
+        test = self.deser_test(
+            ctx,
+            test,
+            "getFunctionalInterfaceClass",
+            &functional_interface_class,
+        );
+        test = self.deser_test(
+            ctx,
+            test,
+            "getFunctionalInterfaceMethodName",
+            &functional_interface_method_name,
+        );
+        test = self.deser_test(
+            ctx,
+            test,
+            "getFunctionalInterfaceMethodSignature",
+            &functional_interface_method_signature,
+        );
         test = self.deser_test(ctx, test, "getImplClass", &impl_class);
         test = self.deser_test(ctx, test, "getImplMethodSignature", &impl_method_signature);
         let stmt = {
@@ -3645,15 +4108,28 @@ impl LambdaToMethod {
         let _ = pos_tree;
         let _ = static_args;
     }
-    fn eq_test(&mut self, ctx: &mut CompilerContext, arg_type: TypeId, arg1: TreeId, arg2: TreeId) -> TreeId {
+    fn eq_test(
+        &mut self,
+        ctx: &mut CompilerContext,
+        arg_type: TypeId,
+        arg1: TreeId,
+        arg2: TreeId,
+    ) -> TreeId {
         let test_expr = {
             let make = &*self.make;
             make.binary(ctx, Tag::EQ, arg1, arg2)
         };
         let operator = {
             let mut syms = &*self.syms;
-            self.operators
-                .resolve_binary(ctx, &mut syms, &self.types, ctx.tree(test_expr).pos, Tag::EQ, arg_type, arg_type)
+            self.operators.resolve_binary(
+                ctx,
+                &mut syms,
+                &self.types,
+                ctx.tree(test_expr).pos,
+                Tag::EQ,
+                arg_type,
+                arg_type,
+            )
         };
         if let TreeKind::Binary { operator: slot, .. } = &mut ctx.tree_mut(test_expr).kind {
             *slot = Some(operator);
@@ -3661,7 +4137,13 @@ impl LambdaToMethod {
         ctx.tree_mut(test_expr).ty = Some(self.syms.boolean_type);
         test_expr
     }
-    fn deser_test(&mut self, ctx: &mut CompilerContext, prev: TreeId, func: &str, lit: &str) -> TreeId {
+    fn deser_test(
+        &mut self,
+        ctx: &mut CompilerContext,
+        prev: TreeId,
+        func: &str,
+        lit: &str,
+    ) -> TreeId {
         let eqmt = {
             let syms = &*self.syms;
             ctx.alloc_type(Type::new_method_type(
@@ -3700,7 +4182,11 @@ impl LambdaToMethod {
         let getter = self.deser_getter(ctx, func, string_type);
         let literal = {
             let make = &*self.make;
-            make.literal(ctx, TypeTag::CLASS, Some(LiteralValue::String(javac_strings::JavaString::from(lit))))
+            make.literal(
+                ctx,
+                TypeTag::CLASS,
+                Some(LiteralValue::String(javac_strings::JavaString::from(lit))),
+            )
         };
         ctx.tree_mut(literal).ty = Some(string_type);
         let select = {
@@ -3723,8 +4209,15 @@ impl LambdaToMethod {
         let boolean_type = self.syms.boolean_type;
         let operator = {
             let mut syms = &*self.syms;
-            self.operators
-                .resolve_binary(ctx, &mut syms, &self.types, ctx.tree(compound).pos, Tag::AND, boolean_type, boolean_type)
+            self.operators.resolve_binary(
+                ctx,
+                &mut syms,
+                &self.types,
+                ctx.tree(compound).pos,
+                Tag::AND,
+                boolean_type,
+                boolean_type,
+            )
         };
         if let TreeKind::Binary { operator: slot, .. } = &mut ctx.tree_mut(compound).kind {
             *slot = Some(operator);
@@ -3744,12 +4237,22 @@ impl LambdaToMethod {
         args: List<TreeId>,
     ) -> TreeId {
         let method_class = self.syms.method_class;
-        let getmt = ctx.alloc_type(Type::new_method_type(arg_types.clone(), ty, List::nil(), method_class));
+        let getmt = ctx.alloc_type(Type::new_method_type(
+            arg_types.clone(),
+            ty,
+            List::nil(),
+            method_class,
+        ));
         let serialized_lambda_type = self.syms.serialized_lambda_type;
-        let name = self.names.from_string(&javac_strings::JavaString::from(func));
+        let name = self
+            .names
+            .from_string(&javac_strings::JavaString::from(func));
         let getsym = {
             let attr_env = self.attr_env.clone().expect("attrEnv");
-            let location = ctx.typ(serialized_lambda_type).tsym.expect("serialized lambda site");
+            let location = ctx
+                .typ(serialized_lambda_type)
+                .tsym
+                .expect("serialized lambda site");
             let attr_rc = Rc::clone(&self.attr);
             let mut attr = attr_rc.borrow_mut();
             let chk = Rc::clone(&attr.chk);
@@ -3819,7 +4322,6 @@ fn reference_kind_of(ctx: &CompilerContext, tree: TreeId) -> i32 {
     }
 }
 
-
 #[allow(dead_code)]
 // Port adapter: unused default-navigation entries are kept for 1:1 traceability.
 impl LambdaToMethod {
@@ -3836,7 +4338,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_package_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, pid) = match &ctx.tree(tree).kind {
@@ -3859,7 +4360,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_import(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Import { qualid, .. } => *qualid,
@@ -3871,7 +4371,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, typarams, extending, implementing, defs) = match &ctx.tree(tree).kind {
@@ -3913,7 +4412,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, restype, typarams, recvparam, params, thrown, body) = match &ctx.tree(tree).kind
@@ -3967,7 +4465,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, nameexpr, vartype, init) = match &ctx.tree(tree).kind {
             TreeKind::VariableDecl {
@@ -3999,11 +4496,9 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_skip(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn default_visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let stats = match &ctx.tree(tree).kind {
@@ -4016,7 +4511,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (body, cond) = match &ctx.tree(tree).kind {
@@ -4032,7 +4526,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, body) = match &ctx.tree(tree).kind {
             TreeKind::WhileLoop { cond, body } => (*cond, *body),
@@ -4046,7 +4539,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_for_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (init, cond, step, body) = match &ctx.tree(tree).kind {
@@ -4077,7 +4569,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_foreach_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (var, expr, body) = match &ctx.tree(tree).kind {
             TreeKind::EnhancedForLoop { var, expr, body } => (*var, *expr, *body),
@@ -4099,7 +4590,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_labelled(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let body = match &ctx.tree(tree).kind {
             TreeKind::LabeledStatement { body, .. } => *body,
@@ -4111,7 +4601,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
@@ -4134,7 +4623,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_case(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (labels, stats) = match &ctx.tree(tree).kind {
             TreeKind::Case { labels, stats, .. } => (labels.clone(), stats.clone()),
@@ -4153,7 +4641,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
@@ -4176,7 +4663,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_synchronized(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lock, body) = match &ctx.tree(tree).kind {
             TreeKind::Synchronized { lock, body } => (*lock, *body),
@@ -4190,7 +4676,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (resources, body, catchers, finalizer) = match &ctx.tree(tree).kind {
@@ -4223,7 +4708,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_catch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (param, body) = match &ctx.tree(tree).kind {
             TreeKind::Catch { param, body } => (*param, *body),
@@ -4237,7 +4721,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
@@ -4266,7 +4749,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, thenpart, elsepart) = match &ctx.tree(tree).kind {
             TreeKind::If {
@@ -4292,7 +4774,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_exec(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::ExpressionStatement { expr } => *expr,
@@ -4305,11 +4786,9 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_break(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn default_visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let value = match &ctx.tree(tree).kind {
@@ -4323,11 +4802,9 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_continue(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn default_visit_return(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
@@ -4341,7 +4818,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_throw(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Throw { expr } => *expr,
@@ -4353,7 +4829,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_assert(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, detail) = match &ctx.tree(tree).kind {
@@ -4368,7 +4843,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (meth, args) = match &ctx.tree(tree).kind {
@@ -4386,7 +4860,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (encl, clazz, args, def) = match &ctx.tree(tree).kind {
@@ -4418,7 +4891,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, orig_dim_annotations_list, elemtype, dims, elems) =
@@ -4464,7 +4936,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (params, body) = match &ctx.tree(tree).kind {
             TreeKind::Lambda { params, body, .. } => (params.clone(), *body),
@@ -4482,7 +4953,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_parens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Parens { expr } => *expr,
@@ -4494,7 +4964,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_assign(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
@@ -4510,7 +4979,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_assignop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
             TreeKind::AssignOp { lhs, rhs, .. } => (*lhs, *rhs),
@@ -4525,7 +4993,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_unary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let arg = match &ctx.tree(tree).kind {
             TreeKind::Unary { arg, .. } => *arg,
@@ -4537,7 +5004,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
@@ -4553,7 +5019,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, expr) = match &ctx.tree(tree).kind {
             TreeKind::TypeCast { clazz, expr } => (*clazz, *expr),
@@ -4567,7 +5032,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, pattern) = match &ctx.tree(tree).kind {
@@ -4587,7 +5051,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_binding_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let var = match &ctx.tree(tree).kind {
             TreeKind::BindingPattern { var } => *var,
@@ -4600,11 +5063,9 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_default_case_label(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn default_visit_parenthesized_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let pattern = match &ctx.tree(tree).kind {
@@ -4617,7 +5078,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_guard_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (patt, expr) = match &ctx.tree(tree).kind {
@@ -4632,7 +5092,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_indexed(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (indexed, index) = match &ctx.tree(tree).kind {
@@ -4652,7 +5111,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let selected = match &ctx.tree(tree).kind {
             TreeKind::FieldAccess { selected, .. } => *selected,
@@ -4664,7 +5122,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_reference(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
@@ -4678,21 +5135,17 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_ident(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn default_visit_literal(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
 
-
     fn default_visit_type_ident(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn default_visit_type_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let elemtype = match &ctx.tree(tree).kind {
@@ -4705,7 +5158,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_type_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, arguments) = match &ctx.tree(tree).kind {
@@ -4725,7 +5177,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_type_union(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let alternatives = match &ctx.tree(tree).kind {
             TreeKind::TypeUnion { alternatives } => alternatives.clone(),
@@ -4738,7 +5189,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_type_intersection(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let bounds = match &ctx.tree(tree).kind {
             TreeKind::TypeIntersection { bounds } => bounds.clone(),
@@ -4750,7 +5200,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, bounds) = match &ctx.tree(tree).kind {
@@ -4775,7 +5224,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_wildcard(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (kind, inner) = match &ctx.tree(tree).kind {
             TreeKind::Wildcard { kind, inner } => (*kind, *inner),
@@ -4790,11 +5238,9 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_type_bound_kind(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn default_visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let annotations = match &ctx.tree(tree).kind {
@@ -4810,7 +5256,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotation_type, args) = match &ctx.tree(tree).kind {
@@ -4835,7 +5280,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, underlying_type) = match &ctx.tree(tree).kind {
             TreeKind::AnnotatedType {
@@ -4857,11 +5301,9 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_erroneous(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn default_visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (defs, expr) = match &ctx.tree(tree).kind {
@@ -4879,7 +5321,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_module_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, qual_id, directives) = match &ctx.tree(tree).kind {
@@ -4908,7 +5349,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_exports(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (qualid, module_names) = match &ctx.tree(tree).kind {
             TreeKind::Exports {
@@ -4931,7 +5371,6 @@ impl LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn default_visit_opens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (qualid, module_names) = match &ctx.tree(tree).kind {
@@ -4956,7 +5395,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_provides(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (service_name, impl_names) = match &ctx.tree(tree).kind {
             TreeKind::Provides {
@@ -4980,7 +5418,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_requires(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let module_name = match &ctx.tree(tree).kind {
             TreeKind::Requires { module_name, .. } => *module_name,
@@ -4996,7 +5433,6 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_uses(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Uses { qualid } => *qualid,
@@ -5009,14 +5445,16 @@ impl LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn default_visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         panic!("AssertionError: visitTree {:?}", tree);
     }
-
 }
 
 impl TreeVisitor for LambdaToMethod {
+    fn visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
+        panic!("AssertionError: visitTree {:?}", tree);
+    }
+
     fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let defs = match &ctx.tree(tree).kind {
             TreeKind::CompilationUnit { defs, .. } => defs.clone(),
@@ -5028,7 +5466,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_package_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, pid) = match &ctx.tree(tree).kind {
@@ -5051,7 +5488,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_import(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Import { qualid, .. } => *qualid,
@@ -5063,7 +5499,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.visit_class_def_l2m(ctx, tree);
@@ -5121,7 +5556,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.visit_var_def_l2m(ctx, tree);
     }
@@ -5129,7 +5563,6 @@ impl TreeVisitor for LambdaToMethod {
     fn visit_skip(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let stats = match &ctx.tree(tree).kind {
@@ -5142,7 +5575,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (body, cond) = match &ctx.tree(tree).kind {
@@ -5158,7 +5590,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, body) = match &ctx.tree(tree).kind {
             TreeKind::WhileLoop { cond, body } => (*cond, *body),
@@ -5172,7 +5603,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_for_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (init, cond, step, body) = match &ctx.tree(tree).kind {
@@ -5203,7 +5633,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_foreach_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (var, expr, body) = match &ctx.tree(tree).kind {
             TreeKind::EnhancedForLoop { var, expr, body } => (*var, *expr, *body),
@@ -5225,7 +5654,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_labelled(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let body = match &ctx.tree(tree).kind {
             TreeKind::LabeledStatement { body, .. } => *body,
@@ -5237,7 +5665,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
@@ -5260,7 +5687,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_case(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (labels, stats) = match &ctx.tree(tree).kind {
             TreeKind::Case { labels, stats, .. } => (labels.clone(), stats.clone()),
@@ -5279,7 +5705,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
@@ -5302,7 +5727,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_synchronized(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lock, body) = match &ctx.tree(tree).kind {
             TreeKind::Synchronized { lock, body } => (*lock, *body),
@@ -5316,7 +5740,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (resources, body, catchers, finalizer) = match &ctx.tree(tree).kind {
@@ -5349,7 +5772,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_catch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (param, body) = match &ctx.tree(tree).kind {
             TreeKind::Catch { param, body } => (*param, *body),
@@ -5363,7 +5785,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
@@ -5392,7 +5813,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, thenpart, elsepart) = match &ctx.tree(tree).kind {
             TreeKind::If {
@@ -5418,7 +5838,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_exec(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::ExpressionStatement { expr } => *expr,
@@ -5431,11 +5850,9 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_break(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let value = match &ctx.tree(tree).kind {
@@ -5449,11 +5866,9 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_continue(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_return(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
@@ -5467,7 +5882,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_throw(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Throw { expr } => *expr,
@@ -5479,7 +5893,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_assert(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, detail) = match &ctx.tree(tree).kind {
@@ -5494,7 +5907,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (meth, args) = match &ctx.tree(tree).kind {
@@ -5512,7 +5924,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.visit_new_class_l2m(ctx, tree);
@@ -5562,7 +5973,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.visit_lambda_l2m(ctx, tree);
     }
@@ -5579,7 +5989,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_assign(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
             TreeKind::Assign { lhs, rhs } => (*lhs, *rhs),
@@ -5593,7 +6002,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_assignop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
@@ -5609,7 +6017,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_unary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let arg = match &ctx.tree(tree).kind {
             TreeKind::Unary { arg, .. } => *arg,
@@ -5621,7 +6028,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
@@ -5637,7 +6043,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, expr) = match &ctx.tree(tree).kind {
             TreeKind::TypeCast { clazz, expr } => (*clazz, *expr),
@@ -5651,7 +6056,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, pattern) = match &ctx.tree(tree).kind {
@@ -5671,7 +6075,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_binding_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let var = match &ctx.tree(tree).kind {
             TreeKind::BindingPattern { var } => *var,
@@ -5684,11 +6087,9 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_default_case_label(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_parenthesized_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let pattern = match &ctx.tree(tree).kind {
@@ -5701,7 +6102,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_guard_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (patt, expr) = match &ctx.tree(tree).kind {
@@ -5716,7 +6116,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_indexed(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (indexed, index) = match &ctx.tree(tree).kind {
@@ -5736,7 +6135,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.visit_select_l2m(ctx, tree);
     }
@@ -5753,11 +6151,9 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_type_ident(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_type_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let elemtype = match &ctx.tree(tree).kind {
@@ -5770,7 +6166,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_type_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, arguments) = match &ctx.tree(tree).kind {
@@ -5790,7 +6185,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_type_union(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let alternatives = match &ctx.tree(tree).kind {
             TreeKind::TypeUnion { alternatives } => alternatives.clone(),
@@ -5803,7 +6197,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_type_intersection(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let bounds = match &ctx.tree(tree).kind {
             TreeKind::TypeIntersection { bounds } => bounds.clone(),
@@ -5815,7 +6208,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, bounds) = match &ctx.tree(tree).kind {
@@ -5840,7 +6232,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_wildcard(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (kind, inner) = match &ctx.tree(tree).kind {
             TreeKind::Wildcard { kind, inner } => (*kind, *inner),
@@ -5855,27 +6246,9 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_type_bound_kind(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
-
-    fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let annotations = match &ctx.tree(tree).kind {
-            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
-            _ => panic!("expected modifiers"),
-        };
-        let annotations = self.translate_annotations(ctx, &annotations);
-        if let TreeKind::Modifiers {
-            annotations: slot, ..
-        } = &mut ctx.tree_mut(tree).kind
-        {
-            *slot = annotations;
-        }
-        self.result = Some(tree);
-    }
-
 
     fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotation_type, args) = match &ctx.tree(tree).kind {
@@ -5900,6 +6273,20 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
+    fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let annotations = match &ctx.tree(tree).kind {
+            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+            _ => panic!("expected modifiers"),
+        };
+        let annotations = self.translate_annotations(ctx, &annotations);
+        if let TreeKind::Modifiers {
+            annotations: slot, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
+            *slot = annotations;
+        }
+        self.result = Some(tree);
+    }
 
     fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, underlying_type) = match &ctx.tree(tree).kind {
@@ -5922,29 +6309,9 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_erroneous(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
-
-    fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (defs, expr) = match &ctx.tree(tree).kind {
-            TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
-            _ => panic!("expected a let expression"),
-        };
-        let defs = self.translate_list(ctx, &defs);
-        let expr = self.translate(ctx, expr);
-        if let TreeKind::LetExpr {
-            defs: d, expr: e, ..
-        } = &mut ctx.tree_mut(tree).kind
-        {
-            *d = defs;
-            *e = expr;
-        }
-        self.result = Some(tree);
-    }
-
 
     fn visit_module_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, qual_id, directives) = match &ctx.tree(tree).kind {
@@ -5973,7 +6340,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_exports(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (qualid, module_names) = match &ctx.tree(tree).kind {
             TreeKind::Exports {
@@ -5996,7 +6362,6 @@ impl TreeVisitor for LambdaToMethod {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_opens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (qualid, module_names) = match &ctx.tree(tree).kind {
@@ -6021,7 +6386,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_provides(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (service_name, impl_names) = match &ctx.tree(tree).kind {
             TreeKind::Provides {
@@ -6045,7 +6409,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_requires(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let module_name = match &ctx.tree(tree).kind {
             TreeKind::Requires { module_name, .. } => *module_name,
@@ -6061,7 +6424,6 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
     fn visit_uses(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Uses { qualid } => *qualid,
@@ -6074,11 +6436,22 @@ impl TreeVisitor for LambdaToMethod {
         self.result = Some(tree);
     }
 
-
-    fn visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        panic!("AssertionError: visitTree {:?}", tree);
+    fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (defs, expr) = match &ctx.tree(tree).kind {
+            TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
+            _ => panic!("expected a let expression"),
+        };
+        let defs = self.translate_list(ctx, &defs);
+        let expr = self.translate(ctx, expr);
+        if let TreeKind::LetExpr {
+            defs: d, expr: e, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
+            *d = defs;
+            *e = expr;
+        }
+        self.result = Some(tree);
     }
-
 }
 #[allow(dead_code)]
 // Port adapter: unused default-navigation entries are kept for 1:1 traceability.
@@ -6096,7 +6469,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_package_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, pid) = match &ctx.tree(tree).kind {
@@ -6119,7 +6491,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_import(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Import { qualid, .. } => *qualid,
@@ -6131,7 +6502,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, typarams, extending, implementing, defs) = match &ctx.tree(tree).kind {
@@ -6173,7 +6543,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, restype, typarams, recvparam, params, thrown, body) = match &ctx.tree(tree).kind
@@ -6227,7 +6596,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, nameexpr, vartype, init) = match &ctx.tree(tree).kind {
             TreeKind::VariableDecl {
@@ -6259,11 +6627,9 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_skip(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let stats = match &ctx.tree(tree).kind {
@@ -6276,7 +6642,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (body, cond) = match &ctx.tree(tree).kind {
@@ -6292,7 +6657,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, body) = match &ctx.tree(tree).kind {
             TreeKind::WhileLoop { cond, body } => (*cond, *body),
@@ -6306,7 +6670,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_for_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (init, cond, step, body) = match &ctx.tree(tree).kind {
@@ -6337,7 +6700,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_foreach_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (var, expr, body) = match &ctx.tree(tree).kind {
             TreeKind::EnhancedForLoop { var, expr, body } => (*var, *expr, *body),
@@ -6359,7 +6721,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_labelled(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let body = match &ctx.tree(tree).kind {
             TreeKind::LabeledStatement { body, .. } => *body,
@@ -6371,7 +6732,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
@@ -6394,7 +6754,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_case(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (labels, stats) = match &ctx.tree(tree).kind {
             TreeKind::Case { labels, stats, .. } => (labels.clone(), stats.clone()),
@@ -6414,8 +6773,11 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
-    fn analyzer_default_visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+    fn analyzer_default_visit_switch_expression(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) {
         let (selector, cases) = match &ctx.tree(tree).kind {
             TreeKind::SwitchExpression {
                 selector, cases, ..
@@ -6436,7 +6798,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_synchronized(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lock, body) = match &ctx.tree(tree).kind {
             TreeKind::Synchronized { lock, body } => (*lock, *body),
@@ -6450,7 +6811,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (resources, body, catchers, finalizer) = match &ctx.tree(tree).kind {
@@ -6483,7 +6843,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_catch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (param, body) = match &ctx.tree(tree).kind {
             TreeKind::Catch { param, body } => (*param, *body),
@@ -6497,7 +6856,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
@@ -6526,7 +6884,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, thenpart, elsepart) = match &ctx.tree(tree).kind {
             TreeKind::If {
@@ -6552,7 +6909,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_exec(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::ExpressionStatement { expr } => *expr,
@@ -6565,11 +6921,9 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_break(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let value = match &ctx.tree(tree).kind {
@@ -6583,11 +6937,9 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_continue(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_return(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
@@ -6601,7 +6953,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_throw(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Throw { expr } => *expr,
@@ -6613,7 +6964,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_assert(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, detail) = match &ctx.tree(tree).kind {
@@ -6628,7 +6978,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (meth, args) = match &ctx.tree(tree).kind {
@@ -6646,7 +6995,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (encl, clazz, args, def) = match &ctx.tree(tree).kind {
@@ -6678,7 +7026,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, orig_dim_annotations_list, elemtype, dims, elems) =
@@ -6724,7 +7071,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (params, body) = match &ctx.tree(tree).kind {
             TreeKind::Lambda { params, body, .. } => (params.clone(), *body),
@@ -6742,7 +7088,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_parens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Parens { expr } => *expr,
@@ -6754,7 +7099,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_assign(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
@@ -6770,7 +7114,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_assignop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
             TreeKind::AssignOp { lhs, rhs, .. } => (*lhs, *rhs),
@@ -6785,7 +7128,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_unary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let arg = match &ctx.tree(tree).kind {
             TreeKind::Unary { arg, .. } => *arg,
@@ -6797,7 +7139,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
@@ -6813,7 +7154,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, expr) = match &ctx.tree(tree).kind {
             TreeKind::TypeCast { clazz, expr } => (*clazz, *expr),
@@ -6827,7 +7167,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, pattern) = match &ctx.tree(tree).kind {
@@ -6847,7 +7186,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_binding_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let var = match &ctx.tree(tree).kind {
             TreeKind::BindingPattern { var } => *var,
@@ -6860,13 +7198,19 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
-    fn analyzer_default_visit_default_case_label(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
+    fn analyzer_default_visit_default_case_label(
+        &mut self,
+        _ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) {
         self.result = Some(tree);
     }
 
-
-    fn analyzer_default_visit_parenthesized_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+    fn analyzer_default_visit_parenthesized_pattern(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) {
         let pattern = match &ctx.tree(tree).kind {
             TreeKind::ParenthesizedPattern { pattern } => *pattern,
             _ => panic!("expected a parenthesized pattern"),
@@ -6877,7 +7221,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_guard_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (patt, expr) = match &ctx.tree(tree).kind {
@@ -6892,7 +7235,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_indexed(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (indexed, index) = match &ctx.tree(tree).kind {
@@ -6912,7 +7254,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let selected = match &ctx.tree(tree).kind {
             TreeKind::FieldAccess { selected, .. } => *selected,
@@ -6924,7 +7265,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_reference(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
@@ -6938,21 +7278,17 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_ident(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_literal(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_type_ident(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_type_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let elemtype = match &ctx.tree(tree).kind {
@@ -6965,7 +7301,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_type_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, arguments) = match &ctx.tree(tree).kind {
@@ -6985,7 +7320,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_type_union(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let alternatives = match &ctx.tree(tree).kind {
             TreeKind::TypeUnion { alternatives } => alternatives.clone(),
@@ -6998,8 +7332,11 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
-    fn analyzer_default_visit_type_intersection(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+    fn analyzer_default_visit_type_intersection(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) {
         let bounds = match &ctx.tree(tree).kind {
             TreeKind::TypeIntersection { bounds } => bounds.clone(),
             _ => panic!("expected an intersection type"),
@@ -7010,7 +7347,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, bounds) = match &ctx.tree(tree).kind {
@@ -7035,7 +7371,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_wildcard(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (kind, inner) = match &ctx.tree(tree).kind {
             TreeKind::Wildcard { kind, inner } => (*kind, *inner),
@@ -7050,11 +7385,9 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_type_bound_kind(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let annotations = match &ctx.tree(tree).kind {
@@ -7070,7 +7403,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotation_type, args) = match &ctx.tree(tree).kind {
@@ -7095,7 +7427,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, underlying_type) = match &ctx.tree(tree).kind {
             TreeKind::AnnotatedType {
@@ -7117,11 +7448,9 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_erroneous(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (defs, expr) = match &ctx.tree(tree).kind {
@@ -7139,7 +7468,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_module_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, qual_id, directives) = match &ctx.tree(tree).kind {
@@ -7168,7 +7496,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_exports(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (qualid, module_names) = match &ctx.tree(tree).kind {
             TreeKind::Exports {
@@ -7191,7 +7518,6 @@ impl LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn analyzer_default_visit_opens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (qualid, module_names) = match &ctx.tree(tree).kind {
@@ -7216,7 +7542,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_provides(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (service_name, impl_names) = match &ctx.tree(tree).kind {
             TreeKind::Provides {
@@ -7240,7 +7565,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_requires(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let module_name = match &ctx.tree(tree).kind {
             TreeKind::Requires { module_name, .. } => *module_name,
@@ -7256,7 +7580,6 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_uses(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Uses { qualid } => *qualid,
@@ -7269,14 +7592,16 @@ impl LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn analyzer_default_visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         panic!("AssertionError: visitTree {:?}", tree);
     }
-
 }
 
 impl TreeVisitor for LambdaAnalyzerPreprocessor {
+    fn visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
+        panic!("AssertionError: visitTree {:?}", tree);
+    }
+
     fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let defs = match &ctx.tree(tree).kind {
             TreeKind::CompilationUnit { defs, .. } => defs.clone(),
@@ -7288,7 +7613,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_package_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, pid) = match &ctx.tree(tree).kind {
@@ -7311,7 +7635,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_import(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Import { qualid, .. } => *qualid,
@@ -7323,7 +7646,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.analyzer_visit_class_def(ctx, tree);
@@ -7340,7 +7662,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
     fn visit_skip(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.analyzer_visit_block(ctx, tree);
@@ -7360,7 +7681,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, body) = match &ctx.tree(tree).kind {
             TreeKind::WhileLoop { cond, body } => (*cond, *body),
@@ -7374,7 +7694,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_for_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (init, cond, step, body) = match &ctx.tree(tree).kind {
@@ -7405,7 +7724,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_foreach_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (var, expr, body) = match &ctx.tree(tree).kind {
             TreeKind::EnhancedForLoop { var, expr, body } => (*var, *expr, *body),
@@ -7427,7 +7745,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_labelled(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let body = match &ctx.tree(tree).kind {
             TreeKind::LabeledStatement { body, .. } => *body,
@@ -7439,7 +7756,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
@@ -7462,7 +7778,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_case(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (labels, stats) = match &ctx.tree(tree).kind {
             TreeKind::Case { labels, stats, .. } => (labels.clone(), stats.clone()),
@@ -7481,7 +7796,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
@@ -7504,7 +7818,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_synchronized(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lock, body) = match &ctx.tree(tree).kind {
             TreeKind::Synchronized { lock, body } => (*lock, *body),
@@ -7518,7 +7831,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (resources, body, catchers, finalizer) = match &ctx.tree(tree).kind {
@@ -7551,7 +7863,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_catch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (param, body) = match &ctx.tree(tree).kind {
             TreeKind::Catch { param, body } => (*param, *body),
@@ -7565,7 +7876,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
@@ -7594,7 +7904,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, thenpart, elsepart) = match &ctx.tree(tree).kind {
             TreeKind::If {
@@ -7620,7 +7929,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_exec(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::ExpressionStatement { expr } => *expr,
@@ -7633,11 +7941,9 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_break(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let value = match &ctx.tree(tree).kind {
@@ -7651,11 +7957,9 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_continue(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_return(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
@@ -7669,7 +7973,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_throw(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Throw { expr } => *expr,
@@ -7681,7 +7984,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_assert(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, detail) = match &ctx.tree(tree).kind {
@@ -7696,7 +7998,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.analyzer_visit_apply(ctx, tree);
@@ -7750,7 +8051,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.analyzer_visit_lambda(ctx, tree);
     }
@@ -7767,7 +8067,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_assign(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
             TreeKind::Assign { lhs, rhs } => (*lhs, *rhs),
@@ -7781,7 +8080,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_assignop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
@@ -7797,7 +8095,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_unary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let arg = match &ctx.tree(tree).kind {
             TreeKind::Unary { arg, .. } => *arg,
@@ -7809,7 +8106,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
@@ -7825,7 +8121,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, expr) = match &ctx.tree(tree).kind {
             TreeKind::TypeCast { clazz, expr } => (*clazz, *expr),
@@ -7839,7 +8134,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, pattern) = match &ctx.tree(tree).kind {
@@ -7859,7 +8153,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_binding_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let var = match &ctx.tree(tree).kind {
             TreeKind::BindingPattern { var } => *var,
@@ -7872,11 +8165,9 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_default_case_label(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_parenthesized_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let pattern = match &ctx.tree(tree).kind {
@@ -7889,7 +8180,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_guard_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (patt, expr) = match &ctx.tree(tree).kind {
@@ -7904,7 +8194,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_indexed(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (indexed, index) = match &ctx.tree(tree).kind {
@@ -7924,7 +8213,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.analyzer_visit_select(ctx, tree);
     }
@@ -7941,11 +8229,9 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_type_ident(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_type_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let elemtype = match &ctx.tree(tree).kind {
@@ -7958,7 +8244,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_type_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, arguments) = match &ctx.tree(tree).kind {
@@ -7978,7 +8263,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_type_union(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let alternatives = match &ctx.tree(tree).kind {
             TreeKind::TypeUnion { alternatives } => alternatives.clone(),
@@ -7991,7 +8275,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_type_intersection(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let bounds = match &ctx.tree(tree).kind {
             TreeKind::TypeIntersection { bounds } => bounds.clone(),
@@ -8003,7 +8286,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, bounds) = match &ctx.tree(tree).kind {
@@ -8028,7 +8310,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_wildcard(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (kind, inner) = match &ctx.tree(tree).kind {
             TreeKind::Wildcard { kind, inner } => (*kind, *inner),
@@ -8043,27 +8324,9 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_type_bound_kind(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
-
-    fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let annotations = match &ctx.tree(tree).kind {
-            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
-            _ => panic!("expected modifiers"),
-        };
-        let annotations = self.translate_annotations(ctx, &annotations);
-        if let TreeKind::Modifiers {
-            annotations: slot, ..
-        } = &mut ctx.tree_mut(tree).kind
-        {
-            *slot = annotations;
-        }
-        self.result = Some(tree);
-    }
-
 
     fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotation_type, args) = match &ctx.tree(tree).kind {
@@ -8088,6 +8351,20 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
+    fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let annotations = match &ctx.tree(tree).kind {
+            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+            _ => panic!("expected modifiers"),
+        };
+        let annotations = self.translate_annotations(ctx, &annotations);
+        if let TreeKind::Modifiers {
+            annotations: slot, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
+            *slot = annotations;
+        }
+        self.result = Some(tree);
+    }
 
     fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, underlying_type) = match &ctx.tree(tree).kind {
@@ -8110,29 +8387,9 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_erroneous(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
-
-    fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (defs, expr) = match &ctx.tree(tree).kind {
-            TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
-            _ => panic!("expected a let expression"),
-        };
-        let defs = self.translate_list(ctx, &defs);
-        let expr = self.translate(ctx, expr);
-        if let TreeKind::LetExpr {
-            defs: d, expr: e, ..
-        } = &mut ctx.tree_mut(tree).kind
-        {
-            *d = defs;
-            *e = expr;
-        }
-        self.result = Some(tree);
-    }
-
 
     fn visit_module_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, qual_id, directives) = match &ctx.tree(tree).kind {
@@ -8161,7 +8418,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_exports(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (qualid, module_names) = match &ctx.tree(tree).kind {
             TreeKind::Exports {
@@ -8184,7 +8440,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_opens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (qualid, module_names) = match &ctx.tree(tree).kind {
@@ -8209,7 +8464,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_provides(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (service_name, impl_names) = match &ctx.tree(tree).kind {
             TreeKind::Provides {
@@ -8233,7 +8487,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_requires(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let module_name = match &ctx.tree(tree).kind {
             TreeKind::Requires { module_name, .. } => *module_name,
@@ -8249,7 +8502,6 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
     fn visit_uses(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Uses { qualid } => *qualid,
@@ -8262,11 +8514,22 @@ impl TreeVisitor for LambdaAnalyzerPreprocessor {
         self.result = Some(tree);
     }
 
-
-    fn visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        panic!("AssertionError: visitTree {:?}", tree);
+    fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (defs, expr) = match &ctx.tree(tree).kind {
+            TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
+            _ => panic!("expected a let expression"),
+        };
+        let defs = self.translate_list(ctx, &defs);
+        let expr = self.translate(ctx, expr);
+        if let TreeKind::LetExpr {
+            defs: d, expr: e, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
+            *d = defs;
+            *e = expr;
+        }
+        self.result = Some(tree);
     }
-
 }
 /// Signature Generation
 pub struct L2MSignatureGenerator {
@@ -8350,9 +8613,6 @@ fn captured_symbols(lambda: &LambdaTranslationContext, kind: LambdaSymbolKind) -
         .collect()
 }
 
-
-
-
 impl LambdaAnalyzerPreprocessor {
     /// Create new synthetic method with given flags, name, type, owner
     fn make_private_synthetic_method(
@@ -8401,15 +8661,25 @@ impl LambdaAnalyzerPreprocessor {
             },
         ))
     }
-    fn type_sig(&self, ctx: &mut CompilerContext, ty: TypeId, allow_illegal_signature: bool) -> String {
-        let mut generator = L2MSignatureGenerator::new(Rc::clone(&self.types), allow_illegal_signature);
+    fn type_sig(
+        &self,
+        ctx: &mut CompilerContext,
+        ty: TypeId,
+        allow_illegal_signature: bool,
+    ) -> String {
+        let mut generator =
+            L2MSignatureGenerator::new(Rc::clone(&self.types), allow_illegal_signature);
         let syms = &*self.syms;
         let _ = generator.assemble_sig(ctx, &syms, ty);
         let _ = syms;
         generator.finish()
     }
     /// Adapter: Types.findDescriptorSymbol with the analyzer services.
-    fn find_descriptor_symbol_checked(&self, ctx: &mut CompilerContext, origin: SymbolId) -> Option<SymbolId> {
+    fn find_descriptor_symbol_checked(
+        &self,
+        ctx: &mut CompilerContext,
+        origin: SymbolId,
+    ) -> Option<SymbolId> {
         let attr = self.attr.borrow();
         let chk = Rc::clone(&attr.chk);
         let chk = chk;
@@ -8420,7 +8690,11 @@ impl LambdaAnalyzerPreprocessor {
     }
 
     /// Adapter: Types.findDescriptorType with the analyzer services.
-    fn find_descriptor_type_checked(&self, ctx: &mut CompilerContext, origin: TypeId) -> Option<TypeId> {
+    fn find_descriptor_type_checked(
+        &self,
+        ctx: &mut CompilerContext,
+        origin: TypeId,
+    ) -> Option<TypeId> {
         let attr = self.attr.borrow();
         let chk = Rc::clone(&attr.chk);
         let chk = chk;
@@ -8446,7 +8720,9 @@ impl LambdaAnalyzerPreprocessor {
             return None;
         }
         let qualifier = match &ctx.tree(tree).kind {
-            TreeKind::MemberReference { expr: Some(expr), .. } => *expr,
+            TreeKind::MemberReference {
+                expr: Some(expr), ..
+            } => *expr,
             _ => return None,
         };
         let attr = Rc::clone(&self.attr);
@@ -8507,8 +8783,8 @@ fn is_protected_in_super_class_of_enclosing_class_in_other_package(
     if target.flags_field & flags::PROTECTED as i64 == 0 {
         return false;
     }
-    crate::code::symbol::packge(ctx, target_reference)
-        != crate::code::symbol::packge(ctx, current_class)
+    symbol::packge(ctx, target_reference)
+        != symbol::packge(ctx, current_class)
 }
 
 /// The tree translator of one lambda body (upstream LambdaBodyTranslator).
@@ -8523,19 +8799,35 @@ pub struct LambdaBodyTranslator {
 }
 
 impl LambdaBodyTranslator {
-    fn translate_type_params(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    fn translate_type_params(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
-    fn translate_var_defs(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    fn translate_var_defs(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
     fn translate_cases(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
-    fn translate_catchers(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    fn translate_catchers(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
-    fn translate_annotations(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    fn translate_annotations(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
     pub fn translate(&mut self, ctx: &mut CompilerContext, tree: Option<TreeId>) -> Option<TreeId> {
@@ -8600,8 +8892,14 @@ impl LambdaToMethod {
     }
 
     /// The signature of a type (upstream typeSig).
-    fn type_sig(&self, ctx: &mut CompilerContext, ty: TypeId, allow_illegal_signature: bool) -> String {
-        let mut generator = L2MSignatureGenerator::new(Rc::clone(&self.types), allow_illegal_signature);
+    fn type_sig(
+        &self,
+        ctx: &mut CompilerContext,
+        ty: TypeId,
+        allow_illegal_signature: bool,
+    ) -> String {
+        let mut generator =
+            L2MSignatureGenerator::new(Rc::clone(&self.types), allow_illegal_signature);
         let syms = &*self.syms;
         let _ = generator.assemble_sig(ctx, &syms, ty);
         let _ = syms;
@@ -8619,7 +8917,11 @@ impl LambdaToMethod {
     }
 
     /// Adapter: Types.findDescriptorSymbol with the pass services.
-    fn find_descriptor_symbol_checked(&mut self, ctx: &mut CompilerContext, origin: SymbolId) -> Option<SymbolId> {
+    fn find_descriptor_symbol_checked(
+        &mut self,
+        ctx: &mut CompilerContext,
+        origin: SymbolId,
+    ) -> Option<SymbolId> {
         let attr = self.attr.borrow();
         let chk = Rc::clone(&attr.chk);
         let chk = chk;
@@ -8630,7 +8932,11 @@ impl LambdaToMethod {
     }
 
     /// Adapter: Types.findDescriptorType with the pass services.
-    fn find_descriptor_type_checked(&mut self, ctx: &mut CompilerContext, origin: TypeId) -> Option<TypeId> {
+    fn find_descriptor_type_checked(
+        &mut self,
+        ctx: &mut CompilerContext,
+        origin: TypeId,
+    ) -> Option<TypeId> {
         let attr = self.attr.borrow();
         let chk = Rc::clone(&attr.chk);
         let chk = chk;
@@ -8665,12 +8971,23 @@ impl LambdaToMethod {
     }
 
     /// Creates the method declaration hoisting the lambda body.
-    fn make_lambda_method_decl(&mut self, ctx: &mut CompilerContext, tree: TreeId, sym: SymbolId, lambda_type: TypeId) -> TreeId {
-        let lambda_restype = ctx.typ(lambda_type).get_return_type(ctx).expect("lambda return type");
+    fn make_lambda_method_decl(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        sym: SymbolId,
+        lambda_type: TypeId,
+    ) -> TreeId {
+        let lambda_restype = ctx
+            .typ(lambda_type)
+            .get_return_type(ctx)
+            .expect("lambda return type");
         let synthetic_params = {
             let contexts = self.context_map.borrow();
             match contexts.get(&tree).map(|context| &context.kind) {
-                Some(TranslationContextKind::Lambda(lambda)) => lambda.synthetic_params.clone().unwrap_or_default(),
+                Some(TranslationContextKind::Lambda(lambda)) => {
+                    lambda.synthetic_params.clone().unwrap_or_default()
+                }
                 _ => Vec::new(),
             }
         };
@@ -8690,7 +9007,10 @@ impl LambdaToMethod {
             make.modifiers(ctx, ctx.sym(sym).flags_field)
         };
         let restype_tree = {
-            let restype_tsym = ctx.typ(lambda_restype).tsym.expect("lambda return type symbol");
+            let restype_tsym = ctx
+                .typ(lambda_restype)
+                .tsym
+                .expect("lambda return type symbol");
             let make = &*self.make;
             let mut syms = &*self.syms;
             make.qual_ident(ctx, &mut syms, restype_tsym)
@@ -8720,7 +9040,12 @@ impl LambdaToMethod {
     }
 
     /// Creates the body block of the translated lambda method (upstream makeLambdaBody).
-    fn make_lambda_body(&mut self, ctx: &mut CompilerContext, tree: TreeId, lambda_method_decl: TreeId) -> TreeId {
+    fn make_lambda_body(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        lambda_method_decl: TreeId,
+    ) -> TreeId {
         // Java: LambdaToMethod.visitLambda positions the TreeMaker at the
         // lambda expression before building the synthetic body, so the body's
         // return/exec statements carry the lambda's position (and the
@@ -8728,7 +9053,11 @@ impl LambdaToMethod {
         let lambda_pos = ctx.tree(tree).pos;
         self.make.at(lambda_pos);
         let (body, can_complete_normally) = match &ctx.tree(tree).kind {
-            TreeKind::Lambda { body: Some(body), can_complete_normally, .. } => (*body, *can_complete_normally),
+            TreeKind::Lambda {
+                body: Some(body),
+                can_complete_normally,
+                ..
+            } => (*body, *can_complete_normally),
             _ => panic!("expected a lambda body"),
         };
         if ctx.tree(body).has_tag(Tag::BLOCK) {
@@ -8740,10 +9069,22 @@ impl LambdaToMethod {
 
     /// Creates the body block of a lambda with an expression body (upstream
     /// makeLambdaExpressionBody).
-    fn make_lambda_expression_body(&mut self, ctx: &mut CompilerContext, expr: TreeId, lambda_method_decl: TreeId) -> TreeId {
+    fn make_lambda_expression_body(
+        &mut self,
+        ctx: &mut CompilerContext,
+        expr: TreeId,
+        lambda_method_decl: TreeId,
+    ) -> TreeId {
         let decl_type = ctx.tree(lambda_method_decl).ty.expect("lambda method type");
-        let restype = ctx.typ(decl_type).get_return_type(ctx).expect("lambda return type");
-        let is_lambda_void = ctx.tree(expr).ty.map(|ty| ctx.typ(ty).has_tag(TypeTag::VOID)).unwrap_or(false);
+        let restype = ctx
+            .typ(decl_type)
+            .get_return_type(ctx)
+            .expect("lambda return type");
+        let is_lambda_void = ctx
+            .tree(expr)
+            .ty
+            .map(|ty| ctx.typ(ty).has_tag(TypeTag::VOID))
+            .unwrap_or(false);
         let is_target_void = ctx.typ(restype).has_tag(TypeTag::VOID);
         let void_type = self.syms.void_type;
         let boxed_void = self.types.boxed_class(ctx, &*self.syms, void_type);
@@ -8760,7 +9101,7 @@ impl LambdaToMethod {
         // tree.pos: for a conditional expression this is the start of the
         // condition, which is the line the synthesized return is attributed
         // to.
-        let expr_start = crate::tree::tree_info::get_start_pos(ctx, expr);
+        let expr_start = tree_info::get_start_pos(ctx, expr);
         self.make.at(expr_start);
         let result = if is_target_void {
             let exec = {
@@ -8812,9 +9153,18 @@ impl LambdaToMethod {
 
     /// Creates the body block of a lambda with a statement body (upstream
     /// makeLambdaStatementBody).
-    fn make_lambda_statement_body(&mut self, ctx: &mut CompilerContext, block: TreeId, lambda_method_decl: TreeId, complete_normally: bool) -> TreeId {
+    fn make_lambda_statement_body(
+        &mut self,
+        ctx: &mut CompilerContext,
+        block: TreeId,
+        lambda_method_decl: TreeId,
+        complete_normally: bool,
+    ) -> TreeId {
         let decl_type = ctx.tree(lambda_method_decl).ty.expect("lambda method type");
-        let restype = ctx.typ(decl_type).get_return_type(ctx).expect("lambda return type");
+        let restype = ctx
+            .typ(decl_type)
+            .get_return_type(ctx)
+            .expect("lambda return type");
         let is_target_void = ctx.typ(restype).has_tag(TypeTag::VOID);
         let void_type = self.syms.void_type;
         let boxed_void = self.types.boxed_class(ctx, &*self.syms, void_type);
@@ -8833,7 +9183,11 @@ impl LambdaToMethod {
             syms: Rc::clone(&self.syms),
         };
         translator.translate(ctx, Some(block));
-        let trans_block = translator.result.take().or(Some(block)).expect("translated block");
+        let trans_block = translator
+            .result
+            .take()
+            .or(Some(block))
+            .expect("translated block");
         if complete_normally && is_target_void_type {
             let bot_type = self.syms.bot_type;
             let bot = {
@@ -8867,13 +9221,23 @@ impl LambdaToMethod {
             })
             .expect("context target");
         let serializable_tsym = self.syms.serializable_type;
-        let serializable_tsym = ctx.typ(serializable_tsym).tsym.expect("serializable type symbol");
+        let serializable_tsym = ctx
+            .typ(serializable_tsym)
+            .tsym
+            .expect("serializable type symbol");
         let syms = &*self.syms;
-        self.types.as_super(ctx, &syms, target, serializable_tsym).is_some()
+        self.types
+            .as_super(ctx, &syms, target, serializable_tsym)
+            .is_some()
     }
 
     /// Deduplicates equivalent lambda bodies (upstream DedupedLambda lookup).
-    fn dedup_lambda(&mut self, ctx: &mut CompilerContext, sym: SymbolId, body: TreeId) -> Option<SymbolId> {
+    fn dedup_lambda(
+        &mut self,
+        ctx: &mut CompilerContext,
+        sym: SymbolId,
+        body: TreeId,
+    ) -> Option<SymbolId> {
         let params = match &ctx.sym(sym).kind_data {
             SymbolKind::MethodSymbol { params, .. } => params.clone(),
             _ => List::nil(),
@@ -8902,7 +9266,10 @@ impl LambdaToMethod {
                         return false;
                     }
                     let _ = syms;
-                    let mut differ = crate::comp::tree_differ::TreeDiffer::new(&params_vec, &candidate_params_vec);
+                    let mut differ = crate::comp::tree_differ::TreeDiffer::new(
+                        &params_vec,
+                        &candidate_params_vec,
+                    );
                     differ.scan(ctx, Some(body), Some(candidate.tree))
                 })
             })
@@ -8942,7 +9309,14 @@ impl LambdaAnalyzerPreprocessor {
     /// ReferenceTranslationContext.needsConversionToLambda).
     fn reference_needs_conversion(&mut self, ctx: &mut CompilerContext, tree: TreeId) -> bool {
         let (kind, mode, varargs, owner_accessible, sym) = match &ctx.tree(tree).kind {
-            TreeKind::MemberReference { kind, mode, varargs_element, owner_accessible, sym, .. } => (*kind, *mode, *varargs_element, *owner_accessible, *sym),
+            TreeKind::MemberReference {
+                kind,
+                mode,
+                varargs_element,
+                owner_accessible,
+                sym,
+                ..
+            } => (*kind, *mode, *varargs_element, *owner_accessible, *sym),
             _ => return false,
         };
         // Java: ReferenceTranslationContext.owner is the owner recorded for
@@ -8955,7 +9329,8 @@ impl LambdaAnalyzerPreprocessor {
             .get(&tree)
             .map(|context| context.owner)
             .expect("context owner");
-        let interface_intersection = self.interface_parameter_is_intersection_or_union_type(ctx, tree);
+        let interface_intersection =
+            self.interface_parameter_is_intersection_or_union_type(ctx, tree);
         let needs_varargs = varargs.is_some();
         let is_array_op = sym
             .map(|sym| ctx.sym(sym).owner == Some(self.syms.array_class))
@@ -8979,7 +9354,13 @@ impl LambdaAnalyzerPreprocessor {
                 })
                 .unwrap_or(false);
         let is_protected = sym
-            .map(|sym| is_protected_in_super_class_of_enclosing_class_in_other_package(ctx, sym, context_owner))
+            .map(|sym| {
+                is_protected_in_super_class_of_enclosing_class_in_other_package(
+                    ctx,
+                    sym,
+                    context_owner,
+                )
+            })
             .unwrap_or(false);
         interface_intersection
             || matches!(kind, Some(crate::tree::jc_tree::ReferenceKind::SUPER))
@@ -8993,7 +9374,7 @@ impl LambdaAnalyzerPreprocessor {
                 && sym
                     .map(|sym| {
                         let owner = ctx.sym(sym).owner.expect("reference owner");
-                        crate::code::symbol::Symbol::is_directly_or_indirectly_local(ctx, owner)
+                        Symbol::is_directly_or_indirectly_local(ctx, owner)
                             || ctx.sym(owner).is_inner(ctx)
                     })
                     .unwrap_or(false))
@@ -9094,20 +9475,32 @@ impl MemberReferenceToLambda {
     /// (upstream addParametersReturnReceiver).
     fn add_parameters_return_receiver(&mut self, ctx: &mut CompilerContext) -> Option<SymbolId> {
         let (kind, varargs_element, target, sym) = match &ctx.tree(self.tree).kind {
-            TreeKind::MemberReference { kind, varargs_element, target, sym, .. } => (*kind, *varargs_element, *target, *sym),
+            TreeKind::MemberReference {
+                kind,
+                varargs_element,
+                target,
+                sym,
+                ..
+            } => (*kind, *varargs_element, *target, *sym),
             _ => panic!("expected a member reference"),
         };
         let target = target.expect("member reference target");
-        let sam_desc = self.find_descriptor_type(ctx, target).expect("descriptor type");
+        let sam_desc = self
+            .find_descriptor_type(ctx, target)
+            .expect("descriptor type");
         let sam_ptypes = ctx.typ(sam_desc).get_parameter_types(ctx);
-        let desc_type = self.find_descriptor_type(ctx, target).expect("descriptor type");
+        let desc_type = self
+            .find_descriptor_type(ctx, target)
+            .expect("descriptor type");
         let mut desc_ptypes = ctx.typ(desc_type).get_parameter_types(ctx);
         let mut sam_ptypes = sam_ptypes;
         let sym = sym.expect("reference symbol");
         let rcvr = match kind {
             Some(crate::tree::jc_tree::ReferenceKind::BOUND) => {
                 let expr = match &ctx.tree(self.tree).kind {
-                    TreeKind::MemberReference { expr: Some(expr), .. } => *expr,
+                    TreeKind::MemberReference {
+                        expr: Some(expr), ..
+                    } => *expr,
                     _ => panic!("bound member reference without qualifier"),
                 };
                 let expr_ty = ctx.tree(expr).ty.expect("receiver type");
@@ -9140,15 +9533,33 @@ impl MemberReferenceToLambda {
                 kind,
                 crate::comp::attr::type_display_of(ctx, target),
                 crate::comp::attr::type_display_of(ctx, desc_type),
-                impl_ptypes.iter().map(|t| crate::comp::attr::type_display_of(ctx,t)).collect::<Vec<_>>().join(","),
-                sam_ptypes.iter().map(|t| crate::comp::attr::type_display_of(ctx,t)).collect::<Vec<_>>().join(","),
-                self.params.iter().map(|p| (ctx.tree(*p).pos, ctx.tree(*p).tag)).collect::<Vec<_>>(),
-                self.args.iter().map(|a| (ctx.tree(*a).pos, ctx.tree(*a).tag)).collect::<Vec<_>>()
+                impl_ptypes
+                    .iter()
+                    .map(|t| crate::comp::attr::type_display_of(ctx, t))
+                    .collect::<Vec<_>>()
+                    .join(","),
+                sam_ptypes
+                    .iter()
+                    .map(|t| crate::comp::attr::type_display_of(ctx, t))
+                    .collect::<Vec<_>>()
+                    .join(","),
+                self.params
+                    .iter()
+                    .map(|p| (ctx.tree(*p).pos, ctx.tree(*p).tag))
+                    .collect::<Vec<_>>(),
+                self.args
+                    .iter()
+                    .map(|a| (ctx.tree(*a).pos, ctx.tree(*a).tag))
+                    .collect::<Vec<_>>()
             );
         }
         let impl_size = impl_ptypes.length();
         let sam_size = sam_ptypes.length();
-        let last = if varargs_element.is_some() { impl_size - 1 } else { impl_size };
+        let last = if varargs_element.is_some() {
+            impl_size - 1
+        } else {
+            impl_size
+        };
         let check_for_intersection = varargs_element.is_some() || impl_size == desc_ptypes.length();
         let mut impl_rest = impl_ptypes;
         let mut sam_rest = sam_ptypes;
@@ -9190,7 +9601,9 @@ impl MemberReferenceToLambda {
         let chk = Rc::clone(&attr.chk);
         let chk = chk;
         let mut syms = &*self.syms;
-        self.types.find_descriptor_type(ctx, &mut syms, &self.diags, &chk, target).ok()
+        self.types
+            .find_descriptor_type(ctx, &mut syms, &self.diags, &chk, target)
+            .ok()
     }
 
     /// Returns the receiver expression of the converted member reference.
@@ -9199,10 +9612,18 @@ impl MemberReferenceToLambda {
     }
 
     /// Adds one parameter to the converted lambda (upstream addParameter).
-    fn add_parameter(&mut self, ctx: &mut CompilerContext, name: &str, ty: TypeId, gen_arg: bool) -> SymbolId {
+    fn add_parameter(
+        &mut self,
+        ctx: &mut CompilerContext,
+        name: &str,
+        ty: TypeId,
+        gen_arg: bool,
+    ) -> SymbolId {
         let owner = self.owner.expect("conversion owner");
         let tree_pos = ctx.tree(self.tree).pos;
-        let name = self.names.from_string(&javac_strings::JavaString::from(name));
+        let name = self
+            .names
+            .from_string(&javac_strings::JavaString::from(name));
         let vsym = ctx.alloc_symbol(Symbol::new(
             Kind::VAR,
             flags::PARAMETER | flags::SYNTHETIC as i64,
@@ -9241,14 +9662,19 @@ impl MemberReferenceToLambda {
             make.ident_symbol(ctx, rcvr)
         };
         let (sym, owner_accessible, expr) = match &ctx.tree(self.tree).kind {
-            TreeKind::MemberReference { sym: Some(sym), owner_accessible, expr, .. } => (*sym, *owner_accessible, *expr),
+            TreeKind::MemberReference {
+                sym: Some(sym),
+                owner_accessible,
+                expr,
+                ..
+            } => (*sym, *owner_accessible, *expr),
             _ => panic!("expected a member reference"),
         };
         let owner = self.owner.expect("conversion owner");
         let prot_access =
             is_protected_in_super_class_of_enclosing_class_in_other_package(ctx, sym, owner);
         let mut rcvr_type = if owner_accessible && !prot_access {
-            let encl = crate::code::symbol::encl_class(ctx, sym).expect("receiver enclosing class");
+            let encl = symbol::encl_class(ctx, sym).expect("receiver enclosing class");
             ctx.sym(encl).ty.expect("receiver enclosing type")
         } else {
             ctx.tree(expr.expect("qualifier expression"))
@@ -9260,7 +9686,10 @@ impl MemberReferenceToLambda {
             ctx.sym(syms.array_class).ty
         };
         if Some(rcvr_type) == array_class_type {
-            rcvr_type = ctx.tree(expr.expect("qualifier expression")).ty.expect("qualifier type");
+            rcvr_type = ctx
+                .tree(expr.expect("qualifier expression"))
+                .ty
+                .expect("qualifier type");
         }
         let rcvr_ty = ctx.sym(rcvr).ty.expect("receiver type");
         let rcvr_tsym = ctx.typ(rcvr_ty).tsym;
@@ -9268,7 +9697,7 @@ impl MemberReferenceToLambda {
         let is_subclass = match (rcvr_tsym, target_tsym) {
             (Some(rcvr_tsym), Some(target_tsym)) => {
                 let syms = &*self.syms;
-                crate::code::symbol::is_sub_class(ctx, &syms, &self.types, rcvr_tsym, target_tsym)
+                symbol::is_sub_class(ctx, &syms, &self.types, rcvr_tsym, target_tsym)
             }
             _ => false,
         };
@@ -9290,8 +9719,14 @@ impl MemberReferenceToLambda {
 
     /// Converts the reference arguments, inserting the casts required by type
     /// erasure (upstream convertArgs).
-    fn convert_args(&mut self, ctx: &mut CompilerContext, meth: SymbolId, args: List<TreeId>, varargs_element: Option<TypeId>) -> List<TreeId> {
-        assert!(ctx.sym(meth).kind == Kind::MTH, "AssertionError: method symbol expected");
+    fn convert_args(
+        &mut self,
+        ctx: &mut CompilerContext,
+        meth: SymbolId,
+        args: List<TreeId>,
+        varargs_element: Option<TypeId>,
+    ) -> List<TreeId> {
+        assert_eq!(ctx.sym(meth).kind, Kind::MTH, "AssertionError: method symbol expected");
         let formals = {
             let meth_type = ctx.sym(meth).ty.expect("method type");
             let erased = {
@@ -9301,7 +9736,7 @@ impl MemberReferenceToLambda {
             ctx.typ(erased).get_parameter_types(ctx)
         };
         if varargs_element.is_some() {
-            assert!(ctx.sym(meth).flags_field & flags::VARARGS != 0, "AssertionError: varargs method expected");
+            assert_ne!(ctx.sym(meth).flags_field & flags::VARARGS, 0, "AssertionError: varargs method expected");
         }
         let attr_env = self.attr_env.clone().expect("attrEnv");
         let mut trans_types = self.trans_types.borrow_mut();
@@ -9310,21 +9745,39 @@ impl MemberReferenceToLambda {
 
     /// Sets the varargs element on the converted call (upstream
     /// setVarargsIfNeeded).
-    fn set_varargs_if_needed(&mut self, ctx: &mut CompilerContext, tree: TreeId, varargs_element: Option<TypeId>) {
-        let Some(varargs_element) = varargs_element else { return; };
+    fn set_varargs_if_needed(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        varargs_element: Option<TypeId>,
+    ) {
+        let Some(varargs_element) = varargs_element else {
+            return;
+        };
         match ctx.tree(tree).tag {
             Tag::APPLY => {
-                if let TreeKind::MethodInvocation { varargs_element: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                if let TreeKind::MethodInvocation {
+                    varargs_element: slot,
+                    ..
+                } = &mut ctx.tree_mut(tree).kind
+                {
                     *slot = Some(varargs_element);
                 }
             }
             Tag::NEWCLASS => {
-                if let TreeKind::NewClass { varargs_element: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                if let TreeKind::NewClass {
+                    varargs_element: slot,
+                    ..
+                } = &mut ctx.tree_mut(tree).kind
+                {
                     *slot = Some(varargs_element);
                 }
             }
             Tag::TYPECAST => {
-                if let TreeKind::TypeCast { expr: Some(expr), .. } = &ctx.tree(tree).kind {
+                if let TreeKind::TypeCast {
+                    expr: Some(expr), ..
+                } = &ctx.tree(tree).kind
+                {
                     let expr = *expr;
                     self.set_varargs_if_needed(ctx, expr, Some(varargs_element));
                 }
@@ -9343,7 +9796,9 @@ impl MemberReferenceToLambda {
                 // super references). Keeping the original "super" qualifier is
                 // what makes the converted lambda capture the enclosing
                 // instance.
-                TreeKind::MemberReference { expr: Some(expr), .. } => *expr,
+                TreeKind::MemberReference {
+                    expr: Some(expr), ..
+                } => *expr,
                 _ => {
                     let ref_sym = match &ctx.tree(self.tree).kind {
                         TreeKind::MemberReference { sym: Some(sym), .. } => *sym,
@@ -9351,13 +9806,16 @@ impl MemberReferenceToLambda {
                     };
                     let owner = ctx.sym(ref_sym).owner.expect("reference owner");
                     let mut syms = &*self.syms;
-                    self.make
-                        .qual_ident(ctx, &mut syms, owner)
+                    self.make.qual_ident(ctx, &mut syms, owner)
                 }
             },
         };
         let (sym, varargs) = match &ctx.tree(self.tree).kind {
-            TreeKind::MemberReference { sym: Some(sym), varargs_element, .. } => (*sym, *varargs_element),
+            TreeKind::MemberReference {
+                sym: Some(sym),
+                varargs_element,
+                ..
+            } => (*sym, *varargs_element),
             _ => panic!("expected a member reference"),
         };
         let name = ctx.sym(sym).name.clone();
@@ -9382,16 +9840,25 @@ impl MemberReferenceToLambda {
         };
         ctx.tree_mut(apply).ty = return_type;
         let referent_type = match &ctx.tree(self.tree).kind {
-            TreeKind::MemberReference { referent_type: Some(referent_type), .. } => *referent_type,
+            TreeKind::MemberReference {
+                referent_type: Some(referent_type),
+                ..
+            } => *referent_type,
             _ => panic!("expected a member reference referent type"),
         };
         let target = {
             let syms = &*self.syms;
             self.types.erasure(ctx, &syms, referent_type)
         };
-        let coerce_target = ctx.typ(target).get_return_type(ctx).expect("referent return type");
+        let coerce_target = ctx
+            .typ(target)
+            .get_return_type(ctx)
+            .expect("referent return type");
         let attr_env = self.attr_env.clone().expect("attrEnv");
-        let coerced = self.trans_types.borrow_mut().coerce(ctx, &attr_env, apply, coerce_target);
+        let coerced = self
+            .trans_types
+            .borrow_mut()
+            .coerce(ctx, &attr_env, apply, coerce_target);
         self.set_varargs_if_needed(ctx, coerced, varargs);
         coerced
     }
@@ -9404,7 +9871,9 @@ impl MemberReferenceToLambda {
         };
         if kind == Some(crate::tree::jc_tree::ReferenceKind::ARRAY_CTOR) {
             let qualifier = match &ctx.tree(self.tree).kind {
-                TreeKind::MemberReference { expr: Some(expr), .. } => *expr,
+                TreeKind::MemberReference {
+                    expr: Some(expr), ..
+                } => *expr,
                 _ => panic!("array constructor without qualifier"),
             };
             let qualifier_ty = ctx.tree(qualifier).ty.expect("array qualifier type");
@@ -9439,15 +9908,22 @@ impl MemberReferenceToLambda {
             array
         } else {
             let qualifier = match &ctx.tree(self.tree).kind {
-                TreeKind::MemberReference { expr: Some(expr), .. } => *expr,
+                TreeKind::MemberReference {
+                    expr: Some(expr), ..
+                } => *expr,
                 _ => panic!("constructor reference without qualifier"),
             };
             let qualifier_ty = ctx.tree(qualifier).ty.expect("constructor qualifier type");
             let (sym, varargs) = match &ctx.tree(self.tree).kind {
-                TreeKind::MemberReference { sym: Some(sym), varargs_element, .. } => (*sym, *varargs_element),
+                TreeKind::MemberReference {
+                    sym: Some(sym),
+                    varargs_element,
+                    ..
+                } => (*sym, *varargs_element),
                 _ => panic!("expected a member reference"),
             };
-            let converted_args = self.convert_args(ctx, sym, List::from_iterable(self.args.clone()), varargs);
+            let converted_args =
+                self.convert_args(ctx, sym, List::from_iterable(self.args.clone()), varargs);
             let clazz = {
                 let make = &*self.make;
                 let mut syms = &*self.syms;
@@ -9457,7 +9933,10 @@ impl MemberReferenceToLambda {
                 let make = &*self.make;
                 make.new_class(ctx, None, List::nil(), clazz, converted_args, None)
             };
-            if let TreeKind::NewClass { constructor: slot, .. } = &mut ctx.tree_mut(new_class).kind {
+            if let TreeKind::NewClass {
+                constructor: slot, ..
+            } = &mut ctx.tree_mut(new_class).kind
+            {
                 *slot = Some(sym);
             }
             ctx.tree_mut(new_class).ty = Some(qualifier_ty);
@@ -9468,7 +9947,11 @@ impl MemberReferenceToLambda {
 }
 
 impl LambdaBodyTranslator {
-    pub fn translate_list(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
+    pub fn translate_list(
+        &mut self,
+        ctx: &mut CompilerContext,
+        trees: &List<TreeId>,
+    ) -> List<TreeId> {
         let mut result: List<TreeId> = List::nil();
         for tree in trees.iter() {
             let translated = self.translate(ctx, Some(tree)).expect("translated tree");
@@ -9497,7 +9980,9 @@ impl LambdaBodyTranslator {
         let is_lambda_void = expr.is_none();
         if self.is_target_void && !is_lambda_void {
             let expr = expr.expect("return expression");
-            let loc_name = self.names.from_string(&javac_strings::JavaString::from("$loc"));
+            let loc_name = self
+                .names
+                .from_string(&javac_strings::JavaString::from("$loc"));
             let owner = match &ctx.tree(self.lambda_method_decl).kind {
                 TreeKind::MethodDecl { sym: Some(sym), .. } => *sym,
                 _ => panic!("expected a lambda method declaration"),
@@ -9530,6 +10015,10 @@ impl LambdaBodyTranslator {
 }
 
 impl TreeVisitor for LambdaBodyTranslator {
+    fn visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
+        panic!("AssertionError: visitTree {:?}", tree);
+    }
+
     fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let defs = match &ctx.tree(tree).kind {
             TreeKind::CompilationUnit { defs, .. } => defs.clone(),
@@ -9541,7 +10030,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_package_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, pid) = match &ctx.tree(tree).kind {
@@ -9564,7 +10052,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_import(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Import { qualid, .. } => *qualid,
@@ -9576,7 +10063,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.visit_class_def_body(ctx, tree);
@@ -9634,7 +10120,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, nameexpr, vartype, init) = match &ctx.tree(tree).kind {
             TreeKind::VariableDecl {
@@ -9666,11 +10151,9 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_skip(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let stats = match &ctx.tree(tree).kind {
@@ -9683,7 +10166,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (body, cond) = match &ctx.tree(tree).kind {
@@ -9699,7 +10181,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, body) = match &ctx.tree(tree).kind {
             TreeKind::WhileLoop { cond, body } => (*cond, *body),
@@ -9713,7 +10194,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_for_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (init, cond, step, body) = match &ctx.tree(tree).kind {
@@ -9744,7 +10224,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_foreach_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (var, expr, body) = match &ctx.tree(tree).kind {
             TreeKind::EnhancedForLoop { var, expr, body } => (*var, *expr, *body),
@@ -9766,7 +10245,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_labelled(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let body = match &ctx.tree(tree).kind {
             TreeKind::LabeledStatement { body, .. } => *body,
@@ -9778,7 +10256,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
@@ -9801,7 +10278,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_case(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (labels, stats) = match &ctx.tree(tree).kind {
             TreeKind::Case { labels, stats, .. } => (labels.clone(), stats.clone()),
@@ -9820,7 +10296,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
@@ -9843,7 +10318,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_synchronized(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lock, body) = match &ctx.tree(tree).kind {
             TreeKind::Synchronized { lock, body } => (*lock, *body),
@@ -9857,7 +10331,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (resources, body, catchers, finalizer) = match &ctx.tree(tree).kind {
@@ -9890,7 +10363,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_catch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (param, body) = match &ctx.tree(tree).kind {
             TreeKind::Catch { param, body } => (*param, *body),
@@ -9904,7 +10376,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
@@ -9933,7 +10404,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, thenpart, elsepart) = match &ctx.tree(tree).kind {
             TreeKind::If {
@@ -9959,7 +10429,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_exec(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::ExpressionStatement { expr } => *expr,
@@ -9972,11 +10441,9 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_break(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let value = match &ctx.tree(tree).kind {
@@ -9990,11 +10457,9 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_continue(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_return(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.visit_return_body(ctx, tree);
@@ -10012,7 +10477,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_assert(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, detail) = match &ctx.tree(tree).kind {
             TreeKind::Assert { cond, detail } => (*cond, *detail),
@@ -10026,7 +10490,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (meth, args) = match &ctx.tree(tree).kind {
@@ -10044,7 +10507,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (encl, clazz, args, def) = match &ctx.tree(tree).kind {
@@ -10076,7 +10538,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, orig_dim_annotations_list, elemtype, dims, elems) =
@@ -10122,7 +10583,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.visit_lambda_body(ctx, tree);
     }
@@ -10139,7 +10599,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_assign(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
             TreeKind::Assign { lhs, rhs } => (*lhs, *rhs),
@@ -10153,7 +10612,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_assignop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
@@ -10169,7 +10627,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_unary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let arg = match &ctx.tree(tree).kind {
             TreeKind::Unary { arg, .. } => *arg,
@@ -10181,7 +10638,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
@@ -10197,7 +10653,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, expr) = match &ctx.tree(tree).kind {
             TreeKind::TypeCast { clazz, expr } => (*clazz, *expr),
@@ -10211,7 +10666,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, pattern) = match &ctx.tree(tree).kind {
@@ -10231,7 +10685,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_binding_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let var = match &ctx.tree(tree).kind {
             TreeKind::BindingPattern { var } => *var,
@@ -10244,11 +10697,9 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_default_case_label(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_parenthesized_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let pattern = match &ctx.tree(tree).kind {
@@ -10261,7 +10712,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_guard_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (patt, expr) = match &ctx.tree(tree).kind {
@@ -10276,7 +10726,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_indexed(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (indexed, index) = match &ctx.tree(tree).kind {
@@ -10296,7 +10745,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let selected = match &ctx.tree(tree).kind {
             TreeKind::FieldAccess { selected, .. } => *selected,
@@ -10308,7 +10756,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_reference(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
@@ -10322,21 +10769,17 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_ident(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_literal(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
 
-
     fn visit_type_ident(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
 
     fn visit_type_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let elemtype = match &ctx.tree(tree).kind {
@@ -10349,7 +10792,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_type_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, arguments) = match &ctx.tree(tree).kind {
@@ -10369,7 +10811,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_type_union(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let alternatives = match &ctx.tree(tree).kind {
             TreeKind::TypeUnion { alternatives } => alternatives.clone(),
@@ -10382,7 +10823,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_type_intersection(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let bounds = match &ctx.tree(tree).kind {
             TreeKind::TypeIntersection { bounds } => bounds.clone(),
@@ -10394,7 +10834,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, bounds) = match &ctx.tree(tree).kind {
@@ -10419,7 +10858,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_wildcard(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (kind, inner) = match &ctx.tree(tree).kind {
             TreeKind::Wildcard { kind, inner } => (*kind, *inner),
@@ -10434,27 +10872,9 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_type_bound_kind(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
-
-    fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let annotations = match &ctx.tree(tree).kind {
-            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
-            _ => panic!("expected modifiers"),
-        };
-        let annotations = self.translate_annotations(ctx, &annotations);
-        if let TreeKind::Modifiers {
-            annotations: slot, ..
-        } = &mut ctx.tree_mut(tree).kind
-        {
-            *slot = annotations;
-        }
-        self.result = Some(tree);
-    }
-
 
     fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotation_type, args) = match &ctx.tree(tree).kind {
@@ -10479,6 +10899,20 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
+    fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let annotations = match &ctx.tree(tree).kind {
+            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+            _ => panic!("expected modifiers"),
+        };
+        let annotations = self.translate_annotations(ctx, &annotations);
+        if let TreeKind::Modifiers {
+            annotations: slot, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
+            *slot = annotations;
+        }
+        self.result = Some(tree);
+    }
 
     fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, underlying_type) = match &ctx.tree(tree).kind {
@@ -10501,29 +10935,9 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_erroneous(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
-
-
-    fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (defs, expr) = match &ctx.tree(tree).kind {
-            TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
-            _ => panic!("expected a let expression"),
-        };
-        let defs = self.translate_list(ctx, &defs);
-        let expr = self.translate(ctx, expr);
-        if let TreeKind::LetExpr {
-            defs: d, expr: e, ..
-        } = &mut ctx.tree_mut(tree).kind
-        {
-            *d = defs;
-            *e = expr;
-        }
-        self.result = Some(tree);
-    }
-
 
     fn visit_module_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, qual_id, directives) = match &ctx.tree(tree).kind {
@@ -10552,7 +10966,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_exports(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (qualid, module_names) = match &ctx.tree(tree).kind {
             TreeKind::Exports {
@@ -10575,7 +10988,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         }
         self.result = Some(tree);
     }
-
 
     fn visit_opens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (qualid, module_names) = match &ctx.tree(tree).kind {
@@ -10600,7 +11012,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_provides(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (service_name, impl_names) = match &ctx.tree(tree).kind {
             TreeKind::Provides {
@@ -10624,7 +11035,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_requires(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let module_name = match &ctx.tree(tree).kind {
             TreeKind::Requires { module_name, .. } => *module_name,
@@ -10640,7 +11050,6 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
     fn visit_uses(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Uses { qualid } => *qualid,
@@ -10653,9 +11062,20 @@ impl TreeVisitor for LambdaBodyTranslator {
         self.result = Some(tree);
     }
 
-
-    fn visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        panic!("AssertionError: visitTree {:?}", tree);
+    fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (defs, expr) = match &ctx.tree(tree).kind {
+            TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
+            _ => panic!("expected a let expression"),
+        };
+        let defs = self.translate_list(ctx, &defs);
+        let expr = self.translate(ctx, expr);
+        if let TreeKind::LetExpr {
+            defs: d, expr: e, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
+            *d = defs;
+            *e = expr;
+        }
+        self.result = Some(tree);
     }
-
 }

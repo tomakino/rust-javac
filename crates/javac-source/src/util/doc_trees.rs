@@ -112,8 +112,7 @@ pub trait DocTrees: Trees {
     /// @param path the path for the tree node
     /// @return the referenced type, or null
     /// @since 15
-    fn get_type_for_doc_path(&self, path: &DocTreePath)
-        -> Option<Rc<dyn TypeMirror>>;
+    fn get_type_for_doc_path(&self, path: &DocTreePath) -> Option<Rc<dyn TypeMirror>>;
 
     /// Returns the list of {@link DocTree} representing the first sentence of
     /// a comment.

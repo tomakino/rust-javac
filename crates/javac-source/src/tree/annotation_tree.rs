@@ -1,3 +1,5 @@
+use super::expression_tree::ExpressionTree;
+use super::tree::Tree;
 /// A tree node for an annotation.
 ///
 /// For example:
@@ -12,8 +14,6 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
-use super::tree::Tree;
 
 pub trait AnnotationTree: ExpressionTree {
     /// Returns the annotation type.
@@ -23,5 +23,4 @@ pub trait AnnotationTree: ExpressionTree {
     /// Returns the arguments, if any, for the annotation.
     /// @return the arguments for the annotation type
     fn get_arguments(&self) -> Vec<Rc<dyn ExpressionTree>>;
-
 }

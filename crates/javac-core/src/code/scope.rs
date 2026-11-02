@@ -30,10 +30,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::rc::Weak;
 
-use crate::ids::{ScopeId, SymbolId};
 use crate::code::kinds;
 use crate::code::symbol::Symbol;
 use crate::ids::TreeId;
+use crate::ids::{ScopeId, SymbolId};
 use crate::util::arena::Arena;
 use crate::util::list::List;
 use crate::util::name::Name;
@@ -45,7 +45,6 @@ pub enum LookupKind {
     RECURSIVE,
     NON_RECURSIVE,
 }
-
 
 /// Java: public interface ScopeListener
 pub trait ScopeListener {
@@ -236,7 +235,7 @@ pub enum ScopeData {
         types: Rc<crate::code::types::Types>,
         /// Java: private final BiConsumer<JCImport, CompletionFailure> cfHandler
         #[allow(clippy::type_complexity)]
-    cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
+        cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
     },
 }
 
@@ -543,7 +542,7 @@ impl Scope {
             let ScopeData::ScopeImpl { shared, nelems, .. } = &self.data else {
                 panic!("ClassCastException: not a ScopeImpl");
             };
-            assert!(*shared == 0, "shared scope cannot be modified");
+            assert_eq!(*shared, 0, "shared scope cannot be modified");
             let table_len = {
                 let (table, _) = self.table_and_entries();
                 table.borrow().len()
@@ -597,12 +596,7 @@ impl Scope {
     }
 
     /// Java: public void enterIfAbsent(Symbol sym)
-    pub fn enter_if_absent(
-        &mut self,
-        self_id: ScopeId,
-        sym: SymbolId,
-        symbols: &Arena<Symbol>,
-    ) {
+    pub fn enter_if_absent(&mut self, self_id: ScopeId, sym: SymbolId, symbols: &Arena<Symbol>) {
         let name = symbol_name(symbols, sym);
         let sym_kind = symbol_kind(symbols, sym);
         let (_, entries) = self.table_and_entries();
@@ -675,13 +669,19 @@ impl Scope {
                         }
                     }
                 }
-                _ => {},
+                _ => {}
             }
             let _ = handled;
             // remove e from elems and sibling list
             let prev = entries[entry_id.index() as usize].prev_sibling;
             let next = entries[entry_id.index() as usize].next_sibling;
-            let ScopeData::ScopeImpl { elems, remove_count, listeners, .. } = &mut self.data else {
+            let ScopeData::ScopeImpl {
+                elems,
+                remove_count,
+                listeners,
+                ..
+            } = &mut self.data
+            else {
                 panic!("ClassCastException: not a ScopeImpl");
             };
             match prev {
@@ -701,12 +701,7 @@ impl Scope {
     }
 
     /// Java: public boolean includes(Symbol c) (ScopeImpl override)
-    pub fn includes(
-        &self,
-        self_id: ScopeId,
-        sym: SymbolId,
-        symbols: &Arena<Symbol>,
-    ) -> bool {
+    pub fn includes(&self, self_id: ScopeId, sym: SymbolId, symbols: &Arena<Symbol>) -> bool {
         let name = symbol_name(symbols, sym);
         let (_, entries) = self.table_and_entries();
         let entries = entries.borrow();
@@ -916,7 +911,6 @@ impl Scope {
         *nelems = n;
     }
 
-
     // ------------------------------------------------------------------
     // Scope query (Scope.java): full cross-scope queries for the import
     // scopes and the recursive ScopeImpl queries. The explicit-context adapter
@@ -1015,7 +1009,15 @@ impl Scope {
                 while current.non_empty() {
                     let sub_scope = *current.head();
                     let snapshot = ctx.scope(sub_scope).clone();
-                    result.extend(snapshot.get_symbols_full_ctx(sub_scope, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()));
+                    result.extend(snapshot.get_symbols_full_ctx(
+                        sub_scope,
+                        lookup_kind,
+                        filter,
+                        types,
+                        syms,
+                        ctx,
+                        attr.as_deref_mut(),
+                    ));
                     current = current.tail();
                 }
                 result
@@ -1108,9 +1110,7 @@ impl Scope {
                 let mut current = start;
                 while let Some(entry_id) = current {
                     let entry = &entries[entry_id.index() as usize];
-                    if lookup_kind == LookupKind::NON_RECURSIVE
-                        && entry.scope != Some(self_id)
-                    {
+                    if lookup_kind == LookupKind::NON_RECURSIVE && entry.scope != Some(self_id) {
                         break;
                     }
                     match entry.sym {
@@ -1154,9 +1154,16 @@ impl Scope {
                 while current.non_empty() {
                     let sub_scope = *current.head();
                     let snapshot = ctx.scope(sub_scope).clone();
-                    result.extend(
-                        snapshot.get_symbols_by_name_full_ctx(sub_scope, name, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()),
-                    );
+                    result.extend(snapshot.get_symbols_by_name_full_ctx(
+                        sub_scope,
+                        name,
+                        lookup_kind,
+                        filter,
+                        types,
+                        syms,
+                        ctx,
+                        attr.as_deref_mut(),
+                    ));
                     current = current.tail();
                 }
                 result
@@ -1169,9 +1176,16 @@ impl Scope {
                 let mut result = Vec::new();
                 for sub_scope in scopes {
                     let snapshot = ctx.scope(sub_scope).clone();
-                    result.extend(
-                        snapshot.get_symbols_by_name_full_ctx(sub_scope, name, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()),
-                    );
+                    result.extend(snapshot.get_symbols_by_name_full_ctx(
+                        sub_scope,
+                        name,
+                        lookup_kind,
+                        filter,
+                        types,
+                        syms,
+                        ctx,
+                        attr.as_deref_mut(),
+                    ));
                 }
                 result
             }
@@ -1182,9 +1196,16 @@ impl Scope {
                 while current.non_empty() {
                     let sub_scope = *current.head();
                     let snapshot = ctx.scope(sub_scope).clone();
-                    result.extend(
-                        snapshot.get_symbols_by_name_full_ctx(sub_scope, name, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()),
-                    );
+                    result.extend(snapshot.get_symbols_by_name_full_ctx(
+                        sub_scope,
+                        name,
+                        lookup_kind,
+                        filter,
+                        types,
+                        syms,
+                        ctx,
+                        attr.as_deref_mut(),
+                    ));
                     current = current.tail();
                 }
                 result
@@ -1479,9 +1500,13 @@ impl Scope {
                 while current.non_empty() {
                     let sub_scope = *current.head();
                     let snapshot = ctx.scope(sub_scope).clone();
-                    result.extend(
-                        snapshot.get_symbols_by_name_ctx(sub_scope, name, lookup_kind, filter, ctx),
-                    );
+                    result.extend(snapshot.get_symbols_by_name_ctx(
+                        sub_scope,
+                        name,
+                        lookup_kind,
+                        filter,
+                        ctx,
+                    ));
                     current = current.tail();
                 }
                 result
@@ -1694,8 +1719,6 @@ pub(crate) fn probe_index(
     }
 }
 
-
-
 /// Imports the members of an imported type, recursively walking its supertypes
 /// when the import is static.
 ///
@@ -1782,10 +1805,19 @@ fn symbol_importer_import_from(
     };
     let members_snapshot = ctx.scope(members).clone();
     let found = match by_name {
-        Some(name) => {
-            members_snapshot.get_symbols_by_name_full_ctx(members, name, lookup_kind, sf, types, syms, ctx, attr)
+        Some(name) => members_snapshot.get_symbols_by_name_full_ctx(
+            members,
+            name,
+            lookup_kind,
+            sf,
+            types,
+            syms,
+            ctx,
+            attr,
+        ),
+        None => {
+            members_snapshot.get_symbols_full_ctx(members, lookup_kind, sf, types, syms, ctx, attr)
         }
-        None => members_snapshot.get_symbols_full_ctx(members, lookup_kind, sf, types, syms, ctx, attr),
     };
     results.insert(0, found);
 }
@@ -1872,7 +1904,10 @@ mod tests {
         table.from_chars(&units, 0, units.len() as i32)
     }
 
-    fn symbol_arena(table: &Rc<NameTableHandle>, entries: &[(SymbolId, &str, Kind)]) -> Arena<Symbol> {
+    fn symbol_arena(
+        table: &Rc<NameTableHandle>,
+        entries: &[(SymbolId, &str, Kind)],
+    ) -> Arena<Symbol> {
         let mut symbols = Arena::new();
         for (sym, text, kind) in entries {
             let index = symbols.push(Symbol::new(
@@ -1881,7 +1916,13 @@ mod tests {
                 name(table, text),
                 None,
                 None,
-                SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
+                SymbolKind::VarSymbol {
+                    pos: 0,
+                    adr: 0,
+                    data_kind: None,
+                    data: None,
+                    lazy_const_value: None,
+                },
             ));
             assert_eq!(index, sym.index());
         }
@@ -1909,10 +1950,25 @@ mod tests {
         scope.enter(self_id, SymbolId::new(1), &symbols);
         scope.enter(self_id, SymbolId::new(2), &symbols);
         assert!(!scope.is_empty());
-        assert_eq!(scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &mut crate::compiler_context::CompilerContext::new()).len(), 3);
+        assert_eq!(
+            scope
+                .get_symbols(
+                    self_id,
+                    LookupKind::NON_RECURSIVE,
+                    &|_| true,
+                    &mut crate::compiler_context::CompilerContext::new()
+                )
+                .len(),
+            3
+        );
         // The upstream elems chain keeps later entries on top.
         assert_eq!(
-            scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &mut crate::compiler_context::CompilerContext::new()),
+            scope.get_symbols(
+                self_id,
+                LookupKind::NON_RECURSIVE,
+                &|_| true,
+                &mut crate::compiler_context::CompilerContext::new()
+            ),
             vec![SymbolId::new(2), SymbolId::new(1), SymbolId::new(0)]
         );
         assert_eq!(
@@ -1932,7 +1988,13 @@ mod tests {
             name(&table, "a"),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None, lazy_const_value: None },
+            SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+                lazy_const_value: None,
+            },
         ));
         let sym1 = ctx.alloc_symbol(Symbol::new(
             Kind::MTH,
@@ -1940,7 +2002,13 @@ mod tests {
             name(&table, "a"),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None, lazy_const_value: None },
+            SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+                lazy_const_value: None,
+            },
         ));
         let mut scope = Scope::new_scope_impl(None);
         let self_id = scope_id(0);
@@ -1968,12 +2036,7 @@ mod tests {
             assert!(scope.includes(self_id, sym0, symbols));
         }
         assert_eq!(
-            scope.get_symbols(
-                self_id,
-                LookupKind::NON_RECURSIVE,
-                &|_| true,
-                &mut ctx,
-            ),
+            scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &mut ctx,),
             vec![sym0]
         );
     }
@@ -1994,10 +2057,30 @@ mod tests {
         scope.enter(self_id, SymbolId::new(0), &symbols);
         // same name and same kind: not entered.
         scope.enter_if_absent(self_id, SymbolId::new(1), &symbols);
-        assert_eq!(scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &mut crate::compiler_context::CompilerContext::new()).len(), 1);
+        assert_eq!(
+            scope
+                .get_symbols(
+                    self_id,
+                    LookupKind::NON_RECURSIVE,
+                    &|_| true,
+                    &mut crate::compiler_context::CompilerContext::new()
+                )
+                .len(),
+            1
+        );
         // same name, different kind: entered.
         scope.enter_if_absent(self_id, SymbolId::new(2), &symbols);
-        assert_eq!(scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &mut crate::compiler_context::CompilerContext::new()).len(), 2);
+        assert_eq!(
+            scope
+                .get_symbols(
+                    self_id,
+                    LookupKind::NON_RECURSIVE,
+                    &|_| true,
+                    &mut crate::compiler_context::CompilerContext::new()
+                )
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -2014,7 +2097,13 @@ mod tests {
                 table.from_chars(&units, 0, units.len() as i32),
                 None,
                 None,
-                SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
+                SymbolKind::VarSymbol {
+                    pos: 0,
+                    adr: 0,
+                    data_kind: None,
+                    data: None,
+                    lazy_const_value: None,
+                },
             ));
             entries.push(SymbolId::new(sym));
         }
@@ -2023,7 +2112,12 @@ mod tests {
         for sym in &entries {
             scope.enter(self_id, *sym, &symbols);
         }
-        let all = scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &mut crate::compiler_context::CompilerContext::new());
+        let all = scope.get_symbols(
+            self_id,
+            LookupKind::NON_RECURSIVE,
+            &|_| true,
+            &mut crate::compiler_context::CompilerContext::new(),
+        );
         assert_eq!(all.len(), 40);
         // The elems chain order is the reverse of the insertion order.
         assert_eq!(all.first(), Some(&SymbolId::new(39)));
@@ -2050,7 +2144,12 @@ mod tests {
         }
         assert_eq!(
             scope
-                .get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &mut crate::compiler_context::CompilerContext::new())
+                .get_symbols(
+                    self_id,
+                    LookupKind::NON_RECURSIVE,
+                    &|_| true,
+                    &mut crate::compiler_context::CompilerContext::new()
+                )
                 .len(),
             0
         );
@@ -2090,7 +2189,13 @@ mod tests {
             a_name.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
+            SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+                lazy_const_value: None,
+            },
         ));
         ctx.scope_enter(outer, a);
         // dup() creates the inner scope: it shares the table and points at the
@@ -2102,7 +2207,13 @@ mod tests {
             b_name.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
+            SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+                lazy_const_value: None,
+            },
         ));
         ctx.scope_enter(inner, b);
         // NON_RECURSIVE returns only the inner scope's own entries.
@@ -2136,24 +2247,22 @@ mod tests {
             walk.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
+            SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+                lazy_const_value: None,
+            },
         ));
         ctx.scope_enter(outer, walk_sym);
         let inner = ctx.scope_dup(outer, None);
         // The default Scope.getSymbolsByName(name) is RECURSIVE.
-        let recursive = ctx.scope_get_symbols_by_name(
-            inner,
-            &walk,
-            LookupKind::RECURSIVE,
-            &|_| true,
-        );
+        let recursive =
+            ctx.scope_get_symbols_by_name(inner, &walk, LookupKind::RECURSIVE, &|_| true);
         assert_eq!(recursive, vec![walk_sym]);
-        let non_recursive = ctx.scope_get_symbols_by_name(
-            inner,
-            &walk,
-            LookupKind::NON_RECURSIVE,
-            &|_| true,
-        );
+        let non_recursive =
+            ctx.scope_get_symbols_by_name(inner, &walk, LookupKind::NON_RECURSIVE, &|_| true);
         assert!(non_recursive.is_empty());
         //... and the RECURSIVE getSymbols visits the enclosing elems chain.
         let all = ctx.scope_get_symbols(inner, LookupKind::RECURSIVE, &|_| true);
@@ -2174,7 +2283,13 @@ mod tests {
             alpha.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
+            SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+                lazy_const_value: None,
+            },
         ));
         let b = ctx.alloc_symbol(Symbol::new(
             Kind::VAR,
@@ -2182,13 +2297,19 @@ mod tests {
             beta.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
+            SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+                lazy_const_value: None,
+            },
         ));
         let first = ctx.scope_create(None);
         ctx.scope_enter(first, a);
         let second = ctx.scope_create(None);
         ctx.scope_enter(second, b);
-        let compound = ctx.alloc_scope(crate::code::scope::Scope::new_compound_scope(None));
+        let compound = ctx.alloc_scope(Scope::new_compound_scope(None));
         ctx.scope_append_sub_scope(compound, first);
         ctx.scope_append_sub_scope(compound, second);
         let all = ctx.scope_get_symbols(compound, LookupKind::NON_RECURSIVE, &|_| true);
@@ -2209,16 +2330,22 @@ mod tests {
         let table = name_table();
         let target = name(&table, "Target");
         let origin_scope = ctx.scope_create(None);
-        let named = ctx.alloc_scope(crate::code::scope::Scope::new_named_import_scope(None));
+        let named = ctx.alloc_scope(Scope::new_named_import_scope(None));
         let origin_sym = ctx.alloc_symbol(Symbol::new(
             Kind::VAR,
             0,
             target.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
+            SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+                lazy_const_value: None,
+            },
         ));
-        let single = ctx.alloc_scope(crate::code::scope::Scope::new_single_entry_scope(
+        let single = ctx.alloc_scope(Scope::new_single_entry_scope(
             None,
             Some(origin_sym),
             Some(origin_scope),
@@ -2227,8 +2354,12 @@ mod tests {
         let found =
             ctx.scope_get_symbols_by_name(named, &target, LookupKind::NON_RECURSIVE, &|_| true);
         assert_eq!(found, vec![origin_sym]);
-        let missing =
-            ctx.scope_get_symbols_by_name(named, &name(&table, "other"), LookupKind::NON_RECURSIVE, &|_| true);
+        let missing = ctx.scope_get_symbols_by_name(
+            named,
+            &name(&table, "other"),
+            LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
         assert!(missing.is_empty());
     }
 
@@ -2244,7 +2375,13 @@ mod tests {
             walk.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
+            SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+                lazy_const_value: None,
+            },
         ));
         let second = ctx.alloc_symbol(Symbol::new(
             Kind::VAR,
@@ -2252,7 +2389,13 @@ mod tests {
             run.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
+            SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+                lazy_const_value: None,
+            },
         ));
         let outer = ctx.scope_create(None);
         ctx.scope_enter(outer, first);
@@ -2279,7 +2422,13 @@ mod tests {
             walk.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
+            SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+                lazy_const_value: None,
+            },
         ));
         let second = ctx.alloc_symbol(Symbol::new(
             Kind::VAR,
@@ -2287,7 +2436,13 @@ mod tests {
             run.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
+            SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+                lazy_const_value: None,
+            },
         ));
         let outer = ctx.scope_create(None);
         ctx.scope_enter(outer, first);
@@ -2305,10 +2460,7 @@ mod tests {
         let owner_id = SymbolId::new(1);
         let mut symbols = symbol_arena(
             &table_handle,
-            &[
-                (sym_id, "x", Kind::VAR),
-                (owner_id, "Sample", Kind::TYP),
-            ],
+            &[(sym_id, "x", Kind::VAR), (owner_id, "Sample", Kind::TYP)],
         );
         let mut scopes: Arena<Scope> = Arena::new();
         let outer_id = ScopeId::new(scopes.push(Scope::new_scope_impl(Some(owner_id))));
@@ -2339,7 +2491,6 @@ mod tests {
         let _ = &mut symbols;
     }
 
-
     #[test]
     fn filter_import_scope_queries_delegate_to_the_import_filter() {
         let table = name_table();
@@ -2358,7 +2509,13 @@ mod tests {
             name(&table, "o"),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None, lazy_const_value: None },
+            SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+                lazy_const_value: None,
+            },
         ));
         let origin = ctx.scope_create(Some(owner));
         let scope = ctx.alloc_scope(Scope::new_filter_import_scope(
@@ -2466,7 +2623,9 @@ mod tests {
         assert!(table_len >= 512, "the table doubled: {table_len}");
         assert_eq!(nelems, 300);
         for (entry_name, sym) in names.iter().zip(ids.iter()) {
-            let entry = scope.lookup(entry_name, &symbols).expect("every name remains found");
+            let entry = scope
+                .lookup(entry_name, &symbols)
+                .expect("every name remains found");
             match &scope.data {
                 ScopeData::ScopeImpl { entries, .. } => {
                     assert_eq!(entries.borrow()[entry.index() as usize].sym, Some(*sym));
@@ -2533,4 +2692,3 @@ mod tests {
         assert!(scope.lookup(&second, &symbols).is_some());
     }
 }
-

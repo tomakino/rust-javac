@@ -37,8 +37,14 @@ impl MirroredTypesException {
     /// Trusted constructor to be called by MirroredTypeException.
     ///
     /// Java: MirroredTypesException(String message, TypeMirror type)
-    pub(crate) fn new_single(message: JavaString, type_: Rc<dyn TypeMirror>) -> MirroredTypesException {
-        MirroredTypesException { message, types: vec![type_] }
+    pub(crate) fn new_single(
+        message: JavaString,
+        type_: Rc<dyn TypeMirror>,
+    ) -> MirroredTypesException {
+        MirroredTypesException {
+            message,
+            types: vec![type_],
+        }
     }
 
     /// Constructs a new MirroredTypesException for the specified types.

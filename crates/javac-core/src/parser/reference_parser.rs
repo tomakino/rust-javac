@@ -318,12 +318,7 @@ mod tests {
     fn reference_holds_optional_parts() {
         let names = Names::new(false);
         let member: Name = names.table.from_string(&JavaString::from("m"));
-        let reference = Reference::new(
-            Some(TreeId::new(0)),
-            None,
-            Some(member),
-            Some(List::nil()),
-        );
+        let reference = Reference::new(Some(TreeId::new(0)), None, Some(member), Some(List::nil()));
         assert!(reference.module_name.is_some());
         assert!(reference.qual_expr.is_none());
         assert!(reference.member.is_some());
@@ -340,7 +335,9 @@ mod tests {
     #[test]
     fn parses_a_type_reference() {
         let mut ctx = CompilerContext::new();
-        let reference = parser().parse(&mut ctx, &sig("java.lang.String")).unwrap_or_else(|e| panic!("parse failed: {}", e.get_message()));
+        let reference = parser()
+            .parse(&mut ctx, &sig("java.lang.String"))
+            .unwrap_or_else(|e| panic!("parse failed: {}", e.get_message()));
         assert!(reference.module_name.is_none());
         assert!(reference.qual_expr.is_some());
         assert!(reference.member.is_none());
@@ -384,7 +381,10 @@ mod tests {
     fn varargs_parameter_types_are_rewritten() {
         let mut ctx = CompilerContext::new();
         let reference = parser()
-            .parse(&mut ctx, &sig("java.lang.String#format(java.lang.String, java.lang.Object...)"))
+            .parse(
+                &mut ctx,
+                &sig("java.lang.String#format(java.lang.String, java.lang.Object...)"),
+            )
             .unwrap_or_else(|e| panic!("parse failed: {}", e.get_message()));
         assert_eq!(reference.param_types.expect("params").length(), 2);
     }

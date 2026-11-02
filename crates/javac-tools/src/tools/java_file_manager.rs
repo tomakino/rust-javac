@@ -799,7 +799,9 @@ mod tests {
         let b: FileObjectRef = Rc::new(TestFile);
         assert!(!manager.is_same_file(&a, &b));
         assert!(!manager.has_location(&location));
-        let listed = manager.list(&location, &js("p"), &[Kind::SOURCE], false).expect("list");
+        let listed = manager
+            .list(&location, &js("p"), &[Kind::SOURCE], false)
+            .expect("list");
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].get_kind(), Kind::SOURCE);
         assert_eq!(manager.is_supported_option(&js("-d")), -1);
@@ -815,7 +817,9 @@ mod tests {
         );
         let fo: JavaFileObjectRef = Rc::new(TestFile);
         assert_eq!(
-            manager.get_location_for_module_of_file(&location, &fo).err(),
+            manager
+                .get_location_for_module_of_file(&location, &fo)
+                .err(),
             Some(Error::UnsupportedOperationException)
         );
         assert_eq!(

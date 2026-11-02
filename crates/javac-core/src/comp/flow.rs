@@ -41,9 +41,7 @@ use crate::ids::{SymbolId, TreeId, TypeId};
 use crate::resources::compiler_properties::errors;
 use crate::resources::compiler_properties::warnings;
 use crate::resources::diagnostic_contract::ErrorInfo;
-use crate::tree::jc_tree::{accept, Tag, TreeKind, TreeVisitor};
-use javac_source::tree::case_tree::CaseKind;
-use javac_tools::lang::model::element::element_kind::ElementKind;
+use crate::tree::jc_tree::{Tag, TreeKind, TreeVisitor, accept};
 use crate::tree::tree_info;
 use crate::tree::tree_maker::{TreeFactory, TreeMaker};
 use crate::util::bits::Bits;
@@ -53,6 +51,8 @@ use crate::util::jc_diagnostic::{
 use crate::util::list::List;
 use crate::util::log::{DiagnosticHandler, Log};
 use crate::util::names::Names;
+use javac_source::tree::case_tree::CaseKind;
+use javac_tools::lang::model::element::element_kind::ElementKind;
 
 /// ADR 0001 adapter: the ported FlowVisitor trait carries the navigational
 /// default methods; this macro forwards every TreeVisitor callback to the
@@ -307,7 +307,11 @@ impl Liveness {
     }
 
     pub fn from_bool(value: bool) -> Liveness {
-        if value { Liveness::ALIVE } else { Liveness::DEAD }
+        if value {
+            Liveness::ALIVE
+        } else {
+            Liveness::DEAD
+        }
     }
 
     pub fn or_bool(self, value: bool) -> Liveness {
@@ -382,8 +386,13 @@ pub fn clone_bits(bits: &Bits) -> Bits {
 /// subclasses (Flow.java:977-991, 1745-1768).
 #[derive(Clone)]
 pub enum PendingExit {
-    Plain { tree: TreeId },
-    Thrown { tree: TreeId, thrown: TypeId },
+    Plain {
+        tree: TreeId,
+    },
+    Thrown {
+        tree: TreeId,
+        thrown: TypeId,
+    },
     Assign {
         tree: TreeId,
         exit_inits: Rc<RefCell<Bits>>,
@@ -442,13 +451,13 @@ pub trait BaseAnalyzer: FlowVisitor {
         let mut resolved = false;
         let exits = std::mem::replace(self.pending_exits_mut(), old_pending_exits);
         for exit in &exits {
-        let target = Self::jump_target(ctx, &exit.tree(), jk);
-        if ctx.tree(exit.tree()).has_tag(jk.tree_tag()) && target == Some(tree) {
-            self.resolve_pending_exit(&exit);
-            resolved = true;
-        } else {
-            *self.pending_exits_mut() = self.pending_exits_mut().append(exit);
-        }
+            let target = Self::jump_target(ctx, &exit.tree(), jk);
+            if ctx.tree(exit.tree()).has_tag(jk.tree_tag()) && target == Some(tree) {
+                self.resolve_pending_exit(&exit);
+                resolved = true;
+            } else {
+                *self.pending_exits_mut() = self.pending_exits_mut().append(exit);
+            }
         }
         Liveness::from_bool(resolved)
     }
@@ -535,8 +544,8 @@ impl Flow {
             lint,
             attr_env: Rc::new(RefCell::new(None)),
             make: Rc::new(RefCell::new(None)),
-            allow_effectively_final_in_inner_classes:
-                Feature::EFFECTIVELY_FINAL_IN_INNER_CLASSES.allowed_in_source(source),
+            allow_effectively_final_in_inner_classes: Feature::EFFECTIVELY_FINAL_IN_INNER_CLASSES
+                .allowed_in_source(source),
         }
     }
 
@@ -603,7 +612,9 @@ impl Flow {
             .info()
             .args
             .iter()
-            .map(|arg| Rc::new(javac_strings::JavaString::from(arg.to_text().as_str())) as DiagnosticArg)
+            .map(|arg| {
+                Rc::new(javac_strings::JavaString::from(arg.to_text().as_str())) as DiagnosticArg
+            })
             .collect();
         let source = self.log.current_source();
         let diagnostic = self.diags.create_with_flags(
@@ -623,7 +634,7 @@ impl Flow {
     pub fn augmented_lint(
         &self,
         ctx: &CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         sym: SymbolId,
     ) -> Rc<Lint> {
         // Port adapter (A3k): the caller's Symtab is forwarded. During Attr the
@@ -750,7 +761,11 @@ fn is_pattern_tree(ctx: &CompilerContext, tree: TreeId) -> bool {
 
 /// Java: JCMultiCatch/alternatives — the catch sub-clauses of a catch clause
 /// (TreeInfo.isMultiCatch: the catch parameter type is a type union).
-fn catch_sub_clauses(ctx: &CompilerContext, catcher: TreeId, param: Option<TreeId>) -> List<TreeId> {
+fn catch_sub_clauses(
+    ctx: &CompilerContext,
+    catcher: TreeId,
+    param: Option<TreeId>,
+) -> List<TreeId> {
     match param {
         Some(param) => match var_decl_vartype(ctx, param) {
             Some(vartype) => match &ctx.tree(vartype).kind {
@@ -774,24 +789,16 @@ fn var_decl_vartype(ctx: &CompilerContext, param: TreeId) -> Option<TreeId> {
 }
 
 /// Java: FlowAnalyzer.isExceptionOrThrowable(Type) (Flow.java:1630-1633)
-fn is_exception_or_throwable(
-    ctx: &mut CompilerContext,
-    syms: &Symtab,
-    exc: TypeId,
-) -> bool {
+fn is_exception_or_throwable(ctx: &mut CompilerContext, syms: &Symtab, exc: TypeId) -> bool {
     let tsym = ctx.typ(exc).tsym;
     tsym == ctx.typ(syms.throwable_type).tsym || tsym == ctx.typ(syms.exception_type).tsym
 }
 
 /// Diagnostic TypeArg placeholder (ADR 0002 P4).
-fn type_place(
-    ctx: &CompilerContext,
-    ty: TypeId,
-) -> crate::resources::diagnostic_contract::TypeArg {
+fn type_place(ctx: &CompilerContext, ty: TypeId) -> crate::resources::diagnostic_contract::TypeArg {
     let text = crate::code::printer::visit_type(ctx, ty);
     crate::resources::diagnostic_contract::TypeArg::placeholder(text)
 }
-
 
 /// FlowVisitor: the ported Tree visitor for the flow analyzers.
 /// The default visit methods are the ported TreeScanner navigational bodies
@@ -817,7 +824,6 @@ pub trait FlowVisitor: TreeVisitor + Sized {
             self.scan_list(ctx, &trees);
         }
     }
-
 
     fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let defs = match &ctx.tree(tree).kind {
@@ -1494,14 +1500,13 @@ pub trait FlowVisitor: TreeVisitor + Sized {
     fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
         panic!("AssertionError: visitTree");
     }
-
 }
 
 /// Java: class Flow.AliveAnalyzer extends BaseAnalyzer (Flow.java:471-958)
 pub struct AliveAnalyzer<'a> {
     flow: &'a Flow,
     /// Port adapter (A3k): the Symtab lent by the caller (see augmented_lint).
-    syms: &'a crate::code::symtab::Symtab,
+    syms: &'a Symtab,
     pending_exits: List<PendingExit>,
     pub(crate) alive: Liveness,
     lint: Rc<Lint>,
@@ -1509,7 +1514,7 @@ pub struct AliveAnalyzer<'a> {
 
 impl<'a> AliveAnalyzer<'a> {
     /// Java: implicit AliveAnalyzer() (the upstream inner class captures Flow)
-    pub fn new(flow: &'a Flow, syms: &'a crate::code::symtab::Symtab) -> AliveAnalyzer<'a> {
+    pub fn new(flow: &'a Flow, syms: &'a Symtab) -> AliveAnalyzer<'a> {
         AliveAnalyzer {
             flow,
             syms,
@@ -1523,8 +1528,10 @@ impl<'a> AliveAnalyzer<'a> {
     fn scan_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.scan_stat(ctx, tree);
         if ctx.tree(tree).has_tag(Tag::BLOCK) && self.alive == Liveness::DEAD {
-            self.flow
-                .error(ctx.tree(tree).pos, errors::initializer_must_be_able_to_complete_normally());
+            self.flow.error(
+                ctx.tree(tree).pos,
+                errors::initializer_must_be_able_to_complete_normally(),
+            );
         }
     }
 
@@ -1552,12 +1559,18 @@ impl<'a> AliveAnalyzer<'a> {
         let exits = std::mem::take(&mut self.pending_exits);
         let current = exits;
         for exit in &current {
-        let tree = exit.tree();
-        let is_return = in_method && ctx.tree(tree).has_tag(Tag::RETURN);
-        let has_error = self.flow.log.has_error_on(Some(Rc::new(
-            SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
-        )));
-        assert!(is_return || has_error, "AssertionError: clearPendingExits (Flow.java:590)");
+            let tree = exit.tree();
+            let is_return = in_method && ctx.tree(tree).has_tag(Tag::RETURN);
+            let has_error =
+                self.flow
+                    .log
+                    .has_error_on(Some(Rc::new(SimpleDiagnosticPosition::new(
+                        ctx.tree(tree).pos,
+                    ))));
+            assert!(
+                is_return || has_error,
+                "AssertionError: clearPendingExits (Flow.java:590)"
+            );
         }
     }
 
@@ -1576,15 +1589,17 @@ impl<'a> AliveAnalyzer<'a> {
             let pattern_type = tree_info::primary_pattern_type(ctx, pat);
             if pattern_type.unconditional()
                 && let Some(ty) = pattern_type.ty
-                    && let Some(tsym) = ctx.typ(ty).tsym {
-                        constants.insert(tsym);
-                    }
+                && let Some(tsym) = ctx.typ(ty).tsym
+            {
+                constants.insert(tsym);
+            }
         } else if ctx.tree(pat).has_tag(Tag::IDENT) {
             let sym = tree_info::symbol(ctx, pat);
             if let Some(sym) = sym
-                && (ctx.sym(sym).flags_field & flags::ENUM as i64) != 0 {
-                    constants.insert(sym);
-                }
+                && (ctx.sym(sym).flags_field & flags::ENUM as i64) != 0
+            {
+                constants.insert(sym);
+            }
         }
     }
 
@@ -1643,30 +1658,29 @@ impl<'a> AliveAnalyzer<'a> {
                 }
                 Kind::TYP => {
                     let sym_type = ctx.sym(sym).ty.expect("class symbol type");
-                    let supers = {
-                        self.flow.types.direct_supertypes(ctx, self.syms, sym_type)
-                    };
+                    let supers = { self.flow.types.direct_supertypes(ctx, self.syms, sym_type) };
                     let current = supers;
                     for sup in &current {
-                    let Some(sup_tsym) = ctx.typ(sup).tsym else {
-                        continue;
-                    };
-                    if ctx.sym(sup_tsym).kind == Kind::TYP
-                        && ctx.sym(sup_tsym).is_abstract()
-                        && ctx.sym(sup_tsym).is_sealed()
-                    {
-                        let permitted = crate::code::symbol::Symbol::permitted_subs(ctx, sup_tsym);
-                        let mut has_all = true;
-                        for sub in permitted.iter() {
-                            if !covered.contains(&sub) {
-                                has_all = false;
-                                break;
+                        let Some(sup_tsym) = ctx.typ(sup).tsym else {
+                            continue;
+                        };
+                        if ctx.sym(sup_tsym).kind == Kind::TYP
+                            && ctx.sym(sup_tsym).is_abstract()
+                            && ctx.sym(sup_tsym).is_sealed()
+                        {
+                            let permitted =
+                                crate::code::symbol::Symbol::permitted_subs(ctx, sup_tsym);
+                            let mut has_all = true;
+                            for sub in permitted.iter() {
+                                if !covered.contains(&sub) {
+                                    has_all = false;
+                                    break;
+                                }
+                            }
+                            if has_all && covered.insert(sup_tsym) {
+                                todo.push(sup_tsym);
                             }
                         }
-                        if has_all && covered.insert(sup_tsym) {
-                            todo.push(sup_tsym);
-                        }
-                    }
                     }
                 }
                 _ => {}
@@ -1703,9 +1717,9 @@ impl<'a> AliveAnalyzer<'a> {
                         let components = ctx.typ(seltype).get_components();
                         let current = components;
                         for component in &current {
-                        if self.is_exhaustive(ctx, component, covered) {
-                            return true;
-                        }
+                            if self.is_exhaustive(ctx, component, covered) {
+                                return true;
+                            }
                         }
                     }
                     false
@@ -1718,7 +1732,8 @@ impl<'a> AliveAnalyzer<'a> {
                 }
             }
             TypeTag::TYPEVAR => {
-                let upper = ctx.upper_bound_of(seltype)
+                let upper = ctx
+                    .upper_bound_of(seltype)
                     .expect("type variable upper bound");
                 self.is_exhaustive(ctx, upper, covered)
             }
@@ -1756,6 +1771,8 @@ flow_tree_visitor_delegate!(AliveAnalyzer<'a>, 'a);
 
 impl<'a> FlowVisitor for AliveAnalyzer<'a> {
     fn visit_package_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
+
+    fn visit_module_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let Some(class_sym) = class_symbol(ctx, tree) else {
@@ -1816,14 +1833,17 @@ impl<'a> FlowVisitor for AliveAnalyzer<'a> {
             *completes_normally = self.alive != Liveness::DEAD;
         }
         if self.alive == Liveness::ALIVE
-            && let Some(method_sym) = method_sym {
-                let method_type = ctx.sym(method_sym).ty.expect("method type");
-                let return_type = return_type_of(ctx, method_type);
-                if !ctx.typ(return_type).has_tag(TypeTag::VOID) {
-                    self.flow
-                        .error(tree_info::diag_end_pos(ctx, body), errors::missing_ret_stmt());
-                }
+            && let Some(method_sym) = method_sym
+        {
+            let method_type = ctx.sym(method_sym).ty.expect("method type");
+            let return_type = return_type_of(ctx, method_type);
+            if !ctx.typ(return_type).has_tag(TypeTag::VOID) {
+                self.flow.error(
+                    tree_info::diag_end_pos(ctx, body),
+                    errors::missing_ret_stmt(),
+                );
             }
+        }
         self.clear_pending_exits(ctx, true);
         self.lint = lint_prev;
     }
@@ -1951,7 +1971,12 @@ impl<'a> FlowVisitor for AliveAnalyzer<'a> {
                 pattern_switch,
                 has_total_pattern,
                 ..
-            } => (*selector, cases.clone(), *pattern_switch, *has_total_pattern),
+            } => (
+                *selector,
+                cases.clone(),
+                *pattern_switch,
+                *has_total_pattern,
+            ),
             _ => panic!("expected a switch"),
         };
         let prev_pending_exits = std::mem::take(&mut self.pending_exits);
@@ -1965,8 +1990,11 @@ impl<'a> FlowVisitor for AliveAnalyzer<'a> {
             }
         }
         let exhaustive_switch = pattern_switch || found_null;
-        let mut constants: Option<HashSet<SymbolId>> =
-            if exhaustive_switch { Some(HashSet::new()) } else { None };
+        let mut constants: Option<HashSet<SymbolId>> = if exhaustive_switch {
+            Some(HashSet::new())
+        } else {
+            None
+        };
         let mut remaining = cases.clone();
         while remaining.non_empty() {
             self.alive = Liveness::ALIVE;
@@ -2152,7 +2180,7 @@ impl<'a> FlowVisitor for AliveAnalyzer<'a> {
                 }
             } else {
                 let mut merged =
-                    std::mem::replace(&mut self.pending_exits, crate::util::list::List::nil());
+                    std::mem::replace(&mut self.pending_exits, List::nil());
                 merged = merged.append_list(&exits);
                 self.pending_exits = merged;
                 self.alive = alive_end;
@@ -2161,7 +2189,7 @@ impl<'a> FlowVisitor for AliveAnalyzer<'a> {
             self.alive = alive_end;
             let exits = std::mem::replace(&mut self.pending_exits, prev_pending_exits);
             let mut merged =
-                std::mem::replace(&mut self.pending_exits, crate::util::list::List::nil());
+                std::mem::replace(&mut self.pending_exits, List::nil());
             merged = merged.append_list(&exits);
             self.pending_exits = merged;
         }
@@ -2234,7 +2262,9 @@ impl<'a> FlowVisitor for AliveAnalyzer<'a> {
 
     fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (encl, args, def) = match &ctx.tree(tree).kind {
-            TreeKind::NewClass { encl, args, def, .. } => (*encl, args.clone(), *def),
+            TreeKind::NewClass {
+                encl, args, def, ..
+            } => (*encl, args.clone(), *def),
             _ => panic!("expected a new class"),
         };
         self.scan(ctx, encl);
@@ -2242,11 +2272,23 @@ impl<'a> FlowVisitor for AliveAnalyzer<'a> {
         self.scan(ctx, def);
     }
 
+    fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (dims, elems) = match &ctx.tree(tree).kind {
+            TreeKind::NewArray { dims, elems, .. } => (dims.clone(), elems.clone()),
+            _ => panic!("expected a new array"),
+        };
+        self.scan_list(ctx, &dims);
+        if let Some(elems) = elems {
+            self.scan_list(ctx, &elems);
+        }
+    }
+
     fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         if let Some(ty) = ctx.tree(tree).ty
-            && ctx.typ(ty).has_tag(TypeTag::ERROR) {
-                return;
-            }
+            && ctx.typ(ty).has_tag(TypeTag::ERROR)
+        {
+            return;
+        }
         let (body, params) = match &ctx.tree(tree).kind {
             TreeKind::Lambda { body, params, .. } => (*body, params.clone()),
             _ => panic!("expected a lambda"),
@@ -2270,19 +2312,6 @@ impl<'a> FlowVisitor for AliveAnalyzer<'a> {
         self.pending_exits = prev_pending;
         self.alive = prev_alive;
     }
-
-    fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (dims, elems) = match &ctx.tree(tree).kind {
-            TreeKind::NewArray { dims, elems, .. } => (dims.clone(), elems.clone()),
-            _ => panic!("expected a new array"),
-        };
-        self.scan_list(ctx, &dims);
-        if let Some(elems) = elems {
-            self.scan_list(ctx, &elems);
-        }
-    }
-
-    fn visit_module_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 }
 
 /// Java: class Flow.LambdaAliveAnalyzer extends AliveAnalyzer
@@ -2303,10 +2332,7 @@ impl<'a> LambdaAliveAnalyzer<'a> {
         self.inner.analyze_tree(ctx, env, tree);
     }
 
-    pub fn new(
-        flow: &'a Flow,
-        syms: &'a crate::code::symtab::Symtab,
-    ) -> LambdaAliveAnalyzer<'a> {
+    pub fn new(flow: &'a Flow, syms: &'a Symtab) -> LambdaAliveAnalyzer<'a> {
         LambdaAliveAnalyzer {
             inner: AliveAnalyzer::new(flow, syms),
             in_lambda: false,
@@ -2317,6 +2343,8 @@ impl<'a> LambdaAliveAnalyzer<'a> {
 flow_tree_visitor_delegate!(LambdaAliveAnalyzer<'a>, 'a);
 
 impl<'a> FlowVisitor for LambdaAliveAnalyzer<'a> {
+    fn visit_class_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
+
     fn visit_return(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.inner.record_exit(ctx, PendingExit::new(tree));
     }
@@ -2329,8 +2357,6 @@ impl<'a> FlowVisitor for LambdaAliveAnalyzer<'a> {
         <AliveAnalyzer as FlowVisitor>::visit_lambda(&mut self.inner, ctx, tree);
         self.in_lambda = false;
     }
-
-    fn visit_class_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 }
 
 impl<'a> BaseAnalyzer for LambdaAliveAnalyzer<'a> {
@@ -2360,10 +2386,7 @@ impl<'a> SnippetAliveAnalyzer<'a> {
         self.inner.analyze_tree(ctx, env, tree);
     }
 
-    pub fn new(
-        flow: &'a Flow,
-        syms: &'a crate::code::symtab::Symtab,
-    ) -> SnippetAliveAnalyzer<'a> {
+    pub fn new(flow: &'a Flow, syms: &'a Symtab) -> SnippetAliveAnalyzer<'a> {
         SnippetAliveAnalyzer {
             inner: AliveAnalyzer::new(flow, syms),
         }
@@ -2412,10 +2435,7 @@ impl<'a> SnippetBreakAnalyzer<'a> {
         self.inner.analyze_tree(ctx, env, tree);
     }
 
-    pub fn new(
-        flow: &'a Flow,
-        syms: &'a crate::code::symtab::Symtab,
-    ) -> SnippetBreakAnalyzer<'a> {
+    pub fn new(flow: &'a Flow, syms: &'a Symtab) -> SnippetBreakAnalyzer<'a> {
         SnippetBreakAnalyzer {
             inner: AliveAnalyzer::new(flow, syms),
             seen_trees: HashSet::new(),
@@ -2432,9 +2452,9 @@ impl<'a> SnippetBreakAnalyzer<'a> {
 flow_tree_visitor_delegate!(SnippetBreakAnalyzer<'a>, 'a);
 
 impl<'a> FlowVisitor for SnippetBreakAnalyzer<'a> {
-    fn visit_labelled(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+    fn visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.seen_trees.insert(tree);
-        <AliveAnalyzer as FlowVisitor>::visit_labelled(&mut self.inner, ctx, tree);
+        <AliveAnalyzer as FlowVisitor>::visit_do_loop(&mut self.inner, ctx, tree);
     }
 
     fn visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -2452,9 +2472,9 @@ impl<'a> FlowVisitor for SnippetBreakAnalyzer<'a> {
         <AliveAnalyzer as FlowVisitor>::visit_foreach_loop(&mut self.inner, ctx, tree);
     }
 
-    fn visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+    fn visit_labelled(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.seen_trees.insert(tree);
-        <AliveAnalyzer as FlowVisitor>::visit_do_loop(&mut self.inner, ctx, tree);
+        <AliveAnalyzer as FlowVisitor>::visit_labelled(&mut self.inner, ctx, tree);
     }
 
     fn visit_break(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -2531,7 +2551,7 @@ fn scan_synthetic_break<V: FlowVisitor>(
 pub struct FlowAnalyzer<'a> {
     flow: &'a Flow,
     /// Port adapter (A3k): the Symtab lent by the caller (see augmented_lint).
-    syms: &'a crate::code::symtab::Symtab,
+    syms: &'a Symtab,
     pending_exits: List<PendingExit>,
     precise_rethrow_types: HashMap<SymbolId, List<TypeId>>,
     caught: List<TypeId>,
@@ -2555,7 +2575,7 @@ impl<'a> FlowAnalyzer<'a> {
     /// Java: public FlowAnalyzer() (Flow.java:966-980)
     pub fn new(
         flow: &'a Flow,
-        syms: &'a crate::code::symtab::Symtab,
+        syms: &'a Symtab,
         attr: Option<&'a mut crate::comp::attr::Attr>,
     ) -> FlowAnalyzer<'a> {
         FlowAnalyzer {
@@ -2578,7 +2598,7 @@ impl<'a> FlowAnalyzer<'a> {
     /// Java: LambdaFlowAnalyzer() (Flow.java:1686-1722)
     pub fn new_lambda(
         flow: &'a Flow,
-        syms: &'a crate::code::symtab::Symtab,
+        syms: &'a Symtab,
         attr: Option<&'a mut crate::comp::attr::Attr>,
     ) -> FlowAnalyzer<'a> {
         let mut analyzer = FlowAnalyzer::new(flow, syms, attr);
@@ -2591,38 +2611,46 @@ impl<'a> FlowAnalyzer<'a> {
         let pending = std::mem::take(&mut self.pending_exits);
         let current = pending;
         for exit in &current {
-        match &exit {
-            PendingExit::Thrown { tree, thrown } => {
-                let class_def_pos = self.class_def.map(|class_def| ctx.tree(class_def).pos);
-                if self.class_def.is_some() && class_def_pos == Some(ctx.tree(*tree).pos) {
-                    self.flow.error(
-                        ctx.tree(*tree).pos,
-                        errors::unreported_exception_default_constructor(type_place(
-                            ctx, *thrown,
-                        )),
-                    );
-                } else if ctx.tree(*tree).has_tag(Tag::VARDEF) {
-                    let sym = var_sym(ctx, *tree);
-                    let is_resource = sym
-                        .map(|sym| {
-                            matches!(
-                                &ctx.sym(sym).kind_data,
-                                crate::code::symbol::SymbolKind::VarSymbol {
-                                    data_kind: Some(ElementKind::RESOURCE_VARIABLE),
-                                    ..
-                                }
-                            )
-                        })
-                        .unwrap_or(false);
-                    if is_resource {
-                        let name = ctx.sym(sym.expect("resource symbol")).name.clone();
+            match &exit {
+                PendingExit::Thrown { tree, thrown } => {
+                    let class_def_pos = self.class_def.map(|class_def| ctx.tree(class_def).pos);
+                    if self.class_def.is_some() && class_def_pos == Some(ctx.tree(*tree).pos) {
                         self.flow.error(
                             ctx.tree(*tree).pos,
-                            errors::unreported_exception_implicit_close(
-                                type_place(ctx, *thrown),
-                                name,
-                            ),
+                            errors::unreported_exception_default_constructor(type_place(
+                                ctx, *thrown,
+                            )),
                         );
+                    } else if ctx.tree(*tree).has_tag(Tag::VARDEF) {
+                        let sym = var_sym(ctx, *tree);
+                        let is_resource = sym
+                            .map(|sym| {
+                                matches!(
+                                    &ctx.sym(sym).kind_data,
+                                    crate::code::symbol::SymbolKind::VarSymbol {
+                                        data_kind: Some(ElementKind::RESOURCE_VARIABLE),
+                                        ..
+                                    }
+                                )
+                            })
+                            .unwrap_or(false);
+                        if is_resource {
+                            let name = ctx.sym(sym.expect("resource symbol")).name.clone();
+                            self.flow.error(
+                                ctx.tree(*tree).pos,
+                                errors::unreported_exception_implicit_close(
+                                    type_place(ctx, *thrown),
+                                    name,
+                                ),
+                            );
+                        } else {
+                            self.flow.error(
+                                ctx.tree(*tree).pos,
+                                errors::unreported_exception_need_to_catch_or_throw(type_place(
+                                    ctx, *thrown,
+                                )),
+                            );
+                        }
                     } else {
                         self.flow.error(
                             ctx.tree(*tree).pos,
@@ -2631,24 +2659,18 @@ impl<'a> FlowAnalyzer<'a> {
                             )),
                         );
                     }
-                } else {
-                    self.flow.error(
-                        ctx.tree(*tree).pos,
-                        errors::unreported_exception_need_to_catch_or_throw(type_place(
-                            ctx, *thrown,
-                        )),
+                }
+                _ => {
+                    assert!(
+                        self.flow
+                            .log
+                            .has_error_on(Some(Rc::new(SimpleDiagnosticPosition::new(
+                                ctx.tree(exit.tree()).pos
+                            ),))),
+                        "AssertionError: errorUncaught (Flow.java:1014)"
                     );
                 }
             }
-            _ => {
-                assert!(
-                    self.flow.log.has_error_on(Some(Rc::new(
-                        SimpleDiagnosticPosition::new(ctx.tree(exit.tree()).pos),
-                    ))),
-                    "AssertionError: errorUncaught (Flow.java:1014)"
-                );
-            }
-        }
         }
     }
 
@@ -2660,25 +2682,14 @@ impl<'a> FlowAnalyzer<'a> {
             tree_info::symbol(ctx, tree).unwrap_or(syms.no_symbol),
             tree,
         );
-        if !self
-            .flow
-            .chk
-            .is_unchecked_pos(ctx, &syms, pos, exc)
-        {
-            if !self
-                .flow
-                .chk
-                .is_handled(ctx, &syms, exc, &self.caught)
-            {
+        if !self.flow.chk.is_unchecked_pos(ctx, &syms, pos, exc) {
+            if !self.flow.chk.is_handled(ctx, &syms, exc, &self.caught) {
                 self.pending_exits = self
                     .pending_exits
                     .clone()
                     .append(PendingExit::Thrown { tree, thrown: exc });
             }
-            self.thrown = self
-                .flow
-                .chk
-                .incl(ctx, &syms, exc, &self.thrown);
+            self.thrown = self.flow.chk.incl(ctx, &syms, exc, &self.thrown);
         }
     }
 
@@ -2701,8 +2712,10 @@ impl<'a> FlowAnalyzer<'a> {
             && !is_exception_or_throwable(ctx, &syms, exc)
             && !chk.intersects(ctx, &syms, exc, thrown_in_try)
         {
-            self.flow
-                .error(pos, errors::except_never_thrown_in_try(type_place(ctx, exc)));
+            self.flow.error(
+                pos,
+                errors::except_never_thrown_in_try(type_place(ctx, exc)),
+            );
         } else {
             let catchable = chk.intersect(ctx, &syms, &List::of(exc), thrown_in_try);
             if chk.diff(ctx, &syms, &catchable, caught_in_try).is_empty()
@@ -2711,15 +2724,11 @@ impl<'a> FlowAnalyzer<'a> {
                 let catchable_types: Vec<crate::resources::diagnostic_contract::TypeArg> =
                     catchable.iter().map(|ty| type_place(ctx, ty)).collect();
                 if catchable.length() == 1 {
-                    self.flow.warning_no_lint(
-                        pos,
-                        warnings::unreachable_catch(catchable_types),
-                    );
+                    self.flow
+                        .warning_no_lint(pos, warnings::unreachable_catch(catchable_types));
                 } else {
-                    self.flow.warning_no_lint(
-                        pos,
-                        warnings::unreachable_catch1(catchable_types),
-                    );
+                    self.flow
+                        .warning_no_lint(pos, warnings::unreachable_catch1(catchable_types));
                 }
             }
         }
@@ -2757,6 +2766,8 @@ impl<'a> BaseAnalyzer for FlowAnalyzer<'a> {
 flow_tree_visitor_delegate!(FlowAnalyzer<'a>, 'a);
 
 impl<'a> FlowVisitor for FlowAnalyzer<'a> {
+    fn visit_module_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
+
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         if self.lambda_mode {
             // Java: LambdaFlowAnalyzer.visitClassDef (Flow.java:1715-1717)
@@ -2795,16 +2806,14 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                     let Some(method_sym) = method_symbol(ctx, def) else {
                         continue;
                     };
-                    let mthrown = thrown_types_of(ctx, ctx.sym(method_sym).ty.expect("method type"));
+                    let mthrown =
+                        thrown_types_of(ctx, ctx.sym(method_sym).ty.expect("method type"));
                     if first_constructor {
                         self.caught = mthrown;
                         first_constructor = false;
                     } else {
                         let syms = self.syms;
-                        self.caught =
-                            self.flow
-                                .chk
-                                .intersect(ctx, &syms, &mthrown, &self.caught);
+                        self.caught = self.flow.chk.intersect(ctx, &syms, &mthrown, &self.caught);
                     }
                 }
             }
@@ -2876,12 +2885,8 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
         }
         if tree_info::is_initial_constructor(ctx, tree) {
             let syms = self.syms;
-            self.caught = self
-                .flow
-                .chk
-                .union(ctx, &syms, &self.caught, &mthrown);
-        } else if (ctx.sym(method_sym).flags_field
-            & (flags::BLOCK as i64 | flags::STATIC as i64))
+            self.caught = self.flow.chk.union(ctx, &syms, &self.caught, &mthrown);
+        } else if (ctx.sym(method_sym).flags_field & (flags::BLOCK as i64 | flags::STATIC as i64))
             != flags::BLOCK as i64
         {
             self.caught = mthrown.clone();
@@ -2890,21 +2895,21 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
         let exits = std::mem::take(&mut self.pending_exits);
         let current = exits;
         for exit in &current {
-        match &exit {
-            PendingExit::Thrown { .. } => {
-                self.pending_exits = self.pending_exits.clone().append(exit);
+            match &exit {
+                PendingExit::Thrown { .. } => {
+                    self.pending_exits = self.pending_exits.clone().append(exit);
+                }
+                _ => {
+                    let tree_id = exit.tree();
+                    assert!(
+                        ctx.tree(tree_id).has_tag(Tag::RETURN)
+                            || self.flow.log.has_error_on(Some(Rc::new(
+                                SimpleDiagnosticPosition::new(ctx.tree(tree_id).pos),
+                            ))),
+                        "AssertionError: visitMethodDef exit (Flow.java:1185)"
+                    );
+                }
             }
-            _ => {
-                let tree_id = exit.tree();
-                assert!(
-                    ctx.tree(tree_id).has_tag(Tag::RETURN)
-                        || self.flow.log.has_error_on(Some(Rc::new(
-                            SimpleDiagnosticPosition::new(ctx.tree(tree_id).pos),
-                        ))),
-                    "AssertionError: visitMethodDef exit (Flow.java:1185)"
-                );
-            }
-        }
         }
         self.caught = caught_prev;
         self.thrown = thrown_prev;
@@ -3032,6 +3037,280 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
         self.resolve_yields(ctx, tree, prev_pending);
     }
 
+    fn visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (resources, body, catchers, finalizer) = match &ctx.tree(tree).kind {
+            TreeKind::Try {
+                resources,
+                body,
+                catchers,
+                finalizer,
+                ..
+            } => (resources.clone(), *body, catchers.clone(), *finalizer),
+            _ => panic!("expected a try statement"),
+        };
+        let prev_caught = self.caught.clone();
+        let mut prev_thrown = self.thrown.clone();
+        self.thrown = List::nil();
+        for catcher in catchers.iter() {
+            let param = match &ctx.tree(catcher).kind {
+                TreeKind::Catch { param, .. } => *param,
+                _ => panic!("expected a catch clause"),
+            };
+            for clause in catch_sub_clauses(ctx, catcher, param).iter() {
+                let clause_type = ctx.tree(clause).ty.expect("catch type");
+                let syms = self.syms;
+                self.caught = self.flow.chk.incl(ctx, &syms, clause_type, &self.caught);
+            }
+        }
+        let prev_pending = std::mem::take(&mut self.pending_exits);
+        for resource in resources.iter() {
+            if matches!(ctx.tree(resource).kind, TreeKind::VariableDecl { .. }) {
+                <Self as FlowVisitor>::visit_var_def(self, ctx, resource);
+            } else {
+                self.scan(ctx, Some(resource));
+            }
+        }
+        if !resources.is_empty() {
+            // Java: Flow.java:1288-1308: the close() methods of the resources
+            // throw their declared exceptions at the end of the try block.
+            for resource in resources.iter() {
+                let Some(resource_type) = ctx.tree(resource).ty else {
+                    continue;
+                };
+                let closeable_supertypes = if self.flow.types.is_compound_public(ctx, resource_type)
+                {
+                    let mut supers = {
+                        let syms = self.syms;
+                        self.flow.types.interfaces(ctx, &syms, resource_type)
+                    };
+                    supers = supers.prepend({
+                        let syms = self.syms;
+                        self.flow.types.supertype(ctx, &syms, resource_type, None)
+                    });
+                    supers
+                } else {
+                    List::of(resource_type)
+                };
+                let current = closeable_supertypes;
+                for sup in &current {
+                    let auto_closeable_tsym = {
+                        let syms = self.syms;
+                        ctx.typ(syms.auto_closeable_type)
+                            .tsym
+                            .expect("AutoCloseable symbol")
+                    };
+                    let as_super = {
+                        let syms = self.syms;
+                        self.flow
+                            .types
+                            .as_super(ctx, &syms, sup, auto_closeable_tsym)
+                    };
+                    if as_super.is_none() {
+                        continue;
+                    }
+                    let site = self.flow.types.skip_type_vars_public(ctx, sup);
+                    let close_method = {
+                        let attr = self
+                            .attr
+                            .as_deref_mut()
+                            .expect("AssertionError: the Attr service is not installed on Flow");
+                        let chk_rc = Rc::clone(&self.flow.chk);
+                        let chk = Rc::clone(&chk_rc);
+                        let infer = Rc::clone(&attr.infer);
+                        let env = {
+                            let env = self.flow.attr_env.borrow().clone();
+                            env.expect("AssertionError: attrEnv")
+                        };
+                        let rs = &*self.flow.rs;
+                        let syms = self.syms;
+                        let location = ctx.typ(site).tsym.expect("close site symbol");
+                        rs.resolve_qualified_method(
+                            ctx,
+                            &syms,
+                            &self.flow.types,
+                            attr,
+                            &chk,
+                            &infer,
+                            Some(Rc::new(SimpleDiagnosticPosition::new(
+                                ctx.tree(resource).pos,
+                            ))),
+                            &env,
+                            location,
+                            site,
+                            self.flow.names.close.clone(),
+                            List::nil(),
+                            Some(List::nil()),
+                        )
+                    };
+                    let member_type = {
+                        let syms = self.syms;
+                        self.flow
+                            .types
+                            .member_type(ctx, &syms, resource_type, close_method)
+                    };
+                    if matches!(ctx.sym(close_method).kind, Kind::MTH) {
+                        // Java: mt.getThrownTypes()
+                        let thrown = Types::get_thrown_types_public(
+                            &self.flow.types,
+                            ctx,
+                            member_type,
+                        );
+                        for exc in &thrown {
+                            self.mark_thrown(ctx, resource, exc);
+                        }
+                    }
+                }
+            }
+        }
+        self.scan(ctx, body);
+        let syms = self.syms;
+        let mut thrown_in_try = self.flow.chk.union(
+            ctx,
+            &syms,
+            &self.thrown,
+            &List::of(syms.runtime_exception_type),
+        );
+        thrown_in_try = self
+            .flow
+            .chk
+            .incl(ctx, &syms, syms.error_type, &thrown_in_try);
+        self.thrown = prev_thrown.clone();
+        self.caught = prev_caught.clone();
+        let mut caught_in_try: List<TypeId> = List::nil();
+        for catcher in catchers.iter() {
+            let param = match &ctx.tree(catcher).kind {
+                TreeKind::Catch { param, .. } => *param,
+                _ => panic!("expected a catch clause"),
+            };
+            let sub_clauses = catch_sub_clauses(ctx, catcher, param);
+            let mut ctypes: List<TypeId> = List::nil();
+            let rethrown_types = self
+                .flow
+                .chk
+                .diff(ctx, &syms, &thrown_in_try, &caught_in_try);
+            for clause in sub_clauses.iter() {
+                let exc = ctx.tree(clause).ty.expect("catch type");
+                if exc != syms.unknown_type {
+                    ctypes = ctypes.append(exc);
+                    if self
+                        .flow
+                        .types
+                        .is_same_type(ctx, &syms, exc, syms.object_type)
+                    {
+                        continue;
+                    }
+                    let pos = if sub_clauses.length() > 1 {
+                        ctx.tree(clause).pos
+                    } else {
+                        ctx.tree(catcher).pos
+                    };
+                    self.check_caught_type(ctx, pos, exc, &thrown_in_try, &caught_in_try);
+                    caught_in_try = self.flow.chk.incl(ctx, &syms, exc, &caught_in_try);
+                }
+            }
+            if let Some(param) = param {
+                self.scan(ctx, Some(param));
+                if let Some(param_sym) = var_sym(ctx, param) {
+                    let precise = self
+                        .flow
+                        .chk
+                        .intersect(ctx, &syms, &ctypes, &rethrown_types);
+                    self.precise_rethrow_types.insert(param_sym, precise);
+                }
+            }
+            let catch_body = match &ctx.tree(catcher).kind {
+                TreeKind::Catch { body, .. } => *body,
+                _ => panic!("expected a catch clause"),
+            };
+            self.scan(ctx, catch_body);
+            if let Some(param) = param
+                && let Some(param_sym) = var_sym(ctx, param)
+            {
+                self.precise_rethrow_types.remove(&param_sym);
+            }
+        }
+        if let Some(finalizer) = finalizer {
+            let saved_thrown = self.thrown.clone();
+            let exits = std::mem::replace(&mut self.pending_exits, prev_pending);
+            self.thrown = List::nil();
+            self.scan(ctx, Some(finalizer));
+            let finally_can_complete_normally = match &ctx.tree(tree).kind {
+                TreeKind::Try {
+                    finally_can_complete_normally,
+                    ..
+                } => *finally_can_complete_normally,
+                _ => false,
+            };
+            if !finally_can_complete_normally {
+                let combined = self.flow.chk.union(ctx, &syms, &self.thrown, &saved_thrown);
+                self.thrown = combined;
+            } else {
+                let uncaught_in_try =
+                    self.flow
+                        .chk
+                        .diff(ctx, &syms, &thrown_in_try, &caught_in_try);
+                let with_uncaught = self
+                    .flow
+                    .chk
+                    .union(ctx, &syms, &self.thrown, &uncaught_in_try);
+                self.thrown = self
+                    .flow
+                    .chk
+                    .union(ctx, &syms, &with_uncaught, &saved_thrown);
+                let mut current = exits;
+                while current.non_empty() {
+                    self.pending_exits = self.pending_exits.clone().append(current.head().clone());
+                    current = current.tail();
+                }
+            }
+        } else {
+            let uncaught_in_try = self
+                .flow
+                .chk
+                .diff(ctx, &syms, &thrown_in_try, &caught_in_try);
+            self.thrown = self
+                .flow
+                .chk
+                .union(ctx, &syms, &self.thrown, &uncaught_in_try);
+            let exits = std::mem::replace(&mut self.pending_exits, prev_pending);
+            let mut current = exits;
+            while current.non_empty() {
+                self.pending_exits = self.pending_exits.clone().append(current.head().clone());
+                current = current.tail();
+            }
+        }
+        let _ = &mut prev_thrown;
+    }
+
+    fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
+            TreeKind::Conditional {
+                cond,
+                truepart,
+                falsepart,
+                ..
+            } => (*cond, *truepart, *falsepart),
+            _ => panic!("expected a conditional"),
+        };
+        self.scan(ctx, cond);
+        self.scan(ctx, truepart);
+        self.scan(ctx, falsepart);
+    }
+
+    fn visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (cond, thenpart, elsepart) = match &ctx.tree(tree).kind {
+            TreeKind::If {
+                cond,
+                thenpart,
+                elsepart,
+            } => (*cond, *thenpart, *elsepart),
+            _ => panic!("expected an if statement"),
+        };
+        self.scan(ctx, cond);
+        self.scan(ctx, thenpart);
+        self.scan(ctx, elsepart);
+    }
+
     fn visit_break(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.record_exit(ctx, PendingExit::new(tree));
     }
@@ -3093,6 +3372,15 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
         self.mark_dead(ctx);
     }
 
+    fn visit_assert(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (cond, detail) = match &ctx.tree(tree).kind {
+            TreeKind::Assert { cond, detail } => (*cond, *detail),
+            _ => panic!("expected an assert"),
+        };
+        self.scan(ctx, cond);
+        self.scan(ctx, detail);
+    }
+
     fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (meth, args) = match &ctx.tree(tree).kind {
             TreeKind::MethodInvocation { meth, args, .. } => (*meth, args.clone()),
@@ -3152,11 +3440,23 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
         self.caught = caught_prev;
     }
 
+    fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (dims, elems) = match &ctx.tree(tree).kind {
+            TreeKind::NewArray { dims, elems, .. } => (dims.clone(), elems.clone()),
+            _ => panic!("expected a new array"),
+        };
+        self.scan_list(ctx, &dims);
+        if let Some(elems) = elems {
+            self.scan_list(ctx, &elems);
+        }
+    }
+
     fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         if let Some(ty) = ctx.tree(tree).ty
-            && ctx.typ(ty).has_tag(TypeTag::ERROR) {
-                return;
-            }
+            && ctx.typ(ty).has_tag(TypeTag::ERROR)
+        {
+            return;
+        }
         if self.lambda_mode {
             // Java: LambdaFlowAnalyzer.visitLambda (Flow.java:1688-1713)
             if self.in_lambda {
@@ -3211,340 +3511,34 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
         self.scan(ctx, body);
         let exits = std::mem::take(&mut self.pending_exits);
         for exit in &exits {
-        match &exit {
-            PendingExit::Thrown { .. } => {
-                self.pending_exits = self.pending_exits.clone().append(exit);
-            }
-            _ => {
-                let exit_tree = match &exit {
-                    PendingExit::Plain { tree } => *tree,
-                    PendingExit::Assign { tree, .. } => *tree,
-                    PendingExit::Thrown { tree, .. } => *tree,
-                };
-                let has_return = ctx.tree(exit_tree).has_tag(Tag::RETURN);
-                let has_error = self.flow.log.has_error_on(Some(Rc::new(
-                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(exit_tree).pos),
-                ) as Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>));
-                if !(has_return || has_error) {
-                    panic!("AssertionError: unexpected lambda pending exit");
+            match &exit {
+                PendingExit::Thrown { .. } => {
+                    self.pending_exits = self.pending_exits.clone().append(exit);
+                }
+                _ => {
+                    let exit_tree = match &exit {
+                        PendingExit::Plain { tree } => *tree,
+                        PendingExit::Assign { tree, .. } => *tree,
+                        PendingExit::Thrown { tree, .. } => *tree,
+                    };
+                    let has_return = ctx.tree(exit_tree).has_tag(Tag::RETURN);
+                    let has_error = self.flow.log.has_error_on(Some(Rc::new(
+                        SimpleDiagnosticPosition::new(
+                            ctx.tree(exit_tree).pos,
+                        ),
+                    )
+                        as Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>));
+                    if !(has_return || has_error) {
+                        panic!("AssertionError: unexpected lambda pending exit");
+                    }
                 }
             }
-        }
         }
         self.error_uncaught(ctx);
         self.pending_exits = prev_pending;
         self.caught = prev_caught;
         self.thrown = prev_thrown;
     }
-
-    fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (dims, elems) = match &ctx.tree(tree).kind {
-            TreeKind::NewArray { dims, elems, .. } => (dims.clone(), elems.clone()),
-            _ => panic!("expected a new array"),
-        };
-        self.scan_list(ctx, &dims);
-        if let Some(elems) = elems {
-            self.scan_list(ctx, &elems);
-        }
-    }
-
-    fn visit_assert(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (cond, detail) = match &ctx.tree(tree).kind {
-            TreeKind::Assert { cond, detail } => (*cond, *detail),
-            _ => panic!("expected an assert"),
-        };
-        self.scan(ctx, cond);
-        self.scan(ctx, detail);
-    }
-
-    fn visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (cond, thenpart, elsepart) = match &ctx.tree(tree).kind {
-            TreeKind::If {
-                cond,
-                thenpart,
-                elsepart,
-            } => (*cond, *thenpart, *elsepart),
-            _ => panic!("expected an if statement"),
-        };
-        self.scan(ctx, cond);
-        self.scan(ctx, thenpart);
-        self.scan(ctx, elsepart);
-    }
-
-    fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
-            TreeKind::Conditional {
-                cond,
-                truepart,
-                falsepart,
-                ..
-            } => (*cond, *truepart, *falsepart),
-            _ => panic!("expected a conditional"),
-        };
-        self.scan(ctx, cond);
-        self.scan(ctx, truepart);
-        self.scan(ctx, falsepart);
-    }
-
-    fn visit_module_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
-
-    fn visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (resources, body, catchers, finalizer) = match &ctx.tree(tree).kind {
-            TreeKind::Try {
-                resources,
-                body,
-                catchers,
-                finalizer,
-                ..
-            } => (resources.clone(), *body, catchers.clone(), *finalizer),
-            _ => panic!("expected a try statement"),
-        };
-        let prev_caught = self.caught.clone();
-        let mut prev_thrown = self.thrown.clone();
-        self.thrown = List::nil();
-        for catcher in catchers.iter() {
-            let param = match &ctx.tree(catcher).kind {
-                TreeKind::Catch { param, .. } => *param,
-                _ => panic!("expected a catch clause"),
-            };
-            for clause in catch_sub_clauses(ctx, catcher, param).iter() {
-                let clause_type = ctx.tree(clause).ty.expect("catch type");
-                let syms = self.syms;
-                self.caught = self
-                    .flow
-                    .chk
-                    .incl(ctx, &syms, clause_type, &self.caught);
-            }
-        }
-        let prev_pending = std::mem::take(&mut self.pending_exits);
-        for resource in resources.iter() {
-            if matches!(ctx.tree(resource).kind, TreeKind::VariableDecl { .. }) {
-                <Self as FlowVisitor>::visit_var_def(self, ctx, resource);
-            } else {
-                self.scan(ctx, Some(resource));
-            }
-        }
-        if !resources.is_empty() {
-            // Java: Flow.java:1288-1308: the close() methods of the resources
-            // throw their declared exceptions at the end of the try block.
-            for resource in resources.iter() {
-                let Some(resource_type) = ctx.tree(resource).ty else {
-                    continue;
-                };
-                let closeable_supertypes = if self
-                    .flow
-                    .types
-                    .is_compound_public(ctx, resource_type)
-                {
-                    let mut supers = {
-                        let syms = self.syms;
-                        self.flow.types.interfaces(ctx, &syms, resource_type)
-                    };
-                    supers = supers.prepend({
-                        let syms = self.syms;
-                        self.flow.types.supertype(ctx, &syms, resource_type, None)
-                    });
-                    supers
-                } else {
-                    List::of(resource_type)
-                };
-                let current = closeable_supertypes;
-                for sup in &current {
-                let auto_closeable_tsym = {
-                    let syms = self.syms;
-                    ctx.typ(syms.auto_closeable_type)
-                        .tsym
-                        .expect("AutoCloseable symbol")
-                };
-                let as_super = {
-                    let syms = self.syms;
-                    self.flow
-                        .types
-                        .as_super(ctx, &syms, sup, auto_closeable_tsym)
-                };
-                if as_super.is_none() {
-                    continue;
-                }
-                let site = self.flow.types.skip_type_vars_public(ctx, sup);
-                let close_method = {
-                    let attr = self
-                        .attr
-                        .as_deref_mut()
-                        .expect("AssertionError: the Attr service is not installed on Flow");
-                    let chk_rc = Rc::clone(&self.flow.chk);
-                    let chk = Rc::clone(&chk_rc);
-                    let infer = Rc::clone(&attr.infer);
-                    let env = {
-                        let env = self.flow.attr_env.borrow().clone();
-                        env.expect("AssertionError: attrEnv")
-                    };
-                    let rs = &*self.flow.rs;
-                    let syms = self.syms;
-                    let location = ctx.typ(site).tsym.expect("close site symbol");
-                    rs.resolve_qualified_method(
-                        ctx,
-                        &syms,
-                        &self.flow.types,
-                        attr,
-                        &chk,
-                        &infer,
-                        Some(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(resource).pos))),
-                        &env,
-                        location,
-                        site,
-                        self.flow.names.close.clone(),
-                        List::nil(),
-                        Some(List::nil()),
-                    )
-                };
-                let member_type = {
-                    let syms = self.syms;
-                    self.flow
-                        .types
-                        .member_type(ctx, &syms, resource_type, close_method)
-                };
-                if matches!(
-                    ctx.sym(close_method).kind,
-                    crate::code::kinds::Kind::MTH
-                ) {
-                    // Java: mt.getThrownTypes()
-                    let thrown =
-                        crate::code::types::Types::get_thrown_types_public(
-                            &self.flow.types,
-                            ctx,
-                            member_type,
-                        );
-                    for exc in &thrown {
-                    self.mark_thrown(ctx, resource, exc);
-                    }
-                }
-                }
-            }
-        }
-        self.scan(ctx, body);
-        let syms = self.syms;
-        let mut thrown_in_try = self
-            .flow
-            .chk
-            .union(ctx, &syms, &self.thrown, &List::of(syms.runtime_exception_type));
-        thrown_in_try = self
-            .flow
-            .chk
-            .incl(ctx, &syms, syms.error_type, &thrown_in_try);
-        self.thrown = prev_thrown.clone();
-        self.caught = prev_caught.clone();
-        let mut caught_in_try: List<TypeId> = List::nil();
-        for catcher in catchers.iter() {
-            let param = match &ctx.tree(catcher).kind {
-                TreeKind::Catch { param, .. } => *param,
-                _ => panic!("expected a catch clause"),
-            };
-            let sub_clauses = catch_sub_clauses(ctx, catcher, param);
-            let mut ctypes: List<TypeId> = List::nil();
-            let rethrown_types = self
-                .flow
-                .chk
-                .diff(ctx, &syms, &thrown_in_try, &caught_in_try);
-            for clause in sub_clauses.iter() {
-                let exc = ctx.tree(clause).ty.expect("catch type");
-                if exc != syms.unknown_type {
-                    ctypes = ctypes.append(exc);
-                    if self
-                        .flow
-                        .types
-                        .is_same_type(ctx, &syms, exc, syms.object_type)
-                    {
-                        continue;
-                    }
-                    let pos = if sub_clauses.length() > 1 {
-                        ctx.tree(clause).pos
-                    } else {
-                        ctx.tree(catcher).pos
-                    };
-                    self.check_caught_type(ctx, pos, exc, &thrown_in_try, &caught_in_try);
-                    caught_in_try =
-                        self.flow
-                            .chk
-                            .incl(ctx, &syms, exc, &caught_in_try);
-                }
-            }
-            if let Some(param) = param {
-                self.scan(ctx, Some(param));
-                if let Some(param_sym) = var_sym(ctx, param) {
-                    let precise =
-                        self.flow
-                            .chk
-                            .intersect(ctx, &syms, &ctypes, &rethrown_types);
-                    self.precise_rethrow_types.insert(param_sym, precise);
-                }
-            }
-            let catch_body = match &ctx.tree(catcher).kind {
-                TreeKind::Catch { body, .. } => *body,
-                _ => panic!("expected a catch clause"),
-            };
-            self.scan(ctx, catch_body);
-            if let Some(param) = param
-                && let Some(param_sym) = var_sym(ctx, param) {
-                    self.precise_rethrow_types.remove(&param_sym);
-                }
-        }
-        if let Some(finalizer) = finalizer {
-            let saved_thrown = self.thrown.clone();
-            let exits = std::mem::replace(&mut self.pending_exits, prev_pending);
-            self.thrown = List::nil();
-            self.scan(ctx, Some(finalizer));
-            let finally_can_complete_normally = match &ctx.tree(tree).kind {
-                TreeKind::Try {
-                    finally_can_complete_normally,
-                    ..
-                } => *finally_can_complete_normally,
-                _ => false,
-            };
-            if !finally_can_complete_normally {
-                let combined =
-                    self.flow
-                        .chk
-                        .union(ctx, &syms, &self.thrown, &saved_thrown);
-                self.thrown = combined;
-            } else {
-                let uncaught_in_try =
-                    self.flow
-                        .chk
-                        .diff(ctx, &syms, &thrown_in_try, &caught_in_try);
-                let with_uncaught =
-                    self.flow
-                        .chk
-                        .union(ctx, &syms, &self.thrown, &uncaught_in_try);
-                self.thrown =
-                    self.flow
-                        .chk
-                        .union(ctx, &syms, &with_uncaught, &saved_thrown);
-                let mut current = exits;
-                while current.non_empty() {
-                    self.pending_exits = self.pending_exits.clone().append(current.head().clone());
-                    current = current.tail();
-                }
-            }
-        } else {
-            let uncaught_in_try = self
-                .flow
-                .chk
-                .diff(ctx, &syms, &thrown_in_try, &caught_in_try);
-            self.thrown =
-                self.flow
-                    .chk
-                    .union(ctx, &syms, &self.thrown, &uncaught_in_try);
-            let exits = std::mem::replace(&mut self.pending_exits, prev_pending);
-            let mut current = exits;
-            while current.non_empty() {
-                self.pending_exits = self.pending_exits.clone().append(current.head().clone());
-                current = current.tail();
-            }
-        }
-        let _ = &mut prev_thrown;
-    }
-
-
 }
 
 /// Java: JCVariableDecl.sym
@@ -3596,7 +3590,7 @@ fn symbol_is_enclosed_by(ctx: &CompilerContext, sym: SymbolId, clazz: SymbolId) 
 pub struct AssignAnalyzer<'a> {
     flow: &'a Flow,
     /// Port adapter (A3k): the Symtab lent by the caller (see augmented_lint).
-    syms: &'a crate::code::symtab::Symtab,
+    syms: &'a Symtab,
     pending_exits: List<PendingExit>,
     pub inits: Bits,
     pub uninits: Bits,
@@ -3610,7 +3604,7 @@ pub struct AssignAnalyzer<'a> {
     first_adr: i32,
     next_adr: i32,
     return_adr: i32,
-    unrefd_resources: std::collections::HashSet<SymbolId>,
+    unrefd_resources: HashSet<SymbolId>,
     flow_kind: FlowKind,
     start_pos: i32,
     is_initial_constructor: bool,
@@ -3625,10 +3619,7 @@ pub struct AssignAnalyzer<'a> {
 
 impl<'a> AssignAnalyzer<'a> {
     /// Java: public AssignAnalyzer() (Flow.java:1770-1778)
-    pub fn new(
-        flow: &'a Flow,
-        syms: &'a crate::code::symtab::Symtab,
-    ) -> AssignAnalyzer<'a> {
+    pub fn new(flow: &'a Flow, syms: &'a Symtab) -> AssignAnalyzer<'a> {
         AssignAnalyzer {
             flow,
             syms,
@@ -3645,7 +3636,7 @@ impl<'a> AssignAnalyzer<'a> {
             first_adr: 0,
             next_adr: 0,
             return_adr: 0,
-            unrefd_resources: std::collections::HashSet::new(),
+            unrefd_resources: HashSet::new(),
             flow_kind: FlowKind::NORMAL,
             start_pos: 0,
             is_initial_constructor: false,
@@ -3659,7 +3650,7 @@ impl<'a> AssignAnalyzer<'a> {
     /// Java: LambdaAssignAnalyzer(Env<AttrContext> env) (Flow.java:1648-1650)
     pub fn new_lambda(
         flow: &'a Flow,
-        syms: &'a crate::code::symtab::Symtab,
+        syms: &'a Symtab,
         enclosed_scope: crate::ids::ScopeId,
     ) -> AssignAnalyzer<'a> {
         let mut analyzer = AssignAnalyzer::new(flow, syms);
@@ -3677,7 +3668,10 @@ impl<'a> AssignAnalyzer<'a> {
         if let Some(scope) = self.enclosed_scope {
             // Java: LambdaAssignAnalyzer.trackable (Flow.java:1673-1676)
             return ctx.scope_includes(scope, sym)
-                && matches!(ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind), Some(Kind::MTH));
+                && matches!(
+                    ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind),
+                    Some(Kind::MTH)
+                );
         }
         let sym_pos = match &ctx.sym(sym).kind_data {
             crate::code::symbol::SymbolKind::VarSymbol { pos, .. } => *pos,
@@ -3701,8 +3695,7 @@ impl<'a> AssignAnalyzer<'a> {
             .class_def
             .and_then(|class_def| class_symbol(ctx, class_def));
         matches!(owner.map(|owner| ctx.sym(owner).kind), Some(Kind::TYP))
-            && (flags_field
-                & (flags::FINAL as i64 | flags::HASINIT as i64 | flags::PARAMETER))
+            && (flags_field & (flags::FINAL as i64 | flags::HASINIT as i64 | flags::PARAMETER))
                 == flags::FINAL as i64
             && match (class_def_sym, owner) {
                 (Some(class_sym), Some(owner)) => symbol_is_enclosed_by(ctx, owner, class_sym),
@@ -3797,12 +3790,13 @@ impl<'a> AssignAnalyzer<'a> {
 
     /// Java: letInit(JCTree) (Flow.java:1885-1893)
     fn let_init_tree(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let tree = crate::tree::tree_info::skip_parens(ctx, tree);
+        let tree = tree_info::skip_parens(ctx, tree);
         if (ctx.tree(tree).has_tag(Tag::IDENT) || ctx.tree(tree).has_tag(Tag::SELECT))
             && let Some(sym) = tree_info::symbol(ctx, tree)
-                && ctx.sym(sym).kind == Kind::VAR {
-                    self.let_init(ctx, ctx.tree(tree).pos, sym);
-                }
+            && ctx.sym(sym).kind == Kind::VAR
+        {
+            self.let_init(ctx, ctx.tree(tree).pos, sym);
+        }
     }
 
     /// Java: void checkInit(DiagnosticPosition pos, VarSymbol sym)
@@ -3846,9 +3840,11 @@ impl<'a> AssignAnalyzer<'a> {
     /// Java: void split(boolean setToNull) (Flow.java:1925-1932)
     fn split(&mut self, set_to_null: bool) {
         self.inits_when_false.assign(&mut clone_bits(&self.inits));
-        self.uninits_when_false.assign(&mut clone_bits(&self.uninits));
+        self.uninits_when_false
+            .assign(&mut clone_bits(&self.uninits));
         self.inits_when_true.assign(&mut clone_bits(&self.inits));
-        self.uninits_when_true.assign(&mut clone_bits(&self.uninits));
+        self.uninits_when_true
+            .assign(&mut clone_bits(&self.uninits));
         if set_to_null {
             self.inits.reset();
             self.uninits.reset();
@@ -3857,10 +3853,12 @@ impl<'a> AssignAnalyzer<'a> {
 
     /// Java: protected void merge() (Flow.java:1936-1939)
     fn merge(&mut self) {
-        self.inits
-            .assign(&mut clone_bits(self.inits_when_false.and_set(&self.inits_when_true)));
-        self.uninits
-            .assign(&mut clone_bits(self.uninits_when_false.and_set(&self.uninits_when_true)));
+        self.inits.assign(&mut clone_bits(
+            self.inits_when_false.and_set(&self.inits_when_true),
+        ));
+        self.uninits.assign(&mut clone_bits(
+            self.uninits_when_false.and_set(&self.uninits_when_true),
+        ));
     }
 
     /// Java: void scanExpr(JCTree tree) (Flow.java:1948-1953)
@@ -3894,21 +3892,29 @@ impl<'a> AssignAnalyzer<'a> {
                 self.merge();
             }
             self.inits_when_true.assign(&mut clone_bits(&self.inits));
-            self.inits_when_true.incl_range(self.first_adr, self.next_adr);
-            self.uninits_when_true.assign(&mut clone_bits(&self.uninits));
-            self.uninits_when_true.incl_range(self.first_adr, self.next_adr);
+            self.inits_when_true
+                .incl_range(self.first_adr, self.next_adr);
+            self.uninits_when_true
+                .assign(&mut clone_bits(&self.uninits));
+            self.uninits_when_true
+                .incl_range(self.first_adr, self.next_adr);
             self.inits_when_false.assign(&mut clone_bits(&self.inits));
-            self.uninits_when_false.assign(&mut clone_bits(&self.uninits));
+            self.uninits_when_false
+                .assign(&mut clone_bits(&self.uninits));
         } else if is_true {
             if self.inits.is_reset() {
                 self.merge();
             }
             self.inits_when_false.assign(&mut clone_bits(&self.inits));
-            self.inits_when_false.incl_range(self.first_adr, self.next_adr);
-            self.uninits_when_false.assign(&mut clone_bits(&self.uninits));
-            self.uninits_when_false.incl_range(self.first_adr, self.next_adr);
+            self.inits_when_false
+                .incl_range(self.first_adr, self.next_adr);
+            self.uninits_when_false
+                .assign(&mut clone_bits(&self.uninits));
+            self.uninits_when_false
+                .incl_range(self.first_adr, self.next_adr);
             self.inits_when_true.assign(&mut clone_bits(&self.inits));
-            self.uninits_when_true.assign(&mut clone_bits(&self.uninits));
+            self.uninits_when_true
+                .assign(&mut clone_bits(&self.uninits));
         } else {
             self.scan(ctx, Some(tree));
             if !self.inits.is_reset() {
@@ -3953,16 +3959,14 @@ impl<'a> AssignAnalyzer<'a> {
             let stats = case_stats(ctx, case);
             let next = remaining.tail();
             // handling: case Integer i: case null: joins the two cases
-            let join_null_case = stats.is_empty()
-                && next.non_empty()
-                && {
-                    let next_case = *next.head();
-                    let next_labels = case_labels(ctx, next_case);
-                    next_labels.length() == 1 && {
-                        let label = *next_labels.head();
-                        !is_pattern_tree(ctx, label) && tree_info::is_null(ctx, label)
-                    }
-                };
+            let join_null_case = stats.is_empty() && next.non_empty() && {
+                let next_case = *next.head();
+                let next_labels = case_labels(ctx, next_case);
+                next_labels.length() == 1 && {
+                    let label = *next_labels.head();
+                    !is_pattern_tree(ctx, label) && tree_info::is_null(ctx, label)
+                }
+            };
             let (case, next) = if join_null_case {
                 let case = *next.head();
                 (case, next.clone().tail())
@@ -4014,11 +4018,12 @@ impl<'a> AssignAnalyzer<'a> {
     ) {
         for stat in stats.iter() {
             if ctx.tree(stat).has_tag(Tag::VARDEF)
-                && let Some(sym) = var_sym(ctx, stat) {
-                    let adr = var_symbol_adr(ctx, sym);
-                    inits.excl(adr);
-                    uninits.incl(adr);
-                }
+                && let Some(sym) = var_sym(ctx, stat)
+            {
+                let adr = var_symbol_adr(ctx, sym);
+                inits.excl(adr);
+                uninits.incl(adr);
+            }
         }
     }
 
@@ -4106,6 +4111,8 @@ impl<'a> BaseAnalyzer for AssignAnalyzer<'a> {
 flow_tree_visitor_delegate!(AssignAnalyzer<'a>, 'a);
 
 impl<'a> FlowVisitor for AssignAnalyzer<'a> {
+    fn visit_module_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
+
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         if self.lambda_mode {
             // Java: LambdaAssignAnalyzer.visitClassDef (Flow.java:1678-1680)
@@ -4131,9 +4138,10 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
                 let is_static = (tree_info::flags(ctx, def) & flags::STATIC as i64) != 0;
                 if is_static
                     && let Some(sym) = var_sym(ctx, def)
-                        && self.trackable(ctx, sym) {
-                            self.new_var(ctx, def);
-                        }
+                    && self.trackable(ctx, sym)
+                {
+                    self.new_var(ctx, def);
+                }
             }
         }
         // process all the static initializers
@@ -4150,9 +4158,10 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
                 let is_static = (tree_info::flags(ctx, def) & flags::STATIC as i64) != 0;
                 if !is_static
                     && let Some(sym) = var_sym(ctx, def)
-                        && self.trackable(ctx, sym) {
-                            self.new_var(ctx, def);
-                        }
+                    && self.trackable(ctx, sym)
+                {
+                    self.new_var(ctx, def);
+                }
             }
         }
         // process all the instance initializers
@@ -4205,10 +4214,7 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
         for param in method_params(ctx, tree).iter() {
             self.scan(ctx, Some(param));
             let param_sym = var_sym(ctx, param).expect("parameter symbol");
-            assert!(
-                (ctx.sym(param_sym).flags_field & flags::PARAMETER) != 0,
-                "AssertionError: Method parameter without PARAMETER flag (Flow.java:2200)"
-            );
+            assert_ne!(ctx.sym(param_sym).flags_field & flags::PARAMETER, 0, "AssertionError: Method parameter without PARAMETER flag (Flow.java:2200)");
             self.init_param(ctx, param);
         }
         self.scan(ctx, Some(body));
@@ -4238,9 +4244,8 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
                     continue;
                 }
                 if is_synthesized && !is_compact_constructor {
-                    let info = errors::var_not_initialized_in_default_constructor(symbol_place(
-                        ctx, var,
-                    ));
+                    let info =
+                        errors::var_not_initialized_in_default_constructor(symbol_place(ctx, var));
                     let pos = tree_info::diagnostic_position_for(ctx, var, var_decl);
                     self.check_init_with(ctx, pos, var, info);
                 } else if is_compact_constructor {
@@ -4256,7 +4261,10 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
                                 | flags::RECORD))
                             != 0
                         && (ctx.sym(var).flags_field & flags::STATIC as i64) == 0
-                        && matches!(ctx.sym(var).owner.map(|owner| ctx.sym(owner).kind), Some(Kind::TYP));
+                        && matches!(
+                            ctx.sym(var).owner.map(|owner| ctx.sym(owner).kind),
+                            Some(Kind::TYP)
+                        );
                     if is_instance_record_field {
                         let adr = var_symbol_adr(ctx, var);
                         let not_initialized = !self.inits.is_member(adr);
@@ -4633,20 +4641,20 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
                 self.uninits.assign(&mut clone_bits(&uninits_combined));
                 let current = exits;
                 for exit in &current {
-                if let PendingExit::Assign {
-                    exit_inits,
-                    exit_uninits,
-                    ..
-                } = &exit
-                {
-                    let mut inits_copy = clone_bits(&exit_inits.borrow());
-                    inits_copy.or_set(&self.inits);
-                    *exit_inits.borrow_mut() = inits_copy;
-                    let mut uninits_copy = clone_bits(&exit_uninits.borrow());
-                    uninits_copy.and_set(&self.uninits);
-                    *exit_uninits.borrow_mut() = uninits_copy;
-                }
-                self.pending_exits = self.pending_exits.clone().append(exit);
+                    if let PendingExit::Assign {
+                        exit_inits,
+                        exit_uninits,
+                        ..
+                    } = &exit
+                    {
+                        let mut inits_copy = clone_bits(&exit_inits.borrow());
+                        inits_copy.or_set(&self.inits);
+                        *exit_inits.borrow_mut() = inits_copy;
+                        let mut uninits_copy = clone_bits(&exit_uninits.borrow());
+                        uninits_copy.and_set(&self.uninits);
+                        *exit_uninits.borrow_mut() = uninits_copy;
+                    }
+                    self.pending_exits = self.pending_exits.clone().append(exit);
                 }
                 let mut inits_copy = clone_bits(&inits_end);
                 inits_copy.or_set(&self.inits);
@@ -4714,8 +4722,10 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
             self.scan_cond(ctx, falsepart);
             self.inits_when_true.and_set(&inits_after_then_when_true);
             self.inits_when_false.and_set(&inits_after_then_when_false);
-            self.uninits_when_true.and_set(&uninits_after_then_when_true);
-            self.uninits_when_false.and_set(&uninits_after_then_when_false);
+            self.uninits_when_true
+                .and_set(&uninits_after_then_when_true);
+            self.uninits_when_false
+                .and_set(&uninits_after_then_when_false);
         } else {
             self.scan_expr(ctx, Some(truepart));
             let inits_after_then = clone_bits(&self.inits);
@@ -4794,6 +4804,26 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
         self.mark_dead(ctx);
     }
 
+    fn visit_assert(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (cond, detail) = match &ctx.tree(tree).kind {
+            TreeKind::Assert { cond, detail } => (*cond, *detail),
+            _ => panic!("expected an assert"),
+        };
+        let inits_exit = clone_bits(&self.inits);
+        let mut uninits_exit = clone_bits(&self.uninits);
+        self.scan_cond(ctx, cond.expect("assert cond"));
+        uninits_exit.and_set(&self.uninits_when_true);
+        if let Some(detail) = detail {
+            let inits_when_false = clone_bits(&self.inits_when_false);
+            self.inits.assign(&mut clone_bits(&inits_when_false));
+            let uninits_when_false = clone_bits(&self.uninits_when_false);
+            self.uninits.assign(&mut clone_bits(&uninits_when_false));
+            self.scan_expr(ctx, Some(detail));
+        }
+        self.inits.assign(&mut clone_bits(&inits_exit));
+        self.uninits.assign(&mut uninits_exit);
+    }
+
     fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (meth, args) = match &ctx.tree(tree).kind {
             TreeKind::MethodInvocation { meth, args, .. } => (*meth, args.clone()),
@@ -4805,12 +4835,25 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
 
     fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (encl, args, def) = match &ctx.tree(tree).kind {
-            TreeKind::NewClass { encl, args, def, .. } => (*encl, args.clone(), *def),
+            TreeKind::NewClass {
+                encl, args, def, ..
+            } => (*encl, args.clone(), *def),
             _ => panic!("expected a new class"),
         };
         self.scan_expr(ctx, encl);
         self.scan_exprs(ctx, &args);
         self.scan(ctx, def);
+    }
+
+    fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (dims, elems) = match &ctx.tree(tree).kind {
+            TreeKind::NewArray { dims, elems, .. } => (dims.clone(), elems.clone()),
+            _ => panic!("expected a new array"),
+        };
+        self.scan_exprs(ctx, &dims);
+        if let Some(elems) = elems {
+            self.scan_exprs(ctx, &elems);
+        }
     }
 
     fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -4859,43 +4902,11 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
         }
     }
 
-    fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (dims, elems) = match &ctx.tree(tree).kind {
-            TreeKind::NewArray { dims, elems, .. } => (dims.clone(), elems.clone()),
-            _ => panic!("expected a new array"),
-        };
-        self.scan_exprs(ctx, &dims);
-        if let Some(elems) = elems {
-            self.scan_exprs(ctx, &elems);
-        }
-    }
-
-    fn visit_assert(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (cond, detail) = match &ctx.tree(tree).kind {
-            TreeKind::Assert { cond, detail } => (*cond, *detail),
-            _ => panic!("expected an assert"),
-        };
-        let inits_exit = clone_bits(&self.inits);
-        let mut uninits_exit = clone_bits(&self.uninits);
-        self.scan_cond(ctx, cond.expect("assert cond"));
-        uninits_exit.and_set(&self.uninits_when_true);
-        if let Some(detail) = detail {
-            let inits_when_false = clone_bits(&self.inits_when_false);
-            self.inits.assign(&mut clone_bits(&inits_when_false));
-            let uninits_when_false = clone_bits(&self.uninits_when_false);
-            self.uninits.assign(&mut clone_bits(&uninits_when_false));
-            self.scan_expr(ctx, Some(detail));
-        }
-        self.inits.assign(&mut clone_bits(&inits_exit));
-        self.uninits.assign(&mut uninits_exit);
-    }
-
     fn visit_assign(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
-            TreeKind::Assign { lhs, rhs } => (
-                lhs.expect("assignment lhs"),
-                rhs.expect("assignment rhs"),
-            ),
+            TreeKind::Assign { lhs, rhs } => {
+                (lhs.expect("assignment lhs"), rhs.expect("assignment rhs"))
+            }
             _ => panic!("expected an assignment"),
         };
         if !tree_info::is_ident_or_this_dot_ident(ctx, lhs) {
@@ -4903,22 +4914,6 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
         }
         self.scan_expr(ctx, Some(rhs));
         self.let_init_tree(ctx, lhs);
-    }
-
-    fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let selected = match &ctx.tree(tree).kind {
-            TreeKind::FieldAccess { selected, .. } => *selected,
-            _ => panic!("expected a field access"),
-        };
-        self.scan(ctx, selected);
-        if let Some(sym) = tree_info::symbol(ctx, tree)
-            && ctx.sym(sym).kind == Kind::VAR {
-                if let Some(selected) = selected
-                    && tree_info::is_this_qualifier(ctx, selected) {
-                        self.check_init(ctx, ctx.tree(tree).pos, sym);
-                    }
-                self.referenced(ctx, sym);
-            }
     }
 
     fn visit_assignop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -4945,11 +4940,13 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
                 self.scan_cond(ctx, arg);
                 let t = clone_bits(&self.inits_when_false);
                 let inits_when_true = clone_bits(&self.inits_when_true);
-                self.inits_when_false.assign(&mut clone_bits(&inits_when_true));
+                self.inits_when_false
+                    .assign(&mut clone_bits(&inits_when_true));
                 self.inits_when_true.assign(&mut clone_bits(&t));
                 let t2 = clone_bits(&self.uninits_when_false);
                 let uninits_when_true = clone_bits(&self.uninits_when_true);
-                self.uninits_when_false.assign(&mut clone_bits(&uninits_when_true));
+                self.uninits_when_false
+                    .assign(&mut clone_bits(&uninits_when_true));
                 self.uninits_when_true.assign(&mut clone_bits(&t2));
             }
             Tag::PREINC | Tag::POSTINC | Tag::PREDEC | Tag::POSTDEC => {
@@ -4963,10 +4960,9 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
     fn visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tag = ctx.tree(tree).tag;
         let (lhs, rhs) = match &ctx.tree(tree).kind {
-            TreeKind::Binary { lhs, rhs, .. } => (
-                lhs.expect("binary lhs"),
-                rhs.expect("binary rhs"),
-            ),
+            TreeKind::Binary { lhs, rhs, .. } => {
+                (lhs.expect("binary lhs"), rhs.expect("binary rhs"))
+            }
             _ => panic!("expected a binary expression"),
         };
         match tag {
@@ -5001,15 +4997,6 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
         }
     }
 
-    fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        if let Some(sym) = tree_info::symbol(ctx, tree)
-            && ctx.sym(sym).kind == Kind::VAR {
-                self.check_init(ctx, ctx.tree(tree).pos, sym);
-                self.referenced(ctx, sym);
-                self.unrefd_resources.remove(&sym);
-            }
-    }
-
     fn visit_binding_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let var = match &ctx.tree(tree).kind {
             TreeKind::BindingPattern { var } => *var,
@@ -5018,6 +5005,34 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
         if let Some(var) = var {
             self.scan(ctx, Some(var));
             self.init_param(ctx, var);
+        }
+    }
+
+    fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let selected = match &ctx.tree(tree).kind {
+            TreeKind::FieldAccess { selected, .. } => *selected,
+            _ => panic!("expected a field access"),
+        };
+        self.scan(ctx, selected);
+        if let Some(sym) = tree_info::symbol(ctx, tree)
+            && ctx.sym(sym).kind == Kind::VAR
+        {
+            if let Some(selected) = selected
+                && tree_info::is_this_qualifier(ctx, selected)
+            {
+                self.check_init(ctx, ctx.tree(tree).pos, sym);
+            }
+            self.referenced(ctx, sym);
+        }
+    }
+
+    fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        if let Some(sym) = tree_info::symbol(ctx, tree)
+            && ctx.sym(sym).kind == Kind::VAR
+        {
+            self.check_init(ctx, ctx.tree(tree).pos, sym);
+            self.referenced(ctx, sym);
+            self.unrefd_resources.remove(&sym);
         }
     }
 
@@ -5032,8 +5047,6 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
             self.scan(ctx, Some(underlying_type));
         }
     }
-
-    fn visit_module_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 }
 
 impl<'a> AssignAnalyzer<'a> {
@@ -5043,14 +5056,19 @@ impl<'a> AssignAnalyzer<'a> {
         let exits = std::mem::take(&mut self.pending_exits);
         let current = exits;
         for exit in &current {
-        let tree_id = exit.tree();
-        let is_return = in_method && ctx.tree(tree_id).has_tag(Tag::RETURN);
-        let has_error = self.flow.log.has_error_on(Some(Rc::new(
-            SimpleDiagnosticPosition::new(ctx.tree(tree_id).pos),
-        )));
-        assert!(is_return || has_error, "AssertionError: clearPendingExits");
-        if in_method && self.is_initial_constructor
-            && let PendingExit::Assign { exit_inits, .. } = &exit {
+            let tree_id = exit.tree();
+            let is_return = in_method && ctx.tree(tree_id).has_tag(Tag::RETURN);
+            let has_error =
+                self.flow
+                    .log
+                    .has_error_on(Some(Rc::new(SimpleDiagnosticPosition::new(
+                        ctx.tree(tree_id).pos,
+                    ))));
+            assert!(is_return || has_error, "AssertionError: clearPendingExits");
+            if in_method
+                && self.is_initial_constructor
+                && let PendingExit::Assign { exit_inits, .. } = &exit
+            {
                 let exit_inits = clone_bits(&exit_inits.borrow());
                 self.inits.assign(&mut clone_bits(&exit_inits));
                 // Java: for (int i = firstadr; i < nextadr; i++)
@@ -5133,8 +5151,10 @@ impl<'a> CaptureAnalyzer<'a> {
         // Java: checkEffectivelyFinal (Flow.java:2910-2932); a pattern binding
         // has no recorded declaration position (NOPOS) and is declared inside
         // the guard itself, so the upstream position test does not apply.
-        if matches!(ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind), Some(Kind::MTH))
-            && !is_binding_var
+        if matches!(
+            ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind),
+            Some(Kind::MTH)
+        ) && !is_binding_var
             && sym_pos >= 0
             && sym_pos < tree_info::get_start_pos(ctx, current_tree)
         {
@@ -5145,16 +5165,12 @@ impl<'a> CaptureAnalyzer<'a> {
                         if (sym_flags & flags::FINAL as i64) == 0 {
                             self.report_inner_cls_needs_final_error(ctx, pos, sym);
                         }
-                    } else if (sym_flags
-                        & (flags::EFFECTIVELY_FINAL | flags::FINAL as i64))
-                        == 0
-                    {
+                    } else if (sym_flags & (flags::EFFECTIVELY_FINAL | flags::FINAL as i64)) == 0 {
                         self.report_effectively_final_error(ctx, pos, sym);
                     }
                 }
                 Tag::GUARDPATTERN | Tag::LAMBDA => {
-                    if (ctx.sym(sym).flags_field
-                        & (flags::EFFECTIVELY_FINAL | flags::FINAL as i64))
+                    if (ctx.sym(sym).flags_field & (flags::EFFECTIVELY_FINAL | flags::FINAL as i64))
                         == 0
                     {
                         self.report_effectively_final_error(ctx, pos, sym);
@@ -5167,49 +5183,45 @@ impl<'a> CaptureAnalyzer<'a> {
 
     /// Java: void letInit(JCTree tree) (Flow.java:2934-2957)
     fn let_init(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let tree = crate::tree::tree_info::skip_parens(ctx, tree);
+        let tree = tree_info::skip_parens(ctx, tree);
         if (ctx.tree(tree).has_tag(Tag::IDENT) || ctx.tree(tree).has_tag(Tag::SELECT))
-            && let Some(sym) = tree_info::symbol(ctx, tree) {
-                let Some(current_tree) = self.current_tree else {
-                    return;
-                };
-                let sym_pos = match &ctx.sym(sym).kind_data {
-                    crate::code::symbol::SymbolKind::VarSymbol { pos, .. } => *pos,
-                    _ => 0,
-                };
-                let is_binding_var =
-                    (ctx.sym(sym).flags_field & flags::MATCH_BINDING) != 0;
-                // Java: letInit compares the variable position with the start
-                // of the capturing tree; a pattern binding is declared inside
-                // that tree (and the ported pattern var may have no usable
-                // position), so it is never a captured local.
-                if ctx.sym(sym).kind == Kind::VAR
+            && let Some(sym) = tree_info::symbol(ctx, tree)
+        {
+            let Some(current_tree) = self.current_tree else {
+                return;
+            };
+            let sym_pos = match &ctx.sym(sym).kind_data {
+                crate::code::symbol::SymbolKind::VarSymbol { pos, .. } => *pos,
+                _ => 0,
+            };
+            let is_binding_var = (ctx.sym(sym).flags_field & flags::MATCH_BINDING) != 0;
+            // Java: letInit compares the variable position with the start
+            // of the capturing tree; a pattern binding is declared inside
+            // that tree (and the ported pattern var may have no usable
+            // position), so it is never a captured local.
+            if ctx.sym(sym).kind == Kind::VAR
                     && matches!(ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind), Some(Kind::MTH))
                     && !is_binding_var
                     // A pattern binding has no recorded declaration position
                     // (NOPOS); the upstream position test cannot be applied.
                     && sym_pos >= 0
                     && sym_pos < tree_info::get_start_pos(ctx, current_tree)
-                {
-                    match ctx.tree(current_tree).tag {
-                        Tag::CLASSDEF => {
-                            if !self.flow.allow_effectively_final_in_inner_classes {
-                                self.report_inner_cls_needs_final_error(
-                                    ctx,
-                                    ctx.tree(tree).pos,
-                                    sym,
-                                );
-                            } else {
-                                self.report_effectively_final_error(ctx, ctx.tree(tree).pos, sym);
-                            }
-                        }
-                        Tag::GUARDPATTERN | Tag::LAMBDA => {
+            {
+                match ctx.tree(current_tree).tag {
+                    Tag::CLASSDEF => {
+                        if !self.flow.allow_effectively_final_in_inner_classes {
+                            self.report_inner_cls_needs_final_error(ctx, ctx.tree(tree).pos, sym);
+                        } else {
                             self.report_effectively_final_error(ctx, ctx.tree(tree).pos, sym);
                         }
-                        _ => {}
                     }
+                    Tag::GUARDPATTERN | Tag::LAMBDA => {
+                        self.report_effectively_final_error(ctx, ctx.tree(tree).pos, sym);
+                    }
+                    _ => {}
                 }
             }
+        }
     }
 
     /// Reports the effectively-final error with the capture-context fragment:
@@ -5229,9 +5241,8 @@ impl<'a> CaptureAnalyzer<'a> {
             .flow
             .diags
             .fragment(crate::util::jc_diagnostic::Fragment::from(sub_key));
-        let nested_arg = crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
-            Rc::new(fragment),
-        );
+        let nested_arg =
+            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(fragment));
         self.flow.error(
             pos,
             errors::cant_ref_non_effectively_final_var(symbol_place(ctx, sym), nested_arg),
@@ -5279,6 +5290,8 @@ impl<'a> BaseAnalyzer for CaptureAnalyzer<'a> {
 flow_tree_visitor_delegate!(CaptureAnalyzer<'a>, 'a);
 
 impl<'a> FlowVisitor for CaptureAnalyzer<'a> {
+    fn visit_module_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
+
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let prev_tree = self.current_tree;
         self.current_tree = {
@@ -5291,6 +5304,44 @@ impl<'a> FlowVisitor for CaptureAnalyzer<'a> {
         self.current_tree = prev_tree;
     }
 
+    fn visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (resources, body, catchers, finalizer) = match &ctx.tree(tree).kind {
+            TreeKind::Try {
+                resources,
+                body,
+                catchers,
+                finalizer,
+                ..
+            } => (resources.clone(), *body, catchers.clone(), *finalizer),
+            _ => panic!("expected a try statement"),
+        };
+        for resource in resources.iter() {
+            if !ctx.tree(resource).has_tag(Tag::VARDEF)
+                && let Some(var) = tree_info::symbol(ctx, resource)
+                && (ctx.sym(var).flags_field & (flags::FINAL as i64 | flags::EFFECTIVELY_FINAL))
+                    == 0
+            {
+                self.flow.error(
+                    ctx.tree(resource).pos,
+                    errors::try_with_resources_expr_effectively_final_var(symbol_place(ctx, var)),
+                );
+            }
+        }
+        // Java: super.visitTry(tree)
+        self.scan_list(ctx, &resources);
+        self.scan(ctx, body);
+        self.scan_list(ctx, &catchers);
+        self.scan(ctx, finalizer);
+    }
+
+    fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let value = match &ctx.tree(tree).kind {
+            TreeKind::Yield { value, .. } => *value,
+            _ => panic!("expected a yield"),
+        };
+        self.scan(ctx, value);
+    }
+
     fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let prev_tree = self.current_tree;
         self.current_tree = Some(tree);
@@ -5298,31 +5349,11 @@ impl<'a> FlowVisitor for CaptureAnalyzer<'a> {
         self.current_tree = prev_tree;
     }
 
-    fn visit_guard_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (patt, expr) = match &ctx.tree(tree).kind {
-            TreeKind::GuardPattern { patt, expr } => (*patt, *expr),
-            _ => panic!("expected a guard pattern"),
-        };
-        self.scan(ctx, patt);
-        let prev_tree = self.current_tree;
-        self.current_tree = Some(tree);
-        self.scan(ctx, expr);
-        self.current_tree = prev_tree;
-    }
-
-    fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        if let Some(sym) = tree_info::symbol(ctx, tree)
-            && ctx.sym(sym).kind == Kind::VAR {
-                self.check_effectively_final(ctx, ctx.tree(tree).pos, sym);
-            }
-    }
-
     fn visit_assign(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
-            TreeKind::Assign { lhs, rhs } => (
-                lhs.expect("assignment lhs"),
-                rhs.expect("assignment rhs"),
-            ),
+            TreeKind::Assign { lhs, rhs } => {
+                (lhs.expect("assignment lhs"), rhs.expect("assignment rhs"))
+            }
             _ => panic!("expected an assignment"),
         };
         if !ctx.tree(lhs).has_tag(Tag::IDENT) {
@@ -5359,48 +5390,25 @@ impl<'a> FlowVisitor for CaptureAnalyzer<'a> {
         }
     }
 
-    fn visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (resources, body, catchers, finalizer) = match &ctx.tree(tree).kind {
-            TreeKind::Try {
-                resources,
-                body,
-                catchers,
-                finalizer,
-                ..
-            } => (resources.clone(), *body, catchers.clone(), *finalizer),
-            _ => panic!("expected a try statement"),
+    fn visit_guard_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (patt, expr) = match &ctx.tree(tree).kind {
+            TreeKind::GuardPattern { patt, expr } => (*patt, *expr),
+            _ => panic!("expected a guard pattern"),
         };
-        for resource in resources.iter() {
-            if !ctx.tree(resource).has_tag(Tag::VARDEF)
-                && let Some(var) = tree_info::symbol(ctx, resource)
-                    && (ctx.sym(var).flags_field
-                        & (flags::FINAL as i64 | flags::EFFECTIVELY_FINAL))
-                        == 0
-                    {
-                        self.flow.error(
-                            ctx.tree(resource).pos,
-                            errors::try_with_resources_expr_effectively_final_var(symbol_place(
-                                ctx, var,
-                            )),
-                        );
-                    }
+        self.scan(ctx, patt);
+        let prev_tree = self.current_tree;
+        self.current_tree = Some(tree);
+        self.scan(ctx, expr);
+        self.current_tree = prev_tree;
+    }
+
+    fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        if let Some(sym) = tree_info::symbol(ctx, tree)
+            && ctx.sym(sym).kind == Kind::VAR
+        {
+            self.check_effectively_final(ctx, ctx.tree(tree).pos, sym);
         }
-        // Java: super.visitTry(tree)
-        self.scan_list(ctx, &resources);
-        self.scan(ctx, body);
-        self.scan_list(ctx, &catchers);
-        self.scan(ctx, finalizer);
     }
-
-    fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let value = match &ctx.tree(tree).kind {
-            TreeKind::Yield { value, .. } => *value,
-            _ => panic!("expected a yield"),
-        };
-        self.scan(ctx, value);
-    }
-
-    fn visit_module_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 }
 
 /// Java: CaptureAnalyzer.visitClassDef super call (TreeScanner.visitClassDef)
@@ -5456,7 +5464,7 @@ impl Flow {
     pub fn analyze_tree<'a>(
         &'a self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         make: &Rc<TreeMaker>,
         attr: Option<&'a mut crate::comp::attr::Attr>,
@@ -5475,7 +5483,7 @@ impl Flow {
     pub fn analyze_lambda(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         that: TreeId,
         make: &Rc<TreeMaker>,
@@ -5498,7 +5506,7 @@ impl Flow {
     pub fn analyze_lambda_thrown_types<'a>(
         &'a self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         that: TreeId,
         make: &Rc<TreeMaker>,
@@ -5524,7 +5532,7 @@ impl Flow {
     pub fn alive_after(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         that: TreeId,
         make: &Rc<TreeMaker>,
@@ -5544,7 +5552,7 @@ impl Flow {
     pub fn breaks_out_of(
         &self,
         ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         _loop_tree: TreeId,
         body: TreeId,
@@ -5624,7 +5632,7 @@ mod tests {
 
     #[test]
     fn pending_exit_tree_and_assign_bits() {
-        let tree = crate::ids::TreeId::new(7);
+        let tree = TreeId::new(7);
         assert_eq!(PendingExit::new(tree).tree(), tree);
         assert!(matches!(PendingExit::new(tree), PendingExit::Plain { .. }));
         let mut inits = Bits::new();
@@ -5748,15 +5756,12 @@ mod tests {
         let no_type = ctx.alloc_type(Type::new(
             TypeTag::NONE,
             None,
-            crate::code::type_::TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base },
+            crate::code::type_::TypeKindData::JCNoType {
+                kind: crate::code::type_::JCNoTypeKind::Base,
+            },
         ));
-        let class_sym = crate::code::symtab::new_class_symbol(
-            &mut ctx,
-            0,
-            names.empty.clone(),
-            None,
-            no_type,
-        );
+        let class_sym =
+            crate::code::symtab::new_class_symbol(&mut ctx, 0, names.empty.clone(), None, no_type);
         let class = ctx.alloc_tree(JCTree {
             pos: 1,
             ty: None,
@@ -5786,7 +5791,6 @@ mod tests {
         flow.analyze_tree(&mut ctx, syms_guard, &env, &make, None);
         assert_eq!(log.nerrors.get(), 0);
     }
-
 
     /// Java: Flow.AliveAnalyzer.isExhaustive/transitiveCovers (Flow.java:752-803):
     /// enum constants cover the enum type, permitted subclasses cover the sealed
@@ -5863,7 +5867,9 @@ mod tests {
         let no_type = ctx.alloc_type(Type::new(
             TypeTag::NONE,
             None,
-            crate::code::type_::TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base },
+            crate::code::type_::TypeKindData::JCNoType {
+                kind: crate::code::type_::JCNoTypeKind::Base,
+            },
         ));
         let enum_sym = crate::code::symtab::new_class_symbol(
             &mut ctx,
@@ -5883,7 +5889,13 @@ mod tests {
                     names.from_utf(name),
                     None,
                     Some(enum_sym),
-                    SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None, lazy_const_value: None },
+                    SymbolKind::VarSymbol {
+                        pos: 0,
+                        adr: 0,
+                        data_kind: None,
+                        data: None,
+                        lazy_const_value: None,
+                    },
                 ));
                 let symbols = ctx.symbols_arena();
                 member_scope.enter(members, constant, symbols);
@@ -5894,7 +5906,8 @@ mod tests {
             *ctx.scope_mut(members) = member_scope;
             (a, b)
         };
-        if let SymbolKind::ClassSymbol { members_field, .. } = &mut ctx.sym_mut(enum_sym).kind_data {
+        if let SymbolKind::ClassSymbol { members_field, .. } = &mut ctx.sym_mut(enum_sym).kind_data
+        {
             *members_field = Some(members);
         }
         let mut one = HashSet::new();
@@ -5906,7 +5919,7 @@ mod tests {
         assert!(analyzer.is_exhaustive(&mut ctx, enum_type, &mut both));
         let p_sym = crate::code::symtab::new_class_symbol(
             &mut ctx,
-            (flags::ABSTRACT as i64) | (flags::SEALED as i64),
+            (flags::ABSTRACT as i64) | (flags::SEALED),
             names.from_utf(b"P"),
             None,
             no_type,
@@ -5929,8 +5942,9 @@ mod tests {
         let s1_type = ctx.sym(s1_sym).ty.expect("S1 type");
         let s2_type = ctx.sym(s2_sym).ty.expect("S2 type");
         for sub_type in [s1_type, s2_type] {
-            if let crate::code::type_::TypeKindData::ClassType { supertype_field, .. } =
-                &mut ctx.typ_mut(sub_type).kind
+            if let crate::code::type_::TypeKindData::ClassType {
+                supertype_field, ..
+            } = &mut ctx.typ_mut(sub_type).kind
             {
                 *supertype_field = Some(p_type);
             }

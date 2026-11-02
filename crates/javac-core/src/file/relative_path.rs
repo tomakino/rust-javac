@@ -261,7 +261,7 @@ impl RelativeFile {
     /// java.util.zip.ZipEntry is REGISTERED as unavailable; the archive entry lookup
     /// returns the entry contents through javac-zip (registered adapter: the
     /// upstream ZipEntry object is replaced by its data).
-    pub fn get_zip_entry(&self, archive: &javac_zip::ZipArchive) -> std::option::Option<Vec<u8>> {
+    pub fn get_zip_entry(&self, archive: &javac_zip::ZipArchive) -> Option<Vec<u8>> {
         archive.get_entry(&self.base.path.to_string_lossy())
     }
 
@@ -359,7 +359,9 @@ mod resolve_against_fs_tests {
             .as_relative_path()
             .resolve_against_fs(&root, '/')
             .expect("resolve");
-        assert_eq!(resolved, FsPath::new("/root/pkg/sub/").expect("expected path"));
+        assert_eq!(
+            resolved,
+            FsPath::new("/root/pkg/sub/").expect("expected path")
+        );
     }
 }
-

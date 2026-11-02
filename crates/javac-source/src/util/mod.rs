@@ -13,9 +13,9 @@
 pub(crate) mod dispatch;
 pub mod doc_source_positions;
 pub mod doc_tree_factory;
-pub mod doc_tree_scanner;
 pub mod doc_tree_path;
 pub mod doc_tree_path_scanner;
+pub mod doc_tree_scanner;
 pub mod doc_trees;
 pub mod javac_task;
 pub mod parameter_name_provider;

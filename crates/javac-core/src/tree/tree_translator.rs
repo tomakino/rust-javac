@@ -120,6 +120,10 @@ impl TreeTranslator {
 }
 
 impl TreeVisitor for TreeTranslator {
+    fn visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
+        panic!("AssertionError: visitTree {:?}", tree);
+    }
+
     fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let defs = match &ctx.tree(tree).kind {
             TreeKind::CompilationUnit { defs, .. } => defs.clone(),
@@ -1035,21 +1039,6 @@ impl TreeVisitor for TreeTranslator {
         self.result = Some(tree);
     }
 
-    fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let annotations = match &ctx.tree(tree).kind {
-            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
-            _ => panic!("expected modifiers"),
-        };
-        let annotations = self.translate_annotations(ctx, &annotations);
-        if let TreeKind::Modifiers {
-            annotations: slot, ..
-        } = &mut ctx.tree_mut(tree).kind
-        {
-            *slot = annotations;
-        }
-        self.result = Some(tree);
-    }
-
     fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotation_type, args) = match &ctx.tree(tree).kind {
             TreeKind::Annotation {
@@ -1069,6 +1058,21 @@ impl TreeVisitor for TreeTranslator {
         {
             *a = annotation_type;
             *ar = args;
+        }
+        self.result = Some(tree);
+    }
+
+    fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let annotations = match &ctx.tree(tree).kind {
+            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+            _ => panic!("expected modifiers"),
+        };
+        let annotations = self.translate_annotations(ctx, &annotations);
+        if let TreeKind::Modifiers {
+            annotations: slot, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
+            *slot = annotations;
         }
         self.result = Some(tree);
     }
@@ -1095,23 +1099,6 @@ impl TreeVisitor for TreeTranslator {
     }
 
     fn visit_erroneous(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        self.result = Some(tree);
-    }
-
-    fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (defs, expr) = match &ctx.tree(tree).kind {
-            TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
-            _ => panic!("expected a let expression"),
-        };
-        let defs = self.translate_list(ctx, &defs);
-        let expr = self.translate(ctx, expr);
-        if let TreeKind::LetExpr {
-            defs: d, expr: e, ..
-        } = &mut ctx.tree_mut(tree).kind
-        {
-            *d = defs;
-            *e = expr;
-        }
         self.result = Some(tree);
     }
 
@@ -1238,8 +1225,21 @@ impl TreeVisitor for TreeTranslator {
         self.result = Some(tree);
     }
 
-    fn visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
-        panic!("AssertionError: visitTree {:?}", tree);
+    fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (defs, expr) = match &ctx.tree(tree).kind {
+            TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
+            _ => panic!("expected a let expression"),
+        };
+        let defs = self.translate_list(ctx, &defs);
+        let expr = self.translate(ctx, expr);
+        if let TreeKind::LetExpr {
+            defs: d, expr: e, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
+            *d = defs;
+            *e = expr;
+        }
+        self.result = Some(tree);
     }
 }
 

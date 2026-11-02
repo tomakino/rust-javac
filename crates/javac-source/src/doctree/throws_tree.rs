@@ -1,3 +1,6 @@
+use super::block_tag_tree::BlockTagTree;
+use super::doc_tree::DocTree;
+use super::reference_tree::ReferenceTree;
 /// A tree node for an {@code @exception} or {@code @throws} block tag.
 /// {@code @exception} is a synonym for {@code @throws}.
 ///
@@ -8,9 +11,6 @@
 ///
 /// @since 1.8
 use std::rc::Rc;
-use super::block_tag_tree::BlockTagTree;
-use super::doc_tree::DocTree;
-use super::reference_tree::ReferenceTree;
 
 pub trait ThrowsTree: BlockTagTree {
     /// Returns the name of the exception being documented.
@@ -21,5 +21,4 @@ pub trait ThrowsTree: BlockTagTree {
     /// exception may be thrown.
     /// @return the description
     fn get_description(&self) -> Vec<Rc<dyn DocTree>>;
-
 }

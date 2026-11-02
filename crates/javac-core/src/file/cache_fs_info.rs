@@ -142,8 +142,6 @@ impl Default for CacheFSInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::CacheFSInfo;
-    use javac_fs::Path as FsPath;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir(tag: &str) -> std::path::PathBuf {
@@ -228,5 +226,4 @@ mod tests {
         data.extend(0u16.to_le_bytes());
         std::fs::write(path, data).expect("write zip");
     }
-
 }

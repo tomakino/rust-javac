@@ -3,7 +3,6 @@
 // intentionally allowed).
 #![allow(clippy::needless_lifetimes)]
 
-
 //! Filters for selecting just the elements of interest from a collection of
 //! elements.
 //!
@@ -55,8 +54,7 @@ impl ElementFilter {
 
     const CONSTRUCTOR_KIND: &'static [ElementKind] = &[ElementKind::CONSTRUCTOR];
 
-    const FIELD_KINDS: &'static [ElementKind] =
-        &[ElementKind::FIELD, ElementKind::ENUM_CONSTANT];
+    const FIELD_KINDS: &'static [ElementKind] = &[ElementKind::FIELD, ElementKind::ENUM_CONSTANT];
     const METHOD_KIND: &'static [ElementKind] = &[ElementKind::METHOD];
 
     const PACKAGE_KIND: &'static [ElementKind] = &[ElementKind::PACKAGE];
@@ -113,10 +111,10 @@ impl ElementFilter {
 
     /// {@return a list of constructors in elements}
     /// @param elements the elements to filter
-    pub fn constructors_in<'a>(
-        elements: &'a [Rc<dyn Element>],
-    ) -> Vec<&'a dyn ExecutableElement> {
-        Self::list_filter(elements, Self::CONSTRUCTOR_KIND, |e| e.as_executable_element())
+    pub fn constructors_in<'a>(elements: &'a [Rc<dyn Element>]) -> Vec<&'a dyn ExecutableElement> {
+        Self::list_filter(elements, Self::CONSTRUCTOR_KIND, |e| {
+            e.as_executable_element()
+        })
     }
 
     /// {@return a set of constructors in elements}
@@ -126,7 +124,9 @@ impl ElementFilter {
     pub fn constructors_in_set<'a>(
         elements: &'a [Rc<dyn Element>],
     ) -> Vec<&'a dyn ExecutableElement> {
-        Self::set_filter(elements, Self::CONSTRUCTOR_KIND, |e| e.as_executable_element())
+        Self::set_filter(elements, Self::CONSTRUCTOR_KIND, |e| {
+            e.as_executable_element()
+        })
     }
 
     /// {@return a list of methods in elements}
@@ -319,6 +319,8 @@ fn cast_directive<'a, D: ?Sized>(selected: Option<&'a D>, directive: &dyn Direct
 #[cfg(test)]
 mod tests {
     use super::ElementFilter;
+    use crate::jdk::{Annotation, Class};
+    use crate::lang::model::AnnotatedConstruct;
     use crate::lang::model::element::{
         Directive, DirectiveKind, Element, ElementKind, ExecutableElement, ExportsDirective,
         Modifier, ModuleElement, Name, NestingKind, PackageElement, Parameterizable,
@@ -326,8 +328,6 @@ mod tests {
         VariableElement,
     };
     use crate::lang::model::type_::TypeMirror;
-    use crate::lang::model::AnnotatedConstruct;
-    use crate::jdk::{Annotation, Class};
     use javac_strings::JavaString;
     use std::fmt;
     use std::rc::Rc;
@@ -363,7 +363,9 @@ mod tests {
     }
 
     impl AnnotatedConstruct for Fixture {
-        fn get_annotation_mirrors(&self) -> Vec<Rc<dyn crate::lang::model::element::AnnotationMirror>> {
+        fn get_annotation_mirrors(
+            &self,
+        ) -> Vec<Rc<dyn crate::lang::model::element::AnnotationMirror>> {
             Vec::new()
         }
         fn get_annotation<A: Annotation>(&self, _annotation_type: Class<A>) -> Option<A> {
@@ -407,8 +409,7 @@ mod tests {
             (self.kind == ElementKind::MODULE).then_some(self as &dyn ModuleElement)
         }
         fn as_type_element(&self) -> Option<&dyn TypeElement> {
-            (self.kind.is_class() || self.kind.is_interface())
-                .then_some(self as &dyn TypeElement)
+            (self.kind.is_class() || self.kind.is_interface()).then_some(self as &dyn TypeElement)
         }
         fn as_variable_element(&self) -> Option<&dyn VariableElement> {
             matches!(
@@ -613,9 +614,15 @@ mod tests {
     #[test]
     fn filters_directives() {
         let directives: Vec<Rc<dyn Directive>> = vec![
-            Rc::new(FixtureDirective { kind: DirectiveKind::REQUIRES }),
-            Rc::new(FixtureDirective { kind: DirectiveKind::EXPORTS }),
-            Rc::new(FixtureDirective { kind: DirectiveKind::EXPORTS }),
+            Rc::new(FixtureDirective {
+                kind: DirectiveKind::REQUIRES,
+            }),
+            Rc::new(FixtureDirective {
+                kind: DirectiveKind::EXPORTS,
+            }),
+            Rc::new(FixtureDirective {
+                kind: DirectiveKind::EXPORTS,
+            }),
         ];
         let exports = ElementFilter::exports_in(&directives);
         assert_eq!(exports.len(), 2);
@@ -630,4 +637,3 @@ mod tests {
         assert!(ElementFilter::uses_in(&empty).is_empty());
     }
 }
-

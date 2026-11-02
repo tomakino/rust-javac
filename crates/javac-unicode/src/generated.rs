@@ -7149,4 +7149,3 @@ pub static UPPER_CASE: &[(u32, u32)] = &[
     (0x1e942, 0x1e920),
     (0x1e943, 0x1e921),
 ];
-

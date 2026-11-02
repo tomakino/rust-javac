@@ -65,11 +65,11 @@ use javac_tools::tools::java_file_object::JavaFileObject;
 
 use crate::api::diagnostic_formatter::DiagnosticFormatter;
 use crate::ids::TreeId;
-use crate::util::basic_diagnostic_formatter::BasicDiagnosticFormatter;
-use crate::util::diagnostic_source::DiagnosticSource;
 use crate::resources::diagnostic_contract as contract;
 use crate::tree::end_pos_table::EndPosTable;
+use crate::util::basic_diagnostic_formatter::BasicDiagnosticFormatter;
 use crate::util::context::Context;
+use crate::util::diagnostic_source::DiagnosticSource;
 use crate::util::java_string::JavaString;
 use crate::util::javac_messages::{JavacMessages, Locale};
 use crate::util::list::List;
@@ -215,7 +215,10 @@ pub struct TreeDiagnosticPosition {
 impl TreeDiagnosticPosition {
     /// Java: JCTree.pos() (JCTree.java:486-490): a tree is its own
     /// DiagnosticPosition.
-    pub fn new(ctx: &crate::compiler_context::CompilerContext, tree: TreeId) -> TreeDiagnosticPosition {
+    pub fn new(
+        ctx: &crate::compiler_context::CompilerContext,
+        tree: TreeId,
+    ) -> TreeDiagnosticPosition {
         TreeDiagnosticPosition {
             tree,
             start: crate::tree::tree_info::get_start_pos(ctx, tree),
@@ -377,7 +380,12 @@ macro_rules! info_key_type {
         impl $name {
             /// Java: public $name(String prefix, String key, Object... args)
             pub fn new(prefix: &str, code: &str, args: Vec<DiagnosticArg>) -> $name {
-                $name(DiagnosticInfo::new(DiagnosticType::$kind, prefix, code, args))
+                $name(DiagnosticInfo::new(
+                    DiagnosticType::$kind,
+                    prefix,
+                    code,
+                    args,
+                ))
             }
 
             /// The wrapped diagnostic info.
@@ -570,18 +578,15 @@ impl JCDiagnostic {
     /// Set the diagnostic position after construction (port adapter used for
     /// fragment diagnostics whose preferred position is known only at the
     /// reportMC call site).
-    pub fn set_diagnostic_position(
-        &mut self,
-        position: Option<Rc<dyn DiagnosticPosition>>,
-    ) {
+    pub fn set_diagnostic_position(&mut self, position: Option<Rc<dyn DiagnosticPosition>>) {
         self.position = position;
     }
 
     /// Java: public JavaFileObject getSource()
-    pub fn get_source(&self) -> Option<Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>> {
-        self.source
-            .as_ref()
-            .and_then(|source| source.get_file())
+    pub fn get_source(
+        &self,
+    ) -> Option<Rc<dyn JavaFileObject>> {
+        self.source.as_ref().and_then(|source| source.get_file())
     }
 
     /// Java: public DiagnosticSource getDiagnosticSource()
@@ -637,7 +642,8 @@ impl JCDiagnostic {
     /// Java: public String getPrefix(DiagnosticType dt)
     pub fn get_prefix_for(&self, dt: DiagnosticType) -> String {
         let _ = dt;
-        self.formatter().format_kind(self, &Locale::default_locale())
+        self.formatter()
+            .format_kind(self, &Locale::default_locale())
     }
 
     fn formatter(&self) -> &dyn DiagnosticFormatter<JCDiagnostic> {
@@ -1111,21 +1117,36 @@ impl Factory {
     ///
     /// Java: public Error errorKey(String code, Object... args)
     pub fn error_key(&self, code: &str, args: Vec<DiagnosticArg>) -> Error {
-        Error(DiagnosticInfo::new(DiagnosticType::ERROR, &self.prefix, code, args))
+        Error(DiagnosticInfo::new(
+            DiagnosticType::ERROR,
+            &self.prefix,
+            code,
+            args,
+        ))
     }
 
     /// Create a new warning key.
     ///
     /// Java: Warning warningKey(String code, Object... args)
     pub fn warning_key(&self, code: &str, args: Vec<DiagnosticArg>) -> Warning {
-        Warning(DiagnosticInfo::new(DiagnosticType::WARNING, &self.prefix, code, args))
+        Warning(DiagnosticInfo::new(
+            DiagnosticType::WARNING,
+            &self.prefix,
+            code,
+            args,
+        ))
     }
 
     /// Create a new note key.
     ///
     /// Java: public Note noteKey(String code, Object... args)
     pub fn note_key(&self, code: &str, args: Vec<DiagnosticArg>) -> Note {
-        Note(DiagnosticInfo::new(DiagnosticType::NOTE, &self.prefix, code, args))
+        Note(DiagnosticInfo::new(
+            DiagnosticType::NOTE,
+            &self.prefix,
+            code,
+            args,
+        ))
     }
 
     /// Create a new fragment key.
@@ -1145,7 +1166,7 @@ impl Factory {
 mod tests {
     use super::*;
     use crate::api::diagnostic_formatter::{
-        Configuration, DiagnosticPart, DiagnosticFormatter, MultilineLimit, PositionKind,
+        Configuration, DiagnosticFormatter, DiagnosticPart, MultilineLimit, PositionKind,
     };
     use crate::resources::compiler_properties::errors as compiler_errors;
     use crate::tree::end_pos_table::EndPosTable;
@@ -1273,10 +1294,7 @@ mod tests {
             let args: Vec<String> = info
                 .get_args()
                 .iter()
-                .map(|arg| match java_string_of(arg) {
-                    Some(text) => text,
-                    None => "?".to_string(),
-                })
+                .map(|arg| java_string_of(arg).unwrap_or_else(|| "?".to_string()))
                 .collect();
             self.messages
                 .get_localized_string_for(Some(locale), &info.key(), &args)
@@ -1310,7 +1328,9 @@ mod tests {
     }
 
     fn test_messages() -> Rc<JavacMessages> {
-        Rc::new(JavacMessages::new(crate::util::javac_messages::DEFAULT_BUNDLE_NAME))
+        Rc::new(JavacMessages::new(
+            crate::util::javac_messages::DEFAULT_BUNDLE_NAME,
+        ))
     }
 
     fn factory() -> Factory {
@@ -1401,12 +1421,8 @@ mod tests {
         assert_eq!(warning.get_kind(), DiagnosticKind::WARNING);
         assert!(!warning.is_mandatory());
 
-        let mandatory_warning = factory.mandatory_warning(
-            None,
-            None,
-            None,
-            factory.warning_key("mw", Vec::new()),
-        );
+        let mandatory_warning =
+            factory.mandatory_warning(None, None, None, factory.warning_key("mw", Vec::new()));
         assert_eq!(
             mandatory_warning.get_kind(),
             DiagnosticKind::MANDATORY_WARNING
@@ -1463,8 +1479,8 @@ mod tests {
         // A non-NOPOS position requires a source (upstream IllegalArgumentException
         // check); NO_SOURCE satisfies it and reports line/column 0 like the
         // upstream no-source DiagnosticSource.
-        let source: Rc<crate::util::diagnostic_source::DiagnosticSource> =
-            Rc::new(crate::util::diagnostic_source::DiagnosticSource::no_source());
+        let source: Rc<DiagnosticSource> =
+            Rc::new(DiagnosticSource::no_source());
         let position: Rc<dyn DiagnosticPosition> = Rc::new(SimpleDiagnosticPosition::new(7));
         let error = factory.error(
             None,
@@ -1494,10 +1510,7 @@ mod tests {
             None,
             None,
             None,
-            factory.error_key(
-                "abstract.cant.be.instantiated",
-                vec![string_arg("X")],
-            ),
+            factory.error_key("abstract.cant.be.instantiated", vec![string_arg("X")]),
         );
         assert_eq!(error.get_prefix(), "error");
         assert_eq!(
@@ -1505,7 +1518,10 @@ mod tests {
             "compiler.err.abstract.cant.be.instantiated"
         );
         let message = error.get_message(None);
-        assert_eq!(message.to_string_lossy(), "X is abstract; cannot be instantiated");
+        assert_eq!(
+            message.to_string_lossy(),
+            "X is abstract; cannot be instantiated"
+        );
         assert_eq!(
             error.format_diagnostic(),
             "error: X is abstract; cannot be instantiated"
@@ -1541,11 +1557,11 @@ mod tests {
         let multiline = MultilineDiagnostic::new(&first, List::of(sub.clone()));
         assert!(multiline.is_multiline());
         assert_eq!(multiline.get_subdiagnostics().length(), 1);
-        assert_eq!(multiline.as_diagnostic().get_code_string(), "compiler.err.e");
         assert_eq!(
-            multiline.as_diagnostic().get_kind(),
-            DiagnosticKind::ERROR
+            multiline.as_diagnostic().get_code_string(),
+            "compiler.err.e"
         );
+        assert_eq!(multiline.as_diagnostic().get_kind(), DiagnosticKind::ERROR);
     }
 
     #[test]
@@ -1562,16 +1578,11 @@ mod tests {
         assert_eq!(diagnostic.get_position(), NOPOS as i64);
         assert!(diagnostic.get_source().is_none());
         assert_eq!(
-            diagnostic
-                .get_code()
-                .expect("code")
-                .to_string_lossy(),
+            diagnostic.get_code().expect("code").to_string_lossy(),
             "compiler.err.abstract.cant.be.instantiated"
         );
         assert_eq!(
-            diagnostic
-                .get_message(Some(&tag("en")))
-                .to_string_lossy(),
+            diagnostic.get_message(Some(&tag("en"))).to_string_lossy(),
             "X is abstract; cannot be instantiated"
         );
     }
@@ -1579,19 +1590,15 @@ mod tests {
     #[test]
     fn contract_bridge_keeps_placeholder_arguments() {
         let factory = factory();
-        let contract_error = compiler_errors::abstract_cant_be_instantiated(
-            contract::SymbolArg::from("X"),
-        );
+        let contract_error =
+            compiler_errors::abstract_cant_be_instantiated(contract::SymbolArg::from("X"));
         let error = factory.error(None, None, None, Error::from(contract_error));
         assert_eq!(
             error.get_code_string(),
             "compiler.err.abstract.cant.be.instantiated"
         );
         assert_eq!(error.get_args().len(), 1);
-        assert_eq!(
-            java_string_of(&error.get_args()[0]).as_deref(),
-            Some("X")
-        );
+        assert_eq!(java_string_of(&error.get_args()[0]).as_deref(), Some("X"));
     }
 
     #[test]

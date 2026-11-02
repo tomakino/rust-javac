@@ -176,9 +176,7 @@ impl DiagnosticSource {
         if line_end - self.line_start.get() == 0 {
             return None;
         }
-        Some(JavaString::from(
-            &buf[self.line_start.get()..line_end],
-        ))
+        Some(JavaString::from(&buf[self.line_start.get()..line_end]))
     }
 
     /// Java: public EndPosTable getEndPosTable()
@@ -253,10 +251,7 @@ impl DiagnosticSource {
     }
 
     /// Java: protected char[] initBuf(JavaFileObject fileObject) throws IOException
-    pub fn init_buf(
-        &self,
-        file_object: &dyn JavaFileObject,
-    ) -> Result<Rc<Vec<u16>>, Error> {
+    pub fn init_buf(&self, file_object: &dyn JavaFileObject) -> Result<Rc<Vec<u16>>, Error> {
         let content = file_object.get_char_content(true)?;
         // Java: cs.toString().toCharArray() (the CharBuffer fast path cannot be
         // expressed; registered in the module doc).
@@ -301,15 +296,21 @@ mod tests {
             Err(Error::UnsupportedOperationException)
         }
 
-        fn get_char_content(&self, _ignore_encoding_errors: bool) -> Result<Option<JavaString>, Error> {
+        fn open_reader(
+            &self,
+            _ignore_encoding_errors: bool,
+        ) -> Result<Box<dyn javac_tools::java_io::Reader>, Error> {
+            Err(Error::UnsupportedOperationException)
+        }
+
+        fn get_char_content(
+            &self,
+            _ignore_encoding_errors: bool,
+        ) -> Result<Option<JavaString>, Error> {
             if self.fail {
                 return Err(Error::io(JavaString::from("cannot read")));
             }
             Ok(self.content.clone())
-        }
-
-        fn open_reader(&self, _ignore_encoding_errors: bool) -> Result<Box<dyn javac_tools::java_io::Reader>, Error> {
-            Err(Error::UnsupportedOperationException)
         }
 
         fn open_writer(&self) -> Result<Box<dyn javac_tools::java_io::Writer>, Error> {
@@ -331,15 +332,18 @@ mod tests {
         }
 
         fn is_name_compatible(&self, simple_name: &JavaString, kind: Kind) -> bool {
-            kind == Kind::SOURCE
-                && simple_name.to_string_lossy() == "Test"
+            kind == Kind::SOURCE && simple_name.to_string_lossy() == "Test"
         }
 
-        fn get_nesting_kind(&self) -> Option<javac_tools::lang::model::element::nesting_kind::NestingKind> {
+        fn get_nesting_kind(
+            &self,
+        ) -> Option<javac_tools::lang::model::element::nesting_kind::NestingKind> {
             None
         }
 
-        fn get_access_level(&self) -> Option<javac_tools::lang::model::element::modifier::Modifier> {
+        fn get_access_level(
+            &self,
+        ) -> Option<javac_tools::lang::model::element::modifier::Modifier> {
             None
         }
     }
@@ -396,9 +400,15 @@ mod tests {
     #[test]
     fn line_content_and_blank_lines() {
         let source = DiagnosticSource::new(file_object("a\n\nb"), None);
-        assert_eq!(source.get_line(0).map(|s| s.to_string_lossy()), Some("a".to_string()));
+        assert_eq!(
+            source.get_line(0).map(|s| s.to_string_lossy()),
+            Some("a".to_string())
+        );
         assert_eq!(source.get_line(2), None);
-        assert_eq!(source.get_line(3).map(|s| s.to_string_lossy()), Some("b".to_string()));
+        assert_eq!(
+            source.get_line(3).map(|s| s.to_string_lossy()),
+            Some("b".to_string())
+        );
         assert_eq!(source.get_line(NOPOS), None);
     }
 
@@ -449,7 +459,11 @@ mod tests {
 
         fn store_end(&self, _tree: crate::ids::TreeId, _end_pos: i32) {}
 
-        fn replace_tree(&self, _old_tree: crate::ids::TreeId, _new_tree: crate::ids::TreeId) -> i32 {
+        fn replace_tree(
+            &self,
+            _old_tree: crate::ids::TreeId,
+            _new_tree: crate::ids::TreeId,
+        ) -> i32 {
             NOPOS
         }
     }

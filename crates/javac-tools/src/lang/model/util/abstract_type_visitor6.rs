@@ -14,9 +14,7 @@
 //! * the Java constructors and @SupportedSourceVersion annotations have no Rust
 //!   form.
 
-use crate::lang::model::type_::{
-    IntersectionType, TypeKind, TypeMirror, TypeVisitor, UnionType,
-};
+use crate::lang::model::type_::{IntersectionType, TypeKind, TypeMirror, TypeVisitor, UnionType};
 
 /// A skeletal visitor of types with default behavior appropriate for
 /// the RELEASE_6 source version.
@@ -188,7 +186,9 @@ mod tests {
 
     impl TestVisitor {
         fn new() -> TestVisitor {
-            TestVisitor { visited: Vec::new() }
+            TestVisitor {
+                visited: Vec::new(),
+            }
         }
     }
 

@@ -41,11 +41,7 @@ pub enum Charset {
 
 /// The recorded JDK aliases, in java.nio.charset order.
 const SUPPORTED: &[(Charset, &str, &[&str])] = &[
-    (
-        Charset::Utf8,
-        "UTF-8",
-        &["unicode-1-1-utf-8", "UTF8"],
-    ),
+    (Charset::Utf8, "UTF-8", &["unicode-1-1-utf-8", "UTF8"]),
     (
         Charset::UsAscii,
         "US-ASCII",
@@ -154,9 +150,9 @@ impl Charset {
         match self {
             Charset::Utf8 => decode_utf8(bytes, action),
             Charset::UsAscii => decode_ascii(bytes, action),
-            Charset::Iso8859_1 => {
-                Ok(JavaString::from_units(bytes.iter().map(|byte| u16::from(*byte)).collect()))
-            }
+            Charset::Iso8859_1 => Ok(JavaString::from_units(
+                bytes.iter().map(|byte| u16::from(*byte)).collect(),
+            )),
             Charset::Utf16 => decode_utf16(bytes, Utf16Endian::AutoBom, action),
             Charset::Utf16Be => decode_utf16(bytes, Utf16Endian::Big, action),
             Charset::Utf16Le => decode_utf16(bytes, Utf16Endian::Little, action),
@@ -199,126 +195,126 @@ impl Charset {
             .map(|(_, _, aliases)| *aliases)
             .expect("all charsets are in the table")
     }
-/// Java: Charset.newDecoder() — the incremental decoder of this charset.
-///
-/// # Arguments
-///   - none.
-///
-/// # Returns
-///   - a CharsetDecoder in the REPORT state (callers select the action).
-///
-/// # Panics
-///   - none.
-pub fn new_decoder(self) -> crate::coder::CharsetDecoder {
-    crate::coder::CharsetDecoder::new(self)
-}
-
-/// Java: Charset.newEncoder() — the incremental encoder of this charset.
-///
-/// # Arguments
-///   - none.
-///
-/// # Returns
-///   - a CharsetEncoder in the REPORT state (callers select the action).
-///
-/// # Panics
-///   - none.
-pub fn new_encoder(self) -> crate::coder::CharsetEncoder {
-    crate::coder::CharsetEncoder::new(self)
-}
-
-/// Java: Charset.defaultCharset() — the platform default charset adapter.
-///
-/// the JVM default comes from the launcher's file.encoding /
-/// platform locale; the port takes the launcher-injected
-/// JAVAC_DEFAULT_ENCODING variable first (registered adapter), then the POSIX
-/// locale (LC_ALL/LC_CTYPE/LANG), and falls back to UTF-8 (the recorded
-/// JDK 17 oracle on the development host is UTF-8: file.encoding=UTF-8,
-/// native.encoding=UTF-8, sun.jnu.encoding=UTF-8).
-///
-/// # Arguments
-///   - none.
-///
-/// # Returns
-///   - the default charset.
-///
-/// # Panics
-///   - none.
-pub fn default_charset_name() -> JavaString {
-    if let Ok(name) = std::env::var("JAVAC_DEFAULT_ENCODING") {
-        return JavaString::from(name.as_str());
+    /// Java: Charset.newDecoder() — the incremental decoder of this charset.
+    ///
+    /// # Arguments
+    ///   - none.
+    ///
+    /// # Returns
+    ///   - a CharsetDecoder in the REPORT state (callers select the action).
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn new_decoder(self) -> crate::coder::CharsetDecoder {
+        crate::coder::CharsetDecoder::new(self)
     }
-    for key in ["LC_ALL", "LC_CTYPE", "LANG"] {
-        if let Ok(value) = std::env::var(key) {
-            let upper = value.to_ascii_uppercase();
-            if upper.contains("UTF-8") || upper.contains("UTF8") {
-                return JavaString::from("UTF-8");
-            }
-            if upper.contains("ISO-8859-1") || upper.contains("LATIN1") {
-                return JavaString::from("ISO-8859-1");
+
+    /// Java: Charset.newEncoder() — the incremental encoder of this charset.
+    ///
+    /// # Arguments
+    ///   - none.
+    ///
+    /// # Returns
+    ///   - a CharsetEncoder in the REPORT state (callers select the action).
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn new_encoder(self) -> crate::coder::CharsetEncoder {
+        crate::coder::CharsetEncoder::new(self)
+    }
+
+    /// Java: Charset.defaultCharset() — the platform default charset adapter.
+    ///
+    /// the JVM default comes from the launcher's file.encoding /
+    /// platform locale; the port takes the launcher-injected
+    /// JAVAC_DEFAULT_ENCODING variable first (registered adapter), then the POSIX
+    /// locale (LC_ALL/LC_CTYPE/LANG), and falls back to UTF-8 (the recorded
+    /// JDK 17 oracle on the development host is UTF-8: file.encoding=UTF-8,
+    /// native.encoding=UTF-8, sun.jnu.encoding=UTF-8).
+    ///
+    /// # Arguments
+    ///   - none.
+    ///
+    /// # Returns
+    ///   - the default charset.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn default_charset_name() -> JavaString {
+        if let Ok(name) = std::env::var("JAVAC_DEFAULT_ENCODING") {
+            return JavaString::from(name.as_str());
+        }
+        for key in ["LC_ALL", "LC_CTYPE", "LANG"] {
+            if let Ok(value) = std::env::var(key) {
+                let upper = value.to_ascii_uppercase();
+                if upper.contains("UTF-8") || upper.contains("UTF8") {
+                    return JavaString::from("UTF-8");
+                }
+                if upper.contains("ISO-8859-1") || upper.contains("LATIN1") {
+                    return JavaString::from("ISO-8859-1");
+                }
             }
         }
+        #[cfg(windows)]
+        if let Ok(acp) = Self::windows_acp() {
+            if let Some(name) = Self::acp_charset_name(acp) {
+                return JavaString::from(name);
+            }
+            return JavaString::from(format!("x-windows-{acp}").as_str());
+        }
+        JavaString::from("UTF-8")
     }
+
+    /// Java: Charset.defaultCharset() — the launcher/platform default charset.
+    ///
+    /// the JVM default comes from file.encoding/native.encoding;
+    /// the port resolves the name via default_charset_name() (launcher override,
+    /// POSIX locale, Windows ANSI code page) and maps it through the implemented
+    /// charset set; a name outside the implemented set falls back to UTF-8 (the
+    /// oracle on the development host is UTF-8; registered adapter).
+    ///
+    /// # Arguments
+    ///   - none.
+    ///
+    /// # Returns
+    ///   - the default charset.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn default_charset() -> Charset {
+        let name = Self::default_charset_name();
+        Charset::for_name(&name).unwrap_or(Charset::Utf8)
+    }
+
+    /// Windows ANSI code page (Java: the native encoding used for
+    /// Charset.defaultCharset on Windows).
     #[cfg(windows)]
-    if let Ok(acp) = Self::windows_acp() {
-        if let Some(name) = Self::acp_charset_name(acp) {
-            return JavaString::from(name);
+    pub(crate) fn windows_acp() -> Result<u32, ()> {
+        unsafe extern "system" {
+            fn GetACP() -> u32;
         }
-        return JavaString::from(format!("x-windows-{acp}").as_str());
+        // SAFETY: GetACP is a Win32 API with no preconditions.
+        Ok(unsafe { GetACP() })
     }
-    JavaString::from("UTF-8")
-}
 
-/// Java: Charset.defaultCharset() — the launcher/platform default charset.
-///
-/// the JVM default comes from file.encoding/native.encoding;
-/// the port resolves the name via default_charset_name() (launcher override,
-/// POSIX locale, Windows ANSI code page) and maps it through the implemented
-/// charset set; a name outside the implemented set falls back to UTF-8 (the
-/// oracle on the development host is UTF-8; registered adapter).
-///
-/// # Arguments
-///   - none.
-///
-/// # Returns
-///   - the default charset.
-///
-/// # Panics
-///   - none.
-pub fn default_charset() -> Charset {
-    let name = Self::default_charset_name();
-    Charset::for_name(&name).unwrap_or(Charset::Utf8)
-}
-
-/// Windows ANSI code page (Java: the native encoding used for
-/// Charset.defaultCharset on Windows).
-#[cfg(windows)]
-pub(crate) fn windows_acp() -> Result<u32, ()> {
-    unsafe extern "system" {
-        fn GetACP() -> u32;
+    /// Map a Windows ANSI code page to the JDK charset name (the JVM uses the
+    /// equivalent java.nio.charset name; the table covers the JDK 17 default
+    /// encodings; other code pages map to the JVM-style x-windows-N name).
+    #[cfg(windows)]
+    pub(crate) fn acp_charset_name(acp: u32) -> StdOption<&'static str> {
+        match acp {
+            65001 => Some("UTF-8"),
+            20127 => Some("US-ASCII"),
+            28591 => Some("ISO-8859-1"),
+            932 => Some("Shift_JIS"),
+            936 => Some("GBK"),
+            949 => Some("x-windows-949"),
+            950 => Some("Big5"),
+            1252 => Some("windows-1252"),
+            437 => Some("IBM437"),
+            _ => None,
+        }
     }
-    // SAFETY: GetACP is a Win32 API with no preconditions.
-    Ok(unsafe { GetACP() })
-}
-
-/// Map a Windows ANSI code page to the JDK charset name (the JVM uses the
-/// equivalent java.nio.charset name; the table covers the JDK 17 default
-/// encodings; other code pages map to the JVM-style x-windows-N name).
-#[cfg(windows)]
-pub(crate) fn acp_charset_name(acp: u32) -> StdOption<&'static str> {
-    match acp {
-        65001 => StdOption::Some("UTF-8"),
-        20127 => StdOption::Some("US-ASCII"),
-        28591 => StdOption::Some("ISO-8859-1"),
-        932 => StdOption::Some("Shift_JIS"),
-        936 => StdOption::Some("GBK"),
-        949 => StdOption::Some("x-windows-949"),
-        950 => StdOption::Some("Big5"),
-        1252 => StdOption::Some("windows-1252"),
-        437 => StdOption::Some("IBM437"),
-        _ => StdOption::None,
-    }
-}
 }
 
 /// The canonical names of the implemented charsets (the JDK also has charsets
@@ -329,7 +325,6 @@ pub fn available_charsets() -> Vec<JavaString> {
         .map(|(_, canonical, _)| JavaString::from(*canonical))
         .collect()
 }
-
 
 /// Java: Charset.checkName / IllegalCharsetNameException rules (first character
 /// alphanumeric; the rest alphanumeric or '-', '+', '.', ':', '_').
@@ -349,7 +344,9 @@ fn malformed_utf8(
     length: usize,
 ) -> Result<(), CharacterCodingError> {
     match action {
-        MalformedAction::Report => Err(CharacterCodingError::MalformedInput { input_length: length }),
+        MalformedAction::Report => Err(CharacterCodingError::MalformedInput {
+            input_length: length,
+        }),
         MalformedAction::Replace => {
             units.push(0xFFFD);
             *index += length;
@@ -577,10 +574,7 @@ fn read_utf16_unit(bytes: &[u8], index: usize, big: bool) -> u16 {
     }
 }
 
-fn encode_utf8(
-    units: &[u16],
-    action: MalformedAction,
-) -> Result<Vec<u8>, CharacterCodingError> {
+fn encode_utf8(units: &[u16], action: MalformedAction) -> Result<Vec<u8>, CharacterCodingError> {
     let mut out: Vec<u8> = Vec::with_capacity(units.len());
     let mut index = 0usize;
     while index < units.len() {

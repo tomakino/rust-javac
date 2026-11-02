@@ -20,12 +20,18 @@ pub struct FatalError {
 impl FatalError {
     /// Java: public FatalError(String s) { super(s); }
     pub fn new(message: impl Into<String>) -> Self {
-        FatalError { message: message.into(), cause: None }
+        FatalError {
+            message: message.into(),
+            cause: None,
+        }
     }
 
     /// Java: public FatalError(String s, Throwable t) — internal helper.
     pub fn with_cause(message: impl Into<String>, cause: Box<dyn Any + Send>) -> Self {
-        FatalError { message: message.into(), cause: Some(cause) }
+        FatalError {
+            message: message.into(),
+            cause: Some(cause),
+        }
     }
 
     /// Construct a FatalError with the specified detail message.

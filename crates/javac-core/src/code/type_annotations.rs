@@ -16,9 +16,9 @@ use crate::code::attribute::AttributeKind;
 use crate::code::symtab::Symtab;
 use crate::code::type_annotation_position::TypePathEntry;
 use crate::compiler_context::CompilerContext;
-use crate::tree::tree_scanner::TreeScannerVisitor;
-use crate::ids::{AttributeId, SymbolId};
 use crate::ids::TreeId;
+use crate::ids::{AttributeId, SymbolId};
+use crate::tree::tree_scanner::TreeScannerVisitor;
 use crate::util::jc_diagnostic::Factory;
 use crate::util::list::List;
 use crate::util::log::Log;
@@ -102,15 +102,16 @@ impl TypeAnnotations {
     /// Upstream: TypeAnnotations.java:152-168.
     pub fn annotation_targets(
         &self,
-        ctx: &mut crate::compiler_context::CompilerContext,
+        ctx: &mut CompilerContext,
         syms: &Symtab,
         tsym: SymbolId,
         attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Option<List<AttributeId>> {
         let metadata = ctx.sym(tsym).get_annotation_type_metadata().cloned()?;
-        let at_target =
-            crate::comp::annotate::AnnotationTypeMetadata::get_target_shared(&metadata, ctx, syms, attr)
-                .ok()??;
+        let at_target = crate::comp::annotate::AnnotationTypeMetadata::get_target_shared(
+            &metadata, ctx, syms, attr,
+        )
+        .ok()??;
         let value = self.compound_member(ctx, at_target, &self.names.value)?;
         let values = match &ctx.attr(value).kind {
             AttributeKind::Array { values } => values.clone(),
@@ -129,7 +130,7 @@ impl TypeAnnotations {
     /// Adapter: Attribute.Compound.member(Name) (Attribute.java:490-510).
     fn compound_member(
         &self,
-        ctx: &crate::compiler_context::CompilerContext,
+        ctx: &CompilerContext,
         compound: AttributeId,
         name: &crate::util::name::Name,
     ) -> Option<AttributeId> {
@@ -141,9 +142,9 @@ impl TypeAnnotations {
         };
         let current = values;
         for pair in &current {
-        if &ctx.sym(pair.fst).name == name {
-            return Some(pair.snd);
-        }
+            if &ctx.sym(pair.fst).name == name {
+                return Some(pair.snd);
+            }
         }
         None
     }
@@ -165,7 +166,7 @@ impl TypeAnnotations {
     /// Upstream: TypeAnnotations.java:175-185.
     pub fn annotation_target_type(
         &self,
-        ctx: &mut crate::compiler_context::CompilerContext,
+        ctx: &mut CompilerContext,
         syms: &Symtab,
         a: AttributeId,
         s: SymbolId,
@@ -187,8 +188,8 @@ impl TypeAnnotations {
                 let mut acc = AnnotationType::NONE;
                 let current = targets;
                 for target in &current {
-                let at = self.target_to_annotation_type(ctx, target, s);
-                acc = self.combine_annotation_type(acc, at);
+                    let at = self.target_to_annotation_type(ctx, target, s);
+                    acc = self.combine_annotation_type(acc, at);
                 }
                 acc
             }
@@ -197,11 +198,7 @@ impl TypeAnnotations {
 
     /// Java: private AnnotationType combineAnnotationType(AnnotationType at1,
     /// AnnotationType at2) (TypeAnnotations.java:187-197).
-    fn combine_annotation_type(
-        &self,
-        at1: AnnotationType,
-        at2: AnnotationType,
-    ) -> AnnotationType {
+    fn combine_annotation_type(&self, at1: AnnotationType, at2: AnnotationType) -> AnnotationType {
         if at1 == AnnotationType::NONE {
             at2
         } else if at2 == AnnotationType::NONE {
@@ -217,7 +214,7 @@ impl TypeAnnotations {
     /// (TypeAnnotations.java:199-255).
     fn target_to_annotation_type(
         &self,
-        ctx: &mut crate::compiler_context::CompilerContext,
+        ctx: &mut CompilerContext,
         a: AttributeId,
         s: SymbolId,
     ) -> AnnotationType {
@@ -275,9 +272,7 @@ impl TypeAnnotations {
                 return AnnotationType::DECLARATION;
             }
         } else if target == self.names.ANNOTATION_TYPE {
-            if sym_kind == Kind::TYP
-                && (flags_value & crate::code::flags::ANNOTATION as i64) != 0
-            {
+            if sym_kind == Kind::TYP && (flags_value & crate::code::flags::ANNOTATION as i64) != 0 {
                 return AnnotationType::DECLARATION;
             }
         } else if target == self.names.PACKAGE {
@@ -296,7 +291,8 @@ impl TypeAnnotations {
                         !ctx.typ(ret).has_tag(crate::code::type_tag::TypeTag::VOID)
                     })
                     .unwrap_or(false);
-            if sym_kind == Kind::TYP || sym_kind == Kind::VAR || returns_non_void || is_constructor {
+            if sym_kind == Kind::TYP || sym_kind == Kind::VAR || returns_non_void || is_constructor
+            {
                 return AnnotationType::TYPE;
             }
         } else if target == self.names.TYPE_PARAMETER {
@@ -328,12 +324,12 @@ impl TypeAnnotations {
     /// Upstream: TypeAnnotations.java:146-150.
     pub fn organize_type_annotations_bodies(
         &self,
-        ctx: &mut crate::compiler_context::CompilerContext,
+        ctx: &mut CompilerContext,
         syms: &Symtab,
-        tree: crate::ids::TreeId,
+        tree: TreeId,
     ) {
         let mut positions = TypeAnnotationPositions::new(self, syms, false);
-        crate::tree::tree_scanner::TreeScannerVisitor::scan(&mut positions, ctx, Some(tree));
+        TreeScannerVisitor::scan(&mut positions, ctx, Some(tree));
     }
     /// Java: public void organizeTypeAnnotationsSignatures(final Env<AttrContext> env,
     /// final JCClassDecl tree) (TypeAnnotations.java:120-129).
@@ -354,13 +350,13 @@ impl TypeAnnotations {
     pub fn organize_type_annotations_signatures(
         self: &Rc<TypeAnnotations>,
         env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
-        tree: crate::ids::TreeId,
+        tree: TreeId,
     ) {
         let ta = Rc::clone(self);
         let env = Rc::clone(env);
         self.annotate.after_types(Box::new(
-            move |ctx: &mut crate::compiler_context::CompilerContext,
-                  syms: &crate::code::symtab::Symtab,
+            move |ctx: &mut CompilerContext,
+                  syms: &Symtab,
                   attr: &mut crate::comp::attr::Attr| {
                 let toplevel = env.toplevel.expect("env toplevel");
                 let sourcefile = match &ctx.tree(toplevel).kind {
@@ -369,22 +365,16 @@ impl TypeAnnotations {
                     }
                     _ => None,
                 };
-                let prev = crate::util::abstract_log::AbstractLog::use_source(
-                    &*ta.log,
-                    sourcefile,
-                );
+                let prev = crate::util::abstract_log::AbstractLog::use_source(&*ta.log, sourcefile);
                 let mut positions = TypeAnnotationPositions::new_with_attr(&ta, syms, true, attr);
-                crate::tree::tree_scanner::TreeScannerVisitor::scan(
+                TreeScannerVisitor::scan(
                     &mut positions,
                     ctx,
                     Some(tree),
                 );
                 let _ = syms;
                 let result: Result<(), crate::code::symbol::CompletionFailure> = Ok(());
-                crate::util::abstract_log::AbstractLog::use_source(
-                    &*ta.log,
-                    prev,
-                );
+                crate::util::abstract_log::AbstractLog::use_source(&*ta.log, prev);
                 result
             },
         ));
@@ -408,13 +398,13 @@ impl TypeAnnotations {
     pub fn validate_type_annotations_signatures(
         self: &Rc<TypeAnnotations>,
         env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
-        tree: crate::ids::TreeId,
+        tree: TreeId,
     ) {
         let ta = Rc::clone(self);
         let env = Rc::clone(env);
         self.annotate.validate(Box::new(
-            move |ctx: &mut crate::compiler_context::CompilerContext,
-                  syms: &crate::code::symtab::Symtab,
+            move |ctx: &mut CompilerContext,
+                  syms: &Symtab,
                   attr: &mut crate::comp::attr::Attr| {
                 let toplevel = env.toplevel.expect("env toplevel");
                 let sourcefile = match &ctx.tree(toplevel).kind {
@@ -423,22 +413,16 @@ impl TypeAnnotations {
                     }
                     _ => None,
                 };
-                let prev = crate::util::abstract_log::AbstractLog::use_source(
-                    &*ta.log,
-                    sourcefile,
-                );
+                let prev = crate::util::abstract_log::AbstractLog::use_source(&*ta.log, sourcefile);
                 {
                     attr.validate_type_annotations(ctx, syms, tree, true);
                 }
-                crate::util::abstract_log::AbstractLog::use_source(
-                    &*ta.log,
-                    prev,
-                );
+                crate::util::abstract_log::AbstractLog::use_source(&*ta.log, prev);
                 Ok(())
             },
         ));
     }
-    }
+}
 
 /// Java: private class TypeAnnotationPositions extends TreeScanner
 /// (TypeAnnotations.java:257-1450).
@@ -450,9 +434,9 @@ pub struct TypeAnnotationPositions<'a, 'b> {
     /// Java: private final boolean sigOnly
     pub sig_only: bool,
     /// Java: private List<JCTree> frames = List.nil() (head is the last)
-    pub frames: Vec<crate::ids::TreeId>,
+    pub frames: Vec<TreeId>,
     /// Java: private JCLambda currentLambda = null
-    pub current_lambda: Option<crate::ids::TreeId>,
+    pub current_lambda: Option<TreeId>,
     /// Java: private boolean isInClass = false
     pub is_in_class: bool,
     /// Port adapter: the caller's Attr while running inside Annotate.flush, so
@@ -497,26 +481,32 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     }
 
     /// Java: protected void push(JCTree t)
-    fn push(&mut self, tree: crate::ids::TreeId) {
+    fn push(&mut self, tree: TreeId) {
         self.frames.push(tree);
     }
 
     /// Java: protected JCTree pop()
-    fn pop(&mut self) -> crate::ids::TreeId {
-        self.frames.pop().expect("AssertionError: empty frame stack")
+    fn pop(&mut self) -> TreeId {
+        self.frames
+            .pop()
+            .expect("AssertionError: empty frame stack")
     }
 
     /// Java: private JCTree peek2()
-    fn peek2(&self) -> crate::ids::TreeId {
+    fn peek2(&self) -> TreeId {
         let len = self.frames.len();
         self.frames[len - 2]
     }
 }
 
-impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPositions<'a, 'b> {
+impl<'a, 'b> TreeScannerVisitor for TypeAnnotationPositions<'a, 'b> {
     /// Java: public void scan(JCTree tree) (TypeAnnotations.java:287-295): push/pop
     /// the frame stack around the TreeScanner navigation.
-    fn scan(&mut self, ctx: &mut crate::compiler_context::CompilerContext, tree: Option<crate::ids::TreeId>) {
+    fn scan(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: Option<TreeId>,
+    ) {
         let Some(tree) = tree else {
             return;
         };
@@ -527,7 +517,11 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
 
     /// Java: public void visitClassDef(JCClassDecl tree) (TypeAnnotations.java:1120-1136).
     #[allow(clippy::collapsible_if)]
-    fn visit_class_def(&mut self, ctx: &mut crate::compiler_context::CompilerContext, tree: crate::ids::TreeId) {
+    fn visit_class_def(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) {
         if self.is_in_class {
             return;
         }
@@ -541,7 +535,14 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
                 defs,
                 sym,
                 ..
-            } => (*mods, typarams.clone(), *extending, implementing.clone(), defs.clone(), *sym),
+            } => (
+                *mods,
+                typarams.clone(),
+                *extending,
+                implementing.clone(),
+                defs.clone(),
+                *sym,
+            ),
             _ => return,
         };
         if self.sig_only {
@@ -554,29 +555,33 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
         if let Some(sym) = sym {
             if ctx.sym(sym).is_record() {
                 let components = match &ctx.sym(sym).kind_data {
-                    crate::code::symbol::SymbolKind::ClassSymbol { record_components, .. } => {
-                        record_components.clone()
-                    }
+                    crate::code::symbol::SymbolKind::ClassSymbol {
+                        record_components, ..
+                    } => record_components.clone(),
                     _ => List::nil(),
                 };
                 let current = components;
                 for component in &current {
-                let accessor = match &ctx.sym(component).kind_data {
-                    crate::code::symbol::SymbolKind::RecordComponent { accessor_meth, .. } => {
-                        *accessor_meth
+                    let accessor = match &ctx.sym(component).kind_data {
+                        crate::code::symbol::SymbolKind::RecordComponent {
+                            accessor_meth, ..
+                        } => *accessor_meth,
+                        _ => None,
+                    };
+                    if let Some(accessor) = accessor {
+                        self.scan_list(ctx, &List::of(accessor));
                     }
-                    _ => None,
-                };
-                if let Some(accessor) = accessor {
-                    self.scan_list(ctx, &List::of(accessor));
-                }
                 }
             }
         }
     }
 
     /// Java: public void visitMethodDef(JCMethodDecl tree) (TypeAnnotations.java:1142-1205).
-    fn visit_method_def(&mut self, ctx: &mut crate::compiler_context::CompilerContext, tree: crate::ids::TreeId) {
+    fn visit_method_def(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) {
         let (mods, restype, typarams, recvparam, params, thrown, body, default_value, sym, _) =
             match &ctx.tree(tree).kind {
                 crate::tree::jc_tree::TreeKind::MethodDecl {
@@ -611,7 +616,9 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
         };
         if self.sig_only {
             let mods_annotations = match mods.map(|mods| &ctx.tree(mods).kind) {
-                Some(crate::tree::jc_tree::TreeKind::Modifiers { annotations, .. }) => annotations.clone(),
+                Some(crate::tree::jc_tree::TreeKind::Modifiers { annotations, .. }) => {
+                    annotations.clone()
+                }
                 _ => List::nil(),
             };
             if !mods_annotations.is_empty() {
@@ -650,7 +657,10 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
                     };
                     if !recv_mods_annotations.is_empty() {
                         let vartype = match &ctx.tree(recvparam).kind {
-                            crate::tree::jc_tree::TreeKind::VariableDecl { vartype: Some(vartype), .. } => *vartype,
+                            crate::tree::jc_tree::TreeKind::VariableDecl {
+                                vartype: Some(vartype),
+                                ..
+                            } => *vartype,
                             _ => return,
                         };
                         let pos = crate::code::type_annotation_position::TypeAnnotationPosition::method_receiver(
@@ -660,7 +670,13 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
                         );
                         self.push(recvparam);
                         let recv_type = ctx.sym(recv_sym).ty.expect("receiver type");
-                        self.separate_annotations_kinds(ctx, vartype, Some(recv_type), recv_sym, pos);
+                        self.separate_annotations_kinds(
+                            ctx,
+                            vartype,
+                            Some(recv_type),
+                            recv_sym,
+                            pos,
+                        );
                         self.pop();
                     }
                 }
@@ -668,31 +684,36 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
             let mut index = 0i32;
             let params_current = params.clone();
             for param in &params_current {
-            let param_mods_annotations = match &ctx.tree(param).kind {
-                crate::tree::jc_tree::TreeKind::VariableDecl { mods, .. } => self.modifiers_annotations(ctx, *mods),
-                _ => List::nil(),
-            };
-            if !param_mods_annotations.is_empty() {
-                let param_sym = match &ctx.tree(param).kind {
-                    crate::tree::jc_tree::TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
-                    _ => return,
+                let param_mods_annotations = match &ctx.tree(param).kind {
+                    crate::tree::jc_tree::TreeKind::VariableDecl { mods, .. } => {
+                        self.modifiers_annotations(ctx, *mods)
+                    }
+                    _ => List::nil(),
                 };
-                let vartype = match &ctx.tree(param).kind {
-                    crate::tree::jc_tree::TreeKind::VariableDecl { vartype: Some(vartype), .. } => *vartype,
-                    _ => return,
-                };
-                let pos = crate::code::type_annotation_position::TypeAnnotationPosition::method_parameter(
+                if !param_mods_annotations.is_empty() {
+                    let param_sym = match &ctx.tree(param).kind {
+                        crate::tree::jc_tree::TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
+                        _ => return,
+                    };
+                    let vartype = match &ctx.tree(param).kind {
+                        crate::tree::jc_tree::TreeKind::VariableDecl {
+                            vartype: Some(vartype),
+                            ..
+                        } => *vartype,
+                        _ => return,
+                    };
+                    let pos = crate::code::type_annotation_position::TypeAnnotationPosition::method_parameter(
                     List::nil(),
                     index,
                     ctx.tree(vartype).pos,
                     None,
                 );
-                self.push(param);
-                let param_type = ctx.sym(param_sym).ty.expect("parameter type");
-                self.separate_annotations_kinds(ctx, vartype, Some(param_type), param_sym, pos);
-                self.pop();
-            }
-            index += 1;
+                    self.push(param);
+                    let param_type = ctx.sym(param_sym).ty.expect("parameter type");
+                    self.separate_annotations_kinds(ctx, vartype, Some(param_type), param_sym, pos);
+                    self.pop();
+                }
+                index += 1;
             }
         }
         if self.sig_only {
@@ -708,58 +729,13 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
         }
     }
 
-
-    /// Java: public void visitLambda(JCLambda tree) (TypeAnnotations.java:1210-1250).
-    #[allow(clippy::collapsible_if)]
-    fn visit_lambda(&mut self, ctx: &mut crate::compiler_context::CompilerContext, tree: crate::ids::TreeId) {
-        let prev_lambda = self.current_lambda;
-        self.current_lambda = Some(tree);
-        let params = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::Lambda { params, .. } => params.clone(),
-            _ => List::nil(),
-        };
-        let mut index = 0i32;
-        let current = params.clone();
-        for param in &current {
-        let annotations = match &ctx.tree(param).kind {
-            crate::tree::jc_tree::TreeKind::VariableDecl { mods, .. } => self.modifiers_annotations(ctx, *mods),
-            _ => List::nil(),
-        };
-        if !annotations.is_empty() {
-            let (param_sym, vartype, declared_using_var) = match &ctx.tree(param).kind {
-                crate::tree::jc_tree::TreeKind::VariableDecl { sym: Some(sym), vartype: Some(vartype), declared_using_var, .. } => (*sym, *vartype, *declared_using_var),
-                _ => {
-                    index += 1;
-                    continue;
-                }
-            };
-            let pos = crate::code::type_annotation_position::TypeAnnotationPosition::method_parameter(
-                List::nil(),
-                index,
-                ctx.tree(vartype).pos,
-                Some(tree),
-            );
-            self.push(param);
-            if !declared_using_var {
-                let param_type = ctx.sym(param_sym).ty.expect("lambda parameter type");
-                self.separate_annotations_kinds(ctx, vartype, Some(param_type), param_sym, pos);
-            }
-            self.pop();
-        }
-        index += 1;
-        }
-        let body = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::Lambda { body, .. } => *body,
-            _ => None,
-        };
-        self.scan(ctx, body);
-        self.scan_list(ctx, &params);
-        self.current_lambda = prev_lambda;
-    }
-
     /// Java: public void visitVarDef(JCVariableDecl tree) (TypeAnnotations.java:1255-1330).
     #[allow(clippy::collapsible_if)]
-    fn visit_var_def(&mut self, ctx: &mut crate::compiler_context::CompilerContext, tree: crate::ids::TreeId) {
+    fn visit_var_def(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) {
         use crate::code::symbol::ElementKind;
         let (mods, vartype, init, sym, declared_using_var) = match &ctx.tree(tree).kind {
             crate::tree::jc_tree::TreeKind::VariableDecl {
@@ -795,11 +771,12 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
                     }
                 }
             } else if element_kind == ElementKind::LOCAL_VARIABLE {
-                let pos = crate::code::type_annotation_position::TypeAnnotationPosition::local_variable(
-                    List::nil(),
-                    ctx.tree(tree).pos,
-                    self.current_lambda,
-                );
+                let pos =
+                    crate::code::type_annotation_position::TypeAnnotationPosition::local_variable(
+                        List::nil(),
+                        ctx.tree(tree).pos,
+                        self.current_lambda,
+                    );
                 if !declared_using_var {
                     if let Some(vartype) = vartype {
                         let local_type = ctx.sym(sym).ty.expect("local variable type");
@@ -807,11 +784,12 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
                     }
                 }
             } else if element_kind == ElementKind::BINDING_VARIABLE {
-                let pos = crate::code::type_annotation_position::TypeAnnotationPosition::local_variable(
-                    List::nil(),
-                    ctx.tree(tree).pos,
-                    self.current_lambda,
-                );
+                let pos =
+                    crate::code::type_annotation_position::TypeAnnotationPosition::local_variable(
+                        List::nil(),
+                        ctx.tree(tree).pos,
+                        self.current_lambda,
+                    );
                 if let Some(vartype) = vartype {
                     let binding_type = ctx.sym(sym).ty.expect("binding variable type");
                     self.separate_annotations_kinds(ctx, vartype, Some(binding_type), sym, pos);
@@ -855,23 +833,26 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
                 {
                     let owner = ctx.sym(sym).owner.expect("record component owner");
                     let components = match &ctx.sym(owner).kind_data {
-                        crate::code::symbol::SymbolKind::ClassSymbol { record_components, .. } => {
-                            record_components.clone()
-                        }
+                        crate::code::symbol::SymbolKind::ClassSymbol {
+                            record_components, ..
+                        } => record_components.clone(),
                         _ => List::nil(),
                     };
                     let current = components;
                     for component in &current {
-                    let matches = match &ctx.sym(component).kind_data {
-                        crate::code::symbol::SymbolKind::RecordComponent { pos, .. } => *pos == ctx.tree(tree).pos,
-                        _ => false,
-                    };
-                    if matches {
-                        let raw_type_attributes = ctx.sym(sym).get_raw_type_attributes();
-                        ctx.sym_mut(component).set_type_attributes(raw_type_attributes);
-                        ctx.sym_mut(component).ty = ctx.sym(sym).ty;
-                        break;
-                    }
+                        let matches = match &ctx.sym(component).kind_data {
+                            crate::code::symbol::SymbolKind::RecordComponent { pos, .. } => {
+                                *pos == ctx.tree(tree).pos
+                            }
+                            _ => false,
+                        };
+                        if matches {
+                            let raw_type_attributes = ctx.sym(sym).get_raw_type_attributes();
+                            ctx.sym_mut(component)
+                                .set_type_attributes(raw_type_attributes);
+                            ctx.sym_mut(component).ty = ctx.sym(sym).ty;
+                            break;
+                        }
                     }
                 }
             }
@@ -879,7 +860,11 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
     }
 
     /// Java: public void visitBlock(JCBlock tree) (TypeAnnotations.java:1332-1338).
-    fn visit_block(&mut self, ctx: &mut crate::compiler_context::CompilerContext, tree: crate::ids::TreeId) {
+    fn visit_block(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) {
         if !self.sig_only {
             let stats = match &ctx.tree(tree).kind {
                 crate::tree::jc_tree::TreeKind::Block { stats, .. } => stats.clone(),
@@ -889,40 +874,21 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
         }
     }
 
-    /// Java: public void visitAnnotatedType(JCAnnotatedType tree) (TypeAnnotations.java:1340-1348).
-    fn visit_annotated_type(&mut self, ctx: &mut crate::compiler_context::CompilerContext, tree: crate::ids::TreeId) {
-        self.push(tree);
-        let (annotations, underlying) = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::AnnotatedType { annotations, underlying_type } => {
-                (annotations.clone(), *underlying_type)
-            }
-            _ => (List::nil(), None),
-        };
-        self.find_position(ctx, tree, tree, &annotations);
-        self.pop();
-        self.scan(ctx, underlying);
-    }
-
-    /// Java: public void visitTypeParameter(JCTypeParameter tree) (TypeAnnotations.java:1350-1354).
-    fn visit_type_parameter(&mut self, ctx: &mut crate::compiler_context::CompilerContext, tree: crate::ids::TreeId) {
-        let (annotations, bounds) = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::TypeParameter { annotations, bounds, .. } => {
-                (annotations.clone(), bounds.clone())
-            }
-            _ => (List::nil(), List::nil()),
-        };
-        let frame = self.peek2();
-        self.find_position(ctx, tree, frame, &annotations);
-        self.scan_list(ctx, &bounds);
-    }
-
-
     /// Java: public void visitNewClass(JCNewClass tree) (TypeAnnotations.java:1387-1403).
-    fn visit_new_class(&mut self, ctx: &mut crate::compiler_context::CompilerContext, tree: crate::ids::TreeId) {
+    fn visit_new_class(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) {
         let (encl, typeargs, clazz, args, def) = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::NewClass { encl, typeargs, clazz, args, def, .. } => {
-                (*encl, typeargs.clone(), *clazz, args.clone(), *def)
-            }
+            crate::tree::jc_tree::TreeKind::NewClass {
+                encl,
+                typeargs,
+                clazz,
+                args,
+                def,
+                ..
+            } => (*encl, typeargs.clone(), *clazz, args.clone(), *def),
             _ => return,
         };
         if let Some(def_tree) = def {
@@ -944,11 +910,24 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
 
     /// Java: public void visitNewArray(JCNewArray tree) (TypeAnnotations.java:1405-1460).
     #[allow(clippy::collapsible_if)]
-    fn visit_new_array(&mut self, ctx: &mut crate::compiler_context::CompilerContext, tree: crate::ids::TreeId) {
+    fn visit_new_array(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) {
         let (elemtype, annotations, dim_annotations, elems) = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::NewArray { elemtype, annotations, dim_annotations, elems, .. } => {
-                (*elemtype, annotations.clone(), dim_annotations.clone(), elems.clone())
-            }
+            crate::tree::jc_tree::TreeKind::NewArray {
+                elemtype,
+                annotations,
+                dim_annotations,
+                elems,
+                ..
+            } => (
+                *elemtype,
+                annotations.clone(),
+                dim_annotations.clone(),
+                elems.clone(),
+            ),
             _ => return,
         };
         self.find_position(ctx, tree, tree, &annotations);
@@ -956,45 +935,59 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
         let dim_current = dim_annotations.clone();
         let mut dim_index = 0i32;
         for dim_annos in &dim_current {
-        let mut location: List<TypePathEntry> = List::nil();
-        if dim_index != 0 {
-            depth = depth.append(TypePathEntry::ARRAY);
-            location = depth.clone();
-        }
-        let pos = crate::code::type_annotation_position::TypeAnnotationPosition::new_obj(
-            location,
-            ctx.tree(tree).pos,
-            self.current_lambda,
-        );
-        self.set_type_annotation_pos(ctx, &dim_annos, pos);
-        dim_index += 1;
+            let mut location: List<TypePathEntry> = List::nil();
+            if dim_index != 0 {
+                depth = depth.append(TypePathEntry::ARRAY);
+                location = depth.clone();
+            }
+            let pos = crate::code::type_annotation_position::TypeAnnotationPosition::new_obj(
+                location,
+                ctx.tree(tree).pos,
+                self.current_lambda,
+            );
+            self.set_type_annotation_pos(ctx, &dim_annos, pos);
+            dim_index += 1;
         }
         let mut elem = elemtype;
         depth = depth.append(TypePathEntry::ARRAY);
         while let Some(elem_tree) = elem {
             let elem_kind = ctx.tree(elem_tree).kind.clone();
             match &elem_kind {
-                crate::tree::jc_tree::TreeKind::AnnotatedType { annotations, underlying_type } => {
-                    let location_v = self.locate_nested_types(ctx, ctx.tree(elem_tree).ty.unwrap_or_else(|| panic!("annotated element type")));
+                crate::tree::jc_tree::TreeKind::AnnotatedType {
+                    annotations,
+                    underlying_type,
+                } => {
+                    let location_v = self.locate_nested_types(
+                        ctx,
+                        ctx.tree(elem_tree)
+                            .ty
+                            .unwrap_or_else(|| panic!("annotated element type")),
+                    );
                     let mut location = depth.clone();
                     let mut location_current = location_v;
                     while location_current.non_empty() {
                         location = location.append(*location_current.head());
                         location_current = location_current.tail();
                     }
-                    let pos = crate::code::type_annotation_position::TypeAnnotationPosition::new_obj(
-                        location,
-                        ctx.tree(tree).pos,
-                        self.current_lambda,
-                    );
+                    let pos =
+                        crate::code::type_annotation_position::TypeAnnotationPosition::new_obj(
+                            location,
+                            ctx.tree(tree).pos,
+                            self.current_lambda,
+                        );
                     self.set_type_annotation_pos(ctx, annotations, pos);
                     elem = *underlying_type;
                 }
-                crate::tree::jc_tree::TreeKind::ArrayTypeTree { elemtype: Some(inner) } => {
+                crate::tree::jc_tree::TreeKind::ArrayTypeTree {
+                    elemtype: Some(inner),
+                } => {
                     depth = depth.append(TypePathEntry::ARRAY);
                     elem = Some(*inner);
                 }
-                crate::tree::jc_tree::TreeKind::FieldAccess { selected: Some(selected), .. } => {
+                crate::tree::jc_tree::TreeKind::FieldAccess {
+                    selected: Some(selected),
+                    ..
+                } => {
                     elem = Some(*selected);
                 }
                 _ => break,
@@ -1004,6 +997,104 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
             self.scan_list(ctx, &elems);
         }
     }
+
+    /// Java: public void visitLambda(JCLambda tree) (TypeAnnotations.java:1210-1250).
+    #[allow(clippy::collapsible_if)]
+    fn visit_lambda(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) {
+        let prev_lambda = self.current_lambda;
+        self.current_lambda = Some(tree);
+        let params = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::Lambda { params, .. } => params.clone(),
+            _ => List::nil(),
+        };
+        let mut index = 0i32;
+        let current = params.clone();
+        for param in &current {
+            let annotations = match &ctx.tree(param).kind {
+                crate::tree::jc_tree::TreeKind::VariableDecl { mods, .. } => {
+                    self.modifiers_annotations(ctx, *mods)
+                }
+                _ => List::nil(),
+            };
+            if !annotations.is_empty() {
+                let (param_sym, vartype, declared_using_var) = match &ctx.tree(param).kind {
+                    crate::tree::jc_tree::TreeKind::VariableDecl {
+                        sym: Some(sym),
+                        vartype: Some(vartype),
+                        declared_using_var,
+                        ..
+                    } => (*sym, *vartype, *declared_using_var),
+                    _ => {
+                        index += 1;
+                        continue;
+                    }
+                };
+                let pos =
+                    crate::code::type_annotation_position::TypeAnnotationPosition::method_parameter(
+                        List::nil(),
+                        index,
+                        ctx.tree(vartype).pos,
+                        Some(tree),
+                    );
+                self.push(param);
+                if !declared_using_var {
+                    let param_type = ctx.sym(param_sym).ty.expect("lambda parameter type");
+                    self.separate_annotations_kinds(ctx, vartype, Some(param_type), param_sym, pos);
+                }
+                self.pop();
+            }
+            index += 1;
+        }
+        let body = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::Lambda { body, .. } => *body,
+            _ => None,
+        };
+        self.scan(ctx, body);
+        self.scan_list(ctx, &params);
+        self.current_lambda = prev_lambda;
+    }
+
+    /// Java: public void visitTypeParameter(JCTypeParameter tree) (TypeAnnotations.java:1350-1354).
+    fn visit_type_parameter(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) {
+        let (annotations, bounds) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::TypeParameter {
+                annotations,
+                bounds,
+                ..
+            } => (annotations.clone(), bounds.clone()),
+            _ => (List::nil(), List::nil()),
+        };
+        let frame = self.peek2();
+        self.find_position(ctx, tree, frame, &annotations);
+        self.scan_list(ctx, &bounds);
+    }
+
+    /// Java: public void visitAnnotatedType(JCAnnotatedType tree) (TypeAnnotations.java:1340-1348).
+    fn visit_annotated_type(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) {
+        self.push(tree);
+        let (annotations, underlying) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::AnnotatedType {
+                annotations,
+                underlying_type,
+            } => (annotations.clone(), *underlying_type),
+            _ => (List::nil(), None),
+        };
+        self.find_position(ctx, tree, tree, &annotations);
+        self.pop();
+        self.scan(ctx, underlying);
+    }
 }
 
 impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
@@ -1011,17 +1102,25 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     /// List<JCAnnotation> annotations) (TypeAnnotations.java:1462-1472).
     fn find_position(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        tree: crate::ids::TreeId,
-        frame: crate::ids::TreeId,
-        annotations: &List<crate::ids::TreeId>,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        frame: TreeId,
+        annotations: &List<TreeId>,
     ) {
         if !annotations.is_empty() {
             // The ported frame stack is a Vec pushed root-first; ResolveFrame
             // walks the path from the innermost annotated tree outwards.
             let mut frames = self.frames.clone();
             frames.reverse();
-            let p = self.resolve_frame(ctx, tree, frame, &frames, self.current_lambda, 0, List::nil());
+            let p = self.resolve_frame(
+                ctx,
+                tree,
+                frame,
+                &frames,
+                self.current_lambda,
+                0,
+                List::nil(),
+            );
             self.set_type_annotation_pos(ctx, annotations, p);
         }
     }
@@ -1031,23 +1130,24 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     #[allow(clippy::collapsible_if)]
     fn set_type_annotation_pos(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        annotations: &List<crate::ids::TreeId>,
+        ctx: &mut CompilerContext,
+        annotations: &List<TreeId>,
         position: crate::code::type_annotation_position::TypeAnnotationPosition,
     ) {
         let current = annotations.clone();
         for anno in &current {
-        let attribute = match &ctx.tree(anno).kind {
-            crate::tree::jc_tree::TreeKind::Annotation { attribute, .. } => *attribute,
-            _ => None,
-        };
-        if let Some(attribute) = attribute {
-            if let crate::code::attribute::AttributeKind::TypeCompound { position: slot, .. } =
-                &mut ctx.attr_mut(attribute).kind
-            {
-                *slot = Some(position.clone());
+            let attribute = match &ctx.tree(anno).kind {
+                crate::tree::jc_tree::TreeKind::Annotation { attribute, .. } => *attribute,
+                _ => None,
+            };
+            if let Some(attribute) = attribute {
+                if let AttributeKind::TypeCompound {
+                    position: slot, ..
+                } = &mut ctx.attr_mut(attribute).kind
+                {
+                    *slot = Some(position.clone());
+                }
             }
-        }
         }
     }
 
@@ -1055,14 +1155,18 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     /// ListBuffer<TypePathEntry> depth) (TypeAnnotations.java:1085-1098).
     fn locate_nested_types(
         &self,
-        ctx: &mut crate::compiler_context::CompilerContext,
+        ctx: &mut CompilerContext,
         ty: crate::ids::TypeId,
     ) -> List<TypePathEntry> {
         let mut depth: List<TypePathEntry> = List::nil();
         let mut encl = ctx.typ(ty).get_enclosing_type();
         while let Some(encl_ty) = encl {
-            if ctx.typ(encl_ty).has_tag(crate::code::type_tag::TypeTag::NONE)
-                || ctx.typ(encl_ty).has_tag(crate::code::type_tag::TypeTag::ERROR)
+            if ctx
+                .typ(encl_ty)
+                .has_tag(crate::code::type_tag::TypeTag::NONE)
+                || ctx
+                    .typ(encl_ty)
+                    .has_tag(crate::code::type_tag::TypeTag::ERROR)
             {
                 break;
             }
@@ -1076,9 +1180,9 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     /// (TypeAnnotations.java:1100-1118).
     fn method_param_index(
         &self,
-        ctx: &crate::compiler_context::CompilerContext,
-        path: &[crate::ids::TreeId],
-        param: crate::ids::TreeId,
+        ctx: &CompilerContext,
+        path: &[TreeId],
+        param: TreeId,
     ) -> i32 {
         let mut index = path.len() as isize - 1;
         while index >= 0 {
@@ -1099,7 +1203,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
 }
 
 /// Adapter: the index of param inside a list.
-fn param_index_in_list(params: &List<crate::ids::TreeId>, param: crate::ids::TreeId) -> i32 {
+fn param_index_in_list(params: &List<TreeId>, param: TreeId) -> i32 {
     let mut index = 0i32;
     let mut current = params.clone();
     while current.non_empty() {
@@ -1120,37 +1224,41 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     #[allow(clippy::collapsible_if)]
     fn separate_annotations_kinds(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        typetree: crate::ids::TreeId,
+        ctx: &mut CompilerContext,
+        typetree: TreeId,
         ty: Option<crate::ids::TypeId>,
-        sym: crate::ids::SymbolId,
+        sym: SymbolId,
         pos: crate::code::type_annotation_position::TypeAnnotationPosition,
     ) {
         let all_annotations = ctx.sym(sym).get_raw_attributes();
-        let mut decl_annos: List<crate::ids::AttributeId> = List::nil();
-        let mut type_annos: List<crate::ids::AttributeId> = List::nil();
-        let mut only_type_annos: List<crate::ids::AttributeId> = List::nil();
+        let mut decl_annos: List<AttributeId> = List::nil();
+        let mut type_annos: List<AttributeId> = List::nil();
+        let mut only_type_annos: List<AttributeId> = List::nil();
         let current = all_annotations;
         for a in &current {
-        let target = self
-            .type_annotations
-            .annotation_target_type(ctx, self.syms, a, sym, self.attr.as_deref_mut());
-        match target {
-            AnnotationType::DECLARATION => {
-                decl_annos = decl_annos.append(a);
+            let target = self.type_annotations.annotation_target_type(
+                ctx,
+                self.syms,
+                a,
+                sym,
+                self.attr.as_deref_mut(),
+            );
+            match target {
+                AnnotationType::DECLARATION => {
+                    decl_annos = decl_annos.append(a);
+                }
+                AnnotationType::BOTH => {
+                    decl_annos = decl_annos.append(a);
+                    let ta = self.to_type_compound(ctx, a, pos.clone());
+                    type_annos = type_annos.append(ta);
+                }
+                AnnotationType::TYPE => {
+                    let ta = self.to_type_compound(ctx, a, pos.clone());
+                    type_annos = type_annos.append(ta);
+                    only_type_annos = only_type_annos.append(ta);
+                }
+                AnnotationType::NONE => {}
             }
-            AnnotationType::BOTH => {
-                decl_annos = decl_annos.append(a);
-                let ta = self.to_type_compound(ctx, a, pos.clone());
-                type_annos = type_annos.append(ta);
-            }
-            AnnotationType::TYPE => {
-                let ta = self.to_type_compound(ctx, a, pos.clone());
-                type_annos = type_annos.append(ta);
-                only_type_annos = only_type_annos.append(ta);
-            }
-            AnnotationType::NONE => {}
-        }
         }
         if type_annos.is_empty() {
             return;
@@ -1175,7 +1283,8 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                     &type_annotations,
                     pos.clone(),
                 );
-                ctx.sym_mut(sym).append_unique_type_attributes(type_annotations);
+                ctx.sym_mut(sym)
+                    .append_unique_type_attributes(type_annotations);
                 return;
             }
         };
@@ -1217,7 +1326,9 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                     _ => List::nil(),
                 };
                 let old_args = match &ctx.typ(owner_ty).kind {
-                    crate::code::type_::TypeKindData::MethodType { argtypes, .. } => argtypes.clone(),
+                    crate::code::type_::TypeKindData::MethodType { argtypes, .. } => {
+                        argtypes.clone()
+                    }
                     _ => List::nil(),
                 };
                 let mut new_args: List<crate::ids::TypeId> = List::nil();
@@ -1251,7 +1362,8 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
         } else {
             ctx.sym_mut(sym).ty = Some(annotated);
         }
-        ctx.sym_mut(sym).append_unique_type_attributes(type_annotations.clone());
+        ctx.sym_mut(sym)
+            .append_unique_type_attributes(type_annotations.clone());
         let element_kind = ctx.sym(sym).get_kind(ctx);
         if element_kind == crate::code::symbol::ElementKind::PARAMETER
             || element_kind == crate::code::symbol::ElementKind::LOCAL_VARIABLE
@@ -1267,9 +1379,9 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     /// List<Attribute.TypeCompound> typeAnnotations) (TypeAnnotations.java:422-445).
     fn append_type_annotations_to_owner(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        sym: crate::ids::SymbolId,
-        type_annotations: &List<crate::ids::AttributeId>,
+        ctx: &mut CompilerContext,
+        sym: SymbolId,
+        type_annotations: &List<AttributeId>,
     ) {
         let owner = match ctx.sym(sym).owner {
             Some(owner) => owner,
@@ -1282,12 +1394,15 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                 None => return,
             };
             if (owner_flags & crate::code::flags::STATIC as i64) != 0 {
-                ctx.sym_mut(class_sym).append_class_init_type_attributes(type_annotations.clone());
+                ctx.sym_mut(class_sym)
+                    .append_class_init_type_attributes(type_annotations.clone());
             } else {
-                ctx.sym_mut(class_sym).append_init_type_attributes(type_annotations.clone());
+                ctx.sym_mut(class_sym)
+                    .append_init_type_attributes(type_annotations.clone());
             }
         } else {
-            ctx.sym_mut(owner).append_unique_type_attributes(type_annotations.clone());
+            ctx.sym_mut(owner)
+                .append_unique_type_attributes(type_annotations.clone());
         }
     }
 
@@ -1295,19 +1410,21 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     /// TypeAnnotationPosition p) (TypeAnnotations.java:1010-1015).
     fn to_type_compound(
         &self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        a: crate::ids::AttributeId,
+        ctx: &mut CompilerContext,
+        a: AttributeId,
         position: crate::code::type_annotation_position::TypeAnnotationPosition,
-    ) -> crate::ids::AttributeId {
+    ) -> AttributeId {
         let (ty, values, synthesized) = match &ctx.attr(a).kind {
-            crate::code::attribute::AttributeKind::Compound { values, synthesized, .. } => {
-                (ctx.attr(a).ty, values.clone(), *synthesized)
-            }
+            AttributeKind::Compound {
+                values,
+                synthesized,
+                ..
+            } => (ctx.attr(a).ty, values.clone(), *synthesized),
             _ => (ctx.attr(a).ty, List::nil(), false),
         };
         ctx.alloc_attribute(crate::code::attribute::Attribute::new(
             ty,
-            crate::code::attribute::AttributeKind::TypeCompound {
+            AttributeKind::TypeCompound {
                 values,
                 position: Some(position),
                 synthesized,
@@ -1323,11 +1440,11 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     #[allow(clippy::collapsible_if)]
     fn type_with_annotations(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        typetree: crate::ids::TreeId,
+        ctx: &mut CompilerContext,
+        typetree: TreeId,
         ty: crate::ids::TypeId,
-        annotations: &List<crate::ids::AttributeId>,
-        only_type_annotations: &List<crate::ids::AttributeId>,
+        annotations: &List<AttributeId>,
+        only_type_annotations: &List<AttributeId>,
         mut pos: crate::code::type_annotation_position::TypeAnnotationPosition,
     ) -> crate::ids::TypeId {
         use crate::code::type_::TypeKindData;
@@ -1336,12 +1453,15 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
         }
         for tc in annotations.iter() {
             let matches = match &ctx.attr(tc).kind {
-                crate::code::attribute::AttributeKind::TypeCompound { position, .. } => {
+                AttributeKind::TypeCompound { position, .. } => {
                     position.as_ref().map(|p| p.pos == pos.pos).unwrap_or(false)
                 }
                 _ => false,
             };
-            assert!(matches, "AssertionError: all annotations share the same position");
+            assert!(
+                matches,
+                "AssertionError: all annotations share the same position"
+            );
         }
         if ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::ARRAY) {
             return self.rewrite_array_type(ctx, ty, annotations, pos);
@@ -1354,7 +1474,11 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
         if matches!(&ctx.typ(ty).kind, TypeKindData::UnionClassType { .. }) {
             let first = match &ctx.tree(typetree).kind {
                 crate::tree::jc_tree::TreeKind::TypeUnion { alternatives } => {
-                    if alternatives.non_empty() { Some(*alternatives.head()) } else { None }
+                    if alternatives.non_empty() {
+                        Some(*alternatives.head())
+                    } else {
+                        None
+                    }
                 }
                 _ => None,
             };
@@ -1381,8 +1505,12 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
         {
             let encl_kind = ctx.sym(encl_el_value).get_kind(ctx);
             if encl_kind == crate::code::symbol::ElementKind::PACKAGE
-                || ctx.typ(encl_ty_value).has_tag(crate::code::type_tag::TypeTag::NONE)
-                || ctx.typ(encl_ty_value).has_tag(crate::code::type_tag::TypeTag::ERROR)
+                || ctx
+                    .typ(encl_ty_value)
+                    .has_tag(crate::code::type_tag::TypeTag::NONE)
+                || ctx
+                    .typ(encl_ty_value)
+                    .has_tag(crate::code::type_tag::TypeTag::ERROR)
             {
                 break;
             }
@@ -1396,14 +1524,20 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                 encl_tr = next_tr;
             } else if let crate::tree::jc_tree::TreeKind::TypeApply { clazz, .. } = tr_kind {
                 encl_tr = *clazz;
-            } else if let crate::tree::jc_tree::TreeKind::AnnotatedType { underlying_type, .. } = tr_kind {
+            } else if let crate::tree::jc_tree::TreeKind::AnnotatedType {
+                underlying_type, ..
+            } = tr_kind
+            {
                 encl_tr = *underlying_type;
             } else {
                 break;
             }
         }
         if let Some(encl_ty_value) = encl_ty {
-            if ctx.typ(encl_ty_value).has_tag(crate::code::type_tag::TypeTag::NONE) {
+            if ctx
+                .typ(encl_ty_value)
+                .has_tag(crate::code::type_tag::TypeTag::NONE)
+            {
                 if !only_type_annotations.is_empty() {
                     let info = if only_type_annotations.length() == 1 {
                         let annotation = *only_type_annotations.head();
@@ -1413,16 +1547,26 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                             .map(|t| crate::comp::attr::annotation_type_display(ctx, t))
                             .unwrap_or_default();
                         crate::resources::compiler_properties::errors::cant_type_annotate_scoping1(
-                            crate::resources::diagnostic_contract::AnnotationArg::placeholder(display),
+                            crate::resources::diagnostic_contract::AnnotationArg::placeholder(
+                                display,
+                            ),
                         )
                     } else {
-                        let mut args: Vec<crate::resources::diagnostic_contract::AnnotationArg> = Vec::new();
+                        let mut args: Vec<crate::resources::diagnostic_contract::AnnotationArg> =
+                            Vec::new();
                         for annotation in only_type_annotations.iter() {
-                            args.push(crate::resources::diagnostic_contract::AnnotationArg::placeholder(
-                                ctx.attr(annotation).ty.map(|t| crate::comp::attr::annotation_type_display(ctx, t)).unwrap_or_default(),
-                            ));
+                            args.push(
+                                crate::resources::diagnostic_contract::AnnotationArg::placeholder(
+                                    ctx.attr(annotation)
+                                        .ty
+                                        .map(|t| crate::comp::attr::annotation_type_display(ctx, t))
+                                        .unwrap_or_default(),
+                                ),
+                            );
                         }
-                        crate::resources::compiler_properties::errors::cant_type_annotate_scoping(args)
+                        crate::resources::compiler_properties::errors::cant_type_annotate_scoping(
+                            args,
+                        )
                     };
                     crate::util::abstract_log::AbstractLog::error_at(
                         &*self.type_annotations.log,
@@ -1432,12 +1576,16 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                 }
                 return ty;
             }
-            let mut depth: List<crate::code::type_annotation_position::TypePathEntry> = List::nil();
+            let mut depth: List<TypePathEntry> = List::nil();
             let mut top_ty = Some(encl_ty_value);
             let mut top_el = encl_el;
             while let Some(top_ty_value) = top_ty {
-                if ctx.typ(top_ty_value).has_tag(crate::code::type_tag::TypeTag::NONE)
-                    || ctx.typ(top_ty_value).has_tag(crate::code::type_tag::TypeTag::ERROR)
+                if ctx
+                    .typ(top_ty_value)
+                    .has_tag(crate::code::type_tag::TypeTag::NONE)
+                    || ctx
+                        .typ(top_ty_value)
+                        .has_tag(crate::code::type_tag::TypeTag::ERROR)
                 {
                     break;
                 }
@@ -1446,8 +1594,13 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                 top_ty = encl;
                 top_el = el;
                 if let Some(encl_value) = encl {
-                    if !ctx.typ(encl_value).has_tag(crate::code::type_tag::TypeTag::NONE) {
-                        depth = depth.append(crate::code::type_annotation_position::TypePathEntry::INNER_TYPE);
+                    if !ctx
+                        .typ(encl_value)
+                        .has_tag(crate::code::type_tag::TypeTag::NONE)
+                    {
+                        depth = depth.append(
+                            TypePathEntry::INNER_TYPE,
+                        );
                     }
                 }
             }
@@ -1471,9 +1624,9 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     /// annotations, TypeAnnotationPosition pos) (TypeAnnotations.java:568-620).
     fn rewrite_array_type(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
+        ctx: &mut CompilerContext,
         ty: crate::ids::TypeId,
-        annotations: &List<crate::ids::AttributeId>,
+        annotations: &List<AttributeId>,
         mut pos: crate::code::type_annotation_position::TypeAnnotationPosition,
     ) -> crate::ids::TypeId {
         use crate::code::type_::TypeKindData;
@@ -1483,19 +1636,25 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
             }
             _ => return ty,
         };
-        let mut loc: List<crate::code::type_annotation_position::TypePathEntry> = List::nil();
+        let mut loc: List<TypePathEntry> = List::nil();
         let mut tmp_ty = base_elem;
-        loc = loc.prepend(crate::code::type_annotation_position::TypePathEntry::ARRAY);
+        loc = loc.prepend(TypePathEntry::ARRAY);
         // The top-level copy of the array type.
         let tsym = ctx.typ(ty).tsym.expect("array type symbol");
         let new_top = ctx.alloc_type(crate::code::type_::Type::new(
             crate::code::type_tag::TypeTag::ARRAY,
             Some(tsym),
-            TypeKindData::ArrayType { elemtype: Some(tmp_ty), varargs: base_varargs },
+            TypeKindData::ArrayType {
+                elemtype: Some(tmp_ty),
+                varargs: base_varargs,
+            },
         ));
         let mut tomodify = new_top;
         // Peel the nested array levels, reusing the original element chain.
-        while ctx.typ(tmp_ty).has_tag(crate::code::type_tag::TypeTag::ARRAY) {
+        while ctx
+            .typ(tmp_ty)
+            .has_tag(crate::code::type_tag::TypeTag::ARRAY)
+        {
             let (inner_elem, inner_varargs) = match &ctx.typ(tmp_ty).kind {
                 TypeKindData::ArrayType { elemtype, varargs } => {
                     (elemtype.expect("nested array element type"), *varargs)
@@ -1506,14 +1665,17 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
             let new_arr = ctx.alloc_type(crate::code::type_::Type::new(
                 crate::code::type_tag::TypeTag::ARRAY,
                 Some(arr_sym),
-                TypeKindData::ArrayType { elemtype: Some(inner_elem), varargs: inner_varargs },
+                TypeKindData::ArrayType {
+                    elemtype: Some(inner_elem),
+                    varargs: inner_varargs,
+                },
             ));
             if let TypeKindData::ArrayType { elemtype, .. } = &mut ctx.typ_mut(tomodify).kind {
                 *elemtype = Some(new_arr);
             }
             tomodify = new_arr;
             tmp_ty = inner_elem;
-            loc = loc.prepend(crate::code::type_annotation_position::TypePathEntry::ARRAY);
+            loc = loc.prepend(TypePathEntry::ARRAY);
         }
         // Fix the innermost element type: insert the annotations into its metadata.
         let annotations_list = annotations.clone();
@@ -1544,7 +1706,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
         }
         pos.location = loc;
         for annotation in annotations.iter() {
-            if let crate::code::attribute::AttributeKind::TypeCompound { position, .. } =
+            if let AttributeKind::TypeCompound { position, .. } =
                 &mut ctx.attr_mut(annotation).kind
             {
                 *position = Some(pos.clone());
@@ -1557,10 +1719,10 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     /// List<Attribute.TypeCompound> annotations) (TypeAnnotations.java:625-695).
     fn type_with_annotations_upto(
         &self,
-        ctx: &mut crate::compiler_context::CompilerContext,
+        ctx: &mut CompilerContext,
         ty: crate::ids::TypeId,
         stop_at: crate::ids::TypeId,
-        annotations: &List<crate::ids::AttributeId>,
+        annotations: &List<AttributeId>,
     ) -> crate::ids::TypeId {
         use crate::code::type_::TypeKindData;
         if ty == stop_at || ctx.typ(ty).get_enclosing_type().is_none() {
@@ -1604,7 +1766,10 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                 ctx.alloc_type(crate::code::type_::Type::new(
                     crate::code::type_tag::TypeTag::ARRAY,
                     Some(tsym),
-                    TypeKindData::ArrayType { elemtype: Some(new_elem), varargs: *varargs },
+                    TypeKindData::ArrayType {
+                        elemtype: Some(new_elem),
+                        varargs: *varargs,
+                    },
                 ))
             }
             TypeKindData::WildcardType { .. }
@@ -1621,13 +1786,13 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn resolve_frame(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        tree: crate::ids::TreeId,
-        frame: crate::ids::TreeId,
-        path: &[crate::ids::TreeId],
-        current_lambda: Option<crate::ids::TreeId>,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        frame: TreeId,
+        path: &[TreeId],
+        current_lambda: Option<TreeId>,
         outer_type_index: i32,
-        mut location: List<crate::code::type_annotation_position::TypePathEntry>,
+        mut location: List<TypePathEntry>,
     ) -> crate::code::type_annotation_position::TypeAnnotationPosition {
         use crate::code::type_annotation_position::TypeAnnotationPosition;
         use crate::code::type_annotation_position::TypePathEntry;
@@ -1688,20 +1853,29 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                         current = current.tail();
                     }
                     match type_index {
-                        Some(type_index) => TypeAnnotationPosition::constructor_invocation_type_arg(
-                            location,
-                            type_index,
-                            frame_pos,
-                            current_lambda,
-                        ),
-                        None => TypeAnnotationPosition::new_obj(location, frame_pos, current_lambda),
+                        Some(type_index) => {
+                            TypeAnnotationPosition::constructor_invocation_type_arg(
+                                location,
+                                type_index,
+                                frame_pos,
+                                current_lambda,
+                            )
+                        }
+                        None => {
+                            TypeAnnotationPosition::new_obj(location, frame_pos, current_lambda)
+                        }
                     }
                 }
             }
             TreeKind::NewArray { .. } => {
                 TypeAnnotationPosition::new_obj(location, frame_pos, current_lambda)
             }
-            TreeKind::ClassDecl { extending, implementing, typarams, .. } => {
+            TreeKind::ClassDecl {
+                extending,
+                implementing,
+                typarams,
+                ..
+            } => {
                 let extending = *extending;
                 let implementing = implementing.clone();
                 let typarams = typarams.clone();
@@ -1741,11 +1915,18 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                             parameter_index,
                             current_lambda,
                         ),
-                        None => panic!("AssertionError: Could not determine position of tree within frame"),
+                        None => panic!(
+                            "AssertionError: Could not determine position of tree within frame"
+                        ),
                     }
                 }
             }
-            TreeKind::MethodDecl { thrown, restype, typarams, .. } => {
+            TreeKind::MethodDecl {
+                thrown,
+                restype,
+                typarams,
+                ..
+            } => {
                 let thrown = thrown.clone();
                 let restype = *restype;
                 let typarams = typarams.clone();
@@ -1760,7 +1941,12 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                     current = current.tail();
                 }
                 if let Some(type_index) = thrown_index {
-                    TypeAnnotationPosition::method_throws(location, type_index, frame_pos, current_lambda)
+                    TypeAnnotationPosition::method_throws(
+                        location,
+                        type_index,
+                        frame_pos,
+                        current_lambda,
+                    )
                 } else if restype == Some(tree) {
                     TypeAnnotationPosition::method_return(location, frame_pos, current_lambda)
                 } else {
@@ -1780,14 +1966,16 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                             parameter_index,
                             current_lambda,
                         ),
-                        None => panic!("AssertionError: Could not determine position of tree within frame"),
+                        None => panic!(
+                            "AssertionError: Could not determine position of tree within frame"
+                        ),
                     }
                 }
             }
             TreeKind::TypeApply { clazz, arguments } => {
                 let clazz = *clazz;
                 let arguments = arguments.clone();
-                let new_path: Vec<crate::ids::TreeId> = path[1..].to_vec();
+                let new_path: Vec<TreeId> = path[1..].to_vec();
                 if new_path.len() < 2 {
                     panic!("AssertionError: too shallow frame path");
                 }
@@ -1804,14 +1992,19 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                     }
                     let arg = match arg {
                         Some(arg) => arg,
-                        None => panic!("AssertionError: Could not determine type argument position of tree within frame"),
+                        None => panic!(
+                            "AssertionError: Could not determine type argument position of tree within frame"
+                        ),
                     };
                     location = location.prepend(TypePathEntry {
                         tag: TypePathEntryKind::TYPE_ARGUMENT,
                         arg,
                     });
                     let frame_ty = ctx.tree(frame).ty.expect("type apply type");
-                    let type_to_use = if ctx.tree(new_path[1]).has_tag(crate::tree::jc_tree::Tag::NEWCLASS) {
+                    let type_to_use = if ctx
+                        .tree(new_path[1])
+                        .has_tag(crate::tree::jc_tree::Tag::NEWCLASS)
+                    {
                         ctx.tree(new_path[1]).ty.expect("new class type")
                     } else {
                         frame_ty
@@ -1829,7 +2022,12 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                     location,
                 )
             }
-            TreeKind::MemberReference { expr, typeargs, mode, .. } => {
+            TreeKind::MemberReference {
+                expr,
+                typeargs,
+                mode,
+                ..
+            } => {
                 let expr = *expr;
                 let typeargs = typeargs.clone();
                 let mode = *mode;
@@ -1839,7 +2037,11 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                             TypeAnnotationPosition::method_ref(location, frame_pos, current_lambda)
                         }
                         crate::tree::jc_tree::ReferenceMode::NEW => {
-                            TypeAnnotationPosition::constructor_ref(location, frame_pos, current_lambda)
+                            TypeAnnotationPosition::constructor_ref(
+                                location,
+                                frame_pos,
+                                current_lambda,
+                            )
                         }
                     }
                 } else {
@@ -1872,22 +2074,30 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                                 )
                             }
                         },
-                        None => panic!("AssertionError: Could not determine type argument position of tree within frame"),
+                        None => panic!(
+                            "AssertionError: Could not determine type argument position of tree within frame"
+                        ),
                     }
                 }
             }
             TreeKind::ArrayTypeTree { .. } => {
                 location = location.prepend(TypePathEntry::ARRAY);
-                let mut new_path: Vec<crate::ids::TreeId> = path[1..].to_vec();
+                let mut new_path: Vec<TreeId> = path[1..].to_vec();
                 loop {
                     if new_path.len() < 2 {
                         panic!("AssertionError: too shallow array frame path");
                     }
                     let np_head = new_path[1];
-                    if ctx.tree(np_head).has_tag(crate::tree::jc_tree::Tag::TYPEARRAY) {
+                    if ctx
+                        .tree(np_head)
+                        .has_tag(crate::tree::jc_tree::Tag::TYPEARRAY)
+                    {
                         new_path.remove(0);
                         location = location.prepend(TypePathEntry::ARRAY);
-                    } else if ctx.tree(np_head).has_tag(crate::tree::jc_tree::Tag::ANNOTATED_TYPE) {
+                    } else if ctx
+                        .tree(np_head)
+                        .has_tag(crate::tree::jc_tree::Tag::ANNOTATED_TYPE)
+                    {
                         new_path.remove(0);
                     } else {
                         break;
@@ -1909,13 +2119,20 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                     panic!("AssertionError: too shallow type parameter frame path");
                 }
                 let outer = path[2];
-                let first_bound = if bounds.non_empty() { Some(*bounds.head()) } else { None };
+                let first_bound = if bounds.non_empty() {
+                    Some(*bounds.head())
+                } else {
+                    None
+                };
                 let bounds_is_interface = first_bound
                     .and_then(|first_bound| ctx.tree(first_bound).ty)
                     .map(|first_ty| {
                         ctx.typ(first_ty)
                             .tsym
-                            .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0)
+                            .map(|tsym| {
+                                (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64)
+                                    != 0
+                            })
                             .unwrap_or(false)
                     })
                     .unwrap_or(false);
@@ -1990,7 +2207,11 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                     }
                     crate::code::symbol::ElementKind::PARAMETER => {
                         if ctx.sym(v).name == self.type_annotations.names._this {
-                            TypeAnnotationPosition::method_receiver(location, frame_pos, current_lambda)
+                            TypeAnnotationPosition::method_receiver(
+                                location,
+                                frame_pos,
+                                current_lambda,
+                            )
                         } else {
                             let parameter_index = self.method_param_index(ctx, path, frame);
                             TypeAnnotationPosition::method_parameter(
@@ -2002,21 +2223,35 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                         }
                     }
                     crate::code::symbol::ElementKind::EXCEPTION_PARAMETER => {
-                        TypeAnnotationPosition::exception_parameter(location, frame_pos, current_lambda)
+                        TypeAnnotationPosition::exception_parameter(
+                            location,
+                            frame_pos,
+                            current_lambda,
+                        )
                     }
                     crate::code::symbol::ElementKind::RESOURCE_VARIABLE => {
-                        TypeAnnotationPosition::resource_variable(location, frame_pos, current_lambda)
+                        TypeAnnotationPosition::resource_variable(
+                            location,
+                            frame_pos,
+                            current_lambda,
+                        )
                     }
                     _ => panic!("AssertionError: Found unexpected type annotation for variable"),
                 }
             }
-            TreeKind::AnnotatedType { underlying_type, .. } => {
+            TreeKind::AnnotatedType {
+                underlying_type, ..
+            } => {
                 if frame == tree {
                     let underlying = underlying_type.expect("annotated type underlying");
                     let utype = ctx.tree(underlying).ty.expect("underlying type");
                     let tsym_kind = ctx.typ(utype).tsym.map(|tsym| ctx.sym(tsym).get_kind(ctx));
-                    let is_wildcard = ctx.typ(utype).has_tag(crate::code::type_tag::TypeTag::WILDCARD);
-                    let is_array = ctx.typ(utype).has_tag(crate::code::type_tag::TypeTag::ARRAY);
+                    let is_wildcard = ctx
+                        .typ(utype)
+                        .has_tag(crate::code::type_tag::TypeTag::WILDCARD);
+                    let is_array = ctx
+                        .typ(utype)
+                        .has_tag(crate::code::type_tag::TypeTag::ARRAY);
                     let is_type_parameter = tsym_kind
                         .map(|kind| kind == crate::code::symbol::ElementKind::TYPE_PARAMETER)
                         .unwrap_or(false);
@@ -2025,7 +2260,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                         location = location.append_list(&nested);
                     }
                 }
-                let new_path: Vec<crate::ids::TreeId> = path[1..].to_vec();
+                let new_path: Vec<TreeId> = path[1..].to_vec();
                 if new_path.len() < 2 {
                     panic!("AssertionError: too shallow annotated type frame path");
                 }
@@ -2040,7 +2275,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                 )
             }
             TreeKind::TypeUnion { .. } => {
-                let new_path: Vec<crate::ids::TreeId> = path[1..].to_vec();
+                let new_path: Vec<TreeId> = path[1..].to_vec();
                 if new_path.len() < 2 {
                     panic!("AssertionError: too shallow union frame path");
                 }
@@ -2065,7 +2300,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                     i += 1;
                     current = current.tail();
                 }
-                let new_path: Vec<crate::ids::TreeId> = path[1..].to_vec();
+                let new_path: Vec<TreeId> = path[1..].to_vec();
                 if new_path.len() < 2 {
                     panic!("AssertionError: too shallow intersection frame path");
                 }
@@ -2092,12 +2327,14 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                 }
                 let type_index = match type_index {
                     Some(type_index) => type_index,
-                    None => return crate::code::type_annotation_position::TypeAnnotationPosition::unknown(),
+                    None => return TypeAnnotationPosition::unknown(),
                 };
                 let exsym = meth.and_then(|meth| crate::tree::tree_info::symbol(ctx, meth));
                 let exsym = match exsym {
                     Some(exsym) => exsym,
-                    None => panic!("AssertionError: could not determine symbol for method invocation"),
+                    None => {
+                        panic!("AssertionError: could not determine symbol for method invocation")
+                    }
                 };
                 if ctx.sym(exsym).is_constructor(&self.type_annotations.names) {
                     TypeAnnotationPosition::constructor_invocation_type_arg(
@@ -2124,7 +2361,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                     Some(crate::code::bound_kind::BoundKind::EXTENDS)
                     | Some(crate::code::bound_kind::BoundKind::SUPER) => {
                         location = location.prepend(TypePathEntry::WILDCARD);
-                        let new_path: Vec<crate::ids::TreeId> = path[1..].to_vec();
+                        let new_path: Vec<TreeId> = path[1..].to_vec();
                         if new_path.len() < 2 {
                             panic!("AssertionError: too shallow wildcard frame path");
                         }
@@ -2142,7 +2379,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                 }
             }
             TreeKind::FieldAccess { .. } => {
-                let new_path: Vec<crate::ids::TreeId> = path[1..].to_vec();
+                let new_path: Vec<TreeId> = path[1..].to_vec();
                 if new_path.len() < 2 {
                     panic!("AssertionError: too shallow member select frame path");
                 }
@@ -2165,11 +2402,13 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     /// Adapter: the modifier annotations of a VariableDecl/JCMethodDecl.
     fn modifiers_annotations(
         &self,
-        ctx: &crate::compiler_context::CompilerContext,
-        mods: Option<crate::ids::TreeId>,
-    ) -> List<crate::ids::TreeId> {
+        ctx: &CompilerContext,
+        mods: Option<TreeId>,
+    ) -> List<TreeId> {
         match mods.map(|mods| &ctx.tree(mods).kind) {
-            Some(crate::tree::jc_tree::TreeKind::Modifiers { annotations, .. }) => annotations.clone(),
+            Some(crate::tree::jc_tree::TreeKind::Modifiers { annotations, .. }) => {
+                annotations.clone()
+            }
             _ => List::nil(),
         }
     }
@@ -2178,11 +2417,13 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     /// (TypeAnnotations.java:1356-1385).
     fn propagate_new_class_annotations_to_owner(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        tree: crate::ids::TreeId,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
     ) {
         let (clazz, def) = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::NewClass { clazz, def, .. } => (clazz.expect("new class clazz"), *def),
+            crate::tree::jc_tree::TreeKind::NewClass { clazz, def, .. } => {
+                (clazz.expect("new class clazz"), *def)
+            }
             _ => return,
         };
         let def = match def {
@@ -2212,28 +2453,36 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
         let clazz_ty = ctx.tree(clazz).ty.expect("new class clazz type");
         let expected_location = self.locate_nested_types(ctx, clazz_ty);
         let old_attributes = ctx.sym(sym).get_raw_type_attributes();
-        let mut new_attributes: List<crate::ids::AttributeId> = List::nil();
+        let mut new_attributes: List<AttributeId> = List::nil();
         let current = old_attributes;
         for old in &current {
-        let (old_ty, old_values, old_position, synthesized) = match &ctx.attr(old).kind {
-            crate::code::attribute::AttributeKind::TypeCompound { values, position, synthesized } => {
-                (ctx.attr(old).ty, values.clone(), position.clone(), *synthesized)
-            }
-            _ => continue,
-        };
-        let old_location = old_position.map(|p| p.location).unwrap_or_else(List::nil);
-        if old_location == expected_location {
-            let new_attr = ctx.alloc_attribute(crate::code::attribute::Attribute::new(
-                old_ty,
-                crate::code::attribute::AttributeKind::TypeCompound {
-                    values: old_values,
-                    position: Some(pos.clone()),
+            let (old_ty, old_values, old_position, synthesized) = match &ctx.attr(old).kind {
+                AttributeKind::TypeCompound {
+                    values,
+                    position,
                     synthesized,
-                },
-            ));
-            new_attributes = new_attributes.append(new_attr);
+                } => (
+                    ctx.attr(old).ty,
+                    values.clone(),
+                    position.clone(),
+                    *synthesized,
+                ),
+                _ => continue,
+            };
+            let old_location = old_position.map(|p| p.location).unwrap_or_else(List::nil);
+            if old_location == expected_location {
+                let new_attr = ctx.alloc_attribute(crate::code::attribute::Attribute::new(
+                    old_ty,
+                    AttributeKind::TypeCompound {
+                        values: old_values,
+                        position: Some(pos.clone()),
+                        synthesized,
+                    },
+                ));
+                new_attributes = new_attributes.append(new_attr);
+            }
         }
-        }
-        ctx.sym_mut(owner).append_unique_type_attributes(new_attributes);
+        ctx.sym_mut(owner)
+            .append_unique_type_attributes(new_attributes);
     }
 }

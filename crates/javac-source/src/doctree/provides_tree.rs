@@ -1,3 +1,6 @@
+use super::block_tag_tree::BlockTagTree;
+use super::doc_tree::DocTree;
+use super::reference_tree::ReferenceTree;
 /// A tree node for a {@code @provides} block tag.
 ///
 /// <pre>
@@ -6,9 +9,6 @@
 ///
 /// @since 9
 use std::rc::Rc;
-use super::block_tag_tree::BlockTagTree;
-use super::doc_tree::DocTree;
-use super::reference_tree::ReferenceTree;
 
 pub trait ProvidesTree: BlockTagTree {
     /// Returns the name of the service type being documented.
@@ -18,5 +18,4 @@ pub trait ProvidesTree: BlockTagTree {
     /// Returns a description of the service type being provided by the module.
     /// @return the description
     fn get_description(&self) -> Vec<Rc<dyn DocTree>>;
-
 }

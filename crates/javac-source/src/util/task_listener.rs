@@ -59,7 +59,10 @@ mod tests {
         listener.started(&event);
         listener.finished(&event);
 
-        let mut recorder = Recorder { started: 0, finished: 0 };
+        let mut recorder = Recorder {
+            started: 0,
+            finished: 0,
+        };
         let listener: &mut dyn TaskListener = &mut recorder;
         listener.started(&event);
         listener.finished(&event);

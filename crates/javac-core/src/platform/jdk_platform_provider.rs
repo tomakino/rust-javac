@@ -81,14 +81,14 @@ use javac_tools::tools::java_file_manager::JavaFileManager;
 use crate::code::source::{Feature, Source};
 use crate::file::cache_fs_info::CacheFSInfo;
 use crate::file::javac_file_manager::JavacFileManager;
-use crate::platform::ct_sym_java_file_manager::CtSymJavaFileManager;
-use crate::util::context::Context;
-use crate::util::log::Log;
-use crate::util::options::Options;
 use crate::jvm::target::Target;
+use crate::platform::ct_sym_java_file_manager::CtSymJavaFileManager;
 use crate::platform::platform_description::{PlatformDescription, PluginInfo};
 use crate::platform::platform_provider::{PlatformNotSupported, PlatformProvider};
+use crate::util::context::Context;
 use crate::util::java_string::JavaString;
+use crate::util::log::Log;
+use crate::util::options::Options;
 use crate::util::string_utils::to_upper_case;
 
 /// Java: private static final String[] symbolFileLocation = { "lib", "ct.sym" };
@@ -298,7 +298,7 @@ struct PlatformDescriptionImpl {
     ct_sym_version: JavaString,
     /// The JDK home (Java: System.getProperty("java.home") read by findCtSym();
     /// injected because the port runs without a JVM - registered deviation).
-    java_home: std::option::Option<FsPath>,
+    java_home: Option<FsPath>,
     // Java: private final Map<Path, FileSystem> ctSym2FileSystem = new HashMap<>();
     // REGISTERED: no FileSystem handle is kept (javac-ctsym reads the archive once
     // and drops it), so the map is not declared; close() is the upstream empty-loop case.
@@ -347,11 +347,9 @@ impl PlatformDescription for PlatformDescriptionImpl {
         if !Files::exists(&ct_sym_path) {
             panic!("IllegalStateException: Cannot find ct.sym!");
         }
-        let archive = Rc::new(
-            CtSym::open(&ct_sym_path.as_path()).unwrap_or_else(|error| {
-                panic!("IllegalStateException: cannot open ct.sym: {error:?}")
-            }),
-        );
+        let archive = Rc::new(CtSym::open(&ct_sym_path.as_path()).unwrap_or_else(|error| {
+            panic!("IllegalStateException: cannot open ct.sym: {error:?}")
+        }));
         // Java: Context context = new Context(); context.put(Log.errKey, pw);
         // CacheFSInfo.preRegister(context); new JavacFileManager(context, true, null).
         // The ported wiring injects the services (registered adapter).
@@ -665,7 +663,9 @@ mod tests {
             return;
         };
         let provider = JDKPlatformProvider::new(FsPath::from_path_buf(home));
-        let description = provider.get_platform(&js("8"), &js("")).expect("platform 8");
+        let description = provider
+            .get_platform(&js("8"), &js(""))
+            .expect("platform 8");
         let file_manager = description.get_file_manager();
         assert!(file_manager.has_location(&StandardLocation::PLATFORM_CLASS_PATH));
         assert!(!file_manager.has_location(&StandardLocation::SYSTEM_MODULES));
@@ -718,7 +718,9 @@ mod tests {
             return;
         };
         let provider = JDKPlatformProvider::new(FsPath::from_path_buf(home));
-        let description = provider.get_platform(&js("17"), &js("")).expect("platform 17");
+        let description = provider
+            .get_platform(&js("17"), &js(""))
+            .expect("platform 17");
         let file_manager = description.get_file_manager();
         assert!(file_manager.has_location(&StandardLocation::SYSTEM_MODULES));
         assert!(!file_manager.has_location(&StandardLocation::PLATFORM_CLASS_PATH));

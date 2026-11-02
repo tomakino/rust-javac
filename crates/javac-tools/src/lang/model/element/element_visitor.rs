@@ -13,8 +13,8 @@
 //!   forward to `visitUnknown` become trait default methods, exactly as
 //!   upstream.
 
-use super::executable_element::ExecutableElement;
 use super::element::Element;
+use super::executable_element::ExecutableElement;
 use super::module_element::ModuleElement;
 use super::package_element::PackageElement;
 use super::record_component_element::RecordComponentElement;
@@ -102,7 +102,9 @@ pub trait ElementVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit_executable: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_executable: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits a type parameter element.
@@ -113,7 +115,9 @@ pub trait ElementVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit_type_parameter: Rust: visitor interface method not overridden")
+        panic!(
+            "AbstractMethodError: visit_type_parameter: Rust: visitor interface method not overridden"
+        )
     }
 
     /// Visits an unknown kind of element.

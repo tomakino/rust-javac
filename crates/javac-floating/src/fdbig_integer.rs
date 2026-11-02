@@ -151,7 +151,7 @@ impl FDBigInteger {
             }
         } else {
             Self::value_of_pow2(p2)
-        }
+        };
     }
 
     /// Java: public static FDBigInteger valueOfMulPow52(long value, int p5, int p2)
@@ -168,7 +168,9 @@ impl FDBigInteger {
                 let mut carry = (v0 as i64 & LONG_MASK).wrapping_mul(pow5);
                 v0 = carry as i32;
                 carry = (carry as u64 >> 32) as i64;
-                carry = (v1 as i64 & LONG_MASK).wrapping_mul(pow5).wrapping_add(carry);
+                carry = (v1 as i64 & LONG_MASK)
+                    .wrapping_mul(pow5)
+                    .wrapping_add(carry);
                 v1 = carry as i32;
                 let v2 = (carry as u64 >> 32) as i32;
                 if bitcount == 0 {
@@ -194,24 +196,13 @@ impl FDBigInteger {
                 let mut r;
                 if v1 == 0 {
                     r = vec![0; pow5.n_words as usize + 1 + extra];
-                    Self::mult_arr_const_into(
-                        &pow5.data,
-                        pow5.n_words as usize,
-                        v0,
-                        &mut r,
-                    );
+                    Self::mult_arr_const_into(&pow5.data, pow5.n_words as usize, v0, &mut r);
                 } else {
                     r = vec![0; pow5.n_words as usize + 2 + extra];
-                    Self::mult_arr_const2_into(
-                        &pow5.data,
-                        pow5.n_words as usize,
-                        v0,
-                        v1,
-                        &mut r,
-                    );
+                    Self::mult_arr_const2_into(&pow5.data, pow5.n_words as usize, v0, v1, &mut r);
                 }
                 FDBigInteger::new_from_int_array(r, pow5.offset).left_shift(p2)
-            }
+            };
         } else if p2 != 0 {
             return if bitcount == 0 {
                 FDBigInteger::new_from_int_array(vec![v0, v1], wordcount)
@@ -219,14 +210,13 @@ impl FDBigInteger {
                 FDBigInteger::new_from_int_array(
                     vec![
                         v0.wrapping_shl(bitcount as u32),
-                        ((v1 as u32) << (bitcount as u32)
-                            | ((v0 as u32) >> (32 - bitcount) as u32))
+                        ((v1 as u32) << (bitcount as u32) | ((v0 as u32) >> (32 - bitcount) as u32))
                             as i32,
                         (v1 as u32 >> (32 - bitcount) as u32) as i32,
                     ],
                     wordcount,
                 )
-            }
+            };
         }
         FDBigInteger::new_from_int_array(vec![v0, v1], 0)
     }
@@ -303,14 +293,7 @@ impl FDBigInteger {
                 result = vec![0; self.n_words as usize];
             }
             let src = self.data.clone();
-            FDBigInteger::left_shift_into(
-                &src,
-                idx,
-                &mut result,
-                bitcount,
-                anticount,
-                prev,
-            );
+            FDBigInteger::left_shift_into(&src, idx, &mut result, bitcount, anticount, prev);
             FDBigInteger::new_from_int_array(result, self.offset + wordcount)
         } else {
             if bitcount != 0 {
@@ -399,10 +382,7 @@ impl FDBigInteger {
         if th_size < s_size {
             // this value is significantly less than S, result of division is zero.
             // just mult this by 10.
-            let p = Self::mult_and_carry_by_10_in_place(
-                &mut self.data,
-                self.n_words as usize,
-            );
+            let p = Self::mult_and_carry_by_10_in_place(&mut self.data, self.n_words as usize);
             if p != 0 {
                 self.data[self.n_words as usize] = p;
                 self.n_words += 1;
@@ -526,13 +506,7 @@ impl FDBigInteger {
 
     /// Java: private static void mult(int[] s1, int s1Len, int[] s2, int s2Len,
     /// int[] dst)
-    fn mult_arrays_into(
-        s1: &[i32],
-        s1_len: usize,
-        s2: &[i32],
-        s2_len: usize,
-        dst: &mut [i32],
-    ) {
+    fn mult_arrays_into(s1: &[i32], s1_len: usize, s2: &[i32], s2_len: usize, dst: &mut [i32]) {
         for i in 0..s1_len {
             let v = s1[i] as u32 as u64;
             let mut p: u64 = 0;
@@ -551,7 +525,10 @@ impl FDBigInteger {
     /// when it is not immutable; the Rust port returns an equal value instead
     /// (value semantics), keeping every arithmetic step 1:1.
     pub(crate) fn left_inplace_sub(&self, subtrahend: &FDBigInteger) -> FDBigInteger {
-        assert!(self.size() >= subtrahend.size(), "result should be positive");
+        assert!(
+            self.size() >= subtrahend.size(),
+            "result should be positive"
+        );
         let mut minuend = self.clone();
         let mut offset_diff = subtrahend.offset - minuend.offset;
         let sub_len = subtrahend.n_words as usize;
@@ -581,9 +558,8 @@ impl FDBigInteger {
         let min_len = minuend.n_words as usize;
         let mut s_index = 0usize;
         while s_index < sub_len && m_index < min_len {
-            let diff = (minuend.data[m_index] as u32 as i64)
-                - (s_data[s_index] as u32 as i64)
-                + borrow;
+            let diff =
+                (minuend.data[m_index] as u32 as i64) - (s_data[s_index] as u32 as i64) + borrow;
             minuend.data[m_index] = diff as i32;
             borrow = diff >> 32; // signed shift
             s_index += 1;
@@ -610,7 +586,10 @@ impl FDBigInteger {
     // not read subLen afterwards; the assignment is kept 1:1.
     #[allow(unused_assignments)]
     pub(crate) fn right_inplace_sub(&self, mut subtrahend: FDBigInteger) -> FDBigInteger {
-        assert!(self.size() >= subtrahend.size(), "result should be positive");
+        assert!(
+            self.size() >= subtrahend.size(),
+            "result should be positive"
+        );
         let minuend = self;
         let mut offset_diff = minuend.offset - subtrahend.offset;
         let mut sub_len = subtrahend.n_words as usize;
@@ -650,9 +629,7 @@ impl FDBigInteger {
         }
         let mut m_index = 0usize;
         while m_index < min_len {
-            let diff = (m_data[m_index] as u32 as i64)
-                - (s_data[s_index] as u32 as i64)
-                + borrow;
+            let diff = (m_data[m_index] as u32 as i64) - (s_data[s_index] as u32 as i64) + borrow;
             s_data[s_index] = diff as i32;
             borrow = diff >> 32; // signed shift
             s_index += 1;
@@ -693,7 +670,11 @@ impl FDBigInteger {
             let a = self.data[a_len as usize];
             let b = other.data[b_len as usize];
             if a != b {
-                return if (a as u32 as u64) < (b as u32 as u64) { -1 } else { 1 };
+                return if (a as u32 as u64) < (b as u32 as u64) {
+                    -1
+                } else {
+                    1
+                };
             }
         }
         if a_len > 0 {
@@ -719,7 +700,11 @@ impl FDBigInteger {
             let a = self.data[(self.n_words - 1) as usize];
             let b = 1i32.wrapping_shl(bitcount as u32);
             if a != b {
-                return if (a as u32 as u64) < (b as u32 as u64) { -1 } else { 1 };
+                return if (a as u32 as u64) < (b as u32 as u64) {
+                    -1
+                } else {
+                    1
+                };
             }
             return Self::check_zero_tail(&self.data, (self.n_words - 1) as usize);
         }
@@ -998,13 +983,7 @@ impl FDBigInteger {
 
     /// Java: private static void mult(int[] src, int srcLen, int v0, int v1,
     /// int[] dst)
-    fn mult_arr_const2_into(
-        src: &[i32],
-        src_len: usize,
-        v0: i32,
-        v1: i32,
-        dst: &mut [i32],
-    ) {
+    fn mult_arr_const2_into(src: &[i32], src_len: usize, v0: i32, v1: i32, dst: &mut [i32]) {
         let v = v0 as u32 as u64;
         let mut carry: u64 = 0;
         for j in 0..src_len {
@@ -1172,7 +1151,6 @@ impl FDBigInteger {
     }
 }
 
-
 /// Read-only accessors for the upstream static power tables (FloatingDecimal
 /// accesses FDBigInteger.SMALL_5_POW / LONG_5_POW directly).
 pub(crate) fn small5pow(i: i32) -> i32 {
@@ -1187,7 +1165,6 @@ pub(crate) fn long5pow_len() -> usize {
     LONG_5_POW.len()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1198,10 +1175,7 @@ mod tests {
     fn to_big_integer_and_to_string_use_the_integer_value() {
         let value = FDBigInteger::value_of_pow52(3, 2);
         assert_eq!(value.to_string_debug(), "500");
-        assert_eq!(
-            value.to_big_integer().to_debug_string(),
-            "500"
-        );
+        assert_eq!(value.to_big_integer().to_debug_string(), "500");
         assert_eq!(FDBigInteger::zero().to_string_debug(), "0");
     }
 }

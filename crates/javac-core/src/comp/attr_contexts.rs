@@ -150,7 +150,7 @@ impl crate::comp::check::CheckContext for DiamondCheckContext {
                     // Java: the reason argument is the details diagnostic
                     // itself (its Type arguments carry the where clauses).
                     crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
-                        std::rc::Rc::new(details.clone()),
+                        Rc::new(details.clone()),
                     ),
                 ),
             ));
@@ -319,7 +319,6 @@ impl crate::comp::check::CheckContext for ExpressionLambdaReturnContext {
     }
 }
 
-
 /// Java: Attr.RecoveryInfo's anonymous CheckContext (Attr.java:598-620): a
 /// NestedCheckContext whose deferredAttrContext is the empty deferred context.
 /// Registered adapter: the anonymous subclass is a named struct.
@@ -372,7 +371,6 @@ impl crate::comp::check::CheckContext for RecoveryCheckContext {
         &self.deferred_attr_context
     }
 }
-
 
 /// Java: the anonymous Check.NestedCheckContext in visitTypeCast
 /// (Attr.java:4044-4065) overriding compatible with isCastable (adapter: the
@@ -429,7 +427,6 @@ impl crate::comp::check::CheckContext for CastCheckContext {
         self.enclosing.deferred_attr_context()
     }
 }
-
 
 /// Java: the anonymous Check.NestedCheckContext in visitTry (Attr.java:1893-1905)
 /// reporting TryNotApplicableToType (§9: named struct).
@@ -495,7 +492,6 @@ impl crate::comp::check::CheckContext for TryCheckContext {
         self.enclosing.deferred_attr_context()
     }
 }
-
 
 /// Java: the anonymous Check.NestedCheckContext in visitSwitchExpression
 /// (Attr.java:1650-1665) reporting IncompatibleTypeInSwitchExpression.

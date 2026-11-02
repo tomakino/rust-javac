@@ -127,7 +127,7 @@ impl SymbolMetadata {
         self.set_declaration_attributes(other.get_declaration_attributes());
         let sym = self.sym;
         if (ctx.sym(sym).flags_field & flags::BRIDGE) != 0 {
-            assert!(ctx.sym(other.sym).kind == Kind::MTH);
+            assert_eq!(ctx.sym(other.sym).kind, Kind::MTH);
             let mut type_attributes: List<AttributeId> = List::nil();
             let mut current = other.get_type_attributes();
             while current.non_empty() {
@@ -157,9 +157,7 @@ impl SymbolMetadata {
 
     /// Java: public boolean isEmpty()
     pub fn is_empty(&self) -> bool {
-        !self.is_started()
-            || self.pending_completion()
-            || self.filter_decl_sentinels().is_empty()
+        !self.is_started() || self.pending_completion() || self.filter_decl_sentinels().is_empty()
     }
 
     /// Java: public boolean isTypesEmpty()
@@ -195,7 +193,11 @@ impl SymbolMetadata {
                 let mut current = list;
                 while current.non_empty() {
                     let type_compound = *current.head();
-                    if !self.type_attributes.iter().any(|existing| existing == type_compound) {
+                    if !self
+                        .type_attributes
+                        .iter()
+                        .any(|existing| existing == type_compound)
+                    {
                         self.type_attributes = self.type_attributes.append(type_compound);
                     }
                     current = current.tail();
@@ -264,7 +266,8 @@ impl SymbolMetadata {
     ) {
         let attributes = self.filter_decl_sentinels();
         if attributes.iter().any(|existing| existing == compound) {
-            self.attributes = DeclState::Attributes(remove_from_compound_list(ctx, attributes.clone(), compound));
+            self.attributes =
+                DeclState::Attributes(remove_from_compound_list(ctx, attributes.clone(), compound));
         } else {
             // slow path: the attributes list might contain annotation containers
             let mut current = attributes.clone();
@@ -295,9 +298,7 @@ impl SymbolMetadata {
                     &ctx.attr(array[0]).kind,
                     AttributeKind::Compound { .. } | AttributeKind::TypeCompound { .. }
                 );
-                if is_compound
-                    && ctx.attr(array[0]).ty == ctx.attr(compound).ty
-                {
+                if is_compound && ctx.attr(array[0]).ty == ctx.attr(compound).ty {
                     self.attributes = DeclState::Attributes(remove_from_compound_list(
                         ctx,
                         attributes.clone(),

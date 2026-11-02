@@ -96,10 +96,10 @@ mod tests {
         }
 
         fn get_comment_tree(
-        &self,
-        _ctx: &mut crate::compiler_context::CompilerContext,
-        tree: TreeId,
-    ) -> Option<Rc<DCTree>> {
+            &self,
+            _ctx: &mut crate::compiler_context::CompilerContext,
+            tree: TreeId,
+        ) -> Option<Rc<DCTree>> {
             self.trees.get(&tree).cloned()
         }
 
@@ -153,7 +153,11 @@ mod tests {
         assert!(!table.has_comment(tree));
         assert!(table.get_comment(tree).is_none());
         assert!(table.get_comment_text(tree).is_none());
-        assert!(table.get_comment_tree(&mut crate::compiler_context::CompilerContext::new(), tree).is_none());
+        assert!(
+            table
+                .get_comment_tree(&mut crate::compiler_context::CompilerContext::new(), tree)
+                .is_none()
+        );
     }
 
     #[test]
@@ -168,10 +172,16 @@ mod tests {
             table.get_comment(tree).expect("comment").get_source_pos(2),
             7
         );
-        assert!(table.get_comment_tree(&mut crate::compiler_context::CompilerContext::new(), tree).is_none());
+        assert!(
+            table
+                .get_comment_tree(&mut crate::compiler_context::CompilerContext::new(), tree)
+                .is_none()
+        );
 
         table.trees.insert(tree, doc_comment_tree(comment, "doc"));
-        let parsed = table.get_comment_tree(&mut crate::compiler_context::CompilerContext::new(), tree).expect("parsed tree");
+        let parsed = table
+            .get_comment_tree(&mut crate::compiler_context::CompilerContext::new(), tree)
+            .expect("parsed tree");
         assert_eq!(
             parsed.get_kind(),
             javac_source::doctree::doc_tree::Kind::DOC_COMMENT

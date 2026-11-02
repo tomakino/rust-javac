@@ -65,11 +65,7 @@ impl fmt::Display for Error {
         match self {
             Error::Io(err) => write!(f, "I/O error: {}", err),
             Error::NotAnImage(name) => write!(f, "\"{}\" is not an image file", name),
-            Error::WrongVersion {
-                name,
-                major,
-                minor,
-            } => write!(
+            Error::WrongVersion { name, major, minor } => write!(
                 f,
                 "the image file \"{}\" is not the correct version. Major: {}. Minor: {}",
                 name, major, minor
@@ -134,11 +130,8 @@ impl JImage {
     ///
     /// Built lazily, on first use.
     pub fn resources(&self) -> &[String] {
-        self.resources.get_or_init(|| {
-            self.index
-                .resource_names(&self.modules)
-                .unwrap_or_default()
-        })
+        self.resources
+            .get_or_init(|| self.index.resource_names(&self.modules).unwrap_or_default())
     }
 
     /// Lists the children of a jimage tree node, e.g. "/modules/java.base/java/lang".
@@ -223,10 +216,10 @@ mod tests {
     use std::collections::HashMap;
     use std::path::PathBuf;
 
+    use super::JImage;
     use super::image_header;
     use super::image_location;
     use super::image_strings;
-    use super::JImage;
 
     // Recorded from the baseline JDK 17.0.19 (Temurin 17.0.19+10), the JDK that also produced
     // this machine's lib/modules:
@@ -411,7 +404,8 @@ mod tests {
                 return Some(candidate);
             }
         }
-        let fallback = PathBuf::from(r"C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot\lib\modules");
+        let fallback =
+            PathBuf::from(r"C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot\lib\modules");
         if fallback.is_file() {
             return Some(fallback);
         }
@@ -474,24 +468,34 @@ mod tests {
 
         // The leading slash is accepted as well (the internal name form).
         assert_eq!(
-            image.find_resource("/java.base/java/lang/Object.class").as_deref(),
+            image
+                .find_resource("/java.base/java/lang/Object.class")
+                .as_deref(),
             Some(object.as_slice())
         );
         assert_eq!(
-            image.get_class_bytes("java.base", "java.lang.Object").as_deref(),
+            image
+                .get_class_bytes("java.base", "java.lang.Object")
+                .as_deref(),
             Some(object.as_slice())
         );
         assert_eq!(
-            image.get_class_bytes("java.base", "java/lang/Object").as_deref(),
+            image
+                .get_class_bytes("java.base", "java/lang/Object")
+                .as_deref(),
             Some(object.as_slice())
         );
 
-        assert!(image
-            .get_class_bytes("java.base", "java.lang.NoSuchClassXyz")
-            .is_none());
-        assert!(image
-            .find_resource("java.base/java/lang/NoSuchClassXyz.class")
-            .is_none());
+        assert!(
+            image
+                .get_class_bytes("java.base", "java.lang.NoSuchClassXyz")
+                .is_none()
+        );
+        assert!(
+            image
+                .find_resource("java.base/java/lang/NoSuchClassXyz.class")
+                .is_none()
+        );
         assert!(image.find_resource("no.such.module/Foo.class").is_none());
         assert!(image.find_resource("java.base").is_none());
     }
@@ -597,10 +601,12 @@ mod tests {
         assert!(entries.contains(&"/modules".to_string()));
         assert!(entries.contains(&"/packages".to_string()));
         assert!(entries.contains(&"/java.base/java/lang/Object.class".to_string()));
-        assert!(!image
-            .resources()
-            .iter()
-            .any(|name| name.starts_with("modules/") || name.starts_with("packages/")));
+        assert!(
+            !image
+                .resources()
+                .iter()
+                .any(|name| name.starts_with("modules/") || name.starts_with("packages/"))
+        );
     }
 
     /// /modules and /packages tree nodes that carry the synthetic "modules"/"packages" module
@@ -677,8 +683,14 @@ mod tests {
     #[test]
     fn image_strings_hash_matches_jdk() {
         // Produced by jdk.internal.jimage.ImageStringsReader.hashCode on the baseline JDK.
-        assert_eq!(image_strings::hash_code(&units("/java.base/java/lang/Object.class")), 2066871583);
-        assert_eq!(image_strings::hash_code(&units("/java.base/module-info.class")), 2084612757);
+        assert_eq!(
+            image_strings::hash_code(&units("/java.base/java/lang/Object.class")),
+            2066871583
+        );
+        assert_eq!(
+            image_strings::hash_code(&units("/java.base/module-info.class")),
+            2084612757
+        );
         assert_eq!(image_strings::hash_code(&units("/modules")), 271141917);
         assert_eq!(image_strings::hash_code(&units("/packages")), 192025657);
         assert_eq!(
@@ -687,7 +699,10 @@ mod tests {
             )),
             1326423269
         );
-        assert_eq!(image_strings::hash_code(&units("")), image_strings::HASH_MULTIPLIER);
+        assert_eq!(
+            image_strings::hash_code(&units("")),
+            image_strings::HASH_MULTIPLIER
+        );
         assert_eq!(
             image_strings::hash_code_seeded(&units("/java.base/java/lang/Object.class"), 12345),
             1812041453
@@ -736,9 +751,18 @@ mod tests {
         table.push(0);
 
         assert_eq!(image_strings::string_from_bytes(&table, 0).unwrap(), "abc");
-        assert_eq!(image_strings::string_from_bytes(&table, offset_e_acute).unwrap(), "é");
-        assert_eq!(image_strings::string_from_bytes(&table, offset_cjk).unwrap(), "中文");
-        assert_eq!(image_strings::string_from_bytes(&table, offset_emoji).unwrap(), "😀");
+        assert_eq!(
+            image_strings::string_from_bytes(&table, offset_e_acute).unwrap(),
+            "é"
+        );
+        assert_eq!(
+            image_strings::string_from_bytes(&table, offset_cjk).unwrap(),
+            "中文"
+        );
+        assert_eq!(
+            image_strings::string_from_bytes(&table, offset_emoji).unwrap(),
+            "😀"
+        );
         assert_eq!(
             image_strings::string_from_bytes(&table, offset_nul).unwrap(),
             "a\0b"
@@ -766,11 +790,11 @@ mod tests {
     fn image_location_decompress_reads_attribute_record() {
         let mut bytes: Vec<u8> = Vec::new();
         // kind = 1 (MODULE), value 5 (1 byte)
-        bytes.extend_from_slice(&[(1 << 3), 0x05]);
+        bytes.extend_from_slice(&[1 << 3, 0x05]);
         // kind = 3 (BASE), value 7 (1 byte)
-        bytes.extend_from_slice(&[(3 << 3), 0x07]);
+        bytes.extend_from_slice(&[3 << 3, 0x07]);
         // kind = 5 (OFFSET), value 100 (1 byte)
-        bytes.extend_from_slice(&[(5 << 3), 0x64]);
+        bytes.extend_from_slice(&[5 << 3, 0x64]);
         // kind = 7 (UNCOMPRESSED), value 1895 = 0x0767 (2 bytes)
         bytes.extend_from_slice(&[(7 << 3) | 1, 0x07, 0x67]);
         // ATTRIBUTE_END
@@ -823,7 +847,10 @@ mod tests {
             return;
         };
         let cases: &[(&str, &[&str])] = &[
-            ("java.lang", &["java.base", "java.instrument", "java.management"]),
+            (
+                "java.lang",
+                &["java.base", "java.instrument", "java.management"],
+            ),
             ("java.util", &["java.base", "java.logging", "java.prefs"]),
             ("java.io", &["java.base"]),
             ("java.nio", &["java.base"]),
@@ -831,12 +858,19 @@ mod tests {
             ("com.sun.beans", &["java.desktop"]),
         ];
         for (package, expected) in cases {
-            let mut modules = image.modules_of_package(package).expect("modules_of_package");
+            let mut modules = image
+                .modules_of_package(package)
+                .expect("modules_of_package");
             modules.sort();
             let expected: Vec<String> = expected.iter().map(|module| module.to_string()).collect();
             assert_eq!(modules, expected, "package {}", package);
         }
-        assert!(image.modules_of_package("no.such.package").unwrap().is_empty());
+        assert!(
+            image
+                .modules_of_package("no.such.package")
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -849,7 +883,9 @@ mod tests {
         let mut lines = Vec::new();
         let mut pair_count = 0usize;
         for package in &packages {
-            let mut modules = image.modules_of_package(package).expect("modules_of_package");
+            let mut modules = image
+                .modules_of_package(package)
+                .expect("modules_of_package");
             modules.sort();
             pair_count += modules.len();
             lines.push(format!("{}={}", package, modules.join(",")));
@@ -868,7 +904,9 @@ mod tests {
         modules.sort();
         let mut lines = Vec::new();
         for module in &modules {
-            let mut packages = image.packages_of_module(module).expect("packages_of_module");
+            let mut packages = image
+                .packages_of_module(module)
+                .expect("packages_of_module");
             packages.sort();
             if !packages.is_empty() {
                 lines.push(format!("{}={}", module, packages.join(",")));
@@ -876,15 +914,27 @@ mod tests {
         }
         assert_eq!(lines.len(), EXPECTED_MODULE_COUNT);
         assert_eq!(fnv1a64_names(&lines), EXPECTED_MODULE_PACKAGE_FNV);
-        for (module, count) in [("java.base", 189), ("java.compiler", 9), ("jdk.compiler", 40)] {
+        for (module, count) in [
+            ("java.base", 189),
+            ("java.compiler", 9),
+            ("jdk.compiler", 40),
+        ] {
             assert_eq!(
-                image.packages_of_module(module).expect("packages_of_module").len(),
+                image
+                    .packages_of_module(module)
+                    .expect("packages_of_module")
+                    .len(),
                 count,
                 "module {}",
                 module
             );
         }
-        assert!(image.packages_of_module("no.such.module").unwrap().is_empty());
+        assert!(
+            image
+                .packages_of_module("no.such.module")
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

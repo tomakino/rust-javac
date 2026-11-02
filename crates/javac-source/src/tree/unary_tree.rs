@@ -1,3 +1,4 @@
+use super::expression_tree::ExpressionTree;
 /// A tree node for postfix and unary expressions.
 /// Use {@link #getKind getKind} to determine the kind of operator.
 ///
@@ -15,11 +16,9 @@
 /// @author Jonathan Gibbons
 /// @since 1.6
 use std::rc::Rc;
-use super::expression_tree::ExpressionTree;
 
 pub trait UnaryTree: ExpressionTree {
     /// Returns the expression that is the operand of the unary operator.
     /// @return the expression
     fn get_expression(&self) -> Rc<dyn ExpressionTree>;
-
 }

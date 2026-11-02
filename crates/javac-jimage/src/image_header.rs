@@ -75,9 +75,7 @@ impl ImageHeader {
         // Rust: the JDK would fail later (negative capacities / huge index) for corrupt
         // headers; rejecting the nonsensical values here keeps the arithmetic checked.
         if table_length < 0 || locations_size < 0 || strings_size < 0 || resource_count < 0 {
-            return Err(Error::Corrupted(
-                "negative image header field".to_string(),
-            ));
+            return Err(Error::Corrupted("negative image header field".to_string()));
         }
 
         Ok(ImageHeader {

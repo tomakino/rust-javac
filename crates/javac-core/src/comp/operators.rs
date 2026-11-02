@@ -477,8 +477,7 @@ impl Operators {
         {
             t
         } else if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
-            let upper = ctx.upper_bound_of(t)
-                .expect("type variable upper bound");
+            let upper = ctx.upper_bound_of(t).expect("type variable upper bound");
             self.string_promotion(ctx, syms, types, upper)
         } else {
             syms.object_type
@@ -574,7 +573,10 @@ impl Operators {
     /// Java: Name operatorName(Tag tag) (Operators.java:293-295) — the opname[]
     /// lookup expressed as the initOperatorNames match (Porting rules adapter).
     pub fn operator_name(&self, tag: Tag) -> Name {
-        let from = |text: &str| self.names.from_string(&javac_strings::JavaString::from(text));
+        let from = |text: &str| {
+            self.names
+                .from_string(&javac_strings::JavaString::from(text))
+        };
         match tag {
             Tag::POS => from("+"),
             Tag::NEG => from("-"),
@@ -618,9 +620,10 @@ impl Operators {
         tag: Tag,
         args: &[Option<TypeId>],
     ) -> SymbolId {
-        let erroneous = args.iter().flatten().any(|t| {
-            ctx.typ(*t).has_tag(TypeTag::ERROR) || ctx.typ(*t).has_tag(TypeTag::NONE)
-        });
+        let erroneous = args
+            .iter()
+            .flatten()
+            .any(|t| ctx.typ(*t).has_tag(TypeTag::ERROR) || ctx.typ(*t).has_tag(TypeTag::NONE));
         if !erroneous {
             use crate::resources::compiler_properties::errors;
             let op_name = self.operator_name(tag);
@@ -650,7 +653,8 @@ impl Operators {
                 .args
                 .iter()
                 .map(|arg| {
-                    Rc::new(javac_strings::JavaString::from(arg.to_text().as_str())) as DiagnosticArg
+                    Rc::new(javac_strings::JavaString::from(arg.to_text().as_str()))
+                        as DiagnosticArg
                 })
                 .collect();
             let source = self.log.current_source();
@@ -690,46 +694,78 @@ impl Operators {
     #[allow(clippy::type_complexity)]
     fn init_unary_operators(&mut self, ctx: &mut CompilerContext, syms: &Symtab) {
         let table: &[(UnaryKind, Tag, &[(OperatorType, OperatorType, i32)])] = &[
-            (UnaryKind::Numeric, Tag::POS, &[
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, byte_codes::NOP),
-                (OperatorType::FLOAT, OperatorType::FLOAT, byte_codes::NOP),
-                (OperatorType::LONG, OperatorType::LONG, byte_codes::NOP),
-                (OperatorType::INT, OperatorType::INT, byte_codes::NOP),
-            ]),
-            (UnaryKind::Numeric, Tag::NEG, &[
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, byte_codes::DNEG),
-                (OperatorType::FLOAT, OperatorType::FLOAT, byte_codes::FNEG),
-                (OperatorType::LONG, OperatorType::LONG, byte_codes::LNEG),
-                (OperatorType::INT, OperatorType::INT, byte_codes::INEG),
-            ]),
-            (UnaryKind::NumericIntegral, Tag::COMPL, &[
-                (OperatorType::LONG, OperatorType::LONG, byte_codes::LXOR),
-                (OperatorType::INT, OperatorType::INT, byte_codes::IXOR),
-            ]),
-            (UnaryKind::PrefixPostfix, Tag::POSTINC, &[
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, byte_codes::DADD),
-                (OperatorType::FLOAT, OperatorType::FLOAT, byte_codes::FADD),
-                (OperatorType::LONG, OperatorType::LONG, byte_codes::LADD),
-                (OperatorType::INT, OperatorType::INT, byte_codes::IADD),
-                (OperatorType::CHAR, OperatorType::CHAR, byte_codes::IADD),
-                (OperatorType::SHORT, OperatorType::SHORT, byte_codes::IADD),
-                (OperatorType::BYTE, OperatorType::BYTE, byte_codes::IADD),
-            ]),
-            (UnaryKind::PrefixPostfix, Tag::POSTDEC, &[
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, byte_codes::DSUB),
-                (OperatorType::FLOAT, OperatorType::FLOAT, byte_codes::FSUB),
-                (OperatorType::LONG, OperatorType::LONG, byte_codes::LSUB),
-                (OperatorType::INT, OperatorType::INT, byte_codes::ISUB),
-                (OperatorType::CHAR, OperatorType::CHAR, byte_codes::ISUB),
-                (OperatorType::SHORT, OperatorType::SHORT, byte_codes::ISUB),
-                (OperatorType::BYTE, OperatorType::BYTE, byte_codes::ISUB),
-            ]),
-            (UnaryKind::Boolean, Tag::NOT, &[
-                (OperatorType::BOOLEAN, OperatorType::BOOLEAN, byte_codes::BOOL_NOT),
-            ]),
-            (UnaryKind::Reference, Tag::NULLCHK, &[
-                (OperatorType::OBJECT, OperatorType::OBJECT, byte_codes::NULLCHK),
-            ]),
+            (
+                UnaryKind::Numeric,
+                Tag::POS,
+                &[
+                    (OperatorType::DOUBLE, OperatorType::DOUBLE, byte_codes::NOP),
+                    (OperatorType::FLOAT, OperatorType::FLOAT, byte_codes::NOP),
+                    (OperatorType::LONG, OperatorType::LONG, byte_codes::NOP),
+                    (OperatorType::INT, OperatorType::INT, byte_codes::NOP),
+                ],
+            ),
+            (
+                UnaryKind::Numeric,
+                Tag::NEG,
+                &[
+                    (OperatorType::DOUBLE, OperatorType::DOUBLE, byte_codes::DNEG),
+                    (OperatorType::FLOAT, OperatorType::FLOAT, byte_codes::FNEG),
+                    (OperatorType::LONG, OperatorType::LONG, byte_codes::LNEG),
+                    (OperatorType::INT, OperatorType::INT, byte_codes::INEG),
+                ],
+            ),
+            (
+                UnaryKind::NumericIntegral,
+                Tag::COMPL,
+                &[
+                    (OperatorType::LONG, OperatorType::LONG, byte_codes::LXOR),
+                    (OperatorType::INT, OperatorType::INT, byte_codes::IXOR),
+                ],
+            ),
+            (
+                UnaryKind::PrefixPostfix,
+                Tag::POSTINC,
+                &[
+                    (OperatorType::DOUBLE, OperatorType::DOUBLE, byte_codes::DADD),
+                    (OperatorType::FLOAT, OperatorType::FLOAT, byte_codes::FADD),
+                    (OperatorType::LONG, OperatorType::LONG, byte_codes::LADD),
+                    (OperatorType::INT, OperatorType::INT, byte_codes::IADD),
+                    (OperatorType::CHAR, OperatorType::CHAR, byte_codes::IADD),
+                    (OperatorType::SHORT, OperatorType::SHORT, byte_codes::IADD),
+                    (OperatorType::BYTE, OperatorType::BYTE, byte_codes::IADD),
+                ],
+            ),
+            (
+                UnaryKind::PrefixPostfix,
+                Tag::POSTDEC,
+                &[
+                    (OperatorType::DOUBLE, OperatorType::DOUBLE, byte_codes::DSUB),
+                    (OperatorType::FLOAT, OperatorType::FLOAT, byte_codes::FSUB),
+                    (OperatorType::LONG, OperatorType::LONG, byte_codes::LSUB),
+                    (OperatorType::INT, OperatorType::INT, byte_codes::ISUB),
+                    (OperatorType::CHAR, OperatorType::CHAR, byte_codes::ISUB),
+                    (OperatorType::SHORT, OperatorType::SHORT, byte_codes::ISUB),
+                    (OperatorType::BYTE, OperatorType::BYTE, byte_codes::ISUB),
+                ],
+            ),
+            (
+                UnaryKind::Boolean,
+                Tag::NOT,
+                &[(
+                    OperatorType::BOOLEAN,
+                    OperatorType::BOOLEAN,
+                    byte_codes::BOOL_NOT,
+                )],
+            ),
+            (
+                UnaryKind::Reference,
+                Tag::NULLCHK,
+                &[(
+                    OperatorType::OBJECT,
+                    OperatorType::OBJECT,
+                    byte_codes::NULLCHK,
+                )],
+            ),
         ];
         for (kind, tag, entries) in table {
             // Java: initOperators prepends each helper; the operator suppliers
@@ -753,145 +789,660 @@ impl Operators {
     /// Java: private void initBinaryOperators() (Operators.java:707-804)
     #[allow(clippy::type_complexity)]
     fn init_binary_operators(&mut self, ctx: &mut CompilerContext, syms: &Symtab) {
-        let table: &[(BinaryKind, Tag, &[(OperatorType, OperatorType, OperatorType, &[i32])])] = &[
-            (BinaryKind::String, Tag::PLUS, &[
-                (OperatorType::STRING, OperatorType::OBJECT, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-                (OperatorType::OBJECT, OperatorType::STRING, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-                (OperatorType::STRING, OperatorType::STRING, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-                (OperatorType::STRING, OperatorType::INT, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-                (OperatorType::STRING, OperatorType::LONG, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-                (OperatorType::STRING, OperatorType::FLOAT, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-                (OperatorType::STRING, OperatorType::DOUBLE, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-                (OperatorType::STRING, OperatorType::BOOLEAN, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-                (OperatorType::STRING, OperatorType::BOT, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-                (OperatorType::INT, OperatorType::STRING, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-                (OperatorType::LONG, OperatorType::STRING, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-                (OperatorType::FLOAT, OperatorType::STRING, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-                (OperatorType::DOUBLE, OperatorType::STRING, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-                (OperatorType::BOOLEAN, OperatorType::STRING, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-                (OperatorType::BOT, OperatorType::STRING, OperatorType::STRING, &[byte_codes::STRING_ADD]),
-            ]),
-            (BinaryKind::Numeric, Tag::PLUS, &[
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, OperatorType::DOUBLE, &[byte_codes::DADD]),
-                (OperatorType::FLOAT, OperatorType::FLOAT, OperatorType::FLOAT, &[byte_codes::FADD]),
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::LONG, &[byte_codes::LADD]),
-                (OperatorType::INT, OperatorType::INT, OperatorType::INT, &[byte_codes::IADD]),
-            ]),
-            (BinaryKind::Numeric, Tag::MINUS, &[
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, OperatorType::DOUBLE, &[byte_codes::DSUB]),
-                (OperatorType::FLOAT, OperatorType::FLOAT, OperatorType::FLOAT, &[byte_codes::FSUB]),
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::LONG, &[byte_codes::LSUB]),
-                (OperatorType::INT, OperatorType::INT, OperatorType::INT, &[byte_codes::ISUB]),
-            ]),
-            (BinaryKind::Numeric, Tag::MUL, &[
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, OperatorType::DOUBLE, &[byte_codes::DMUL]),
-                (OperatorType::FLOAT, OperatorType::FLOAT, OperatorType::FLOAT, &[byte_codes::FMUL]),
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::LONG, &[byte_codes::LMUL]),
-                (OperatorType::INT, OperatorType::INT, OperatorType::INT, &[byte_codes::IMUL]),
-            ]),
-            (BinaryKind::Numeric, Tag::DIV, &[
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, OperatorType::DOUBLE, &[byte_codes::DDIV]),
-                (OperatorType::FLOAT, OperatorType::FLOAT, OperatorType::FLOAT, &[byte_codes::FDIV]),
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::LONG, &[byte_codes::LDIV]),
-                (OperatorType::INT, OperatorType::INT, OperatorType::INT, &[byte_codes::IDIV]),
-            ]),
-            (BinaryKind::Numeric, Tag::MOD, &[
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, OperatorType::DOUBLE, &[byte_codes::DMOD]),
-                (OperatorType::FLOAT, OperatorType::FLOAT, OperatorType::FLOAT, &[byte_codes::FMOD]),
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::LONG, &[byte_codes::LMOD]),
-                (OperatorType::INT, OperatorType::INT, OperatorType::INT, &[byte_codes::IMOD]),
-            ]),
-            (BinaryKind::Boolean, Tag::BITAND, &[
-                (OperatorType::BOOLEAN, OperatorType::BOOLEAN, OperatorType::BOOLEAN, &[byte_codes::IAND]),
-            ]),
-            (BinaryKind::NumericIntegral, Tag::BITAND, &[
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::LONG, &[byte_codes::LAND]),
-                (OperatorType::INT, OperatorType::INT, OperatorType::INT, &[byte_codes::IAND]),
-            ]),
-            (BinaryKind::Boolean, Tag::BITOR, &[
-                (OperatorType::BOOLEAN, OperatorType::BOOLEAN, OperatorType::BOOLEAN, &[byte_codes::IOR]),
-            ]),
-            (BinaryKind::NumericIntegral, Tag::BITOR, &[
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::LONG, &[byte_codes::LOR]),
-                (OperatorType::INT, OperatorType::INT, OperatorType::INT, &[byte_codes::IOR]),
-            ]),
-            (BinaryKind::Boolean, Tag::BITXOR, &[
-                (OperatorType::BOOLEAN, OperatorType::BOOLEAN, OperatorType::BOOLEAN, &[byte_codes::IXOR]),
-            ]),
-            (BinaryKind::NumericIntegral, Tag::BITXOR, &[
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::LONG, &[byte_codes::LXOR]),
-                (OperatorType::INT, OperatorType::INT, OperatorType::INT, &[byte_codes::IXOR]),
-            ]),
-            (BinaryKind::Shift, Tag::SL, &[
-                (OperatorType::INT, OperatorType::INT, OperatorType::INT, &[byte_codes::ISHL]),
-                (OperatorType::INT, OperatorType::LONG, OperatorType::INT, &[byte_codes::ISHLL]),
-                (OperatorType::LONG, OperatorType::INT, OperatorType::LONG, &[byte_codes::LSHL]),
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::LONG, &[byte_codes::LSHLL]),
-            ]),
-            (BinaryKind::Shift, Tag::SR, &[
-                (OperatorType::INT, OperatorType::INT, OperatorType::INT, &[byte_codes::ISHR]),
-                (OperatorType::INT, OperatorType::LONG, OperatorType::INT, &[byte_codes::ISHRL]),
-                (OperatorType::LONG, OperatorType::INT, OperatorType::LONG, &[byte_codes::LSHR]),
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::LONG, &[byte_codes::LSHRL]),
-            ]),
-            (BinaryKind::Shift, Tag::USR, &[
-                (OperatorType::INT, OperatorType::INT, OperatorType::INT, &[byte_codes::IUSHR]),
-                (OperatorType::INT, OperatorType::LONG, OperatorType::INT, &[byte_codes::IUSHRL]),
-                (OperatorType::LONG, OperatorType::INT, OperatorType::LONG, &[byte_codes::LUSHR]),
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::LONG, &[byte_codes::LUSHRL]),
-            ]),
-            (BinaryKind::Numeric, Tag::LT, &[
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, OperatorType::BOOLEAN, &[byte_codes::DCMPG, byte_codes::IFLT]),
-                (OperatorType::FLOAT, OperatorType::FLOAT, OperatorType::BOOLEAN, &[byte_codes::FCMPG, byte_codes::IFLT]),
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::BOOLEAN, &[byte_codes::LCMP, byte_codes::IFLT]),
-                (OperatorType::INT, OperatorType::INT, OperatorType::BOOLEAN, &[byte_codes::IF_ICMPLT]),
-            ]),
-            (BinaryKind::Numeric, Tag::GT, &[
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, OperatorType::BOOLEAN, &[byte_codes::DCMPL, byte_codes::IFGT]),
-                (OperatorType::FLOAT, OperatorType::FLOAT, OperatorType::BOOLEAN, &[byte_codes::FCMPL, byte_codes::IFGT]),
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::BOOLEAN, &[byte_codes::LCMP, byte_codes::IFGT]),
-                (OperatorType::INT, OperatorType::INT, OperatorType::BOOLEAN, &[byte_codes::IF_ICMPGT]),
-            ]),
-            (BinaryKind::Numeric, Tag::LE, &[
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, OperatorType::BOOLEAN, &[byte_codes::DCMPG, byte_codes::IFLE]),
-                (OperatorType::FLOAT, OperatorType::FLOAT, OperatorType::BOOLEAN, &[byte_codes::FCMPG, byte_codes::IFLE]),
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::BOOLEAN, &[byte_codes::LCMP, byte_codes::IFLE]),
-                (OperatorType::INT, OperatorType::INT, OperatorType::BOOLEAN, &[byte_codes::IF_ICMPLE]),
-            ]),
-            (BinaryKind::Numeric, Tag::GE, &[
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, OperatorType::BOOLEAN, &[byte_codes::DCMPL, byte_codes::IFGE]),
-                (OperatorType::FLOAT, OperatorType::FLOAT, OperatorType::BOOLEAN, &[byte_codes::FCMPL, byte_codes::IFGE]),
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::BOOLEAN, &[byte_codes::LCMP, byte_codes::IFGE]),
-                (OperatorType::INT, OperatorType::INT, OperatorType::BOOLEAN, &[byte_codes::IF_ICMPGE]),
-            ]),
-            (BinaryKind::Equality, Tag::EQ, &[
-                (OperatorType::OBJECT, OperatorType::OBJECT, OperatorType::BOOLEAN, &[byte_codes::IF_ACMPEQ]),
-                (OperatorType::BOOLEAN, OperatorType::BOOLEAN, OperatorType::BOOLEAN, &[byte_codes::IF_ICMPEQ]),
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, OperatorType::BOOLEAN, &[byte_codes::DCMPL, byte_codes::IFEQ]),
-                (OperatorType::FLOAT, OperatorType::FLOAT, OperatorType::BOOLEAN, &[byte_codes::FCMPL, byte_codes::IFEQ]),
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::BOOLEAN, &[byte_codes::LCMP, byte_codes::IFEQ]),
-                (OperatorType::INT, OperatorType::INT, OperatorType::BOOLEAN, &[byte_codes::IF_ICMPEQ]),
-            ]),
-            (BinaryKind::Equality, Tag::NE, &[
-                (OperatorType::OBJECT, OperatorType::OBJECT, OperatorType::BOOLEAN, &[byte_codes::IF_ACMPNE]),
-                (OperatorType::BOOLEAN, OperatorType::BOOLEAN, OperatorType::BOOLEAN, &[byte_codes::IF_ICMPNE]),
-                (OperatorType::DOUBLE, OperatorType::DOUBLE, OperatorType::BOOLEAN, &[byte_codes::DCMPL, byte_codes::IFNE]),
-                (OperatorType::FLOAT, OperatorType::FLOAT, OperatorType::BOOLEAN, &[byte_codes::FCMPL, byte_codes::IFNE]),
-                (OperatorType::LONG, OperatorType::LONG, OperatorType::BOOLEAN, &[byte_codes::LCMP, byte_codes::IFNE]),
-                (OperatorType::INT, OperatorType::INT, OperatorType::BOOLEAN, &[byte_codes::IF_ICMPNE]),
-            ]),
-            (BinaryKind::Boolean, Tag::AND, &[
-                (OperatorType::BOOLEAN, OperatorType::BOOLEAN, OperatorType::BOOLEAN, &[byte_codes::BOOL_AND]),
-            ]),
-            (BinaryKind::Boolean, Tag::OR, &[
-                (OperatorType::BOOLEAN, OperatorType::BOOLEAN, OperatorType::BOOLEAN, &[byte_codes::BOOL_OR]),
-            ]),
+        let table: &[(
+            BinaryKind,
+            Tag,
+            &[(OperatorType, OperatorType, OperatorType, &[i32])],
+        )] = &[
+            (
+                BinaryKind::String,
+                Tag::PLUS,
+                &[
+                    (
+                        OperatorType::STRING,
+                        OperatorType::OBJECT,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                    (
+                        OperatorType::OBJECT,
+                        OperatorType::STRING,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                    (
+                        OperatorType::STRING,
+                        OperatorType::STRING,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                    (
+                        OperatorType::STRING,
+                        OperatorType::INT,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                    (
+                        OperatorType::STRING,
+                        OperatorType::LONG,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                    (
+                        OperatorType::STRING,
+                        OperatorType::FLOAT,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                    (
+                        OperatorType::STRING,
+                        OperatorType::DOUBLE,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                    (
+                        OperatorType::STRING,
+                        OperatorType::BOOLEAN,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                    (
+                        OperatorType::STRING,
+                        OperatorType::BOT,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::STRING,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::STRING,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                    (
+                        OperatorType::FLOAT,
+                        OperatorType::STRING,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                    (
+                        OperatorType::DOUBLE,
+                        OperatorType::STRING,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                    (
+                        OperatorType::BOOLEAN,
+                        OperatorType::STRING,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                    (
+                        OperatorType::BOT,
+                        OperatorType::STRING,
+                        OperatorType::STRING,
+                        &[byte_codes::STRING_ADD],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Numeric,
+                Tag::PLUS,
+                &[
+                    (
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        &[byte_codes::DADD],
+                    ),
+                    (
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        &[byte_codes::FADD],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        &[byte_codes::LADD],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        &[byte_codes::IADD],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Numeric,
+                Tag::MINUS,
+                &[
+                    (
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        &[byte_codes::DSUB],
+                    ),
+                    (
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        &[byte_codes::FSUB],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        &[byte_codes::LSUB],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        &[byte_codes::ISUB],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Numeric,
+                Tag::MUL,
+                &[
+                    (
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        &[byte_codes::DMUL],
+                    ),
+                    (
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        &[byte_codes::FMUL],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        &[byte_codes::LMUL],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        &[byte_codes::IMUL],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Numeric,
+                Tag::DIV,
+                &[
+                    (
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        &[byte_codes::DDIV],
+                    ),
+                    (
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        &[byte_codes::FDIV],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        &[byte_codes::LDIV],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        &[byte_codes::IDIV],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Numeric,
+                Tag::MOD,
+                &[
+                    (
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        &[byte_codes::DMOD],
+                    ),
+                    (
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        &[byte_codes::FMOD],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        &[byte_codes::LMOD],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        &[byte_codes::IMOD],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Boolean,
+                Tag::BITAND,
+                &[(
+                    OperatorType::BOOLEAN,
+                    OperatorType::BOOLEAN,
+                    OperatorType::BOOLEAN,
+                    &[byte_codes::IAND],
+                )],
+            ),
+            (
+                BinaryKind::NumericIntegral,
+                Tag::BITAND,
+                &[
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        &[byte_codes::LAND],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        &[byte_codes::IAND],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Boolean,
+                Tag::BITOR,
+                &[(
+                    OperatorType::BOOLEAN,
+                    OperatorType::BOOLEAN,
+                    OperatorType::BOOLEAN,
+                    &[byte_codes::IOR],
+                )],
+            ),
+            (
+                BinaryKind::NumericIntegral,
+                Tag::BITOR,
+                &[
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        &[byte_codes::LOR],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        &[byte_codes::IOR],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Boolean,
+                Tag::BITXOR,
+                &[(
+                    OperatorType::BOOLEAN,
+                    OperatorType::BOOLEAN,
+                    OperatorType::BOOLEAN,
+                    &[byte_codes::IXOR],
+                )],
+            ),
+            (
+                BinaryKind::NumericIntegral,
+                Tag::BITXOR,
+                &[
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        &[byte_codes::LXOR],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        &[byte_codes::IXOR],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Shift,
+                Tag::SL,
+                &[
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        &[byte_codes::ISHL],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::LONG,
+                        OperatorType::INT,
+                        &[byte_codes::ISHLL],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::INT,
+                        OperatorType::LONG,
+                        &[byte_codes::LSHL],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        &[byte_codes::LSHLL],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Shift,
+                Tag::SR,
+                &[
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        &[byte_codes::ISHR],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::LONG,
+                        OperatorType::INT,
+                        &[byte_codes::ISHRL],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::INT,
+                        OperatorType::LONG,
+                        &[byte_codes::LSHR],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        &[byte_codes::LSHRL],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Shift,
+                Tag::USR,
+                &[
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        &[byte_codes::IUSHR],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::LONG,
+                        OperatorType::INT,
+                        &[byte_codes::IUSHRL],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::INT,
+                        OperatorType::LONG,
+                        &[byte_codes::LUSHR],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        &[byte_codes::LUSHRL],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Numeric,
+                Tag::LT,
+                &[
+                    (
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::DCMPG, byte_codes::IFLT],
+                    ),
+                    (
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::FCMPG, byte_codes::IFLT],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::LCMP, byte_codes::IFLT],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::IF_ICMPLT],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Numeric,
+                Tag::GT,
+                &[
+                    (
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::DCMPL, byte_codes::IFGT],
+                    ),
+                    (
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::FCMPL, byte_codes::IFGT],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::LCMP, byte_codes::IFGT],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::IF_ICMPGT],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Numeric,
+                Tag::LE,
+                &[
+                    (
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::DCMPG, byte_codes::IFLE],
+                    ),
+                    (
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::FCMPG, byte_codes::IFLE],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::LCMP, byte_codes::IFLE],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::IF_ICMPLE],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Numeric,
+                Tag::GE,
+                &[
+                    (
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::DCMPL, byte_codes::IFGE],
+                    ),
+                    (
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::FCMPL, byte_codes::IFGE],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::LCMP, byte_codes::IFGE],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::IF_ICMPGE],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Equality,
+                Tag::EQ,
+                &[
+                    (
+                        OperatorType::OBJECT,
+                        OperatorType::OBJECT,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::IF_ACMPEQ],
+                    ),
+                    (
+                        OperatorType::BOOLEAN,
+                        OperatorType::BOOLEAN,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::IF_ICMPEQ],
+                    ),
+                    (
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::DCMPL, byte_codes::IFEQ],
+                    ),
+                    (
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::FCMPL, byte_codes::IFEQ],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::LCMP, byte_codes::IFEQ],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::IF_ICMPEQ],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Equality,
+                Tag::NE,
+                &[
+                    (
+                        OperatorType::OBJECT,
+                        OperatorType::OBJECT,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::IF_ACMPNE],
+                    ),
+                    (
+                        OperatorType::BOOLEAN,
+                        OperatorType::BOOLEAN,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::IF_ICMPNE],
+                    ),
+                    (
+                        OperatorType::DOUBLE,
+                        OperatorType::DOUBLE,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::DCMPL, byte_codes::IFNE],
+                    ),
+                    (
+                        OperatorType::FLOAT,
+                        OperatorType::FLOAT,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::FCMPL, byte_codes::IFNE],
+                    ),
+                    (
+                        OperatorType::LONG,
+                        OperatorType::LONG,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::LCMP, byte_codes::IFNE],
+                    ),
+                    (
+                        OperatorType::INT,
+                        OperatorType::INT,
+                        OperatorType::BOOLEAN,
+                        &[byte_codes::IF_ICMPNE],
+                    ),
+                ],
+            ),
+            (
+                BinaryKind::Boolean,
+                Tag::AND,
+                &[(
+                    OperatorType::BOOLEAN,
+                    OperatorType::BOOLEAN,
+                    OperatorType::BOOLEAN,
+                    &[byte_codes::BOOL_AND],
+                )],
+            ),
+            (
+                BinaryKind::Boolean,
+                Tag::OR,
+                &[(
+                    OperatorType::BOOLEAN,
+                    OperatorType::BOOLEAN,
+                    OperatorType::BOOLEAN,
+                    &[byte_codes::BOOL_OR],
+                )],
+            ),
         ];
         for (kind, tag, entries) in table {
             for (arg1, arg2, res, opcodes) in entries.iter() {
                 let name = self.operator_name(*tag);
-                let symbol =
-                    self.make_operator(ctx, syms, &name, &[*arg1, *arg2], *res, opcodes);
+                let symbol = self.make_operator(ctx, syms, &name, &[*arg1, *arg2], *res, opcodes);
                 self.binary.push(BinaryEntry {
                     tag: *tag,
                     kind: *kind,
@@ -912,7 +1463,6 @@ fn type_arg_text(ctx: &CompilerContext, t: TypeId) -> String {
         .map(|tsym| crate::comp::resolve::symbol_display_name(ctx, tsym))
         .unwrap_or_else(|| format!("{:?}", ctx.typ(t).get_tag()))
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -939,12 +1489,7 @@ mod tests {
     fn harness() -> Harness {
         let mut ctx = CompilerContext::new();
         let names = Rc::new(Names::new(false));
-        let syms = Symtab::new(
-            &mut ctx,
-            Rc::clone(&names),
-            Target::JDK1_17,
-            Source::JDK17,
-        );
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, Source::JDK17);
         let mut jcontext = Context::new();
         let messages = JavacMessages::instance(&mut jcontext);
         let diags = Rc::new(Factory::new(messages, "compiler"));
@@ -978,9 +1523,7 @@ mod tests {
     fn return_type(ctx: &CompilerContext, sym: SymbolId) -> TypeId {
         let ty = ctx.sym(sym).ty.expect("operator type");
         match &ctx.typ(ty).kind {
-            TypeKindData::MethodType { restype, .. } => {
-                restype.expect("operator return type")
-            }
+            TypeKindData::MethodType { restype, .. } => restype.expect("operator return type"),
             _ => panic!("expected a method type"),
         }
     }
@@ -991,15 +1534,9 @@ mod tests {
         let int_t = h.syms.int_type;
         let string_t = h.syms.string_type;
         let long_t = h.syms.long_type;
-        let plus = h.operators.resolve_binary(
-            &mut h.ctx,
-            &h.syms,
-            &h.types,
-            0,
-            Tag::PLUS,
-            int_t,
-            int_t,
-        );
+        let plus =
+            h.operators
+                .resolve_binary(&mut h.ctx, &h.syms, &h.types, 0, Tag::PLUS, int_t, int_t);
         assert_ne!(plus, h.operators.no_op_symbol);
         assert_eq!(operator_opcode(&h.ctx, plus), byte_codes::IADD);
         assert_eq!(return_type(&h.ctx, plus), int_t);
@@ -1017,15 +1554,9 @@ mod tests {
         assert_eq!(operator_opcode(&h.ctx, concat), byte_codes::STRING_ADD);
         assert_eq!(return_type(&h.ctx, concat), string_t);
 
-        let shift = h.operators.resolve_binary(
-            &mut h.ctx,
-            &h.syms,
-            &h.types,
-            0,
-            Tag::SL,
-            int_t,
-            long_t,
-        );
+        let shift =
+            h.operators
+                .resolve_binary(&mut h.ctx, &h.syms, &h.types, 0, Tag::SL, int_t, long_t);
         assert_ne!(shift, h.operators.no_op_symbol);
         assert_eq!(operator_opcode(&h.ctx, shift), byte_codes::ISHLL);
         assert_eq!(return_type(&h.ctx, shift), int_t);
@@ -1036,26 +1567,16 @@ mod tests {
         let mut h = harness();
         let int_t = h.syms.int_type;
         let bool_t = h.syms.boolean_type;
-        let neg = h.operators.resolve_unary(
-            &mut h.ctx,
-            &h.syms,
-            &h.types,
-            0,
-            Tag::NEG,
-            int_t,
-        );
+        let neg = h
+            .operators
+            .resolve_unary(&mut h.ctx, &h.syms, &h.types, 0, Tag::NEG, int_t);
         assert_ne!(neg, h.operators.no_op_symbol);
         assert_eq!(operator_opcode(&h.ctx, neg), byte_codes::INEG);
         assert_eq!(return_type(&h.ctx, neg), int_t);
 
-        let not = h.operators.resolve_unary(
-            &mut h.ctx,
-            &h.syms,
-            &h.types,
-            0,
-            Tag::NOT,
-            bool_t,
-        );
+        let not = h
+            .operators
+            .resolve_unary(&mut h.ctx, &h.syms, &h.types, 0, Tag::NOT, bool_t);
         assert_ne!(not, h.operators.no_op_symbol);
         assert_eq!(operator_opcode(&h.ctx, not), byte_codes::BOOL_NOT);
         assert_eq!(return_type(&h.ctx, not), bool_t);
@@ -1098,7 +1619,10 @@ mod tests {
         let sum = cf
             .fold2(&mut h.ctx, &h.syms, byte_codes::IADD, one, two)
             .expect("int fold");
-        assert_eq!(h.ctx.typ(sum).const_value(), Some(&ConstantValue::Integer(3)));
+        assert_eq!(
+            h.ctx.typ(sum).const_value(),
+            Some(&ConstantValue::Integer(3))
+        );
         let zero = h.ctx.type_const_type(int_t, ConstantValue::Integer(0));
         let quotient = cf.fold2(&mut h.ctx, &h.syms, byte_codes::IDIV, one, zero);
         assert!(quotient.is_none(), "division by zero must return null");
@@ -1129,12 +1653,8 @@ mod tests {
         let one = h.ctx.type_const_type(int_t, ConstantValue::Integer(1));
         // Composite instruction lcmp; iflt (as built by Operators.mergeOpcodes).
         let cmp = (byte_codes::LCMP << byte_codes::PRE_SHIFT) | byte_codes::IFLT;
-        let two_long = h
-            .ctx
-            .type_const_type(long_t, ConstantValue::Long(2));
-        let one_long = h
-            .ctx
-            .type_const_type(long_t, ConstantValue::Long(1));
+        let two_long = h.ctx.type_const_type(long_t, ConstantValue::Long(2));
+        let one_long = h.ctx.type_const_type(long_t, ConstantValue::Long(1));
         let lt = cf
             .fold2(&mut h.ctx, &h.syms, cmp, one_long, two_long)
             .expect("composite fold");

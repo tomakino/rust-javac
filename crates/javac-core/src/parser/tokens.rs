@@ -168,7 +168,122 @@ pub enum TokenKind {
 impl TokenKind {
     /// The upstream enum declaration order.
     pub fn values() -> &'static [TokenKind] {
-        &[TokenKind::EOF, TokenKind::ERROR, TokenKind::IDENTIFIER, TokenKind::ABSTRACT, TokenKind::ASSERT, TokenKind::BOOLEAN, TokenKind::BREAK, TokenKind::BYTE, TokenKind::CASE, TokenKind::CATCH, TokenKind::CHAR, TokenKind::CLASS, TokenKind::CONST, TokenKind::CONTINUE, TokenKind::DEFAULT, TokenKind::DO, TokenKind::DOUBLE, TokenKind::ELSE, TokenKind::ENUM, TokenKind::EXTENDS, TokenKind::FINAL, TokenKind::FINALLY, TokenKind::FLOAT, TokenKind::FOR, TokenKind::GOTO, TokenKind::IF, TokenKind::IMPLEMENTS, TokenKind::IMPORT, TokenKind::INSTANCEOF, TokenKind::INT, TokenKind::INTERFACE, TokenKind::LONG, TokenKind::NATIVE, TokenKind::NEW, TokenKind::PACKAGE, TokenKind::PRIVATE, TokenKind::PROTECTED, TokenKind::PUBLIC, TokenKind::RETURN, TokenKind::SHORT, TokenKind::STATIC, TokenKind::STRICTFP, TokenKind::SUPER, TokenKind::SWITCH, TokenKind::SYNCHRONIZED, TokenKind::THIS, TokenKind::THROW, TokenKind::THROWS, TokenKind::TRANSIENT, TokenKind::TRY, TokenKind::VOID, TokenKind::VOLATILE, TokenKind::WHILE, TokenKind::INTLITERAL, TokenKind::LONGLITERAL, TokenKind::FLOATLITERAL, TokenKind::DOUBLELITERAL, TokenKind::CHARLITERAL, TokenKind::STRINGLITERAL, TokenKind::TRUE, TokenKind::FALSE, TokenKind::NULL, TokenKind::UNDERSCORE, TokenKind::ARROW, TokenKind::COLCOL, TokenKind::LPAREN, TokenKind::RPAREN, TokenKind::LBRACE, TokenKind::RBRACE, TokenKind::LBRACKET, TokenKind::RBRACKET, TokenKind::SEMI, TokenKind::COMMA, TokenKind::DOT, TokenKind::ELLIPSIS, TokenKind::EQ, TokenKind::GT, TokenKind::LT, TokenKind::BANG, TokenKind::TILDE, TokenKind::QUES, TokenKind::COLON, TokenKind::EQEQ, TokenKind::LTEQ, TokenKind::GTEQ, TokenKind::BANGEQ, TokenKind::AMPAMP, TokenKind::BARBAR, TokenKind::PLUSPLUS, TokenKind::SUBSUB, TokenKind::PLUS, TokenKind::SUB, TokenKind::STAR, TokenKind::SLASH, TokenKind::AMP, TokenKind::BAR, TokenKind::CARET, TokenKind::PERCENT, TokenKind::LTLT, TokenKind::GTGT, TokenKind::GTGTGT, TokenKind::PLUSEQ, TokenKind::SUBEQ, TokenKind::STAREQ, TokenKind::SLASHEQ, TokenKind::AMPEQ, TokenKind::BAREQ, TokenKind::CARETEQ, TokenKind::PERCENTEQ, TokenKind::LTLTEQ, TokenKind::GTGTEQ, TokenKind::GTGTGTEQ, TokenKind::MONKEYS_AT, TokenKind::CUSTOM]
+        &[
+            TokenKind::EOF,
+            TokenKind::ERROR,
+            TokenKind::IDENTIFIER,
+            TokenKind::ABSTRACT,
+            TokenKind::ASSERT,
+            TokenKind::BOOLEAN,
+            TokenKind::BREAK,
+            TokenKind::BYTE,
+            TokenKind::CASE,
+            TokenKind::CATCH,
+            TokenKind::CHAR,
+            TokenKind::CLASS,
+            TokenKind::CONST,
+            TokenKind::CONTINUE,
+            TokenKind::DEFAULT,
+            TokenKind::DO,
+            TokenKind::DOUBLE,
+            TokenKind::ELSE,
+            TokenKind::ENUM,
+            TokenKind::EXTENDS,
+            TokenKind::FINAL,
+            TokenKind::FINALLY,
+            TokenKind::FLOAT,
+            TokenKind::FOR,
+            TokenKind::GOTO,
+            TokenKind::IF,
+            TokenKind::IMPLEMENTS,
+            TokenKind::IMPORT,
+            TokenKind::INSTANCEOF,
+            TokenKind::INT,
+            TokenKind::INTERFACE,
+            TokenKind::LONG,
+            TokenKind::NATIVE,
+            TokenKind::NEW,
+            TokenKind::PACKAGE,
+            TokenKind::PRIVATE,
+            TokenKind::PROTECTED,
+            TokenKind::PUBLIC,
+            TokenKind::RETURN,
+            TokenKind::SHORT,
+            TokenKind::STATIC,
+            TokenKind::STRICTFP,
+            TokenKind::SUPER,
+            TokenKind::SWITCH,
+            TokenKind::SYNCHRONIZED,
+            TokenKind::THIS,
+            TokenKind::THROW,
+            TokenKind::THROWS,
+            TokenKind::TRANSIENT,
+            TokenKind::TRY,
+            TokenKind::VOID,
+            TokenKind::VOLATILE,
+            TokenKind::WHILE,
+            TokenKind::INTLITERAL,
+            TokenKind::LONGLITERAL,
+            TokenKind::FLOATLITERAL,
+            TokenKind::DOUBLELITERAL,
+            TokenKind::CHARLITERAL,
+            TokenKind::STRINGLITERAL,
+            TokenKind::TRUE,
+            TokenKind::FALSE,
+            TokenKind::NULL,
+            TokenKind::UNDERSCORE,
+            TokenKind::ARROW,
+            TokenKind::COLCOL,
+            TokenKind::LPAREN,
+            TokenKind::RPAREN,
+            TokenKind::LBRACE,
+            TokenKind::RBRACE,
+            TokenKind::LBRACKET,
+            TokenKind::RBRACKET,
+            TokenKind::SEMI,
+            TokenKind::COMMA,
+            TokenKind::DOT,
+            TokenKind::ELLIPSIS,
+            TokenKind::EQ,
+            TokenKind::GT,
+            TokenKind::LT,
+            TokenKind::BANG,
+            TokenKind::TILDE,
+            TokenKind::QUES,
+            TokenKind::COLON,
+            TokenKind::EQEQ,
+            TokenKind::LTEQ,
+            TokenKind::GTEQ,
+            TokenKind::BANGEQ,
+            TokenKind::AMPAMP,
+            TokenKind::BARBAR,
+            TokenKind::PLUSPLUS,
+            TokenKind::SUBSUB,
+            TokenKind::PLUS,
+            TokenKind::SUB,
+            TokenKind::STAR,
+            TokenKind::SLASH,
+            TokenKind::AMP,
+            TokenKind::BAR,
+            TokenKind::CARET,
+            TokenKind::PERCENT,
+            TokenKind::LTLT,
+            TokenKind::GTGT,
+            TokenKind::GTGTGT,
+            TokenKind::PLUSEQ,
+            TokenKind::SUBEQ,
+            TokenKind::STAREQ,
+            TokenKind::SLASHEQ,
+            TokenKind::AMPEQ,
+            TokenKind::BAREQ,
+            TokenKind::CARETEQ,
+            TokenKind::PERCENTEQ,
+            TokenKind::LTLTEQ,
+            TokenKind::GTGTEQ,
+            TokenKind::GTGTGTEQ,
+            TokenKind::MONKEYS_AT,
+            TokenKind::CUSTOM,
+        ]
     }
 
     /// The keyword/text of this token kind (Java: TokenKind.name, null -> None).
@@ -417,7 +532,13 @@ impl Token {
         end_pos: i32,
         comments: Option<List<Rc<dyn Comment>>>,
     ) -> Token {
-        let token = Token { kind, pos, end_pos, comments, value: TokenValue::None };
+        let token = Token {
+            kind,
+            pos,
+            end_pos,
+            comments,
+            value: TokenValue::None,
+        };
         token.check_kind();
         token
     }
@@ -430,7 +551,13 @@ impl Token {
         name: Name,
         comments: Option<List<Rc<dyn Comment>>>,
     ) -> Token {
-        let token = Token { kind, pos, end_pos, comments, value: TokenValue::Name(name) };
+        let token = Token {
+            kind,
+            pos,
+            end_pos,
+            comments,
+            value: TokenValue::Name(name),
+        };
         token.check_kind();
         token
     }
@@ -443,7 +570,13 @@ impl Token {
         string_val: JavaString,
         comments: Option<List<Rc<dyn Comment>>>,
     ) -> Token {
-        let token = Token { kind, pos, end_pos, comments, value: TokenValue::String(string_val) };
+        let token = Token {
+            kind,
+            pos,
+            end_pos,
+            comments,
+            value: TokenValue::String(string_val),
+        };
         token.check_kind();
         token
     }
@@ -477,7 +610,10 @@ impl Token {
         };
         // Java: if (kind.tag != expected) throw new AssertionError("Bad token kind - expected " + expected);
         if self.kind.tag() != expected {
-            panic!("java.lang.AssertionError: Bad token kind - expected {:?}", expected);
+            panic!(
+                "java.lang.AssertionError: Bad token kind - expected {:?}",
+                expected
+            );
         }
     }
 
@@ -491,8 +627,18 @@ impl Token {
         let first = tokens.lookup_kind_str(&name[..1]);
         let second = tokens.lookup_kind_str(&name[1..]);
         [
-            Token::new(first, self.pos, self.pos + first.name().unwrap_or("").len() as i32, None),
-            Token::new(second, self.pos + first.name().unwrap_or("").len() as i32, self.end_pos, None),
+            Token::new(
+                first,
+                self.pos,
+                self.pos + first.name().unwrap_or("").len() as i32,
+                None,
+            ),
+            Token::new(
+                second,
+                self.pos + first.name().unwrap_or("").len() as i32,
+                self.end_pos,
+                None,
+            ),
         ]
     }
 
@@ -507,7 +653,10 @@ impl Token {
     /// Java: public String stringVal()
     pub fn string_val(&self) -> &JavaString {
         match &self.value {
-            TokenValue::String(value) | TokenValue::Numeric { string_val: value, .. } => value,
+            TokenValue::String(value)
+            | TokenValue::Numeric {
+                string_val: value, ..
+            } => value,
             TokenValue::None | TokenValue::Name(_) => {
                 panic!("java.lang.UnsupportedOperationException")
             }
@@ -594,13 +743,18 @@ impl Tokens {
 
     /// Java: TokenKind lookupKind(String name)
     pub fn lookup_kind_str(&self, name: &str) -> TokenKind {
-        self.keywords.get(name).copied().unwrap_or(TokenKind::IDENTIFIER)
+        self.keywords
+            .get(name)
+            .copied()
+            .unwrap_or(TokenKind::IDENTIFIER)
     }
 }
 
 impl fmt::Debug for Tokens {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Tokens").field("keywords", &self.keywords.len()).finish()
+        f.debug_struct("Tokens")
+            .field("keywords", &self.keywords.len())
+            .finish()
     }
 }
 

@@ -162,11 +162,21 @@ mod tests {
             "error".to_string()
         }
 
-        fn format_source(&self, _diag: &DummyDiagnostic, fullname: bool, _locale: &Locale) -> String {
+        fn format_source(
+            &self,
+            _diag: &DummyDiagnostic,
+            fullname: bool,
+            _locale: &Locale,
+        ) -> String {
             if fullname { "full" } else { "short" }.to_string()
         }
 
-        fn format_position(&self, _diag: &DummyDiagnostic, pk: PositionKind, _locale: &Locale) -> String {
+        fn format_position(
+            &self,
+            _diag: &DummyDiagnostic,
+            pk: PositionKind,
+            _locale: &Locale,
+        ) -> String {
             format!("{pk:?}")
         }
 
@@ -187,7 +197,10 @@ mod tests {
             formatter.format(&diag, Some(&Locale::new("zh_CN"))),
             "format:zh_CN"
         );
-        assert_eq!(formatter.format_position(&diag, PositionKind::Line, &Locale::new("en")), "Line");
+        assert_eq!(
+            formatter.format_position(&diag, PositionKind::Line, &Locale::new("en")),
+            "Line"
+        );
         let configuration = formatter.get_configuration();
         configuration.set_visible(&[DiagnosticPart::Summary, DiagnosticPart::Source]);
         configuration.set_multiline_limit(MultilineLimit::Depth, 3);
@@ -208,7 +221,10 @@ mod tests {
         {
             let formatter: &mut dyn DiagnosticFormatter<DummyDiagnostic> = &mut formatter;
             assert_eq!(formatter.format_kind(&diag, &Locale::new("en")), "error");
-            assert_eq!(formatter.format_source(&diag, true, &Locale::new("en")), "full");
+            assert_eq!(
+                formatter.format_source(&diag, true, &Locale::new("en")),
+                "full"
+            );
             let _ = formatter.get_configuration();
         }
         assert_eq!(

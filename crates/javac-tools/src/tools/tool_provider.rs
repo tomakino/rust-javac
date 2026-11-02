@@ -105,7 +105,10 @@ impl ToolProvider {
     ///   systemDocumentationToolModule = "jdk.javadoc"
     ///   systemDocumentationToolName   = "jdk.javadoc.internal.api.JavadocTool"
     pub fn get_system_documentation_tool() -> Option<Rc<dyn DocumentationTool>> {
-        let _ = (system_documentation_tool_module(), system_documentation_tool_name());
+        let _ = (
+            system_documentation_tool_module(),
+            system_documentation_tool_name(),
+        );
         None
     }
 
@@ -136,10 +139,10 @@ mod tests {
         // assertion first, then install a factory that reports an unavailable
         // platform compiler (the JavacTool implementation is provided by the
         // compiler entry point and is not registered in this crate test).
-        assert!(super::ToolProvider::get_system_java_compiler().is_none());
+        assert!(ToolProvider::get_system_java_compiler().is_none());
         let factory: super::SystemJavaCompilerFactory = std::sync::Arc::new(|| None);
         assert!(super::install_system_java_compiler(factory).is_ok());
-        assert!(super::ToolProvider::get_system_java_compiler().is_none());
+        assert!(ToolProvider::get_system_java_compiler().is_none());
         let duplicate: super::SystemJavaCompilerFactory = std::sync::Arc::new(|| None);
         assert!(super::install_system_java_compiler(duplicate).is_err());
     }
@@ -160,7 +163,10 @@ mod tests {
     fn constants_match_upstream() {
         // The lookup constants are part of the upstream implementation; they
         // are kept for the P6 API wiring.
-        assert_eq!(super::system_java_compiler_module(), JavaString::from("jdk.compiler"));
+        assert_eq!(
+            super::system_java_compiler_module(),
+            JavaString::from("jdk.compiler")
+        );
         assert_eq!(
             super::system_java_compiler_name(),
             JavaString::from("com.sun.tools.javac.api.JavacTool")

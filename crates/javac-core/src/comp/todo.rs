@@ -170,9 +170,7 @@ impl Todo {
             None => {
                 let queue = Rc::new(FileQueue::new(file.clone()));
                 if let Some(file) = file {
-                    self.file_map
-                        .borrow_mut()
-                        .push((file, Rc::clone(&queue)));
+                    self.file_map.borrow_mut().push((file, Rc::clone(&queue)));
                 }
                 self.contents_by_file
                     .borrow_mut()

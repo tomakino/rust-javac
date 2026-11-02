@@ -203,7 +203,8 @@ impl PoolWriter {
         // Java: SignatureGenerator.classReference calls PoolWriter.enterInner
         // (PoolWriter.java:318-319, 223-231); the shared generator defers the
         // class references, so merge them whenever a signature is put.
-        self.signature_gen.take_inner_classes_into(ctx, &mut self.inner_classes);
+        self.signature_gen
+            .take_inner_classes_into(ctx, &mut self.inner_classes);
         self.put_name(name)
     }
 
@@ -405,9 +406,7 @@ impl PoolWriter {
         self.pool
             .poolbuf
             .append_bytes_from(&bytes, 0, bytes.len() as i32);
-        if self.pool.overflow_string.is_none()
-            && bytes.len() as i32 > Self::MAX_STRING_LENGTH
-        {
+        if self.pool.overflow_string.is_none() && bytes.len() as i32 > Self::MAX_STRING_LENGTH {
             self.pool.overflow_string = Some(String::from_utf8_lossy(&bytes).to_string());
         }
     }
@@ -485,7 +484,8 @@ impl PoolWriter {
                     }
                     PoolKey::String(text) => {
                         let name = self.names.from_string(&text);
-                        let name_index = self.write_if_needed(ctx, syms, PoolConstantRef::Utf8(name));
+                        let name_index =
+                            self.write_if_needed(ctx, syms, PoolConstantRef::Utf8(name));
                         self.pool.poolbuf.append_char(name_index);
                     }
                     _ => panic!("AssertionError: unexpected basic constant"),
@@ -494,7 +494,9 @@ impl PoolWriter {
             PoolConstantRef::MethodHandle(handle) => {
                 let reference_kind = crate::code::symbol::method_handle_reference_kind(ctx, handle)
                     .expect("method handle reference kind");
-                self.pool.poolbuf.append_byte(class_file::CONSTANT_METHODHANDLE);
+                self.pool
+                    .poolbuf
+                    .append_byte(class_file::CONSTANT_METHODHANDLE);
                 self.pool.poolbuf.append_byte(reference_kind);
                 let base = crate::code::symbol::method_handle_base_symbol(ctx, handle)
                     .expect("method handle base symbol");
@@ -502,14 +504,19 @@ impl PoolWriter {
                 self.pool.poolbuf.append_char(member_index);
             }
             PoolConstantRef::MethodType(ty) => {
-                self.pool.poolbuf.append_byte(class_file::CONSTANT_METHODTYPE);
+                self.pool
+                    .poolbuf
+                    .append_byte(class_file::CONSTANT_METHODTYPE);
                 let base = self.types.base_type_of(ctx, syms, ty);
                 let descriptor = self.put_descriptor(ctx, syms, base);
                 self.pool.poolbuf.append_char(descriptor);
             }
             PoolConstantRef::NameAndType(nt) => {
-                self.pool.poolbuf.append_byte(class_file::CONSTANT_NAMEANDTYPE);
-                let name_index = self.write_if_needed(ctx, syms, PoolConstantRef::Utf8(nt.name.clone()));
+                self.pool
+                    .poolbuf
+                    .append_byte(class_file::CONSTANT_NAMEANDTYPE);
+                let name_index =
+                    self.write_if_needed(ctx, syms, PoolConstantRef::Utf8(nt.name.clone()));
                 self.pool.poolbuf.append_char(name_index);
                 let descriptor = self.put_descriptor(ctx, syms, nt.type_);
                 self.pool.poolbuf.append_char(descriptor);
@@ -591,7 +598,8 @@ impl PoolWriter {
             return self.names.empty.clone();
         }
         let names = Rc::clone(&self.names);
-        self.signature_gen.take_inner_classes_into(ctx, &mut self.inner_classes);
+        self.signature_gen
+            .take_inner_classes_into(ctx, &mut self.inner_classes);
         self.signature_gen.to_name(&names)
     }
 
@@ -603,8 +611,7 @@ impl PoolWriter {
         t: TypeId,
     ) -> Name {
         self.signature_gen.reset();
-        let typarams =
-            crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
+        let typarams = crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
         if !typarams.is_empty()
             && let Err(error) = self.signature_gen.assemble_params_sig(ctx, syms, typarams)
         {
@@ -629,7 +636,8 @@ impl PoolWriter {
             }
         }
         let names = Rc::clone(&self.names);
-        self.signature_gen.take_inner_classes_into(ctx, &mut self.inner_classes);
+        self.signature_gen
+            .take_inner_classes_into(ctx, &mut self.inner_classes);
         self.signature_gen.to_name(&names)
     }
 }
@@ -658,10 +666,7 @@ fn pool_tag_of(constant: &PoolConstantRef) -> i32 {
 
 /// Java: MethodHandleSymbol.poolKey (Symbol.java:2403-2406):
 /// new Pair<>(baseSymbol(), referenceKind()).
-fn method_handle_pool_key(
-    ctx: &CompilerContext,
-    handle: SymbolId,
-) -> PoolKey {
+fn method_handle_pool_key(ctx: &CompilerContext, handle: SymbolId) -> PoolKey {
     let base = crate::code::symbol::method_handle_base_symbol(ctx, handle)
         .expect("method handle base symbol");
     let reference_kind = crate::code::symbol::method_handle_reference_kind(ctx, handle)
@@ -673,10 +678,7 @@ fn method_handle_pool_key(
 }
 
 /// Return the pool key of a loadable constant reference.
-fn loadable_pool_key(
-    ctx: &CompilerContext,
-    arg: &LoadableConstantRef,
-) -> PoolKey {
+fn loadable_pool_key(ctx: &CompilerContext, arg: &LoadableConstantRef) -> PoolKey {
     match arg {
         LoadableConstantRef::Basic(basic) => basic.pool_key(),
         LoadableConstantRef::Class(ty) => PoolKey::Class(*ty),
@@ -695,16 +697,14 @@ fn pool_keys_equal(
     b: &PoolKey,
 ) -> bool {
     match (a, b) {
-        (PoolKey::Type(t1), PoolKey::Type(t2))
-        | (PoolKey::Class(t1), PoolKey::Class(t2)) => {
+        (PoolKey::Type(t1), PoolKey::Type(t2)) | (PoolKey::Class(t1), PoolKey::Class(t2)) => {
             types.is_same_type(ctx, syms, *t1, *t2)
         }
         (PoolKey::NameAndType(n1, t1), PoolKey::NameAndType(n2, t2)) => {
             n1 == n2 && types.is_same_type(ctx, syms, *t1, *t2)
         }
         (PoolKey::Pair(x1, y1), PoolKey::Pair(x2, y2)) => {
-            pool_keys_equal(ctx, syms, types, x1, x2)
-                && pool_keys_equal(ctx, syms, types, y1, y2)
+            pool_keys_equal(ctx, syms, types, x1, x2) && pool_keys_equal(ctx, syms, types, y1, y2)
         }
         // Java: Dynamic.poolKey (PoolConstant.java:151-154) is
         // Pair(bsmKey, dynamicType().poolKey(types)); equal dynamic symbols
@@ -750,4 +750,3 @@ fn pool_keys_equal(
 fn bsm_keys_equal(a: &BsmKey, b: &BsmKey) -> bool {
     a.bsm_key == b.bsm_key && a.static_arg_keys == b.static_arg_keys
 }
-
