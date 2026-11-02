@@ -406,7 +406,7 @@ impl CheckContext for AnnotationValueContext {
         types: &crate::code::types::Types,
         found: TypeId,
         req: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         // Java: return found.hasTag(TypeTag.NONE) || super.compatible(found, req, warn);
         ctx.typ(found).has_tag(TypeTag::NONE)

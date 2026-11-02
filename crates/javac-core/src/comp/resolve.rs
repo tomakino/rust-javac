@@ -4373,7 +4373,7 @@ pub trait MethodCheck {
         deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
         argtypes: crate::util::list::List<TypeId>,
         formals: crate::util::list::List<TypeId>,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> Result<(), MethodCheckFailure>;
 
     /// Java: MethodCheck mostSpecificCheck(List<Type> actuals)
@@ -4398,7 +4398,7 @@ impl MethodCheck for OwnedMethodCheck {
         deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
         argtypes: crate::util::list::List<TypeId>,
         formals: crate::util::list::List<TypeId>,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> Result<(), MethodCheckFailure> {
         self.0.arguments_acceptable(
             ctx,
@@ -4437,7 +4437,7 @@ impl MethodCheck for NilMethodCheck {
         _deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
         _argtypes: crate::util::list::List<TypeId>,
         _formals: crate::util::list::List<TypeId>,
-        _warn: &mut crate::util::warner::Warner,
+        _warn: &crate::util::warner::Warner,
     ) -> Result<(), MethodCheckFailure> {
         // do nothing - method always applicable regardless of actuals
         Ok(())
@@ -4468,7 +4468,7 @@ pub trait AbstractMethodCheck: MethodCheck {
         actual: TypeId,
         formal: TypeId,
         deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> Result<(), MethodCheckFailure>;
 }
 
@@ -4500,7 +4500,7 @@ pub fn abstract_method_check_arguments_acceptable(
     deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
     argtypes: crate::util::list::List<TypeId>,
     formals: crate::util::list::List<TypeId>,
-    warn: &mut crate::util::warner::Warner,
+    warn: &crate::util::warner::Warner,
 ) -> Result<(), MethodCheckFailure> {
     let use_varargs = deferred_attr_context.phase.is_varargs_required();
     let call_tree = {
@@ -4705,7 +4705,7 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         types: &crate::code::types::Types,
         found: TypeId,
         req: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         let mut found = found;
         let mut req = req;
@@ -4865,7 +4865,7 @@ impl MethodResultInfo {
         diags: &crate::util::jc_diagnostic::Factory,
         pos: Option<crate::ids::TreeId>,
         found: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> Result<TypeId, MethodCheckFailure> {
         let _ = chk;
         if ctx.typ(found).has_tag(crate::code::type_tag::TypeTag::DEFERRED) {
@@ -5003,7 +5003,7 @@ impl AbstractMethodCheck for MethodReferenceCheck {
         actual: TypeId,
         formal: TypeId,
         deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> Result<(), MethodCheckFailure> {
         // Java: MethodReferenceCheck.methodCheckResult (Resolve.java:1030-1050)
         let mut check_context = method_check_context(
@@ -5042,7 +5042,7 @@ impl MethodCheck for MethodReferenceCheck {
         deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
         argtypes: crate::util::list::List<TypeId>,
         formals: crate::util::list::List<TypeId>,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> Result<(), MethodCheckFailure> {
         abstract_method_check_arguments_acceptable(
             self,
@@ -5088,7 +5088,7 @@ impl Resolve {
         allow_boxing: bool,
         use_varargs: bool,
         resolve_context: &mut MethodResolutionContext,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> Result<TypeId, MethodCheckFailure> {
         let mut mt = types.member_type(ctx, syms, site, m);
         let mut tvars: crate::util::list::List<TypeId> = crate::util::list::List::nil();
@@ -5274,7 +5274,7 @@ impl Resolve {
         result_info: &crate::comp::attr::ResultInfo,
         argtypes: crate::util::list::List<TypeId>,
         typeargtypes: Option<crate::util::list::List<TypeId>>,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> Result<TypeId, MethodCheckFailure> {
         let mut resolution_context = MethodResolutionContext::new();
         resolution_context.method_check = Some(Rc::clone(&self.default_method_check));
@@ -5354,7 +5354,7 @@ impl Resolve {
         allow_boxing: bool,
         use_varargs: bool,
         resolve_context: &mut MethodResolutionContext,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> Option<TypeId> {
         let raw_result = catch_inapplicable_method_exception(|| self.raw_instantiate(
             ctx,
@@ -5483,7 +5483,7 @@ impl Resolve {
             allow_boxing,
             use_varargs,
             resolve_context,
-            &mut warn,
+            &warn,
         ));
         let inner_result = match raw_result {
             Ok(inner) => inner,
@@ -5685,7 +5685,7 @@ impl Resolve {
         m1: SymbolId,
         m2: SymbolId,
         use_varargs: bool,
-        note_warner: &mut crate::util::warner::Warner,
+        note_warner: &crate::util::warner::Warner,
     ) -> SymbolId {
         let m2_kind = ctx.sym(m2).kind;
         match m2_kind {
@@ -5847,7 +5847,7 @@ impl Resolve {
         m1: SymbolId,
         m2: SymbolId,
         use_varargs: bool,
-        note_warner: &mut crate::util::warner::Warner,
+        note_warner: &crate::util::warner::Warner,
     ) -> bool {
         // Java: noteWarner.clear() (Resolve.java:1733).
         note_warner.clear();
@@ -6056,7 +6056,7 @@ impl AbstractMethodCheck for ArityMethodCheck {
         _actual: TypeId,
         _formal: TypeId,
         _deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
-        _warn: &mut crate::util::warner::Warner,
+        _warn: &crate::util::warner::Warner,
     ) -> Result<(), MethodCheckFailure> {
         // do nothing - actual always compatible to formals
         Ok(())
@@ -6077,7 +6077,7 @@ impl MethodCheck for ArityMethodCheck {
         deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
         argtypes: crate::util::list::List<TypeId>,
         formals: crate::util::list::List<TypeId>,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> Result<(), MethodCheckFailure> {
         abstract_method_check_arguments_acceptable(
             self,
@@ -6140,7 +6140,7 @@ impl AbstractMethodCheck for ResolveMethodCheck {
         actual: TypeId,
         formal: TypeId,
         deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> Result<(), MethodCheckFailure> {
         let check_context = Rc::new(method_check_context(
             !deferred_attr_context.phase.is_boxing_required(),
@@ -6198,7 +6198,7 @@ impl MethodCheck for ResolveMethodCheck {
         deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
         argtypes: crate::util::list::List<TypeId>,
         formals: crate::util::list::List<TypeId>,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> Result<(), MethodCheckFailure> {
         let self_diags = Rc::clone(&self.diags);
         let _ = diags;
@@ -6383,7 +6383,7 @@ impl MethodCheck for MostSpecificCheck {
         deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
         formals1: crate::util::list::List<TypeId>,
         formals2: crate::util::list::List<TypeId>,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> Result<(), MethodCheckFailure> {
         let msym = deferred_attr_context.msym;
         let formals2 = adjust_args(

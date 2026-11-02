@@ -3692,7 +3692,7 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
         s: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         let result = self.is_subtype_unchecked_internal(ctx, syms, t, s, true, warn);
         if result {
@@ -3731,7 +3731,7 @@ impl Types {
         syms: &Symtab,
         ts: &List<TypeId>,
         ss: &List<TypeId>,
-        _warn: &mut crate::util::warner::Warner,
+        _warn: &crate::util::warner::Warner,
     ) -> bool {
         let mut ts = ts.clone();
         let mut ss = ss.clone();
@@ -3780,7 +3780,7 @@ impl Types {
         t: TypeId,
         s: TypeId,
         capture: bool,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         if ctx.typ(t).has_tag(TypeTag::ARRAY) && ctx.typ(s).has_tag(TypeTag::ARRAY) {
             // Java: isSameType(elemtype(t), elemtype(s)) /
@@ -3853,7 +3853,7 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
         s: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         if t == s {
             return true;
@@ -3894,7 +3894,7 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
         s: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         match &ctx.typ(t).kind {
             TypeKindData::JCPrimitiveType
@@ -4151,7 +4151,7 @@ impl Types {
         ct: TypeId,
         s: TypeId,
         reverse: bool,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         // Java: Warner warn = noWarnings; (per-component cleared)
         let mut compound_warn = crate::util::warner::Warner::new(None);
@@ -6599,7 +6599,7 @@ impl Types {
         syms: &Symtab,
         from: TypeId,
         to: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         let mut reverse = false;
         let mut from = from;
@@ -6652,7 +6652,7 @@ impl Types {
         syms: &Symtab,
         from: TypeId,
         to: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         let mut reverse = false;
         let mut from = from;
@@ -7980,7 +7980,7 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
         s: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         if ctx.typ(t).has_tag(TypeTag::ERROR) {
             return true;
@@ -8036,7 +8036,7 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
         s: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         self.is_same_type(ctx, syms, t, s)
             || (!ctx.typ(t).is_primitive()
@@ -8052,7 +8052,7 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
         s: TypeId,
-        warner: &mut crate::util::warner::Warner,
+        warner: &crate::util::warner::Warner,
     ) -> bool {
         let tvars = crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
         let svars = crate::code::types::get_type_arguments_completed(ctx, syms, s, None);
@@ -8096,7 +8096,7 @@ impl Types {
         r1: TypeId,
         r2: TypeId,
         r2res: TypeId,
-        warner: &mut crate::util::warner::Warner,
+        warner: &crate::util::warner::Warner,
     ) -> bool {
         let r1_res = method_return_type(ctx, r1);
         if self.is_same_type(ctx, syms, r1_res, r2res) {
@@ -9552,7 +9552,7 @@ impl Types {
         t: TypeId,
         s: TypeId,
         capture: bool,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         if ctx.typ(t).has_tag(TypeTag::ARRAY) && ctx.typ(s).has_tag(TypeTag::ARRAY) {
             let t_elem = elemtype_of(self, ctx, syms, t).expect("array element type");
@@ -9617,7 +9617,7 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
         s: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         let result = self.is_subtype_unchecked_internal_warn(ctx, syms, t, s, true, warn);
         if result {
@@ -9634,7 +9634,7 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
         s: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) {
         if !ctx.typ(t).has_tag(TypeTag::ARRAY) || self.is_reifiable(ctx, syms, t) {
             return;
@@ -9663,7 +9663,7 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
         s: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         if ctx.typ(t).has_tag(TypeTag::ERROR) {
             return true;
@@ -12043,14 +12043,14 @@ mod tests {
         assert!(!types.is_subtypes(&mut ctx, &syms, &ints, &booleans));
         assert!(!types.is_subtypes(&mut ctx, &syms, &ints, &List::nil()));
         let mut warn = crate::util::warner::Warner::new(None);
-        assert!(types.is_subtypes_unchecked(&mut ctx, &syms, &ints, &ints, &mut warn));
-        assert!(!types.is_subtypes_unchecked(&mut ctx, &syms, &ints, &booleans, &mut warn));
+        assert!(types.is_subtypes_unchecked(&mut ctx, &syms, &ints, &ints, &warn));
+        assert!(!types.is_subtypes_unchecked(&mut ctx, &syms, &ints, &booleans, &warn));
         assert!(!types.is_subtypes_unchecked(
             &mut ctx,
             &syms,
             &List::nil(),
             &ints,
-            &mut warn
+            &warn
         ));
     }
 

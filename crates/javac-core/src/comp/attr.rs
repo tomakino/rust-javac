@@ -3430,7 +3430,7 @@ impl crate::comp::check::CheckContext for ConditionalCheckContext {
         types: &Types,
         found: TypeId,
         req: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         self.enclosing
             .compatible(ctx, syms, types, found, req, warn)
@@ -3500,7 +3500,7 @@ impl crate::comp::check::CheckContext for DiamondCheckContext {
         types: &Types,
         found: TypeId,
         req: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         self.enclosing
             .compatible(ctx, syms, types, found, req, warn)
@@ -3603,7 +3603,7 @@ impl crate::comp::check::CheckContext for FunctionalReturnContext {
         types: &Types,
         found: TypeId,
         req: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         // Java: chk.basicHandler.compatible(inferenceContext().asUndetVar(found),
         // inferenceContext().asUndetVar(req), warn)
@@ -3672,7 +3672,7 @@ impl crate::comp::check::CheckContext for ExpressionLambdaReturnContext {
         types: &Types,
         found: TypeId,
         req: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         // Java: if (req.hasTag(VOID)) { expStmtExpected = true;
         // return TreeInfo.isExpressionStatement(expr); }
@@ -4285,7 +4285,7 @@ impl crate::comp::check::CheckContext for RecoveryCheckContext {
         types: &Types,
         found: TypeId,
         req: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         self.enclosing
             .compatible(ctx, syms, types, found, req, warn)
@@ -8052,7 +8052,7 @@ impl Attr {
                 let mut warn = crate::util::warner::Warner::new(None);
                 if !self
                     .types
-                    .is_castable_with_warn(ctx, syms, left, right, &mut warn)
+                    .is_castable_with_warn(ctx, syms, left, right, &warn)
                 {
                     self.attr_error(
                         ctx.tree(tree).pos,
@@ -8090,7 +8090,7 @@ impl crate::comp::check::CheckContext for CastCheckContext {
         types: &Types,
         found: TypeId,
         req: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         let _ = types;
         // Java: return types.isCastable(found, req, warn);
@@ -8707,7 +8707,7 @@ impl crate::comp::check::CheckContext for TryCheckContext {
         types: &Types,
         found: TypeId,
         req: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         self.enclosing
             .compatible(ctx, syms, types, found, req, warn)
@@ -9696,7 +9696,7 @@ impl crate::comp::check::CheckContext for SwitchExpressionCheckContext {
         types: &Types,
         found: TypeId,
         req: TypeId,
-        warn: &mut crate::util::warner::Warner,
+        warn: &crate::util::warner::Warner,
     ) -> bool {
         self.enclosing
             .compatible(ctx, syms, types, found, req, warn)
@@ -10445,7 +10445,7 @@ impl Attr {
         let mut warn = crate::util::warner::Warner::new(None);
         if !self
             .types
-            .is_castable_with_warn(ctx, syms, expr_type, patt_type, &mut warn)
+            .is_castable_with_warn(ctx, syms, expr_type, patt_type, &warn)
         {
             let fragment = self
                 .diags
@@ -11346,7 +11346,7 @@ impl Attr {
                     &self.types,
                     res_type,
                     return_type,
-                    &mut warn,
+                    &warn,
                 )
             {
                 incompatible_return_type = None;
@@ -17092,7 +17092,7 @@ mod tests {
             _types: &Types,
             _found: TypeId,
             _req: TypeId,
-            _warn: &mut crate::util::warner::Warner,
+            _warn: &crate::util::warner::Warner,
         ) -> bool {
             false
         }
@@ -17443,7 +17443,7 @@ mod tests {
             types: &crate::code::types::Types,
             found: TypeId,
             req: TypeId,
-            warn: &mut crate::util::warner::Warner,
+            warn: &crate::util::warner::Warner,
         ) -> bool {
             self.enclosing
                 .compatible(ctx, syms, types, found, req, warn)

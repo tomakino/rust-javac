@@ -517,7 +517,7 @@ impl DeferredAttrContext {
                 let context = Rc::clone(&self.inference_context);
                 let mut default_warn = Warner::new(None);
                 let mut warn_guard = self.warn.as_ref().map(|warn| warn.borrow_mut());
-                let warn_ref: &mut Warner = match warn_guard.as_mut() {
+                let warn_ref: &Warner = match warn_guard.as_mut() {
                     Some(warn) => warn,
                     None => &mut default_warn,
                 };
@@ -570,7 +570,7 @@ impl DeferredAttrContext {
     ) -> Result<Vec<StuckNode>, DeferredAttrFailure> {
         let mut default_warn = Warner::new(None);
         let mut warn_guard = self.warn.as_ref().map(|warn| warn.borrow_mut());
-        let warn_ref: &mut Warner = match warn_guard.as_mut() {
+        let warn_ref: &Warner = match warn_guard.as_mut() {
             Some(warn) => warn,
             None => &mut default_warn,
         };
@@ -762,7 +762,7 @@ impl crate::comp::check::CheckContext for ParentCheckContext {
         types: &Types,
         found: TypeId,
         req: TypeId,
-        warn: &mut Warner,
+        warn: &Warner,
     ) -> bool {
         self.enclosing.compatible(ctx, syms, types, found, req, warn)
     }
@@ -3338,7 +3338,7 @@ mod tests {
             _types: &Types,
             _found: TypeId,
             _req: TypeId,
-            _warn: &mut Warner,
+            _warn: &Warner,
         ) -> bool {
             true
         }

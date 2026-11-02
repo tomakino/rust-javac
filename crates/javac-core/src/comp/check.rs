@@ -1511,7 +1511,7 @@ impl Check {
         let warn_shared =
             check_context.check_warner_shared(ctx, syms, &self.types, pos, found, req);
         let mut warn = warn_shared.borrow_mut();
-        if check_context.compatible(ctx, syms, &self.types, found, req, &mut warn) {
+        if check_context.compatible(ctx, syms, &self.types, found, req, &warn) {
             if warn.has_non_silent_lint(LintCategory::UNCHECKED) {
                 let warning = crate::resources::compiler_properties::warnings::prob_found_req(
                     crate::resources::diagnostic_contract::DiagnosticArg::from_display(
@@ -1618,7 +1618,7 @@ pub trait CheckContext {
         types: &Types,
         found: TypeId,
         req: TypeId,
-        warn: &mut Warner,
+        warn: &Warner,
     ) -> bool;
 
     /// Java: void report(DiagnosticPosition pos, JCDiagnostic details)
@@ -1676,7 +1676,7 @@ impl CheckContext for NestedCheckContext {
         types: &Types,
         found: TypeId,
         req: TypeId,
-        warn: &mut Warner,
+        warn: &Warner,
     ) -> bool {
         self.enclosing_context
             .compatible(ctx, syms, types, found, req, warn)
@@ -1729,7 +1729,7 @@ impl CheckContext for BasicCheckContext {
         _types: &Types,
         found: TypeId,
         req: TypeId,
-        warn: &mut Warner,
+        warn: &Warner,
     ) -> bool {
         // Java: return types.isAssignable(found, req, warn);
         self.types
@@ -2938,7 +2938,7 @@ impl Check {
         let mut warn = self.cast_warner(pos);
         if self
             .types
-            .is_castable_with_warn(ctx, syms, found, req, &mut warn)
+            .is_castable_with_warn(ctx, syms, found, req, &warn)
         {
             if warn.has_lint(LintCategory::UNCHECKED) {
                 self.warn_unchecked(
@@ -3199,7 +3199,7 @@ impl Check {
         _tree: TreeId,
         actual: TypeId,
         formal: TypeId,
-        warn: &mut Warner,
+        warn: &Warner,
     ) {
         if self
             .types
@@ -3313,7 +3313,7 @@ impl Check {
                     arg,
                     arg_type,
                     *formals.head(),
-                    &mut warn,
+                    &warn,
                 );
                 // Java: Check.ConversionWarner.warn reports
                 // Warnings.ProbFoundReq(Fragments.UncheckedConversion,
@@ -3343,7 +3343,7 @@ impl Check {
                     let arg = *args_list.head();
                     let arg_type = ctx.tree(arg).ty.expect("attributed argument type");
                     let mut warn = self.convert_warner(ctx.tree(arg).pos);
-                    self.assert_convertible(ctx, syms, arg, arg_type, var_arg, &mut warn);
+                    self.assert_convertible(ctx, syms, arg, arg_type, var_arg, &warn);
                     if warn.has_non_silent_lint(LintCategory::UNCHECKED) {
                         self.warn_unchecked(
                             ctx.tree(arg).pos,
@@ -10562,7 +10562,7 @@ mod tests {
             _types: &Types,
             _found: TypeId,
             _req: TypeId,
-            _warn: &mut Warner,
+            _warn: &Warner,
         ) -> bool {
             self.compatible_calls
                 .set(self.compatible_calls.get() + 1);

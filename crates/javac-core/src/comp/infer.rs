@@ -218,7 +218,7 @@ fn incorporation_action_apply(
     syms: &Symtab,
     types: &Types,
     inference_context: &InferenceContext,
-    warn: &mut Warner,
+    warn: &Warner,
 ) -> Result<(), InferenceException> {
     match action {
         IncorporationAction::CheckBounds {
@@ -575,7 +575,7 @@ impl Infer {
         syms: &Symtab,
         types: &Types,
         inference_context: &InferenceContext,
-        warn: &mut Warner,
+        warn: &Warner,
     ) -> Result<(), InferenceException> {
         let mut progress = true;
         let mut round = 0;
@@ -1519,7 +1519,7 @@ impl InferenceContext {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         types: &Types,
-        warn: &mut Warner,
+        warn: &Warner,
     ) -> Result<(), InferenceException> {
         let strategy = Rc::new(LeafSolver {
             context: Rc::downgrade(self),
@@ -1534,7 +1534,7 @@ impl InferenceContext {
         syms: &Symtab,
         types: &Types,
         vars: List<TypeId>,
-        warn: &mut Warner,
+        warn: &Warner,
     ) -> Result<(), InferenceException> {
         let strategy = Rc::new(BestLeafSolver {
             context: Rc::downgrade(self),
@@ -1551,7 +1551,7 @@ impl InferenceContext {
         syms: &Symtab,
         types: &Types,
         vars_to_solve: List<TypeId>,
-        warn: &mut Warner,
+        warn: &Warner,
     ) -> Result<(), InferenceException> {
         let restvars = self.restvars(ctx, syms, types);
         let mut intersect: List<TypeId> = List::nil();
@@ -1582,7 +1582,7 @@ impl InferenceContext {
         syms: &Symtab,
         types: &Types,
         strategy: Rc<dyn GraphStrategy>,
-        warn: &mut Warner,
+        warn: &Warner,
     ) -> Result<(), InferenceException> {
         let infer = self.infer.clone().expect("InferenceContext.infer");
         let mut solver = GraphSolver::new(self);
@@ -1638,7 +1638,7 @@ impl InferenceContext {
         types: &Types,
         partial: bool,
         steps: &[InferenceStep],
-        warn: &mut Warner,
+        warn: &Warner,
     ) -> Result<(), InferenceException> {
         let infer = self.infer.clone().expect("InferenceContext.infer");
         loop {
@@ -2133,7 +2133,7 @@ impl<'a> GraphSolver<'a> {
         types: &Types,
         infer: &Infer,
         strategy: Rc<dyn GraphStrategy>,
-        warn: &mut Warner,
+        warn: &Warner,
     ) -> Result<(), InferenceException> {
         infer.do_incorporation(ctx, syms, types, self.inference_context, warn)?;
         let mut graph = InferenceGraph::new(ctx, syms, types, self.inference_context);
@@ -2785,7 +2785,7 @@ impl FreeTypeListener for PropagateListener {
         }
         let infer = original.infer.clone().expect("InferenceContext.infer");
         let mut warn = self.warn.borrow_mut();
-        infer.do_incorporation(ctx, syms, types, &original, &mut warn)?;
+        infer.do_incorporation(ctx, syms, types, &original, &warn)?;
         drop(warn);
         original.notify_change(ctx, syms, types)
     }
@@ -2820,7 +2820,7 @@ impl FreeTypeListener for UnreachableVarsListener {
             syms,
             types,
             self.unreachable_vars.clone(),
-            &mut warn,
+            &warn,
         )?;
         drop(warn);
         original.notify_change(ctx, syms, types)
@@ -2984,7 +2984,7 @@ fn check_bound(
     t: TypeId,
     ib_s: InferenceBound,
     ib_t: InferenceBound,
-    warn: &mut Warner,
+    warn: &Warner,
 ) -> Result<bool, InferenceException> {
     let r = if ib_s.less_than(ib_t) {
         types.is_subtype_unchecked_with_warn(ctx, syms, s, t, warn)
@@ -3190,7 +3190,7 @@ impl Infer {
         allow_boxing: bool,
         use_varargs: bool,
         resolve_context: &mut crate::comp::resolve::MethodResolutionContext,
-        warn: &mut Warner,
+        warn: &Warner,
     ) -> Result<TypeId, InferenceException> {
         let outcome = crate::comp::resolve::catch_inference_exception(|| {
             self.instantiate_method_inner(
@@ -3247,7 +3247,7 @@ impl Infer {
         allow_boxing: bool,
         use_varargs: bool,
         resolve_context: &mut crate::comp::resolve::MethodResolutionContext,
-        warn: &mut Warner,
+        warn: &Warner,
     ) -> Result<TypeId, InferenceException> {
         let _ = (allow_boxing, use_varargs);
         // Port adapter: upstream Infer.instantiateMethod passes the caller's
@@ -3256,7 +3256,7 @@ impl Infer {
         // warning/lint state shared and the guard writes it back on every
         // return path (including the ?-early-returns).
         struct WarnSync<'a> {
-            target: &'a mut Warner,
+            target: &'a Warner,
             shared: Rc<RefCell<Warner>>,
         }
         impl Drop for WarnSync<'_> {
@@ -3269,10 +3269,10 @@ impl Infer {
                 // leave the shared Warner empty for every later
                 // PartiallyInferredMethodType.check (which is what decides
                 // between the unchecked-erasure path and shouldPropagate).
-                *self.target = self.shared.borrow().clone();
+                self.target.copy_from(&self.shared.borrow());
             }
         }
-        let warn_shared = Rc::new(RefCell::new(warn.clone()));
+        let warn_shared = Rc::new(RefCell::new((*warn).clone()));
         let _warn_sync = WarnSync {
             target: warn,
             shared: Rc::clone(&warn_shared),
@@ -3308,7 +3308,7 @@ impl Infer {
                     Rc::clone(&deferred_context),
                     argtypes,
                     types.get_parameter_types_public(ctx, mt),
-                    &mut warn_shared.borrow_mut(),
+                    &warn_shared.borrow_mut(),
                 )
                 .map_err(|failure| match failure {
                     crate::comp::resolve::MethodCheckFailure::Inference(ex) => ex,
@@ -3341,7 +3341,7 @@ impl Infer {
                 syms,
                 types,
                 &inference_context,
-                &mut warn_shared.borrow_mut(),
+                &warn_shared.borrow_mut(),
             )?;
             // Java: instantiateMethod finally (Infer.java:241-246).
             inference_context.notify_change(ctx, syms, types)?;
@@ -3359,7 +3359,7 @@ impl Infer {
                 syms,
                 types,
                 &inference_context,
-                &mut warn_shared.borrow_mut(),
+                &warn_shared.borrow_mut(),
             )?;
             let result_info = result_info.expect("result info");
             if !warn_shared
@@ -3462,7 +3462,7 @@ impl Infer {
         // minimize as yet undetermined type variables
         if self.allow_graph_inference {
             let context = Rc::clone(&inference_context);
-            context.solve(ctx, syms, types, &mut warn_shared.borrow_mut())?;
+            context.solve(ctx, syms, types, &warn_shared.borrow_mut())?;
         } else {
             inference_context.solve_legacy(
                 ctx,
@@ -3470,7 +3470,7 @@ impl Infer {
                 types,
                 true,
                 &crate::comp::infer::legacy_inference_steps_eq_lower(),
-                &mut warn_shared.borrow_mut(),
+                &warn_shared.borrow_mut(),
             )?;
         }
         let inst_mt = inference_context.as_inst_type(ctx, syms, types, mt);
@@ -3537,7 +3537,7 @@ impl Infer {
                 types,
                 false,
                 &crate::comp::infer::legacy_inference_steps_eq_upper(),
-                &mut warn_shared.borrow_mut(),
+                &warn_shared.borrow_mut(),
             )?;
             // Java: instantiateMethod finally { if (resultInfo != null ||
             // !allowGraphInference) inferenceContext.notifyChange(); }
@@ -4435,7 +4435,7 @@ mod tests {
         );
         let mut warn = Warner::new(None);
         context
-            .solve(&mut ctx, &syms, &types, &mut warn)
+            .solve(&mut ctx, &syms, &types, &warn)
             .expect("solve should succeed");
         assert!(context.restvars(&mut ctx, &syms, &types).is_empty());
         assert_eq!(
@@ -4460,7 +4460,7 @@ mod tests {
         );
         let mut warn = Warner::new(None);
         context
-            .solve(&mut ctx, &syms, &types, &mut warn)
+            .solve(&mut ctx, &syms, &types, &warn)
             .expect("solve should succeed");
         assert_eq!(
             context.inst_types(&mut ctx, &types),
@@ -4484,7 +4484,7 @@ mod tests {
         );
         let mut warn = Warner::new(None);
         context
-            .solve(&mut ctx, &syms, &types, &mut warn)
+            .solve(&mut ctx, &syms, &types, &warn)
             .expect("solve should succeed");
         assert_eq!(
             context.inst_types(&mut ctx, &types),

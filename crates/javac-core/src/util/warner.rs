@@ -79,6 +79,17 @@ impl Warner {
         self.silent_lint_set.borrow_mut().clear();
         self.warned.set(false);
     }
+
+    /// Copies the observable warning state from `other` into `self`.
+    ///
+    /// The port keeps the lint sets behind interior mutability; inference code
+    /// that works on a cloned sink uses this to publish the final state back to
+    /// the caller's sink.
+    pub fn copy_from(&self, other: &Warner) {
+        *self.non_silent_lint_set.borrow_mut() = other.non_silent_lint_set.borrow().clone();
+        *self.silent_lint_set.borrow_mut() = other.silent_lint_set.borrow().clone();
+        self.warned.set(other.warned.get());
+    }
 }
 
 #[cfg(test)]
