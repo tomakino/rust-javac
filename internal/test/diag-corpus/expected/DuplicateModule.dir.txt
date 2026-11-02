@@ -5,4 +5,3 @@ module blah {}
 module blah {}
        ^
 2 errors
-printing javac parameters to: <tmp>\javac.20261101_092346.args

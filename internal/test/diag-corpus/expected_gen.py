@@ -14,6 +14,7 @@ A file example produces <name>.txt; a directory example produces
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -162,6 +163,11 @@ def normalize(text: str, examples_dir: Path, temp: Path) -> str:
     result = result.replace(base_unix, "<src>")
     result = result.replace(tmp, "<tmp>")
     result = result.replace(tmp_unix, "<tmp>")
+    # The Windows javac launcher prints the argument-file path when it aborts
+    # with an internal error (exit 4). The line carries a timestamp and the
+    # current directory, so it is not part of the compiler diagnostics and
+    # must not be frozen into the baselines.
+    result = re.sub(r"(?m)^printing javac parameters to: .*\r?\n?", "", result)
     return result
 
 
