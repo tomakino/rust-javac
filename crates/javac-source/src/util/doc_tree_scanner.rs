@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/DocTreeScanner.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A DocTreeVisitor that visits all the child doc tree nodes.
 //!
 //! PORTING_RULES (§14.7): Java class DocTreeScanner<R,P> implements

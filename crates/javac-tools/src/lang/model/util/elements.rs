@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/util/Elements.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Utility methods for operating on program elements.
 //!
 //! PORTING_RULES (§6/§14):

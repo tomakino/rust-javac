@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/AnnotatedConstruct.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a construct that can be annotated.
 //!
 //! PORTING_RULES — signature mapping:

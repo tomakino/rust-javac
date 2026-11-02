@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/Position.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A class that defines source code positions as simple character
 //! offsets from the beginning of the file. The first character
 //! is at position 0.

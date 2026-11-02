@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/type/ExecutableType.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents the type of an executable.
 //!
 //! PORTING_RULES: `List<? extends X>` -> `Vec<Rc<dyn X>>`.

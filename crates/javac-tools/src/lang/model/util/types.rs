@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/util/Types.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Utility methods for operating on types.
 //!
 //! PORTING_RULES (§6/§14):

@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/type/DeclaredType.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a declared type, either a class type or an interface type.
 //!
 //! PORTING_RULES: `List<? extends TypeMirror>` -> `Vec<Rc<dyn TypeMirror>>`;

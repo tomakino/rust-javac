@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/AnnotationValueVisitor.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A visitor of the values of annotation interface elements, using a variant of
 //! the visitor design pattern.
 //!

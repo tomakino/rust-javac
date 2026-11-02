@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/JavacTask.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Provides access to functionality specific to the JDK Java Compiler, javac.
 //!
 //! PORTING_RULES (§14): the Java abstract class becomes a Rust trait whose

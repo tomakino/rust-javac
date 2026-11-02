@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/SourcePositions.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Provides methods to obtain the position of a Tree within a CompilationUnit.
 //!
 //! PORTING_RULES: Java interface -> Rust trait; `long` -> i64 (the Java

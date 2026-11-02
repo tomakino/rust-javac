@@ -1,5 +1,3 @@
-// Origin: jdk/internal/math/FloatingDecimal.java + FDBigInteger.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Ports of the JDK floating-point conversion classes used by javac:
 //! `jdk.internal.math.FloatingDecimal` (JLS-compatible `Float.valueOf`/`Double.valueOf`
 //! parsing and `Float.toString`/`Double.toString` formatting) and its helper

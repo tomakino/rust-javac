@@ -1,5 +1,3 @@
-// Origin: javax/tools/ForwardingJavaFileObject.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Forwards calls to a given Java file object.
 
 use super::file_object::FileObject;

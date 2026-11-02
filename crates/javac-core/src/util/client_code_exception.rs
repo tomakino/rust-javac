@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/ClientCodeException.java @ 982d53c (jdk-17.0.19-ga)
-
 //! An exception used for propagating exceptions found in client code invoked
 //! from javac.
 //!

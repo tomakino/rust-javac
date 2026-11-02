@@ -1,5 +1,3 @@
-// Origin: com/sun/source/doctree/AttributeTree.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A tree node for an attribute in an HTML element.
 //!
 //! PORTING_RULES: Java interface -> Rust trait; the nested enum ValueKind lives

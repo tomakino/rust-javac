@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/code/TypeTag.java @ 982d53c (jdk-17.0.19-ga)
-
 //! An interface for type tag values, which distinguish between different sorts
 //! of types.
 //!

@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/TypeParameterElement.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a formal type parameter of a generic class, interface, method,
 //! or constructor element.
 //!

@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/ExecutableElement.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a method, constructor, or initializer (static or instance) of a
 //! class or interface, including annotation type elements.
 //!

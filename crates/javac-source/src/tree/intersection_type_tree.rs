@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/IntersectionTypeTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for an intersection type in a cast expression.
 ///
 /// @author Maurizio Cimadamore

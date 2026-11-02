@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/Warner.java @ 982d53c (jdk-17.0.19-ga)
-
 //! An interface to support optional warnings, needed for support of unchecked
 //! conversions and unchecked casts.
 //!

@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/jvm/ClassFile.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A JVM class file.
 //!
 //! <p>Generic Java classfiles have one additional attribute for classes,

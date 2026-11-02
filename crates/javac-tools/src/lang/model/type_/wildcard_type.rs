@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/type/WildcardType.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a wildcard type argument.
 //!
 //! PORTING_RULES: nullable bounds -> `Option<Rc<dyn TypeMirror>>`.

@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/BlockTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for a statement block.
 ///
 /// For example:

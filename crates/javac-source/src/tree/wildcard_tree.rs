@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/WildcardTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for a wildcard type argument.
 /// Use {@link #getKind getKind} to determine the kind of bound.
 ///

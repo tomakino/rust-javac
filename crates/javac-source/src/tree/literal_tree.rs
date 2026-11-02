@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/LiteralTree.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A tree node for a literal expression.
 //!
 //! PORTING_RULES: Java `Object getValue()` returns a boxed primitive value or a

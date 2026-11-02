@@ -1,5 +1,3 @@
-// Origin: java.compiler/share/classes/javax/tools (package) @ 982d53c (jdk-17.0.19-ga)
-
 //! Rust representation of the `java.compiler` module API (JDK 17) that javac
 //! implements and uses: `javax.tools`, plus the minimal `javax.lang.model`
 //! types required by its signatures.

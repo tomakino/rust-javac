@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/Dependencies.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Track dependencies in the javac symbol completion process.
 //!
 //! PORTING_RULES adapters (registered):

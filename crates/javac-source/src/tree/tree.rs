@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/Tree.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Common interface for all nodes in an abstract syntax tree.
 //!
 //! PORTING_RULES:

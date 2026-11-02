@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/parser/UnicodeReader.java @ 982d53c (jdk-17.0.19-ga)
-
 //! The unicode character reader used by the javac/javadoc lexer/tokenizer,
 //! returns characters one by one as contained in the input stream, handling
 //! unicode escape sequences accordingly.

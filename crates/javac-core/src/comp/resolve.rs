@@ -1,7 +1,6 @@
 // PORTING_RULES: the upstream-shaped method-check code keeps large error
 // enums and nested conditionals; the lints are allowed locally (registered).
 #![allow(clippy::result_large_err, clippy::collapsible_if)]
-// Origin: com/sun/tools/javac/comp/Resolve.java @ 982d53c (jdk-17.0.19-ga)
 
 //! Name/method resolution (Java: com.sun.tools.javac.comp.Resolve).
 //!

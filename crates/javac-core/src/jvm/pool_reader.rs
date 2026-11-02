@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/jvm/PoolReader.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Pool interface towards ClassReader. Exposes methods to decode and read javac
 //! entities from the constant pool.
 //!

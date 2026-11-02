@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/comp/MemberEnter.java @ 982d53c (jdk-17.0.19-ga)
 //
 // Registration:
 // Ported in this file: the MemberEnter structure, signature(), memberEnter (both

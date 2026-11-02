@@ -1,5 +1,3 @@
-// Origin: javax/tools/ForwardingJavaFileManager.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Forwards calls to a given file manager.
 
 use super::java_file_manager::{FileObjectRef, JavaFileManager, JavaFileObjectRef, Location, LocationRef};

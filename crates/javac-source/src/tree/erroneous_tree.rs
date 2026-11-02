@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/ErroneousTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node to stand in for a malformed expression.
 ///
 /// @author Peter von der Ah&eacute;

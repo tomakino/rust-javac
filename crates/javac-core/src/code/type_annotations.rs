@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/code/TypeAnnotations.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Type annotations helper: separates declaration annotations from type
 //! annotations, organizes the type annotation positions of a class tree and
 //! validates the type annotation applicability rules.

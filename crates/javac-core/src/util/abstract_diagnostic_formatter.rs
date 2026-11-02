@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/util/AbstractDiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga)
 // Gap registration supplement (method-level audit):
 // Dependency/phase: P2/P3 utility-service.
 // - NOT PORTED: expr2String (AbstractDiagnosticFormatter.java:231)

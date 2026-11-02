@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/VariableElement.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a field, enum constant, method or constructor parameter, local
 //! variable, resource variable, or exception parameter.
 //!

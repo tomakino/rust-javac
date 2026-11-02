@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/jvm/PoolConstant.java @ 982d53c (jdk-17.0.19-ga)
-
 //! This interface models all javac entities that can be used to represent
 //! constant pool entries. A pool constant entity must (i) be associated with a
 //! constant pool entry tag and (ii) have a function which generates a key for

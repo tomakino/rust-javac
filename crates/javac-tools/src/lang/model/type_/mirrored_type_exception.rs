@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/type/MirroredTypeException.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Thrown when an application attempts to access the Class object
 //! corresponding to a TypeMirror.
 //!

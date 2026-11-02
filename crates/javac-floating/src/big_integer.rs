@@ -1,5 +1,3 @@
-// Origin: java/math/BigInteger.java + java/math/BitSieve.java + java/math/SignedMutableBigInteger.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Port of `java.math.BigInteger` (JDK 17) together with the two package-private
 //! helpers it uses, `MutableBigInteger`, `SignedMutableBigInteger` and
 //! `BitSieve`.

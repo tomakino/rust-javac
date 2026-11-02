@@ -1,5 +1,3 @@
-// Origin: com/sun/source/doctree/BlockTagTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node used as the base class for the different types of
 /// block tags.
 ///

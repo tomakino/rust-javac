@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/code/TypeAnnotationPosition.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Type annotation positions and type paths, as read from classfiles and as
 //! used by the Annotate/Code layers.
 //!

@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/ForLoopTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for a basic {@code for} loop statement.
 ///
 /// For example:

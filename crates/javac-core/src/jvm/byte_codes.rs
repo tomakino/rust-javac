@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/jvm/ByteCodes.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Bytecode instruction codes, as well as typecodes used as
 //! instruction modifiers.
 //!

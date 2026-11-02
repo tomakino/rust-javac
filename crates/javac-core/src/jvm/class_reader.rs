@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/jvm/ClassReader.java @ 982d53c (jdk-17.0.19-ga)
-// Gap registration (method-level audit of ClassReader.java):
 // Dependency/phase: P2/S2-B (attribute readers, module/directive readers) and
 // P3 semantic batches (Annotate/Code/Types); the classfile parsing surface is
 // ported in this file.

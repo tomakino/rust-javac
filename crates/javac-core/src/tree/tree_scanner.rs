@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/tree/TreeScanner.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A subclass of Tree.Visitor, this class defines a general tree scanner
 //! pattern. Translation proceeds recursively in left-to-right order down a
 //! tree. There is one visitor method in this class for every possible kind of

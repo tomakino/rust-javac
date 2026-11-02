@@ -1,5 +1,3 @@
-// Origin: jdk/internal/math/FloatingDecimal.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Port of \`jdk.internal.math.FloatingDecimal\` (JDK 17).
 //!
 //! PORTING_RULES §9.17 (standard-library adapter): upstream algorithms,

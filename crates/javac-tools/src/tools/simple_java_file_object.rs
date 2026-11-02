@@ -1,5 +1,3 @@
-// Origin: javax/tools/SimpleJavaFileObject.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Provides simple implementations for most methods in JavaFileObject.
 
 use super::file_object::FileObject;

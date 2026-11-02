@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/DefaultCaseLabelTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A case label that marks {@code default} in {@code case null, default}.
 ///
 /// @since 17

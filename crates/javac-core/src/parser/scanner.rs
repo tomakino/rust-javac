@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/parser/Scanner.java @ 982d53c (jdk-17.0.19-ga)
-
 //! The lexical analyzer maps an input stream consisting of ASCII characters
 //! and Unicode escapes into a token sequence.
 //!

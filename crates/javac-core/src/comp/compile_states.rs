@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/comp/CompileStates.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Partial map recording which compiler phases have been executed for each
 //! compilation unit (ATTR/FLOW phases).
 //!

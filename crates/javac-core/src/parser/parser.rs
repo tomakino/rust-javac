@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/parser/Parser.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Reads syntactic units from source code.
 //! Parsers are normally created from a ParserFactory.
 //!

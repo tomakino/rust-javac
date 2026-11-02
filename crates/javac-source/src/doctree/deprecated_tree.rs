@@ -1,5 +1,3 @@
-// Origin: com/sun/source/doctree/DeprecatedTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for an {@code @deprecated} block tag.
 ///
 /// <pre>

@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/code/Scope.java @ 982d53c (jdk-17.0.19-ga)
 //! A scope represents an area of visibility in a Java program. The Scope class
 //! is a container for symbols which provides efficient access to symbols given
 //! their names. Scopes are implemented as hash tables with "open addressing"

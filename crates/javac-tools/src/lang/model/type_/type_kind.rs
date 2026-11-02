@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/type/TypeKind.java @ 982d53c (jdk-17.0.19-ga)
-
 //! The kind of a type mirror.
 
 use javac_strings::JavaString;

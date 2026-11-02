@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/Parameterizable.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A mixin interface for an element that has type parameters.
 
 use super::element::Element;

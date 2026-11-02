@@ -1,5 +1,3 @@
-// Origin: javax/lang/model (AnnotatedConstruct.getAnnotationMirrors) and the
-// javax.lang.model mirror objects of com.sun.tools.javac.model.JavacElements /
 // JavacTypes @ 982d53c (jdk-17.0.19-ga)
 //
 // PORTING ADAPTER (registered): the upstream mirror objects are the compiler's

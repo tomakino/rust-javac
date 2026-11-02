@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/comp/TreeHasher.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A tree visitor that computes a hash code (TreeHasher.java).
 //!
 //! PORTING_RULES: TreeHasher extends TreeScanner; the port implements TreeVisitor

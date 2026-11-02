@@ -1,5 +1,3 @@
-// Origin: javax/tools/package-info.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Provides interfaces for tools which can be invoked from a program,
 //! for example, compilers.
 //!

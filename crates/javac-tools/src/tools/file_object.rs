@@ -1,5 +1,3 @@
-// Origin: javax/tools/FileObject.java @ 982d53c (jdk-17.0.19-ga)
-
 //! File abstraction for tools: an abstraction of regular files and other
 //! sources of data.
 

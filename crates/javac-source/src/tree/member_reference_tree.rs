@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/MemberReferenceTree.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A tree node for a member reference expression.
 //!
 //! PORTING_RULES: Java interface -> Rust trait; the nested enum ReferenceMode

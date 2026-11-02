@@ -1,5 +1,3 @@
-// Origin: java/util/Random.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Port of the parts of `java.util.Random` used by the ported
 //! `java.math.BigInteger` (candidate generation and Miller-Rabin bases).
 //!

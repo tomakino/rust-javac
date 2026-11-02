@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/api/Formattable.java @ 982d53c (jdk-17.0.19-ga)
-
 //! This interface must be implemented by any javac class that has non-trivial
 //! formatting needs (e.g. where toString() does not apply because of localization).
 //!

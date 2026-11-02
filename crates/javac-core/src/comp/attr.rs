@@ -1,5 +1,4 @@
 #![allow(clippy::result_large_err)]
-// Origin: com/sun/tools/javac/comp/Attr.java @ 982d53c (jdk-17.0.19-ga)
 //
 // Attr A (structure + type/identifier/expression entry points).
 //

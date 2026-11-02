@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/type/package-info.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Interfaces used to model Java programming language types.
 //!
 //! <p> Unless otherwise specified in a particular implementation, the

@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/comp/Lower.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Translates away syntactic sugar before code generation: inner classes and
 //! their access bridges, class literals, assertions, foreach loops, enum
 //! switches, string concatenation and assignment operators.

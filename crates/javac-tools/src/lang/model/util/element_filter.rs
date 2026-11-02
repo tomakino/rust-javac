@@ -3,7 +3,6 @@
 // intentionally allowed).
 #![allow(clippy::needless_lifetimes)]
 
-// Origin: javax/lang/model/util/ElementFilter.java @ 982d53c (jdk-17.0.19-ga)
 
 //! Filters for selecting just the elements of interest from a collection of
 //! elements.

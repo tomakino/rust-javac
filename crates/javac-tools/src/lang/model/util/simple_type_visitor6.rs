@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/util/SimpleTypeVisitor6.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A simple visitor of types with default behavior appropriate for the
 //! RELEASE_6 source version.
 //!

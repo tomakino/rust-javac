@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/comp/TreeDiffer.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A visitor that compares two lambda bodies for structural equality
 //! (TreeDiffer.java).
 //!

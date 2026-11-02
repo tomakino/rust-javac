@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/tree/DocPretty.java @ 982d53c (jdk-17.0.19-ga)
 // Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: tree (tree nodes/scanners for the corresponding upstream feature).
 // Not yet ported upstream methods (no substitutes in this file):

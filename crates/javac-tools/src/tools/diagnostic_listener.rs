@@ -1,5 +1,3 @@
-// Origin: javax/tools/DiagnosticListener.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Interface for receiving diagnostics from tools.
 
 use super::diagnostic::Diagnostic;

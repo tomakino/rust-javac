@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/TreePathScanner.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A TreeVisitor that visits all the child tree nodes, and provides support for
 //! maintaining a path for the parent nodes.  To visit nodes of a particular
 //! type, just override the corresponding visitXYZ method.  Inside your method,

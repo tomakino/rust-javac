@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/code/DeferredLintHandler.java @ 982d53c (jdk-17.0.19-ga)
 //
 // PORTING_RULES adapters (registered):
 // - DiagnosticPosition object identity -> Rc<dyn DiagnosticPosition> compared

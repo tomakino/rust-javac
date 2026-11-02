@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/platform/JDKPlatformProvider.java @ 982d53c (jdk-17.0.19-ga)
-
 //! PlatformProvider for JDK N.
 //!
 //! <p><b>This is NOT part of any supported API.

@@ -1,5 +1,3 @@
-// Origin: javax/tools/StandardJavaFileManager.java @ 982d53c (jdk-17.0.19-ga)
-
 //! File manager based on java.io.File and java.nio.file.Path.
 
 use super::java_file_manager::{FileObjectRef, JavaFileManager, JavaFileObjectRef, Location};

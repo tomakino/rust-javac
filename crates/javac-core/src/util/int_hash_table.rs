@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/IntHashTable.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A hash table that maps Object to int.
 //!
 //! This is a custom hash table optimised for the Object -> int

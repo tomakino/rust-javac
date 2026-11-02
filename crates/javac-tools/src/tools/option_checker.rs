@@ -1,5 +1,3 @@
-// Origin: javax/tools/OptionChecker.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Interface for recognizing options.
 
 use javac_strings::JavaString;

@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/type/TypeMirror.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a type in the Java programming language.
 //!
 //! PORTING_RULES:

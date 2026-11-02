@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/tree/EndPosTable.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Specifies the methods to access a mappings of syntax trees to end positions.
 //!
 //! <p><b>This is NOT part of any supported API.

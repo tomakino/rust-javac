@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/code/Directive.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Root class for the directives that may appear in module compilation units.
 //!
 //! <p><b>This is NOT part of any supported API.

@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/Convert.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Utility class for static conversion methods between numbers and strings in
 //! various formats.
 //!

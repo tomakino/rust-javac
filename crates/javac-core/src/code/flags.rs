@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/code/Flags.java @ 982d53c (jdk-17.0.19-ga)
 #![allow(non_upper_case_globals)]
 
 //! Access flags and other modifiers for Java classes and members.

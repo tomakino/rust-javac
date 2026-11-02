@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/Modifier.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a modifier on a program element such
 //! as a class, method, or field.
 

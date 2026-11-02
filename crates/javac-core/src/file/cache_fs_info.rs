@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/file/CacheFSInfo.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Caching implementation of FSInfo.
 //!
 //! <p><b>This is NOT part of any supported API.

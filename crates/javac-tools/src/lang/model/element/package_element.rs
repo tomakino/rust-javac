@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/PackageElement.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a package program element.
 //!
 //! PORTING_RULES: `extends Element, QualifiedNameable` -> Rust supertraits.

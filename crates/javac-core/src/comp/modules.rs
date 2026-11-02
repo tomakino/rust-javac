@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/comp/Modules.java @ 982d53c (jdk-17.0.19-ga)
-
 //! This class provides the module system: module declarations are entered,
 //! resolved and completed; the module graph (requires/transitive closure),
 //! visible packages and --add-exports/--add-reads/--add-modules handling are

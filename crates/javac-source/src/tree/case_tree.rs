@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/CaseTree.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A tree node for a case in a switch statement or expression.
 //!
 //! PORTING_RULES: Java interface -> Rust trait; the two Java `default` methods

@@ -2,7 +2,6 @@
 // module element::element mirrors that (clippy::module_inception is expected).
 #![allow(clippy::module_inception)]
 
-// Origin: javax/lang/model/element/package-info.java @ 982d53c (jdk-17.0.19-ga)
 
 //! Interfaces used to model elements of the Java programming language.
 //!

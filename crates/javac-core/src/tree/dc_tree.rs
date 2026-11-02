@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/tree/DCTree.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Doc tree node family (Java: DCTree and its nested node classes).
 //!
 //! PORTING_RULES: doc-tree adapter notes (same policy as JCTree in ADR 0005):

@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/RecordComponentElement.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a record component.
 //!
 //! PORTING_RULES: the Java `@Override` re-declarations of

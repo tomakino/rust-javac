@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/comp/Operators.java @ 982d53c (jdk-17.0.19-ga)
 //
 // PORTING_RULES:
 // - ADR 0001: the ported Operators receives the services explicitly (the

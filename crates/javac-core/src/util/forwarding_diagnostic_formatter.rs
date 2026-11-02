@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/ForwardingDiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A delegated diagnostic formatter delegates all formatting actions to an
 //! underlying formatter (aka the delegated formatter).
 //!

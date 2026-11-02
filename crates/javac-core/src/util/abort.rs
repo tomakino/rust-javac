@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/Abort.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Throwing an instance of this class causes (silent) termination of the main
 //! compiler method.
 //!

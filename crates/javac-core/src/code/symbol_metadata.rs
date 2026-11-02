@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/code/SymbolMetadata.java @ 982d53c (jdk-17.0.19-ga)
 //
 // PORTING_RULES adapters (registered):
 // - the upstream sentinel values DECL_NOT_STARTED/DECL_IN_PROGRESS are

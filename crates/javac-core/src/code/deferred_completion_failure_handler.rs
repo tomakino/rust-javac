@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/code/DeferredCompletionFailureHandler.java @ 982d53c (jdk-17.0.19-ga)
-
 //! When a CompletionFailure is thrown when user code is running, it should not be
 //! thrown out to the client code, but rather skipped, and then rethrown later if
 //! javac itself will complete the Symbol.

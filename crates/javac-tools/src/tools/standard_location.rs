@@ -1,5 +1,3 @@
-// Origin: javax/tools/StandardLocation.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Standard locations of file objects.
 
 use super::java_file_manager::Location;

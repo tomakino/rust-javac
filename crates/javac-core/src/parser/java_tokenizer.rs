@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/parser/JavaTokenizer.java @ 982d53c (jdk-17.0.19-ga)
-
 //! The lexical analyzer maps an input stream consisting of UTF-8 characters
 //! and unicode escape sequences into a token sequence.
 //!

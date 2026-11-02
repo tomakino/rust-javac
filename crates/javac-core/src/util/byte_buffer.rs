@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/ByteBuffer.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A byte buffer is a flexible array which grows when elements are
 //! appended. There are also methods to append names to byte buffers
 //! and to convert byte buffers to names.

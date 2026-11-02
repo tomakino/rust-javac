@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/DiagnosticSource.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A simple abstraction of a source file, as needed for use in a diagnostic
 //! message. Provides access to the line and position in a line for any given
 //! character offset.

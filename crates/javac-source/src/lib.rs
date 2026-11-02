@@ -1,5 +1,3 @@
-// Origin: com/sun/source (module) @ 982d53c (jdk-17.0.19-ga)
-
 //! Interfaces for the compiler tree API of the Java programming language
 //! (`com.sun.source`, JDK 17).
 //!

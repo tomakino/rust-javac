@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/file/FSInfo.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Get meta-info about files. Default direct (non-caching) implementation.
 //! @see CacheFSInfo
 //!

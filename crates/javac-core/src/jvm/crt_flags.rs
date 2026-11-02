@@ -1,4 +1,3 @@
-
 // Source: com/sun/tools/javac/jvm/CRTFlags.java
 
 //! Character range table flags, indicating the kind of source entry a

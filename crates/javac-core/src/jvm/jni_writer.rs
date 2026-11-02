@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/jvm/JNIWriter.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Native-header writer: emits the C header for a class exposing native
 //! methods and/or fields annotated with `@Native`, ported 1:1 from
 //! JNIWriter.java.

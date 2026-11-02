@@ -1,5 +1,3 @@
-// Origin: com/sun/source/doctree/DocTree.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Common interface for all nodes in a documentation syntax tree.
 //!
 //! PORTING_RULES (docs/PORTING_RULES.md §14):

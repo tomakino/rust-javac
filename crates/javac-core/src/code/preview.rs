@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/code/Preview.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Helper class to handle preview language features. This class maps certain language
 //! features (see {@link Feature}) into 'preview' features; the mapping is completely
 //! ad-hoc, so as to allow for maximum flexibility, which allows to migrate preview

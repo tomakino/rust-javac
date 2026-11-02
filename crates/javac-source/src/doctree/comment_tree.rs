@@ -1,5 +1,3 @@
-// Origin: com/sun/source/doctree/CommentTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// An embedded HTML comment.
 ///
 /// <pre>

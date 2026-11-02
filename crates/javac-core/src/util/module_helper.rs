@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/ModuleHelper.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Module export helper.
 //!
 //! PORTING_RULES:

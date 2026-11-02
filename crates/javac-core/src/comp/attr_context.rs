@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/comp/AttrContext.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Contains information specific to the attribute and enter passes, to be used
 //! in place of the generic field in environments.
 //!

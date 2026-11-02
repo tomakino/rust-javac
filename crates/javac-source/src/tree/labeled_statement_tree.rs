@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/LabeledStatementTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for a labeled statement.
 ///
 /// For example:

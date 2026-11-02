@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/parser/Lexer.java @ 982d53c (jdk-17.0.19-ga)
-
 //! The lexical analyzer interface (Java: public interface Lexer).
 //!
 //! PORTING_RULES: the Java interface becomes a Rust trait; the token(int

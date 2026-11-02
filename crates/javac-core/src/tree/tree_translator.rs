@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/tree/TreeTranslator.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A subclass of Tree.Visitor, this class defines a general tree translator
 //! pattern. Translation proceeds recursively in left-to-right order down a
 //! tree, constructing translated nodes by overwriting existing ones. There is

@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/type/UnionType.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a union type.
 
 use super::type_mirror::TypeMirror;

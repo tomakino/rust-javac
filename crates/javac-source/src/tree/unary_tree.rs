@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/UnaryTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for postfix and unary expressions.
 /// Use {@link #getKind getKind} to determine the kind of operator.
 ///

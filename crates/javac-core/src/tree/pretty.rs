@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/tree/Pretty.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Prints out a tree as an indented Java source program.
 //!
 //! <p><b>This is NOT part of any supported API.

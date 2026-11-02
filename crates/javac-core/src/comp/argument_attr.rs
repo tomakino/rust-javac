@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/comp/ArgumentAttr.java @ 982d53c (jdk-17.0.19-ga)
 //
 // Registration mapping (): this file ports
 // - ArgumentAttr (instance/constructor/setResult/checkSpeculative/

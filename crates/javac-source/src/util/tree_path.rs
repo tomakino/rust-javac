@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/TreePath.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A path of tree nodes, typically used to represent the sequence of ancestor
 //! nodes of a tree node up to the top-level CompilationUnitTree node.
 //!

@@ -1,5 +1,3 @@
-// Origin: com/sun/source/doctree/ReferenceTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for a reference to a Java language element.
 ///
 /// <pre>

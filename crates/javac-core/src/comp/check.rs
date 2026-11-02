@@ -1,5 +1,3 @@
-
-// Origin: com/sun/tools/javac/comp/Check.java @ 982d53c (jdk-17.0.19-ga)
 //
 // Registration: this file ports the Check subset required by
 // the Enter/Flow batches (class enter symbol/flags/duplicate checks, the

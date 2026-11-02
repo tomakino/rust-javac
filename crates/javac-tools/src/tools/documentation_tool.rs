@@ -1,5 +1,3 @@
-// Origin: javax/tools/DocumentationTool.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Interface to invoke Java programming language documentation tools from
 //! programs.
 //!

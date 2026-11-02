@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/LayoutCharacters.java @ 982d53c (jdk-17.0.19-ga)
-
 //! An interface containing layout character constants used in Java programs.
 //!
 //! <p><b>This is NOT part of any supported API.

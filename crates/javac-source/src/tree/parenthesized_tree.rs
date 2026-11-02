@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/ParenthesizedTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for a parenthesized expression.  Note: parentheses
 /// not be preserved by the parser.
 ///

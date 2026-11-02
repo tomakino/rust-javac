@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/AssignmentTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for an assignment expression.
 ///
 /// For example:

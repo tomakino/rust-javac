@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/UnknownDirectiveException.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Indicates that an unknown kind of module directive was encountered.
 //!
 //! PORTING_RULES: Java class inheritance -> embedded `UnknownEntityException`;

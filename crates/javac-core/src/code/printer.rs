@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/code/Printer.java @ 982d53c (jdk-17.0.19-ga)
 //
 // A combined type/symbol visitor for generating non-trivial localized string
 // representation of types and symbols.

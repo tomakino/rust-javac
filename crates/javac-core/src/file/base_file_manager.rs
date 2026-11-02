@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/file/BaseFileManager.java @ 982d53c (jdk-17.0.19-ga)
 // Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: P2 ClassReader / API.
 // REGISTERED units (dependencies unavailable, no substitute logic):

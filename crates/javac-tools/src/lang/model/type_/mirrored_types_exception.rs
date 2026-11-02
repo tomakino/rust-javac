@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/type/MirroredTypesException.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Thrown when an application attempts to access a sequence of Class objects
 //! each corresponding to a TypeMirror.
 //!

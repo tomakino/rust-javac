@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/TreeVisitor.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A visitor of trees, in the style of the visitor design pattern.
 //!
 //! PORTING_RULES (docs/PORTING_RULES.md §14): visitor interface methods are

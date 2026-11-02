@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/comp/LambdaToMethod.java @ 982d53c (jdk-17.0.19-ga)
-
 //! This pass desugars lambda expressions into static methods
 //! (LambdaToMethod.java).
 //!

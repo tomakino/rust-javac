@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/PackageTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// Represents the package declaration.
 ///
 /// @jls 7.3 Compilation Units

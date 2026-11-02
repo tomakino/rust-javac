@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/Element.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a program element such as a module, package, class, or method.
 //!
 //! PORTING_RULES — signature mapping:

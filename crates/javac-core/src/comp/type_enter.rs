@@ -1,5 +1,4 @@
 #![allow(dead_code)] // helper surface retained for the phase/service wiring (see the header).
-// Origin: com/sun/tools/javac/comp/TypeEnter.java @ 982d53c (jdk-17.0.19-ga)
 //
 // Registration (this file):
 // - Ported below: the TypeEnter structure/dependencies injection, instance

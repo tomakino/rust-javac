@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/comp/Annotate.java @ 982d53c (jdk-17.0.19-ga)
 //
 // contains the Annotate support types that the -3.5b Annotate
 // body and the -3.5 pre-requisite Check.validateAnnotation family need:

@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/util/SimpleAnnotationValueVisitor7.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A simple visitor for annotation values with default behavior appropriate for
 //! the RELEASE_7 source version.
 //!

@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/MethodTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for a method or annotation type element declaration.
 ///
 /// For example:

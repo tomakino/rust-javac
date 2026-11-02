@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/RawDiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A raw formatter for diagnostic messages.
 //! The raw formatter will format a diagnostic according to one of two format
 //! patterns, depending on whether or not the source name and position are set.

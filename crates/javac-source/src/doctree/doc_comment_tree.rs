@@ -1,5 +1,3 @@
-// Origin: com/sun/source/doctree/DocCommentTree.java @ 982d53c (jdk-17.0.19-ga)
-
 //! The top-level representation of a documentation comment.
 //!
 //! PORTING_RULES: Java interface -> Rust trait; the 3 Java `default` methods

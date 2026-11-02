@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/ParameterNameProvider.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A provider for parameter names when the parameter names are not determined
 //! from a reliable source, like a classfile.
 //!

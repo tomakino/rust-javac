@@ -1,7 +1,6 @@
 #![allow(clippy::result_large_err)]
 #![allow(clippy::type_complexity)]
 
-// Origin: com/sun/tools/javac/code/Types.java @ 982d53c (jdk-17.0.19-ga)
 // Method-level audit status (Type/Types batch): the previous 123-method
 // NOT PORTED list is resolved below. Every unit maps to a local implementation,
 // a dispatch adapter, or an explicitly registered dependency.

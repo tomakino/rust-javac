@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/code/Kinds.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Internal symbol kinds which distinguish between elements of different
 //! subclasses of Symbol. Symbol kinds are organized so they can be or'ed to
 //! sets.

@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/tree/DocTreeMaker.java @ 982d53c (jdk-17.0.19-ga)
 // Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: tree (tree nodes/scanners for the corresponding upstream feature).
 // Not yet ported upstream methods (no substitutes in this file):
@@ -76,7 +75,11 @@ impl DocTreeMaker {
     /// set_reference_parser (registered adapter). JavacTrees remains a P6
     /// REGISTERED dependency for getSentenceBreak.
     pub fn new(diags: Rc<Factory>) -> DocTreeMaker {
-        DocTreeMaker {            pos: NOPOS,            diags,            reference_parser: None,        }
+        DocTreeMaker {
+            pos: NOPOS,
+            diags,
+            reference_parser: None,
+        }
     }
 
     /// The diagnostic factory supplied at construction (Java: private final

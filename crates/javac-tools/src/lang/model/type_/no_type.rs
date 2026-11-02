@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/type/NoType.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A pseudo-type used where no actual type is appropriate.
 
 use super::type_mirror::TypeMirror;

@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/NewClassTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node to declare a new instance of a class.
 ///
 /// For example:

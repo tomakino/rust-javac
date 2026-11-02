@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/tree/JCTree.java @ 982d53c (jdk-17.0.19-ga)
-
 //! The abstract syntax tree (JCTree) of the javac compiler.
 //!
 //! <p><b>This is NOT part of any supported API.

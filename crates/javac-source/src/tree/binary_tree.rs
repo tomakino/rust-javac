@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/BinaryTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for a binary expression.
 /// Use {@link #getKind getKind} to determine the kind of operator.
 ///

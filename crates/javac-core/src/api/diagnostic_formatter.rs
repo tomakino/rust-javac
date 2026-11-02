@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/api/DiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Provides simple functionalities for javac diagnostic formatting.
 //!
 //! <p><b>This is NOT part of any supported API.

@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/CatchTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for a {@code catch} block in a {@code try} statement.
 ///
 /// For example:

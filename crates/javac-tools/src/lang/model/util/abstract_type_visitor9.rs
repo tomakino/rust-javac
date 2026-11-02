@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/util/AbstractTypeVisitor9.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A skeletal visitor of types with default behavior appropriate for the
 //! RELEASE_9 through RELEASE_14 source version.
 //!

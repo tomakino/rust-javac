@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/DocTreeFactory.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Factory for creating {@code DocTree} nodes.
 //!
 //! PORTING_RULES (§12/§14):

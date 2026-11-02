@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/code/Source.java @ 982d53c (jdk-17.0.19-ga)
-
 //! The source language version accepted.
 //!
 //! <p><b>This is NOT part of any supported API.

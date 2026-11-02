@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/Name.java @ 982d53c (jdk-17.0.19-ga)
-
 //! An immutable sequence of characters.
 //!
 //! PORTING_RULES — signature mapping:

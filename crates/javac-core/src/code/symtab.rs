@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/code/Symtab.java @ 982d53c (jdk-17.0.19-ga)
 // Gap registration supplement (method-level audit):
 // Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
 // - NOT PORTED: isTerminal (Symtab.java:324)

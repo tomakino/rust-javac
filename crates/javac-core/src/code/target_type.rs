@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/code/TargetType.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Describes the type of program element an extended annotation (or extended
 //! compound attribute) targets.
 //!

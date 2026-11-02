@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/Options.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A table of all command-line options.
 //! If an option has an argument, the option name is mapped to the argument.
 //! If a set option has no argument, it is mapped to itself.

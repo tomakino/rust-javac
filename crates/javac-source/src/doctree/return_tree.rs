@@ -1,5 +1,3 @@
-// Origin: com/sun/source/doctree/ReturnTree.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A tree node for an {@code @return} block tag.
 //!
 //! PORTING_RULES: Java interface -> Rust trait; the Java `default boolean

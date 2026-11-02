@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/BasicDiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A basic formatter for diagnostic messages.
 //! The basic formatter will format a diagnostic according to one of three
 //! format patterns, depending on whether or not the source name and position

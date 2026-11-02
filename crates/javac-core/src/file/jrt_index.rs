@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/file/JRTIndex.java @ 982d53c (jdk-17.0.19-ga)
-
 // PORTING_RULES: the thread_local initializer is already a const block; the lint fires on the
 // generated wrapper, so it is allowed here.
 #![allow(clippy::missing_const_for_thread_local)]

@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/Scope.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Interface for determining locally available program elements, such as local
 //! variables and imports.
 //!

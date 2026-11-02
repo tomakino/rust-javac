@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/ModuleTree.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A tree node for a module declaration.
 //!
 //! PORTING_RULES: Java interface -> Rust trait; the nested enum ModuleKind

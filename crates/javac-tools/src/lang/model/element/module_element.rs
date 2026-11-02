@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/ModuleElement.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a module program element.
 //!
 //! PORTING_RULES:

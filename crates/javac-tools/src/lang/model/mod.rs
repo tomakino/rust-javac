@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/package-info.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Types and hierarchies of packages comprising a {@index "Java language
 //! model"}, a model of the declarations and types of the Java
 //! programming language.

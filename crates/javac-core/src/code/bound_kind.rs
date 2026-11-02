@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/code/BoundKind.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Kind of a wildcard bound.
 //!
 //! <p><b>This is NOT part of any supported API.

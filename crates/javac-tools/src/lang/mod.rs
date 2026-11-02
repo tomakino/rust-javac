@@ -1,5 +1,3 @@
-// Origin: javax/lang (package) @ 982d53c (jdk-17.0.19-ga)
-
 //! `javax.lang` package tree.
 //!
 //! Only the members required by the `javax.tools` signatures are ported so

@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/util/package-info.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Utilities to assist in the processing of
 //! {@linkplain javax.lang.model.element program elements} and
 //! {@linkplain javax.lang.model.type types}.

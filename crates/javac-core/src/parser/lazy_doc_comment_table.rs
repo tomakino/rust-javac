@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/parser/LazyDocCommentTable.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A table giving the doc comment, if any, for any tree node, parsing the doc
 //! comment on demand.
 //!

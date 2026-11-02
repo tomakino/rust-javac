@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/TaskEvent.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Provides details about work that has been done by the JDK Java Compiler,
 //! javac.
 //!

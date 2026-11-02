@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/AnnotationValue.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a value of an annotation interface element.
 //!
 //! PORTING_RULES — the Java `Object getValue()` is mapped to the closed

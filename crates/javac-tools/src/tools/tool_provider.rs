@@ -1,5 +1,3 @@
-// Origin: javax/tools/ToolProvider.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Provides methods for locating tool providers, for example,
 //! providers of compilers.
 

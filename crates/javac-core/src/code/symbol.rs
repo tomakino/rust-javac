@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/code/Symbol.java @ 982d53c (jdk-17.0.19-ga)
 // Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
 // The entries marked "implemented"/"blocked" were reconciled by the Symbol API

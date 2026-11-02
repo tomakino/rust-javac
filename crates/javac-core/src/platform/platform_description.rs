@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/platform/PlatformDescription.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A description of settings needed for a particular {@code --release name} option.
 //!
 //! <p><b>This is NOT part of any supported API.

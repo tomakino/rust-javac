@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/type/TypeVariable.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a type variable.
 
 use super::reference_type::ReferenceType;

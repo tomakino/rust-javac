@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/comp/DeferredAttr.java @ 982d53c (jdk-17.0.19-ga)
 //
 // Registration mapping: AttributionMode / AttrMode / DeferredStuckPolicy /
 // dummyStuckPolicy / SpeculativeCache / DeferredType operations /

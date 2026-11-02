@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/platform/PlatformUtils.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Internal utilities to work with PlatformDescriptions.
 //!
 //! <p><b>This is NOT part of any supported API.

@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/code/TypeMetadata.java @ 982d53c (jdk-17.0.19-ga)
 //
 // PORTING_RULES:
 // - TypeMetadata is an immutable EnumMap<Entry.Kind, Entry>; the port uses a

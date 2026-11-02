@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/type/ErrorType.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a class or interface type that cannot be properly modeled.
 
 use super::declared_type::DeclaredType;

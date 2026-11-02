@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/file/RelativePath.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Used to represent a platform-neutral path within a platform-specific
 //! container, such as a directory or zip file.
 //! Internally, the file separator is always '/'.

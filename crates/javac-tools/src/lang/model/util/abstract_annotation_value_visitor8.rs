@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/util/AbstractAnnotationValueVisitor8.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A skeletal visitor for annotation values with default behavior appropriate
 //! for the RELEASE_8 source version.
 //!

@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/ModifiersTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for the modifiers, including annotations, for a declaration.
 ///
 /// For example:

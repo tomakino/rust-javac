@@ -1,5 +1,3 @@
-// Origin: com/sun/source/doctree/ThrowsTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for an {@code @exception} or {@code @throws} block tag.
 /// {@code @exception} is a synonym for {@code @throws}.
 ///

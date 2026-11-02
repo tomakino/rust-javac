@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/util/AbstractElementVisitor8.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A skeletal visitor of program elements with default behavior appropriate
 //! for the RELEASE_8 source version.
 //!

@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/SimpleTreeVisitor.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A simple visitor for tree nodes.
 //!
 //! PORTING_RULES (§14.5):

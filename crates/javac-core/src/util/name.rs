@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/Name.java @ 982d53c (jdk-17.0.19-ga)
-
 //! An abstraction for internal compiler strings. They are stored in Utf8 format.
 //! Names are stored in a Name.Table, and are unique within that table.
 //!

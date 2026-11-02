@@ -1,5 +1,3 @@
-// Origin: com/sun/source/doctree/SummaryTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for an {@code @summary} inline tag.
 ///
 /// <pre>

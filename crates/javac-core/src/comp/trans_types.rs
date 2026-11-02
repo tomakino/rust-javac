@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/comp/TransTypes.java @ 982d53c (jdk-17.0.19-ga)
-
 //! This pass translates Generic Java to conventional Java.
 //!
 //! ADR 0001: the upstream Context services are injected explicitly.

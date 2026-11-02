@@ -1,5 +1,3 @@
-// Origin: com/sun/source/doctree/DocTreeVisitor.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A visitor of documentation trees, in the style of the visitor design
 //! pattern.
 //!

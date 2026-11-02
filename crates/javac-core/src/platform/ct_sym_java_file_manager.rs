@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/platform/JDKPlatformProvider.java @ 982d53c (jdk-17.0.19-ga)
-
 //! The platform file manager of JDKPlatformProvider.PlatformDescriptionImpl
 //! (JDKPlatformProvider.java:154-359): the Java anonymous JavacFileManager
 //! subclass and its private SigJavaFileObject.

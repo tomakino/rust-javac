@@ -1,5 +1,3 @@
-// Origin: javax/tools/JavaCompiler.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Interface to invoke Java programming language compilers from programs.
 
 use super::diagnostic_listener::DiagnosticListener;

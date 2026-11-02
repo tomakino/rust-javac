@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/QualifiedNameable.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A mixin interface for an element that has a qualified name.
 
 use super::element::Element;

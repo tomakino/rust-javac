@@ -1,5 +1,3 @@
-// Origin: com/sun/source/doctree/StartElementTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for the start of an HTML element.
 ///
 /// <pre>

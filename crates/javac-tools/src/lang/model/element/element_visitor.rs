@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/ElementVisitor.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A visitor of program elements, in the style of the visitor design pattern.
 //!
 //! PORTING_RULES — signature mapping:

@@ -1,5 +1,3 @@
-// Origin: java/lang/Character.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Adapter for the `java.lang.Character` digit helpers used by the ported
 //! `java.math.BigInteger` (the Unicode classification lives in the in-workspace
 //! `javac-unicode` crate; this module keeps the exact JDK signatures).

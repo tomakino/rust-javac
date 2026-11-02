@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/parser/TextBlockSupport.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Methods used to support text blocks lint.
 //!
 //! <p><b>This is NOT part of any supported API.

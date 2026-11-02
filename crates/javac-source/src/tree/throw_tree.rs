@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/ThrowTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for a {@code throw} statement.
 ///
 /// For example:

@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/MandatoryWarningHandler.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A handler to process mandatory warnings, setting up a deferred diagnostic to
 //! be printed at the end of the compilation if some warnings get suppressed
 //! because too many warnings have already been generated.

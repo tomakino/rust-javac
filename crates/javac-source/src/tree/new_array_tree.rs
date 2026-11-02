@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/NewArrayTree.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A tree node for an expression to create a new instance of an array.
 //!
 //! PORTING_RULES: nested generic lists map to nested Vecs;

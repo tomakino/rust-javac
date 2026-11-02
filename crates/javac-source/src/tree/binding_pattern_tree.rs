@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/BindingPatternTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A binding pattern tree
 ///
 /// @since 16

@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/type/PrimitiveType.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a primitive type.
 
 use super::type_mirror::TypeMirror;

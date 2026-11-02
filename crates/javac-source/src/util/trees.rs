@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/Trees.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Bridges JSR 199, JSR 269, and the Tree API.
 //!
 //! PORTING_RULES (§14.6):

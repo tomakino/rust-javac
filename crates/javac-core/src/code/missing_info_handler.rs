@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/code/MissingInfoHandler.java @ 982d53c (jdk-17.0.19-ga)
 //
 // PORTING_RULES:
 // - the Context singleton instance is not expressed (ADR 0001); Symtab creates

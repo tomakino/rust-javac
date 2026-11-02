@@ -1,5 +1,3 @@
-// Origin: java/math/MutableBigInteger.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Port of `java.math.MutableBigInteger` (JDK 17), the mutable magnitude helper
 //! used by `java.math.BigInteger`.
 //!

@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/UnknownEntityException.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Superclass of exceptions which indicate that an unknown kind of entity was
 //! encountered.
 //!

@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/util/ElementKindVisitor9.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A visitor of program elements based on their kind with default behavior
 //! appropriate for source versions RELEASE_9 through RELEASE_14.
 //!

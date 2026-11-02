@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/jvm/Profile.java @ 982d53c (jdk-17.0.19-ga)
-
 //! The target profile.
 //!
 //! <p><b>This is NOT part of any supported API.

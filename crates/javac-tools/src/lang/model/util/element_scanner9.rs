@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/util/ElementScanner9.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A scanning visitor of program elements with default behavior appropriate for
 //! source versions RELEASE_9 through RELEASE_14.
 //!

@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/ProvidesTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for a 'provides' directive in a module declaration.
 ///
 /// For example:

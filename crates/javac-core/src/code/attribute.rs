@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/code/Attribute.java @ 982d53c (jdk-17.0.19-ga)
 // Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: P3 semantic services (Attr/Annotatees).
 // Not yet ported upstream methods (no substitutes in this file):

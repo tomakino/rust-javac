@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/LambdaExpressionTree.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A tree node for a lambda expression.
 //!
 //! PORTING_RULES: Java interface -> Rust trait; the nested enum BodyKind lives

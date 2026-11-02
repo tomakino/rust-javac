@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/code/ModuleFinder.java @ 982d53c (jdk-17.0.19-ga)
-
 //! This class provides operations to locate module definitions from the source
 //! and class files on the paths provided to javac.
 //!

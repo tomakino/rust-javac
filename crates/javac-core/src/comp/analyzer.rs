@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/comp/Analyzer.java @ 982d53c (jdk-17.0.19-ga)
 //
 // Registration:
 // - the Analyzer class + the analyzerModes set + the -XDfind option decoding;

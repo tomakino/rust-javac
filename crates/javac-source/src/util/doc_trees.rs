@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/DocTrees.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Provides access to syntax trees for doc comments.
 //!
 //! PORTING_RULES (§14.6):

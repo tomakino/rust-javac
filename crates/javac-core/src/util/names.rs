@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/Names.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Access to the compiler's name table. Standard names are defined, as well as
 //! methods to create new names.
 //!

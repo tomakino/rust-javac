@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/file/JavacFileManager.java @ 982d53c (jdk-17.0.19-ga)
 // Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: P2 ClassReader / API.
 // Not yet ported upstream methods (no substitutes in this file):

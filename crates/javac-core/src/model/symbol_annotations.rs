@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/code/AnnoConstruct.java and the annotated API of
-// com/sun/tools/javac/code/Symbol.java @ 982d53c (jdk-17.0.19-ga)
 //
 // PORTING ADAPTER (registered): upstream reads java.lang.annotation.Annotation
 // instances through Class reflection (getName/isAnnotationPresent) and JVM

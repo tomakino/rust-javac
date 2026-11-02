@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/TaskListener.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Provides a listener to monitor the activity of the JDK Java Compiler, javac.
 //!
 //! PORTING_RULES: Java interface -> Rust trait; the two Java `default` methods

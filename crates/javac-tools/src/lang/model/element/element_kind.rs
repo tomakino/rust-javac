@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/ElementKind.java @ 982d53c (jdk-17.0.19-ga)
-
 //! The kind of an element.
 
 use javac_strings::JavaString;

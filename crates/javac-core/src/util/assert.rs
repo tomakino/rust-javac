@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/Assert.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Simple facility for unconditional assertions.
 //! The methods in this class are described in terms of equivalent assert
 //! statements, assuming that assertions have been enabled.

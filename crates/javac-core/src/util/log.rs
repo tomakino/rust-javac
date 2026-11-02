@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/Log.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A class for error logs. Reports errors and warnings, and keeps track of error
 //! numbers and positions.
 //!

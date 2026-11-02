@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/Plugin.java @ 982d53c (jdk-17.0.19-ga)
-
 //! The interface for a javac plug-in.
 //!
 //! PORTING_RULES (§14): Java interface -> Rust trait; `String` -> JavaString;

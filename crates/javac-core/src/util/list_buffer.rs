@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/ListBuffer.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A class for constructing lists by appending elements. Modelled after
 //! java.lang.StringBuffer.
 //!

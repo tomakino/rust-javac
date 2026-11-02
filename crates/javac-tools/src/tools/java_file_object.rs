@@ -1,5 +1,3 @@
-// Origin: javax/tools/JavaFileObject.java @ 982d53c (jdk-17.0.19-ga)
-
 //! File abstraction for tools operating on Java programming language
 //! source and class files.
 

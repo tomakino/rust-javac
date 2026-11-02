@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/FatalError.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Throwing an instance of this class causes immediate termination of the main
 //! compiler method. It is used when some non-recoverable error has been detected
 //! in the compiler environment at runtime.

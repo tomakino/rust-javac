@@ -2,7 +2,6 @@
 // module doctree::doc_tree mirrors that (clippy::module_inception is expected).
 #![allow(clippy::module_inception)]
 
-// Origin: com/sun/source/doctree/package-info.java @ 982d53c (jdk-17.0.19-ga)
 
 //! Provides interfaces to represent documentation comments as abstract syntax
 //! trees (AST).

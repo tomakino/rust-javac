@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/code/ClassFinder.java @ 982d53c (jdk-17.0.19-ga)
-// Gap registration (method-level audit of ClassFinder.java):
 // Dependency/phase: P2/S3 (ClassFinder body; the file layer JavaFileManager/
 // Locations/JavacFileManager/JRTIndex is ported in this crate and injected).
 //

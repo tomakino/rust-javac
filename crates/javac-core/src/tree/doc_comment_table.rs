@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/tree/DocCommentTable.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A table giving the doc comment, if any, for any tree node.
 //!
 //! PORTING_RULES: Java JCTree keys -> arena TreeId (ADR 0001). The Comment and

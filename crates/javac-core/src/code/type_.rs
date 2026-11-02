@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/code/Type.java @ 982d53c (jdk-17.0.19-ga)
-
 //! This class represents Java types. The class itself defines the behavior of
 //! the following types:
 //! <pre>

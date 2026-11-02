@@ -1,5 +1,3 @@
-// Origin: javax/tools/DiagnosticCollector.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Provides an easy way to collect diagnostics in a list.
 
 use super::diagnostic::Diagnostic;

@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/TreeScanner.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A TreeVisitor that visits all the child tree nodes.
 //!
 //! PORTING_RULES (§14):

@@ -1,4 +1,3 @@
-
 // Source: com/sun/tools/javac/jvm/UninitializedType.java
 
 //! Pseudo-types that appear in verifier tables to indicate objects that have

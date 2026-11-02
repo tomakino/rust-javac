@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/util/Iterators.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Utilities for Iterators.
 //!
 //! <p><b>This is NOT part of any supported API.

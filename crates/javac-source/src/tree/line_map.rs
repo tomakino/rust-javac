@@ -1,5 +1,3 @@
-// Origin: com/sun/source/tree/LineMap.java @ 982d53c (jdk-17.0.19-ga)
-
 /// Provides methods to convert between character positions and line numbers
 /// for a compilation unit.
 ///

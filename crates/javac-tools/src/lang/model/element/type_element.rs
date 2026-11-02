@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/TypeElement.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents a class or interface program element.
 //!
 //! PORTING_RULES:

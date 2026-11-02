@@ -1,5 +1,3 @@
-// Origin: com/sun/source/util/package-info.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Provides utilities for operations on abstract syntax trees (AST).
 //!
 //! @author Peter von der Ah&eacute;

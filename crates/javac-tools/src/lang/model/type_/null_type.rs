@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/type/NullType.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Represents the null type.
 
 use super::reference_type::ReferenceType;

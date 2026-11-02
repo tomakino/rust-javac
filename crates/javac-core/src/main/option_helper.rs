@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/main/OptionHelper.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Helper object used by Option.process, providing access to the compilation
 //! environment.
 //!

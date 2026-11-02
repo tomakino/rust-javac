@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/api/Messages.java @ 982d53c (jdk-17.0.19-ga)
-
 //! This interface defines the minimum requirements in order to provide support
 //! for localized formatted strings.
 //!

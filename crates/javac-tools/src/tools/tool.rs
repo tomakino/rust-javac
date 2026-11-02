@@ -1,5 +1,3 @@
-// Origin: javax/tools/Tool.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Common interface for tools that can be invoked from a program.
 
 use crate::lang::model::source_version::SourceVersion;

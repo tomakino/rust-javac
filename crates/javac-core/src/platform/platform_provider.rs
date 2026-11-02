@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/platform/PlatformProvider.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A collection of platform descriptions that can be selected using {@code --release name}
 //! command line option.
 //! Register in {@code META-INF/services/com.sun.tools.javac.platform.PlatformProvider}.

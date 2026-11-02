@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/element/NestingKind.java @ 982d53c (jdk-17.0.19-ga)
-
 //! The <i>nesting kind</i> of a type element.
 
 use javac_strings::JavaString;

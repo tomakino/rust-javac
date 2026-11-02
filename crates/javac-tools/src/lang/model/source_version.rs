@@ -1,5 +1,3 @@
-// Origin: javax/lang/model/SourceVersion.java @ 982d53c (jdk-17.0.19-ga)
-
 //! Source versions of the Java programming language.
 //!
 //! See the appropriate edition of

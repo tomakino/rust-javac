@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/comp/Env.java @ 982d53c (jdk-17.0.19-ga)
-
 //! A class for environments, instances of which are passed as arguments to tree
 //! visitors. Environments refer to important ancestors of the subtree that is
 //! currently visited, such as the enclosing method, the enclosing class, or the

@@ -1,5 +1,3 @@
-// Origin: com/sun/tools/javac/comp/TransPatterns.java @ 982d53c (jdk-17.0.19-ga)
-
 //! This pass translates pattern-matching constructs, such as instanceof <pattern>.
 //!
 //! PORTING_RULES: the upstream class extends TreeTranslator; the port keeps a

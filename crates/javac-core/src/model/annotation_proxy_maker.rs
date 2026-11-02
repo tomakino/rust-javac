@@ -1,4 +1,3 @@
-// Origin: com/sun/tools/javac/model/AnnotationProxyMaker.java @ 982d53c (jdk-17.0.19-ga)
 //
 // PORTING ADAPTER (registered): the upstream generator produces JVM dynamic
 // proxies of java.lang.annotation.Annotation through

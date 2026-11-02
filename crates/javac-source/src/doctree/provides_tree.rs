@@ -1,5 +1,3 @@
-// Origin: com/sun/source/doctree/ProvidesTree.java @ 982d53c (jdk-17.0.19-ga)
-
 /// A tree node for a {@code @provides} block tag.
 ///
 /// <pre>
