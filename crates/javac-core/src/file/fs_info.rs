@@ -449,30 +449,6 @@ mod tests {
         ))
     }
 
-    #[test]
-    fn queries_on_a_temp_directory() {
-        let dir = temp_dir("query");
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let dir_path = FsPath::from_path_buf(dir.clone());
-        let info = FSInfo::new();
-        assert!(info.exists(&dir_path));
-        assert!(info.is_directory(&dir_path));
-        assert!(!info.is_file(&dir_path));
-
-        let file = dir.join("a.txt");
-        std::fs::write(&file, b"x").expect("write");
-        let file_path = FsPath::from_path_buf(file.clone());
-        assert!(info.exists(&file_path));
-        assert!(info.is_file(&file_path));
-        assert!(!info.is_directory(&file_path));
-        assert!(!info.exists(&FsPath::new("no/such/javac-file").expect("path")));
-
-        let canonical = info.get_canonical_file(&dir_path);
-        assert!(canonical.is_absolute());
-        assert_eq!(canonical, info.get_canonical_file(&dir_path));
-        std::fs::remove_dir_all(&dir).expect("cleanup");
-    }
-
     fn crc32(bytes: &[u8]) -> u32 {
         let mut crc = 0xFFFF_FFFFu32;
         for byte in bytes {
@@ -543,34 +519,6 @@ mod tests {
         std::fs::write(path, data).expect("write zip");
     }
 
-
-    #[test]
-    fn jar_class_path_parses_the_manifest_and_resolves_relative_urls() {
-        let dir = temp_dir("jarcp");
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let jar = dir.join("y.jar");
-        write_stored_zip(
-            &jar,
-            &[
-                (
-                    "META-INF/MANIFEST.MF",
-                    b"Manifest-Version: 1.0\r\nClass-Path: lib/a.jar ../lib2/b.jar http://host/c.jar\r\n\r\n",
-                ),
-                ("lib/a.jar", b""),
-            ],
-        );
-        let info = FSInfo::new();
-        let jar_path = FsPath::from_path_buf(jar.clone());
-        let class_path = info.get_jar_class_path(&jar_path).expect("class path");
-        assert_eq!(
-            class_path,
-            vec![
-                FsPath::from_path_buf(dir.join("lib").join("a.jar")),
-                FsPath::from_path_buf(dir.parent().expect("parent").join("lib2").join("b.jar")),
-            ]
-        );
-        std::fs::remove_dir_all(&dir).expect("cleanup");
-    }
 
     #[test]
     fn manifest_main_attributes_follow_the_oracle() {

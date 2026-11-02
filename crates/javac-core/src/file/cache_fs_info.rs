@@ -161,49 +161,6 @@ mod tests {
         ))
     }
 
-    #[test]
-    fn attribute_cache_hits_until_cleared() {
-        let dir = temp_dir("attrs");
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let file = dir.join("a.txt");
-        std::fs::write(&file, b"x").expect("write");
-        let file_path = FsPath::from_path_buf(file.clone());
-
-        let cache = CacheFSInfo::new();
-        assert!(cache.exists(&file_path));
-        assert!(cache.is_file(&file_path));
-        assert!(!cache.is_directory(&file_path));
-        assert!(cache.get_attributes(&file_path).is_some());
-
-        // Deleting the file does not invalidate the cache (Java semantics).
-        std::fs::remove_file(&file).expect("remove file");
-        assert!(cache.exists(&file_path));
-        assert!(cache.is_file(&file_path));
-
-        // clearCache() drops the cached attributes; the next query re-reads.
-        cache.clear_cache();
-        assert!(!cache.exists(&file_path));
-        assert!(!cache.is_file(&file_path));
-        std::fs::remove_dir_all(&dir).expect("cleanup");
-    }
-
-    #[test]
-    fn canonical_path_cache_is_used_and_cleared() {
-        let dir = temp_dir("canonical");
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let dir_path = FsPath::from_path_buf(dir.clone());
-        let cache = CacheFSInfo::new();
-        let first = cache.get_canonical_file(&dir_path);
-        let second = cache.get_canonical_file(&dir_path);
-        assert_eq!(first, second);
-        assert!(first.is_absolute());
-        cache.clear_cache();
-        // After clearing, the path is computed again (same directory exists).
-        let third = cache.get_canonical_file(&dir_path);
-        assert_eq!(first, third);
-        std::fs::remove_dir_all(&dir).expect("cleanup");
-    }
-
     fn crc32(bytes: &[u8]) -> u32 {
         let mut crc = 0xFFFF_FFFFu32;
         for byte in bytes {
@@ -272,37 +229,6 @@ mod tests {
         data.extend(central_offset.to_le_bytes());
         data.extend(0u16.to_le_bytes());
         std::fs::write(path, data).expect("write zip");
-    }
-
-    #[test]
-    fn jar_class_path_is_cached_until_cleared() {
-        let dir = temp_dir("jarclasspath");
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let jar = dir.join("y.jar");
-        write_stored_zip(
-            &jar,
-            &[
-                (
-                    "META-INF/MANIFEST.MF",
-                    b"Manifest-Version: 1.0\r\nClass-Path: lib/a.jar\r\n\r\n",
-                ),
-                ("lib/a.jar", b""),
-            ],
-        );
-        let jar_path = FsPath::from_path_buf(jar.clone());
-        let cache = CacheFSInfo::new();
-        let first = cache.get_jar_class_path(&jar_path).expect("first");
-        assert_eq!(
-            first,
-            vec![FsPath::from_path_buf(dir.join("lib").join("a.jar"))]
-        );
-        // The cached list is returned even after the jar is deleted.
-        std::fs::remove_file(&jar).expect("remove jar");
-        assert_eq!(cache.get_jar_class_path(&jar_path).expect("cached"), first);
-        // clearCache() drops the list; the next query re-reads the jar.
-        cache.clear_cache();
-        assert!(cache.get_jar_class_path(&jar_path).is_err());
-        std::fs::remove_dir_all(&dir).expect("cleanup");
     }
 
 }

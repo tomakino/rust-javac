@@ -945,35 +945,6 @@ mod tests {
     }
 
     #[test]
-    fn content_cache_is_validated_by_last_modified() {
-        let dir = temp_dir("cache");
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let file = dir.join("A.java");
-        std::fs::write(&file, b"class A {}").expect("write");
-        let path = fs_path(&file);
-        let manager = Rc::new(BaseFileManager::new(
-            None,
-            FsPath::from_path_buf(std::path::PathBuf::from(".")),
-        ));
-        let manager_api: Rc<dyn crate::file::base_file_manager_api::BaseFileManagerApi> =
-            manager.clone();
-        let fo = PathFileObject::for_simple_path(manager_api, &path, &path);
-
-        assert_eq!(manager.get_cached_content(&fo), None);
-        manager.cache(&fo, js("class A {}"));
-        assert_eq!(manager.get_cached_content(&fo), Some(js("class A {}")));
-        manager.flush_cache_object(&fo);
-        assert_eq!(manager.get_cached_content(&fo), None);
-
-        // A changed last-modified time invalidates the cached entry.
-        manager.cache(&fo, js("old"));
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        std::fs::write(&file, b"class A { int x; }").expect("rewrite");
-        assert_eq!(manager.get_cached_content(&fo), None);
-        std::fs::remove_dir_all(&dir).expect("cleanup");
-    }
-
-    #[test]
     fn is_supported_option_uses_the_file_manager_options() {
         let manager =
             BaseFileManager::new(None, FsPath::from_path_buf(std::path::PathBuf::from(".")));

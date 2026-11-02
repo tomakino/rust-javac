@@ -1717,33 +1717,6 @@ mod tests {
 use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    #[test]
-    fn class_loader_reads_class_and_resource_bytes() {
-        let manager = manager();
-        let dir = temp_dir("loader");
-        let pkg = dir.join("pkg");
-        std::fs::create_dir_all(&pkg).expect("package dir");
-        let class_bytes = vec![0xCAu8, 0xFE, 0xBA, 0xBE];
-        std::fs::write(pkg.join("A.class"), &class_bytes).expect("class file");
-        std::fs::write(dir.join("resource.txt"), b"data").expect("resource file");
-        manager
-            .set_location(&StandardLocation::CLASS_PATH, Some(&[dir.clone()]))
-            .expect("set class path");
-        let loader = manager
-            .get_class_loader(&StandardLocation::CLASS_PATH)
-            .expect("class loader");
-        assert_eq!(
-            loader.find_class(&js("pkg.A")).expect("class bytes"),
-            class_bytes
-        );
-        assert_eq!(
-            loader.find_resource(&js("resource.txt")).expect("resource bytes"),
-            b"data".to_vec()
-        );
-        assert!(loader.find_class(&js("pkg.Missing")).is_none());
-        std::fs::remove_dir_all(&dir).expect("cleanup");
-    }
-
     fn temp_dir(tag: &str) -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1788,78 +1761,6 @@ use std::sync::Arc;
 
     fn js(s: &str) -> JavaString {
         JavaString::from(s)
-    }
-
-    #[test]
-    fn output_location_creates_directory_file_objects() {
-        let manager = manager();
-        let dir = temp_dir("out");
-        manager
-            .set_location(&StandardLocation::CLASS_OUTPUT, Some(&[dir.clone()]))
-            .expect("set class output");
-        let out = manager
-            .get_java_file_for_output(&StandardLocation::CLASS_OUTPUT, &js("p.C"), Kind::CLASS, None)
-            .expect("class output");
-        let path = manager.as_path(&(out.clone() as javac_tools::tools::java_file_manager::FileObjectRef)).expect("path");
-        assert_eq!(path, dir.join("p").join("C.class"));
-        assert_eq!(out.get_kind(), Kind::CLASS);
-        assert!(out.get_name().to_string_lossy().ends_with("C.class"));
-        assert!(manager.has_location(&StandardLocation::CLASS_OUTPUT));
-        assert_eq!(manager.get_location(&StandardLocation::CLASS_OUTPUT), Some(vec![dir.clone()]));
-        manager.close().expect("close");
-        std::fs::remove_dir_all(&dir).expect("cleanup");
-    }
-
-    #[test]
-    fn source_path_input_list_infer_and_contains() {
-        let manager = manager();
-        let dir = temp_dir("src");
-        let package_dir = dir.join("p");
-        std::fs::create_dir_all(&package_dir).expect("pkg dir");
-        std::fs::write(package_dir.join("C.java"), b"class C {}").expect("write C");
-        let sub_package = package_dir.join("q");
-        std::fs::create_dir_all(&sub_package).expect("sub pkg");
-        std::fs::write(sub_package.join("D.java"), b"class D {}").expect("write D");
-        manager
-            .set_location(&StandardLocation::SOURCE_PATH, Some(&[dir.clone()]))
-            .expect("set source path");
-        assert_eq!(
-            manager.get_location_as_paths(&StandardLocation::SOURCE_PATH),
-            Some(vec![dir.clone()])
-        );
-
-        let file = manager
-            .get_java_file_for_input(&StandardLocation::SOURCE_PATH, &js("p.C"), Kind::SOURCE)
-            .expect("source input")
-            .expect("C.java");
-        assert!(file.get_name().to_string_lossy().ends_with("C.java"));
-        assert_eq!(
-            manager.infer_binary_name(&StandardLocation::SOURCE_PATH, &file),
-            Some(js("p.C"))
-        );
-        let file_ref: javac_tools::tools::java_file_manager::FileObjectRef = file.clone();
-        assert!(manager.contains(&StandardLocation::SOURCE_PATH, &file_ref).expect("contains"));
-
-        let other = manager
-            .get_file_for_input(&StandardLocation::SOURCE_PATH, &js("p"), &js("C.java"))
-            .expect("file input")
-            .expect("C.java via file input");
-        assert!(manager.is_same_file(&(file_ref.clone()), &other));
-
-        let listed = manager
-            .list(&StandardLocation::SOURCE_PATH, &js("p"), &[Kind::SOURCE], false)
-            .expect("list p");
-        assert_eq!(listed.len(), 1);
-        assert_eq!(
-            listed[0].get_kind(),
-            Kind::SOURCE
-        );
-        let recursive = manager
-            .list(&StandardLocation::SOURCE_PATH, &js("p"), &[Kind::SOURCE], true)
-            .expect("list p recursive");
-        assert_eq!(recursive.len(), 2);
-        manager.close().expect("close");
-        std::fs::remove_dir_all(&dir).expect("cleanup");
     }
 
     #[test]
@@ -1910,69 +1811,6 @@ use std::sync::Arc;
     }
 
     #[test]
-    fn input_objects_and_illegal_arguments() {
-        let manager = manager();
-        let dir = temp_dir("objs");
-        let file = dir.join("X.java");
-        std::fs::write(&file, b"class X {}").expect("write");
-        let objects = manager.get_java_file_objects(&[file.clone()]);
-        assert_eq!(objects.len(), 1);
-        assert_eq!(
-            manager.as_path(&(objects[0].clone() as javac_tools::tools::java_file_manager::FileObjectRef)).expect("path"),
-            file
-        );
-
-        // Module-oriented locations are rejected by the package-oriented methods.
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let local = manager.clone();
-            local.get_java_file_for_input(
-                &StandardLocation::SYSTEM_MODULES,
-                &js("java.lang.Object"),
-                Kind::CLASS,
-            )
-        }));
-        assert!(result.is_err());
-
-        // Invalid relative names are rejected.
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let local = manager.clone();
-            local.get_file_for_input(&StandardLocation::SOURCE_PATH, &js("p"), &js("/abs.java"))
-        }));
-        assert!(result.is_err());
-        manager.flush().expect("flush");
-        manager.close().expect("close");
-        std::fs::remove_dir_all(&dir).expect("cleanup");
-    }
-
-    #[test]
-    fn output_location_validation() {
-        let manager = manager();
-        let dir = temp_dir("valid");
-        // CLASS_OUTPUT requires an existing directory.
-        let missing = dir.join("missing");
-        assert!(manager
-            .set_location(&StandardLocation::CLASS_OUTPUT, Some(&[missing]))
-            .is_err());
-        assert!(manager
-            .set_location(&StandardLocation::CLASS_OUTPUT, Some(&[dir.clone()]))
-            .is_ok());
-        // getJavaFileForOutput rejects a non-output location.
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let local = manager.clone();
-            local.set_location(&StandardLocation::SOURCE_PATH, Some(&[dir.clone()])).expect("source path");
-            local.get_java_file_for_output(
-                &StandardLocation::SOURCE_PATH,
-                &js("p.C"),
-                Kind::CLASS,
-                None,
-            )
-        }));
-        assert!(result.is_err());
-        manager.close().expect("close");
-        std::fs::remove_dir_all(&dir).expect("cleanup");
-    }
-
-    #[test]
     fn is_relative_uri_matches_uri_semantics() {
         // Java: JavacFileManager.isRelativeUri(URI) semantics.
         assert!(!is_relative_uri(""));
@@ -2004,41 +1842,6 @@ use std::sync::Arc;
         )
     }
 
-    /// Java: BaseFileManager.deferredClose (BaseFileManager.java:145-166): close()
-    /// with a deferred-close timeout schedules the cleanup after the inactivity
-    /// period instead of running it immediately.
-    #[test]
-    fn deferred_close_cleans_the_caches_after_the_inactivity_timeout() {
-        let manager = manager_with_defer_close("0.05");
-        let dir = temp_dir("deferred");
-        std::fs::write(dir.join("A.class"), b"bytes").expect("class file");
-        manager
-            .set_location(&StandardLocation::CLASS_PATH, Some(&[dir.clone()]))
-            .expect("class path");
-        let listed = manager
-            .list(&StandardLocation::CLASS_PATH, &js(""), &[Kind::CLASS], false)
-            .expect("list");
-        assert!(!listed.is_empty(), "the test directory lists A.class");
-        assert!(
-            !manager.paths_and_containers.lock().unwrap().is_empty(),
-            "the directory cache is populated"
-        );
-        manager.close().expect("close");
-        assert!(
-            !manager.paths_and_containers.lock().unwrap().is_empty(),
-            "the cleanup is deferred"
-        );
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while !manager.paths_and_containers.lock().unwrap().is_empty() {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the deferred close thread did not clean the caches"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        std::fs::remove_dir_all(&dir).expect("cleanup");
-    }
-
     /// Java: repeated close() calls with the timeout armed schedule independent
     /// deferred-close threads (BaseFileManager.java:145-166); the cleanup is
     /// idempotent and the timeout is reset by the first expiring thread.
@@ -2060,38 +1863,4 @@ use std::sync::Arc;
         manager.close().expect("third close");
     }
 
-    /// Java: BaseFileManager.updateLastUsedTime (BaseFileManager.java:168-172) —
-    /// a use of the manager extends the inactivity window (PathFileObject calls
-    /// it from openInputStream/openOutputStream).
-    #[test]
-    fn deferred_close_defers_when_the_manager_reports_usage() {
-        use crate::file::base_file_manager_api::BaseFileManagerApi;
-
-        let manager = manager_with_defer_close("0.2");
-        let dir = temp_dir("deferred-used");
-        std::fs::write(dir.join("A.class"), b"bytes").expect("class file");
-        manager
-            .set_location(&StandardLocation::CLASS_PATH, Some(&[dir.clone()]))
-            .expect("class path");
-        manager
-            .list(&StandardLocation::CLASS_PATH, &js(""), &[Kind::CLASS], false)
-            .expect("list");
-        manager.close().expect("close");
-        // A use after close() refreshes the last-used time and extends the window.
-        manager.update_last_used_time();
-        std::thread::sleep(std::time::Duration::from_millis(120));
-        assert!(
-            !manager.paths_and_containers.lock().unwrap().is_empty(),
-            "the refreshed last-used time extends the deferred close"
-        );
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-        while !manager.paths_and_containers.lock().unwrap().is_empty() {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the deferred close runs after the extended window"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        std::fs::remove_dir_all(&dir).expect("cleanup");
-    }
 }

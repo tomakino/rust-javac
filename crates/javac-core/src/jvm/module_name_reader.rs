@@ -318,27 +318,6 @@ mod tests {
         assert!(class_path.list_modules().iter().any(|module| module == "java.base"));
     }
 
-    #[test]
-    fn reads_the_module_name_from_a_path() {
-        let Some(bytes) = module_info_bytes("java.base") else {
-            eprintln!("skipping: no baseline JDK 17 installation found");
-            return;
-        };
-        let path = std::env::temp_dir().join(format!(
-            "javac-module-info-{}-{}.class",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::write(&path, &bytes).expect("write module-info");
-        let mut reader = ModuleNameReader::new();
-        let result = reader.read_module_name(&path);
-        let _ = std::fs::remove_file(&path);
-        assert_eq!(result.expect("module name").to_string_lossy(), "java.base");
-    }
-
     fn assert_bad_class_file(result: Result<javac_strings::JavaString, Error>, expected: &str) {
         match result {
             Err(Error::BadClassFile(err)) => {

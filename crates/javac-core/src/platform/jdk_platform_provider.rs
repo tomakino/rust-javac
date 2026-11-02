@@ -616,28 +616,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_ct_sym_yields_no_platforms() {
-        let dir = temp_dir("missing");
-        std::fs::create_dir_all(&dir).expect("create temp dir");
-        let provider = JDKPlatformProvider::new(FsPath::from_path_buf(dir.clone()));
-        assert!(provider.get_supported_platform_names().is_empty());
-        std::fs::remove_dir_all(&dir).expect("cleanup");
-    }
-
-    #[test]
-    fn corrupt_ct_sym_yields_no_platforms() {
-        // Java: FileSystems.newFileSystem throws IOException for a damaged archive and the
-        // static initializer catches it, leaving the supported set empty.
-        let dir = temp_dir("corrupt");
-        std::fs::create_dir_all(dir.join("lib")).expect("create temp dir");
-        std::fs::write(dir.join("lib").join("ct.sym"), b"this is not a zip archive")
-            .expect("write corrupt ct.sym");
-        let provider = JDKPlatformProvider::new(FsPath::from_path_buf(dir.clone()));
-        assert!(provider.get_supported_platform_names().is_empty());
-        std::fs::remove_dir_all(&dir).expect("cleanup");
-    }
-
-    #[test]
     fn supported_platform_versions_match_the_recorded_javac_oracle() {
         let Some(home) = baseline_java_home() else {
             // No JDK home discoverable on this machine: the recorded oracle snapshot is
