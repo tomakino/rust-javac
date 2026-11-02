@@ -271,8 +271,8 @@ impl Preview {
                 crate::resources::compiler_properties::warnings::preview_feature_use(arg)
             };
             let warning = Warning::from(info);
-            let mut handler = self.preview_handler.borrow_mut();
-            handler.as_mut().expect("Preview handler must be installed").report(
+            let handler = self.preview_handler.borrow();
+            handler.as_ref().expect("Preview handler must be installed").report(
                 Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
                 warning,
             );
@@ -335,8 +335,8 @@ impl Preview {
 
     /// Java: public void reportPreviewWarning(DiagnosticPosition pos, Warning warnKey).
     pub fn report_preview_warning(&self, pos: &dyn DiagnosticPosition, warn_key: Warning) {
-        let mut handler = self.preview_handler.borrow_mut();
-        handler.as_mut().expect("Preview handler must be installed").report(
+        let handler = self.preview_handler.borrow();
+        handler.as_ref().expect("Preview handler must be installed").report(
             Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
                 pos.get_start_position(),
             ))),
@@ -420,16 +420,16 @@ impl Preview {
 
     /// Report any deferred diagnostics.
     pub fn report_deferred_diagnostics(&self) {
-        let mut handler = self.preview_handler.borrow_mut();
-        if let Some(handler) = handler.as_mut() {
+        let handler = self.preview_handler.borrow();
+        if let Some(handler) = handler.as_ref() {
             handler.report_deferred_diagnostic();
         }
     }
 
     /// Java: public void clear().
     pub fn clear(&self) {
-        let mut handler = self.preview_handler.borrow_mut();
-        if let Some(handler) = handler.as_mut() {
+        let handler = self.preview_handler.borrow();
+        if let Some(handler) = handler.as_ref() {
             handler.clear();
         }
     }

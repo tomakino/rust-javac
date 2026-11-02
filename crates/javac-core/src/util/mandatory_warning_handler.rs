@@ -32,6 +32,7 @@
 //!   upstream members: currentSourceFile(), nwarnings, MaxWarnings,
 //!   mandatoryWarning/warning/mandatoryNote/note.
 
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use javac_tools::tools::java_file_object::JavaFileObject;
@@ -132,15 +133,15 @@ pub struct MandatoryWarningHandler<L: MandatoryWarningLog> {
     prefix: String,
     /// A set containing the source files for which specific warnings have been
     /// generated -- i.e. in verbose mode.
-    sources_with_reported_warnings: Option<Vec<Option<Rc<dyn JavaFileObject>>>>,
+    sources_with_reported_warnings: RefCell<Option<Vec<Option<Rc<dyn JavaFileObject>>>>>,
     /// The latest best guess at what the final deferred diagnostic will be.
-    deferred_diagnostic_kind: Option<DeferredDiagnosticKind>,
+    deferred_diagnostic_kind: Cell<Option<DeferredDiagnosticKind>>,
     /// If deferredDiagnosticKind is IN_FILE or ADDITIONAL_IN_FILE, the value of
     /// log.currentSourceFile() for the file in question.
-    deferred_diagnostic_source: Option<Rc<dyn JavaFileObject>>,
+    deferred_diagnostic_source: RefCell<Option<Rc<dyn JavaFileObject>>>,
     /// An optional argument used when constructing the deferred diagnostic
     /// message, based on deferredDiagnosticKind.
-    deferred_diagnostic_arg: Option<DiagnosticArg>,
+    deferred_diagnostic_arg: RefCell<Option<DiagnosticArg>>,
     /// True if mandatory warnings and notes are being enforced.
     enforce_mandatory: bool,
     /// A LintCategory included in point-of-use diagnostics.
@@ -166,10 +167,10 @@ impl<L: MandatoryWarningLog> MandatoryWarningHandler<L> {
             source,
             verbose,
             prefix: prefix.to_string(),
-            sources_with_reported_warnings: None,
-            deferred_diagnostic_kind: None,
-            deferred_diagnostic_source: None,
-            deferred_diagnostic_arg: None,
+            sources_with_reported_warnings: RefCell::new(None),
+            deferred_diagnostic_kind: Cell::new(None),
+            deferred_diagnostic_source: RefCell::new(None),
+            deferred_diagnostic_arg: RefCell::new(None),
             enforce_mandatory,
             lint_category: lc,
         }
@@ -191,62 +192,63 @@ impl<L: MandatoryWarningLog> MandatoryWarningHandler<L> {
     /// Report a mandatory warning.
     ///
     /// Java: public void report(DiagnosticPosition pos, Warning warnKey)
-    pub fn report(&mut self, pos: Option<Rc<dyn DiagnosticPosition>>, warn_key: Warning) {
+    pub fn report(&self, pos: Option<Rc<dyn DiagnosticPosition>>, warn_key: Warning) {
         let current_source = self.log.current_source_file();
 
         if self.verbose {
-            if self.sources_with_reported_warnings.is_none() {
-                self.sources_with_reported_warnings = Some(Vec::new());
+            if self.sources_with_reported_warnings.borrow().is_none() {
+                *self.sources_with_reported_warnings.borrow_mut() = Some(Vec::new());
             }
 
             if self.log.nwarnings() < self.log.max_warnings() {
                 // generate message and remember the source file
                 self.log_mandatory_warning(pos, warn_key);
                 self.sources_with_reported_warnings
+                    .borrow_mut()
                     .as_mut()
                     .expect("initialized above")
                     .push(current_source);
-            } else if self.deferred_diagnostic_kind.is_none() {
+            } else if self.deferred_diagnostic_kind.get().is_none() {
                 // set up deferred message
                 let already_reported = self
                     .sources_with_reported_warnings
+                    .borrow()
                     .as_ref()
                     .expect("initialized above")
                     .iter()
                     .any(|candidate| Self::same_file(candidate, &current_source));
                 if already_reported {
                     // more errors in a file that already has reported warnings
-                    self.deferred_diagnostic_kind = Some(DeferredDiagnosticKind::ADDITIONAL_IN_FILE);
+                    self.deferred_diagnostic_kind.set(Some(DeferredDiagnosticKind::ADDITIONAL_IN_FILE));
                 } else {
                     // warnings in a new source file
-                    self.deferred_diagnostic_kind = Some(DeferredDiagnosticKind::IN_FILE);
+                    self.deferred_diagnostic_kind.set(Some(DeferredDiagnosticKind::IN_FILE));
                 }
-                self.deferred_diagnostic_source = current_source.clone();
-                self.deferred_diagnostic_arg =
+                *self.deferred_diagnostic_source.borrow_mut() = current_source.clone();
+                *self.deferred_diagnostic_arg.borrow_mut() =
                     current_source.map(|file| Rc::new(file) as DiagnosticArg);
-            } else if (self.deferred_diagnostic_kind == Some(DeferredDiagnosticKind::IN_FILE)
-                || self.deferred_diagnostic_kind
+            } else if (self.deferred_diagnostic_kind.get() == Some(DeferredDiagnosticKind::IN_FILE)
+                || self.deferred_diagnostic_kind.get()
                     == Some(DeferredDiagnosticKind::ADDITIONAL_IN_FILE))
-                && !Self::same_file(&self.deferred_diagnostic_source, &current_source)
+                && !Self::same_file(&self.deferred_diagnostic_source.borrow(), &current_source)
             {
                 // additional errors in more than one source file
-                self.deferred_diagnostic_kind =
-                    Some(DeferredDiagnosticKind::ADDITIONAL_IN_FILES);
-                self.deferred_diagnostic_arg = None;
+                self.deferred_diagnostic_kind.set(Some(DeferredDiagnosticKind::ADDITIONAL_IN_FILES));
+                *self.deferred_diagnostic_arg.borrow_mut() = None;
             }
         } else {
-            if self.deferred_diagnostic_kind.is_none() {
+            if self.deferred_diagnostic_kind.get().is_none() {
                 // warnings in a single source
-                self.deferred_diagnostic_kind = Some(DeferredDiagnosticKind::IN_FILE);
-                self.deferred_diagnostic_source = current_source.clone();
-                self.deferred_diagnostic_arg =
+                self.deferred_diagnostic_kind.set(Some(DeferredDiagnosticKind::IN_FILE));
+                *self.deferred_diagnostic_source.borrow_mut() = current_source.clone();
+                *self.deferred_diagnostic_arg.borrow_mut() =
                     current_source.map(|file| Rc::new(file) as DiagnosticArg);
-            } else if self.deferred_diagnostic_kind == Some(DeferredDiagnosticKind::IN_FILE)
-                && !Self::same_file(&self.deferred_diagnostic_source, &current_source)
+            } else if self.deferred_diagnostic_kind.get() == Some(DeferredDiagnosticKind::IN_FILE)
+                && !Self::same_file(&self.deferred_diagnostic_source.borrow(), &current_source)
             {
                 // warnings in multiple source files
-                self.deferred_diagnostic_kind = Some(DeferredDiagnosticKind::IN_FILES);
-                self.deferred_diagnostic_arg = None;
+                self.deferred_diagnostic_kind.set(Some(DeferredDiagnosticKind::IN_FILES));
+                *self.deferred_diagnostic_arg.borrow_mut() = None;
             }
         }
     }
@@ -255,18 +257,18 @@ impl<L: MandatoryWarningLog> MandatoryWarningHandler<L> {
     /// report().
     ///
     /// Java: public void reportDeferredDiagnostic()
-    pub fn report_deferred_diagnostic(&mut self) {
-        let Some(kind) = self.deferred_diagnostic_kind else {
+    pub fn report_deferred_diagnostic(&self) {
+        let Some(kind) = self.deferred_diagnostic_kind.get() else {
             return;
         };
         let key = kind.get_key(&self.prefix);
-        match &self.deferred_diagnostic_arg {
+        match &*self.deferred_diagnostic_arg.borrow() {
             None => {
                 let args: Vec<DiagnosticArg> = match self.source {
                     Some(source) => vec![Rc::new(source) as DiagnosticArg],
                     None => Vec::new(),
                 };
-                let file = self.deferred_diagnostic_source.clone();
+                let file = self.deferred_diagnostic_source.borrow().clone();
                 self.log_mandatory_note(file, &key, args);
             }
             Some(deferred_arg) => {
@@ -274,13 +276,13 @@ impl<L: MandatoryWarningLog> MandatoryWarningHandler<L> {
                 if let Some(source) = self.source {
                     args.push(Rc::new(source) as DiagnosticArg);
                 }
-                let file = self.deferred_diagnostic_source.clone();
+                let file = self.deferred_diagnostic_source.borrow().clone();
                 self.log_mandatory_note(file, &key, args);
             }
         }
 
         if !self.verbose {
-            let file = self.deferred_diagnostic_source.clone();
+            let file = self.deferred_diagnostic_source.borrow().clone();
             let recompile = format!("{}.recompile", self.prefix);
             self.log_mandatory_note(file, &recompile, Vec::new());
         }
@@ -291,7 +293,7 @@ impl<L: MandatoryWarningLog> MandatoryWarningHandler<L> {
     ///
     /// Java: private void logMandatoryWarning(DiagnosticPosition pos,
     /// Warning warnKey)
-    fn log_mandatory_warning(&mut self, pos: Option<Rc<dyn DiagnosticPosition>>, warn_key: Warning) {
+    fn log_mandatory_warning(&self, pos: Option<Rc<dyn DiagnosticPosition>>, warn_key: Warning) {
         // Note: the following log methods are safe if lintCategory is null.
         if self.enforce_mandatory {
             self.log
@@ -307,7 +309,7 @@ impl<L: MandatoryWarningLog> MandatoryWarningHandler<L> {
     /// Java: private void logMandatoryNote(JavaFileObject file, String msg,
     /// Object... args)
     fn log_mandatory_note(
-        &mut self,
+        &self,
         file: Option<Rc<dyn JavaFileObject>>,
         msg: &str,
         args: Vec<DiagnosticArg>,
@@ -327,16 +329,16 @@ impl<L: MandatoryWarningLog> MandatoryWarningHandler<L> {
 
     /// Mutable access to the underlying log (Rust accessor for the generic log
     /// parameter, used by the integration tests).
-    pub fn log_mut(&mut self) -> &mut L {
-        &mut self.log
+    pub fn log_mut(&self) -> &L {
+        &self.log
     }
 
     /// Java: public void clear()
-    pub fn clear(&mut self) {
-        self.sources_with_reported_warnings = None;
-        self.deferred_diagnostic_kind = None;
-        self.deferred_diagnostic_source = None;
-        self.deferred_diagnostic_arg = None;
+    pub fn clear(&self) {
+        *self.sources_with_reported_warnings.borrow_mut() = None;
+        self.deferred_diagnostic_kind.set(None);
+        *self.deferred_diagnostic_source.borrow_mut() = None;
+        *self.deferred_diagnostic_arg.borrow_mut() = None;
     }
 }
 
@@ -515,7 +517,7 @@ mod tests {
             MandatoryWarningHandler::new(log, None, true, true, "mask", None);
         handler.report(position(), warning_key(&factory));
         assert_eq!(handler.log.mandatory_warnings.borrow().len(), 1);
-        assert!(handler.deferred_diagnostic_kind.is_none());
+        assert!(handler.deferred_diagnostic_kind.get().is_none());
         handler.report_deferred_diagnostic();
         assert!(handler.log.mandatory_notes.borrow().is_empty());
     }
@@ -535,13 +537,13 @@ mod tests {
         );
         handler.report(position(), warning_key(&factory));
         assert_eq!(
-            handler.deferred_diagnostic_kind,
+            handler.deferred_diagnostic_kind.get(),
             Some(DeferredDiagnosticKind::IN_FILE)
         );
         *handler.log.current.borrow_mut() = Some(file("B.java"));
         handler.report(position(), warning_key(&factory));
         assert_eq!(
-            handler.deferred_diagnostic_kind,
+            handler.deferred_diagnostic_kind.get(),
             Some(DeferredDiagnosticKind::IN_FILES)
         );
         handler.report_deferred_diagnostic();
@@ -575,20 +577,20 @@ mod tests {
         );
         handler.report(position(), warning_key(&factory));
         assert_eq!(
-            handler.deferred_diagnostic_kind,
+            handler.deferred_diagnostic_kind.get(),
             Some(DeferredDiagnosticKind::IN_FILE)
         );
         // The same file again: additional in file.
         handler.report(position(), warning_key(&factory));
         assert_eq!(
-            handler.deferred_diagnostic_kind,
+            handler.deferred_diagnostic_kind.get(),
             Some(DeferredDiagnosticKind::IN_FILE)
         );
         // A different file: additional in files.
         *handler.log.current.borrow_mut() = Some(file("B.java"));
         handler.report(position(), warning_key(&factory));
         assert_eq!(
-            handler.deferred_diagnostic_kind,
+            handler.deferred_diagnostic_kind.get(),
             Some(DeferredDiagnosticKind::ADDITIONAL_IN_FILES)
         );
         let _ = file_a;
@@ -630,8 +632,8 @@ mod tests {
         );
         handler.report(position(), warning_key(&factory));
         handler.clear();
-        assert!(handler.deferred_diagnostic_kind.is_none());
-        assert!(handler.sources_with_reported_warnings.is_none());
+        assert!(handler.deferred_diagnostic_kind.get().is_none());
+        assert!(handler.sources_with_reported_warnings.borrow().is_none());
         handler.report_deferred_diagnostic();
         assert!(handler.log.mandatory_notes.borrow().is_empty());
     }

@@ -76,8 +76,8 @@ struct DeprecatedWarning {
     loc_text: String,
     loc_qualified_text: String,
     lint: Rc<crate::code::lint::Lint>,
-    deprecation_handler: Rc<RefCell<MandatoryWarningHandler<Rc<Log>>>>,
-    removal_handler: Rc<RefCell<MandatoryWarningHandler<Rc<Log>>>>,
+    deprecation_handler: Rc<MandatoryWarningHandler<Rc<Log>>>,
+    removal_handler: Rc<MandatoryWarningHandler<Rc<Log>>>,
     position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>,
 }
 
@@ -87,7 +87,7 @@ impl DeprecatedWarning {
         if self.removal {
             if !self.lint.is_suppressed(LintCategory::REMOVAL) {
                 if self.is_module {
-                    self.removal_handler.borrow_mut().report(
+                    self.removal_handler.report(
                         Some(Rc::clone(&self.position)),
                         crate::util::jc_diagnostic::Warning::from(
                             crate::resources::compiler_properties::warnings::
@@ -97,7 +97,7 @@ impl DeprecatedWarning {
                         ),
                     );
                 } else {
-                    self.removal_handler.borrow_mut().report(
+                    self.removal_handler.report(
                         Some(Rc::clone(&self.position)),
                         crate::util::jc_diagnostic::Warning::from(
                             crate::resources::compiler_properties::warnings::
@@ -117,7 +117,7 @@ impl DeprecatedWarning {
             }
         } else if !self.lint.is_suppressed(LintCategory::DEPRECATION) {
             if self.is_module {
-                self.deprecation_handler.borrow_mut().report(
+                self.deprecation_handler.report(
                     Some(Rc::clone(&self.position)),
                     crate::util::jc_diagnostic::Warning::from(
                         crate::resources::compiler_properties::warnings::
@@ -125,7 +125,7 @@ impl DeprecatedWarning {
                     ),
                 );
             } else {
-                self.deprecation_handler.borrow_mut().report(
+                self.deprecation_handler.report(
                     Some(Rc::clone(&self.position)),
                     crate::util::jc_diagnostic::Warning::from(
                         crate::resources::compiler_properties::warnings::
@@ -198,13 +198,13 @@ pub struct Check {
     pub enter: RefCell<Option<Rc<Enter>>>,
     /// Java: MandatoryWarningHandler deprecationHandler (Check.java:177).
     pub deprecation_handler:
-        Rc<RefCell<MandatoryWarningHandler<Rc<Log>>>>,
+        Rc<MandatoryWarningHandler<Rc<Log>>>,
     /// Java: MandatoryWarningHandler removalHandler (Check.java:181).
-    pub removal_handler: Rc<RefCell<MandatoryWarningHandler<Rc<Log>>>>,
+    pub removal_handler: Rc<MandatoryWarningHandler<Rc<Log>>>,
     /// Java: MandatoryWarningHandler uncheckedHandler (Check.java:184).
-    pub unchecked_handler: Rc<RefCell<MandatoryWarningHandler<Rc<Log>>>>,
+    pub unchecked_handler: Rc<MandatoryWarningHandler<Rc<Log>>>,
     /// Java: MandatoryWarningHandler sunApiHandler (Check.java:187).
-    pub sun_api_handler: Rc<RefCell<MandatoryWarningHandler<Rc<Log>>>>,
+    pub sun_api_handler: Rc<MandatoryWarningHandler<Rc<Log>>>,
     /// Java: private final Preview preview (Check.java:99; installed by the
     /// wiring because the ported Preview is created after Check).
     pub preview: Rc<RefCell<Option<Rc<Preview>>>>,
@@ -311,39 +311,39 @@ impl Check {
     ) -> Check {
         let verbose_deprecated = lint.is_enabled(LintCategory::DEPRECATION);
         let verbose_removal = lint.is_enabled(LintCategory::REMOVAL);
-        let deprecation_handler = Rc::new(RefCell::new(MandatoryWarningHandler::new(
+        let deprecation_handler = Rc::new(MandatoryWarningHandler::new(
             Rc::clone(&log),
             None,
             verbose_deprecated,
             true,
             "deprecated",
             Some(LintCategory::DEPRECATION),
-        )));
-        let removal_handler = Rc::new(RefCell::new(MandatoryWarningHandler::new(
+        ));
+        let removal_handler = Rc::new(MandatoryWarningHandler::new(
             Rc::clone(&log),
             None,
             verbose_removal,
             true,
             "removal",
             Some(LintCategory::REMOVAL),
-        )));
+        ));
         let verbose_unchecked = lint.is_enabled(LintCategory::UNCHECKED);
-        let unchecked_handler = Rc::new(RefCell::new(MandatoryWarningHandler::new(
+        let unchecked_handler = Rc::new(MandatoryWarningHandler::new(
             Rc::clone(&log),
             None,
             verbose_unchecked,
             true,
             "unchecked",
             Some(LintCategory::UNCHECKED),
-        )));
-        let sun_api_handler = Rc::new(RefCell::new(MandatoryWarningHandler::new(
+        ));
+        let sun_api_handler = Rc::new(MandatoryWarningHandler::new(
             Rc::clone(&log),
             None,
             false,
             true,
             "sunapi",
             None,
-        )));
+        ));
         let basic_handler: Rc<dyn CheckContext> = Rc::new(BasicCheckContext {
             log: Rc::clone(&log),
             types: Rc::clone(&types),
@@ -2695,7 +2695,7 @@ impl Check {
             // Java: uncheckedHandler.report(pos, warnKey) — the handler emits
             // point-of-use warnings with -Xlint:unchecked and a filename note
             // otherwise.
-            self.unchecked_handler.borrow_mut().report(
+            self.unchecked_handler.report(
                 Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
                 warning_from_info(warn_key),
             );

@@ -1785,21 +1785,13 @@ impl MiniCompiler {
     /// JavaCompiler.reportDeferredDiagnostics for the mandatory handlers).
     pub fn report_deferred_mandatory_diagnostics(&self) {
         self.chk
-            .deprecation_handler
-            .borrow_mut()
-            .report_deferred_diagnostic();
+            .deprecation_handler.report_deferred_diagnostic();
         self.chk
-            .removal_handler
-            .borrow_mut()
-            .report_deferred_diagnostic();
+            .removal_handler.report_deferred_diagnostic();
         self.chk
-            .unchecked_handler
-            .borrow_mut()
-            .report_deferred_diagnostic();
+            .unchecked_handler.report_deferred_diagnostic();
         self.chk
-            .sun_api_handler
-            .borrow_mut()
-            .report_deferred_diagnostic();
+            .sun_api_handler.report_deferred_diagnostic();
     }
 
     /// Return the diagnostic summary of the current compilation.
