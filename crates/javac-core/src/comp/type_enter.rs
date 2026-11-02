@@ -427,7 +427,7 @@ impl TypeEnter {
             TreeKind::CompilationUnit { defs, .. } => defs.clone(),
             _ => return false,
         };
-        let mut current = defs;
+        let current = defs;
         for imp in &current {
         let (static_import, qualid) = match &ctx.tree(imp).kind {
             TreeKind::Import {
@@ -1430,7 +1430,7 @@ impl TypeEnter {
         env: &Rc<Env<AttrContext>>,
         attr: &mut crate::comp::attr::Attr,
     ) {
-        let mut current = annotations;
+        let current = annotations;
         for annotation in &current {
         if let Some(annotation_type) = annotation_type(ctx, annotation) {
             attr.attrib_type(ctx, syms, annotation_type, env);
@@ -1792,7 +1792,7 @@ impl TypeEnter {
         // Determine interfaces.
         let mut interfaces: List<TypeId> = List::nil();
         let mut all_interfaces: Option<List<TypeId>> = None;
-        let mut iface_trees = implementing;
+        let iface_trees = implementing;
         for iface in &iface_trees {
         let cleared = if strip_type_args {
             self.clear_type_params(ctx, iface)
@@ -1825,7 +1825,7 @@ impl TypeEnter {
         }
         // Determine permits.
         let mut permitted_symbols: List<SymbolId> = List::nil();
-        let mut permitted_trees = permitting;
+        let permitted_trees = permitting;
         for permitted in &permitted_trees {
         let pt = attr.attrib_base(
             ctx,
@@ -1936,7 +1936,7 @@ impl TypeEnter {
                 let syms_borrow = syms;
                 types.direct_supertypes(ctx, syms_borrow, sym_ty)
             };
-            let mut current = supertypes;
+            let current = supertypes;
             for supertype in &current {
             let Some(sup_tsym) = ctx.typ(supertype).tsym else {
                 continue;
@@ -2000,7 +2000,7 @@ impl TypeEnter {
                 ctx.tree(tree).pos,
             );
         }
-        let mut impls = implementing.clone();
+        let impls = implementing.clone();
         for interface in &impls {
         annotate.services.queue_scan_tree_and_type_annotate(
             interface,
@@ -2013,7 +2013,7 @@ impl TypeEnter {
         self.attrib_super_types(ctx, syms, env, attr, &base_env, false);
         let mut interfaces_seen: std::collections::HashSet<TypeId> =
             std::collections::HashSet::new();
-        let mut impls = implementing.clone();
+        let impls = implementing.clone();
         for interface in &impls {
         if let Some(it) = ctx.tree(interface).ty
             && ctx.typ(it).has_tag(crate::code::type_tag::TypeTag::CLASS)
@@ -2037,7 +2037,7 @@ impl TypeEnter {
         {
             attr.attrib_type_variables(ctx, syms, typarams.clone(), &base_env, false);
         }
-        let mut params = typarams;
+        let params = typarams;
         for param in &params {
         annotate.services.queue_scan_tree_and_type_annotate(
             param,
@@ -2196,7 +2196,7 @@ impl TypeEnter {
         let mut first_component_by_name: std::collections::HashMap<String, TreeId> =
             std::collections::HashMap::new();
         let record_name = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
-        let mut current = fields;
+        let current = fields;
         for field in &current {
         let existing = ctx.sym(sym).find_record_component_to_remove(ctx, field);
         if let Some(existing) = existing {
@@ -2217,7 +2217,7 @@ impl TypeEnter {
                     hook: None,
                 };
                 let mut copied: List<TreeId> = List::nil();
-                let mut a = original_annos;
+                let a = original_annos;
                 for anno in &a {
                 if let Some(copy) = copier.copy(ctx, Some(anno)) {
                     copied = copied.append(copy);
@@ -2296,7 +2296,7 @@ impl TypeEnter {
                             hook: None,
                         };
                         let mut copied: List<TreeId> = List::nil();
-                        let mut a = annotations.clone();
+                        let a = annotations.clone();
                         for anno in &a {
                         if let Some(copy) = copier.copy(ctx, Some(anno)) {
                             copied = copied.append(copy);
@@ -2313,7 +2313,7 @@ impl TypeEnter {
         }
         self.enter_this_and_super(ctx, sym, env);
         let defs = class_tree_defs(ctx, tree);
-        let mut current = defs;
+        let current = defs;
         for def in &current {
         if tree_info::is_constructor(ctx, def) {
             let member_enter = Rc::clone(&self.member_enter);
@@ -2355,7 +2355,7 @@ impl TypeEnter {
             TreeKind::ClassDecl { typarams, .. } => typarams.clone(),
             _ => List::nil(),
         };
-        let mut params = typarams;
+        let params = typarams;
         for param in &params {
         if let Some(tvar_ty) = ctx.tree(param).ty {
             let chk_rc = Rc::clone(&self.chk);
@@ -2423,11 +2423,11 @@ impl TypeEnter {
         let defs_to_enter = if is_record {
             let mut already_entered: List<TreeId> = List::nil();
             let record_fields = tree_info::record_fields(ctx, tree);
-            let mut fields = record_fields;
+            let fields = record_fields;
             for field in &fields {
             already_entered = already_entered.prepend(field);
             }
-            let mut current = defs.clone();
+            let current = defs.clone();
             for def in &current {
             if tree_info::is_constructor(ctx, def) && Some(def) != default_constructor {
                 already_entered = already_entered.prepend(def);
@@ -2435,7 +2435,7 @@ impl TypeEnter {
             }
             let already: List<TreeId> = already_entered;
             let mut diff: List<TreeId> = List::nil();
-            let mut current = defs.clone();
+            let current = defs.clone();
             for def in &current {
             let mut contained = false;
             let mut a = already.clone();
@@ -2529,7 +2529,7 @@ impl TypeEnter {
                     hook: None,
                 };
                 let mut copied: List<TreeId> = List::nil();
-                let mut current = original_annos;
+                let current = original_annos;
                 for anno in &current {
                 if let Some(copy) = copier.copy(ctx, Some(anno)) {
                     copied = copied.append(copy);
@@ -2540,7 +2540,7 @@ impl TypeEnter {
             let record_fields = tree_info::record_fields(ctx, env.encl_class.expect("record tree"));
             let record_field = {
                 let mut found: Option<TreeId> = None;
-                let mut current = record_fields;
+                let current = record_fields;
                 for rf in &current {
                 if let TreeKind::VariableDecl {
                     name: rf_name, ..
@@ -2826,7 +2826,7 @@ impl TypeEnter {
         }
         // fields can't be varargs: clear the flag.
         let record_fields = tree_info::record_fields(ctx, tree);
-        let mut current = record_fields.clone();
+        let current = record_fields.clone();
         for field in &current {
         let field_sym = match &ctx.tree(field).kind {
             TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
@@ -2845,7 +2845,7 @@ impl TypeEnter {
         }
         // add the accessors.
         let object_sym = ctx.typ(syms.object_type).tsym.expect("object symbol");
-        let mut current = record_fields;
+        let current = record_fields;
         for field in &current {
         let name = match &ctx.tree(field).kind {
             TreeKind::VariableDecl { name, .. } => name.clone(),
@@ -2885,7 +2885,7 @@ impl TypeEnter {
         }
         let record_fields = tree_info::record_fields(ctx, tree);
         let mut record_field_types: List<TypeId> = List::nil();
-        let mut current = record_fields;
+        let current = record_fields;
         for field in &current {
         if let TreeKind::VariableDecl {
             sym: Some(field_sym),
@@ -2900,14 +2900,14 @@ impl TypeEnter {
             let syms_borrow = syms;
             let types = Rc::clone(&self.types);
             let mut erased: List<TypeId> = List::nil();
-            let mut current = record_field_types;
+            let current = record_field_types;
             for ty in &current {
             erased = erased.append(types.erasure(ctx, syms_borrow, ty));
             }
             erased
         };
         let defs = class_tree_defs(ctx, tree);
-        let mut current = defs;
+        let current = defs;
         for def in &current {
         if tree_info::is_constructor(ctx, def) {
             let params = match &ctx.tree(def).kind {
@@ -2915,7 +2915,7 @@ impl TypeEnter {
                 _ => List::nil(),
             };
             let mut param_types: List<TypeId> = List::nil();
-            let mut p = params;
+            let p = params;
             for param in &p {
             if let TreeKind::VariableDecl {
                 sym: Some(param_sym),
@@ -2929,7 +2929,7 @@ impl TypeEnter {
             let mut erased_params: List<TypeId> = List::nil();
             let syms_borrow = syms;
             let types = Rc::clone(&self.types);
-            let mut current2 = param_types;
+            let current2 = param_types;
             for ty in &current2 {
             erased_params = erased_params.append(types.erasure(ctx, syms_borrow, ty));
             }
@@ -3054,7 +3054,7 @@ impl TypeEnter {
             };
             let super_names = helper.super_args(ctx, syms, &self.types, &names, &mut make);
             let mut super_args: List<TreeId> = List::nil();
-            let mut current = super_names;
+            let current = super_names;
             for name in &current {
             super_args = super_args.append(make.ident(ctx, name));
             }
@@ -3604,7 +3604,7 @@ impl DefaultConstructorHelper for AnonClassConstructorHelper {
             crate::code::symbol::SymbolKind::MethodSymbol { params, .. } => params.clone(),
             _ => List::nil(),
         };
-        let mut current = constr_params;
+        let current = constr_params;
         for p in &current {
         let p_flags = ctx.sym(p).flags_field;
         let head = argtypes.head();
@@ -3720,7 +3720,7 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
     ) -> Option<TypeId> {
         if self.base.constructor_type.is_none() {
             let mut argtypes: List<TypeId> = List::nil();
-            let mut current = self.record_field_decls.clone();
+            let current = self.record_field_decls.clone();
             for field in &current {
             if let TreeKind::VariableDecl {
                 sym: Some(field_sym),
@@ -3772,7 +3772,7 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
         ctx.sym_mut(csym).flags_field |= (flags::COMPACT_RECORD_CONSTRUCTOR)
             | (flags::GENERATEDCONSTR);
         let mut params: List<SymbolId> = List::nil();
-        let mut current = self.record_field_decls.clone();
+        let current = self.record_field_decls.clone();
         for field in &current {
         let is_last = current.is_empty();
         if let TreeKind::VariableDecl {
@@ -3850,7 +3850,7 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
             TreeKind::MethodDecl { params, .. } => params.clone(),
             _ => List::nil(),
         };
-        let mut current = params;
+        let current = params;
         for arg in &current {
         let arg_sym = match &ctx.tree(arg).kind {
             TreeKind::VariableDecl {
@@ -3873,7 +3873,7 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
             List::nil()
         } else {
             let mut copied: List<TreeId> = List::nil();
-            let mut a = original_annos;
+            let a = original_annos;
             for anno in &a {
             if let Some(copy) = copier.copy(ctx, Some(anno)) {
                 copied = copied.append(copy);

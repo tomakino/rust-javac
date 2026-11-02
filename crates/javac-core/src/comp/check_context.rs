@@ -1,7 +1,6 @@
 //! The check-mode enum and the check-context hierarchy used by attribution and
 //! the type checker.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::code::symtab::Symtab;

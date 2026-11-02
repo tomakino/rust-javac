@@ -16,7 +16,6 @@
 //
 // This class contains the logic for unary and binary operator resolution/lookup.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::code::flags;

@@ -757,7 +757,7 @@ impl TransPatterns {
             }
         };
         let mut merged: Vec<TreeId> = Vec::new();
-        let mut current = cases.clone();
+        let current = cases.clone();
         for head in &current {
         if case_stats(ctx, head).is_empty() && current.non_empty() {
             let next = *current.head();

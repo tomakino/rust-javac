@@ -727,7 +727,7 @@ impl ArgumentAttr {
             name.clone(),
         );
         drop(chk);
-        drop(rs);
+        let _ = rs;
         if !ctx.sym(res).kind.is_resolution_error()
             && let crate::tree::jc_tree::TreeKind::MemberReference { sym, .. } =
                 &mut ctx.tree_mut(tree).kind
@@ -1032,7 +1032,7 @@ impl ArgumentAttr {
             if !env.info.borrow().attribution_mode.is_speculative() {
                 let log = &*attr.log;
                 let pos = UniquePos::new(ctx, &log, data.speculative_tree);
-                drop(log);
+                let _ = log;
                 self.argument_type_cache.borrow_mut().remove(&pos);
             }
             crate::comp::deferred_attr::deferred_type_complete_base(
@@ -1225,7 +1225,7 @@ impl ArgumentAttr {
                     return Ok(types_rc.create_error_type_original(ctx, Some(pt), syms));
                 }
                 let yields = self.switch_expression_yields(ctx, data, speculative_tree);
-                let mut yield_list = yields;
+                let yield_list = yields;
                 for yield_tree in &yield_list {
                 let value = match &ctx.tree(yield_tree).kind {
                     crate::tree::jc_tree::TreeKind::Yield { value, .. } => *value,
@@ -1302,7 +1302,7 @@ impl ArgumentAttr {
                     )?;
                 } else {
                     let returns = self.lambda_return_expressions(ctx, data, speculative_tree);
-                    let mut return_list = returns;
+                    let return_list = returns;
                     for ret in &return_list {
                     self.check_return_in_statement_lambda(
                         ctx,

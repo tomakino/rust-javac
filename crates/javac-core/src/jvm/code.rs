@@ -2248,7 +2248,7 @@ impl Code {
         let lvar_length: Vec<i32> = valid_ranges.iter().map(|r| r.length).collect();
         let lvar_index: Vec<i32> = valid_ranges.iter().map(|_| lv.reg).collect();
         let attrs = crate::code::symbol::symbol_raw_type_attributes(ctx, lv.sym);
-        let mut current = attrs;
+        let current = attrs;
         for attr in &current {
         let Some(mut pos) = ctx.attr(attr).get_position(ctx) else {
             continue;
@@ -2280,7 +2280,7 @@ impl Code {
                 continue;
             }
             let attrs = crate::code::symbol::symbol_raw_type_attributes(ctx, lv.sym);
-            let mut current = attrs;
+            let current = attrs;
             for attr in &current {
             let Some(mut pos) = ctx.attr(attr).get_position(ctx) else {
                 continue;

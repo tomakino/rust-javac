@@ -11,8 +11,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use javac_tools::tools::java_file_manager::{JavaFileManager, JavaFileObjectRef, Location, LocationRef};
-use javac_tools::tools::java_file_object::{JavaFileObject, Kind as FileKind};
+use javac_tools::tools::java_file_manager::{JavaFileManager, JavaFileObjectRef, LocationRef};
+use javac_tools::tools::java_file_object::Kind as FileKind;
 use javac_tools::tools::standard_location::StandardLocation;
 
 use crate::code::class_finder::ClassFinder;

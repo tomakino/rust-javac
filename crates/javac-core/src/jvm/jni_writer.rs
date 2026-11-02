@@ -10,14 +10,9 @@
 //!   registered adapter;
 //! - multiModuleMode is a public field like upstream.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
-use javac_tools::java_io::Writer;
-use javac_tools::tools::file_object::FileObject;
-use javac_tools::tools::java_file_manager::{
-    FileObjectRef, JavaFileManager, Location, LocationRef,
-};
+use javac_tools::tools::java_file_manager::{FileObjectRef, JavaFileManager, LocationRef};
 use javac_tools::tools::standard_location::StandardLocation;
 use javac_strings::JavaString;
 

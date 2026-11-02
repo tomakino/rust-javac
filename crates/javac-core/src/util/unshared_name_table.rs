@@ -20,7 +20,6 @@
 //! lifetime of name table entries, so entries are kept until dispose(). This is
 //! a memory-management deviation with no observable compiler behavior.
 
-use std::rc::Rc;
 
 use crate::util::convert;
 use crate::util::name::NameTableHandle;

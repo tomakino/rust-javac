@@ -62,7 +62,6 @@
 //! - RootPackageSymbol.missingInfoHandler (MissingInfoHandler is not ported;
 //!   the variant carries allowPrivateInvokeVirtual only).
 
-use std::collections::HashMap;
 use std::rc::Rc;
 
 pub use javac_tools::lang::model::element::element_kind::ElementKind;
@@ -1955,7 +1954,7 @@ fn symbol_hidden_in_internal(
     }
     let current_ty = ctx.sym(current_class).ty.expect("current class type");
     let supertype = types.supertype(ctx, syms, current_ty, None);
-    let mut supers = types.interfaces(ctx, syms, current_ty).prepend(supertype);
+    let supers = types.interfaces(ctx, syms, current_ty).prepend(supertype);
     let mut hidden_sym: Option<SymbolId> = None;
     for st in &supers {
     let tsym = match (ctx.typ(st).has_tag(crate::code::type_tag::TypeTag::CLASS), ctx.typ(st).tsym) {
@@ -2419,7 +2418,7 @@ fn hidden_in_internal(
         }
     }
     let current_ty = ctx.sym(current_class).ty.expect("class type");
-    let mut supertypes =
+    let supertypes =
         types
             .interfaces(ctx, syms, current_ty)
             .prepend(types.supertype(ctx, syms, current_ty, None));
@@ -3775,7 +3774,7 @@ impl Symbol {
             return None;
         };
         let field_name = ctx.sym(field).name.clone();
-        let mut current = record_components.clone();
+        let current = record_components.clone();
         for rc in &current {
         if ctx.sym(rc).name == field_name {
             return Some(rc);
@@ -3814,7 +3813,7 @@ impl Symbol {
             _ => return None,
         };
         let mut to_remove: Option<SymbolId> = None;
-        let mut current = record_components.clone();
+        let current = record_components.clone();
         for rc in &current {
         let (rc_pos, _rc_varargs) = match &ctx.sym(rc).kind_data {
             crate::code::symbol::SymbolKind::RecordComponent { pos, is_varargs, .. } => {

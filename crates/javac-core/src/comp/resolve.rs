@@ -5441,7 +5441,7 @@ impl Resolve {
             !ctx.sym(sym).kind.is_resolution_error(),
             "AssertionError: !sym.kind.isResolutionError()"
         );
-        let mut warn = crate::util::warner::Warner::new(None);
+        let warn = crate::util::warner::Warner::new(None);
         let raw_result = catch_inapplicable_method_exception(|| self.raw_instantiate(
             ctx,
             syms,
@@ -6638,7 +6638,7 @@ fn method_symbol_display_verbose(
     };
     let varargs = (symbol.flags_field & crate::code::flags::VARARGS) != 0;
     let mut parts: Vec<String> = Vec::new();
-    let mut current = params;
+    let current = params;
     for param in &current {
     let mut text = type_display_str(ctx, param);
     if varargs && current.is_empty() && text.ends_with("[]") {
@@ -7799,7 +7799,7 @@ impl Resolve {
         bound: bool,
     ) {
         use crate::resources::compiler_properties::{fragments, notes};
-        use crate::resources::diagnostic_contract::{DiagnosticArg, SymbolArg, TypeArg};
+        use crate::resources::diagnostic_contract::{DiagnosticArg, SymbolArg};
         use crate::util::jc_diagnostic::{Fragment, MultilineDiagnostic, Note};
         let mut sub_diags: Vec<crate::util::jc_diagnostic::JCDiagnostic> = Vec::new();
         let mut pos = 0i32;
@@ -8016,7 +8016,7 @@ impl Resolve {
         inst: Option<TypeId>,
     ) -> crate::util::jc_diagnostic::JCDiagnostic {
         use crate::resources::compiler_properties::fragments;
-        use crate::resources::diagnostic_contract::{DiagnosticArg, SymbolArg, TypeArg};
+        use crate::resources::diagnostic_contract::{DiagnosticArg, SymbolArg};
         use crate::util::jc_diagnostic::Fragment;
         let sym_ty = ctx.sym(sym).ty;
         let mut sub_diag: Option<crate::util::jc_diagnostic::JCDiagnostic> = None;

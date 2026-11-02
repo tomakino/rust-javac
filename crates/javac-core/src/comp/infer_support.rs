@@ -14,7 +14,6 @@ use crate::compiler_context::CompilerContext;
 use crate::ids::{SymbolId, TypeId};
 use crate::resources::compiler_properties::fragments;
 use crate::resources::diagnostic_contract::TypeArg;
-use crate::util::jc_diagnostic::JCDiagnostic;
 use crate::util::list::List;
 use crate::util::warner::Warner;
 

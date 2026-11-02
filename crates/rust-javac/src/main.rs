@@ -8,24 +8,19 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use javac_core::api::diagnostic_formatter::DiagnosticFormatter;
 use javac_core::code::source::Source;
 use javac_core::comp::resolve::{
     InapplicableMethodExceptionPayload, InferenceExceptionPayload,
 };
 use javac_core::main::mini_compiler::MiniCompiler;
 use javac_core::main::option::ArgKind;
-use javac_core::main::option::InvalidValueException;
 use javac_core::main::option::Option as JavacOption;
 use javac_core::main::option::OptionKind;
 use javac_core::main::option_helper::OptionHelper;
-use javac_core::util::abstract_log::AbstractLog;
 use javac_core::util::log::Log;
-use javac_core::util::basic_diagnostic_formatter::BasicDiagnosticFormatter;
 use javac_core::util::javac_messages::{
     JavacMessages, Locale, DEFAULT_BUNDLE_NAME, JAVAC_BUNDLE_NAME,
 };
-use javac_core::util::log::DiagnosticHandler;
 
 const OK: i32 = 0;
 const ERROR: i32 = 1;

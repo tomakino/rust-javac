@@ -1761,7 +1761,7 @@ impl LambdaAnalyzerPreprocessor {
                         sym,
                         class_sym,
                     );
-                    drop(syms);
+                    let _ = syms;
                     if is_member {
                         return if current_depth > depth { None } else { Some(frame.tree) };
                     }
@@ -2376,7 +2376,7 @@ impl LambdaAnalyzerPreprocessor {
             LambdaSymbolKind::CAPTURED_VAR => {
                 let syms = &*self.syms;
                 let erased = self.types.erasure(ctx, &syms, ctx.sym(sym).ty.expect("captured var type"));
-                drop(syms);
+                let _ = syms;
                 self.new_var_symbol(
                     ctx,
                     flags::SYNTHETIC as i64 | flags::FINAL as i64 | flags::PARAMETER,
@@ -2392,7 +2392,7 @@ impl LambdaAnalyzerPreprocessor {
                 ));
                 let syms = &*self.syms;
                 let erased = self.types.erasure(ctx, &syms, ctx.sym(sym).ty.expect("outer this type"));
-                drop(syms);
+                let _ = syms;
                 self.new_var_symbol(
                     ctx,
                     flags::SYNTHETIC as i64 | flags::FINAL as i64 | flags::PARAMETER,
@@ -2404,7 +2404,7 @@ impl LambdaAnalyzerPreprocessor {
             LambdaSymbolKind::LOCAL_VAR => {
                 let syms = &*self.syms;
                 let erased = self.types.erasure(ctx, &syms, ctx.sym(sym).ty.expect("local var type"));
-                drop(syms);
+                let _ = syms;
                 let var = self.new_var_symbol(
                     ctx,
                     ctx.sym(sym).flags_field & flags::FINAL as i64,
@@ -2420,7 +2420,7 @@ impl LambdaAnalyzerPreprocessor {
             LambdaSymbolKind::PARAM => {
                 let syms = &*self.syms;
                 let erased = self.types.erasure(ctx, &syms, ctx.sym(sym).ty.expect("param type"));
-                drop(syms);
+                let _ = syms;
                 let var = self.new_var_symbol(
                     ctx,
                     (ctx.sym(sym).flags_field & flags::FINAL as i64) | flags::PARAMETER,
@@ -2578,7 +2578,7 @@ impl LambdaAnalyzerPreprocessor {
             self.types
                 .functional_interface_bridges(ctx, &mut syms, &diags, &chk2, &enter, csym)
         };
-        drop(syms);
+        let _ = syms;
         let (self_sym, assigned_to) = self.assigned_symbols(ctx);
         let class_sym = symbol::encl_class(ctx, owner).expect("enclosing class");
         let translated_sym = if ctx.sym(owner).kind == Kind::MTH {
@@ -3178,7 +3178,7 @@ impl LambdaToMethod {
             for marker in targets.iter() {
                 let syms = &*self.syms;
                 let erased = self.types.erasure(ctx, &syms, marker);
-                drop(syms);
+                let _ = syms;
                 let marker_tsym = ctx.typ(erased).tsym;
                 if marker_tsym != serializable_tsym && marker_tsym != target_tsym2 && marker_tsym != object_tsym {
                     markers.push(erased);
@@ -3214,7 +3214,7 @@ impl LambdaToMethod {
                     };
                     let syms = &*self.syms;
                     let same = self.types.is_same_type(ctx, &syms, bridge_erasure, sam_erasure);
-                    drop(syms);
+                    let _ = syms;
                     if !same {
                         static_args.push(LoadableConstantRef::MethodType(self.type_to_method_type(ctx, bridge_erasure)));
                     }
@@ -3266,7 +3266,7 @@ impl LambdaToMethod {
             let mut args: List<TypeId> = List::of(syms.method_handle_lookup_type)
                 .append(syms.string_type)
                 .append(syms.method_type_type);
-            drop(syms);
+            let _ = syms;
             for argument in &static_args {
                 let ty = self.types.constant_type(ctx, &*self.syms, argument);
                 args = args.append(ty);
@@ -8405,7 +8405,7 @@ impl LambdaAnalyzerPreprocessor {
         let mut generator = L2MSignatureGenerator::new(Rc::clone(&self.types), allow_illegal_signature);
         let syms = &*self.syms;
         let _ = generator.assemble_sig(ctx, &syms, ty);
-        drop(syms);
+        let _ = syms;
         generator.finish()
     }
     /// Adapter: Types.findDescriptorSymbol with the analyzer services.
@@ -8604,7 +8604,7 @@ impl LambdaToMethod {
         let mut generator = L2MSignatureGenerator::new(Rc::clone(&self.types), allow_illegal_signature);
         let syms = &*self.syms;
         let _ = generator.assemble_sig(ctx, &syms, ty);
-        drop(syms);
+        let _ = syms;
         generator.finish()
     }
 
@@ -8614,7 +8614,7 @@ impl LambdaToMethod {
         let mut generator = L2MSignatureGenerator::new(Rc::clone(&self.types), false);
         let syms = &*self.syms;
         let _ = generator.assemble_class_sig(ctx, &syms, ty);
-        drop(syms);
+        let _ = syms;
         generator.finish()
     }
 
@@ -8901,7 +8901,7 @@ impl LambdaToMethod {
                     if !self.types.is_same_type(ctx, &syms, sym_ty, other_ty) {
                         return false;
                     }
-                    drop(syms);
+                    let _ = syms;
                     let mut differ = crate::comp::tree_differ::TreeDiffer::new(&params_vec, &candidate_params_vec);
                     differ.scan(ctx, Some(body), Some(candidate.tree))
                 })

@@ -12,7 +12,6 @@ use crate::resources::diagnostic_contract::TypeArg;
 use crate::comp::infer::{contains_any_list, new_captured_type_ctx, Infer, InferenceContext, InferenceException};
 use crate::compiler_context::CompilerContext;
 use crate::ids::TypeId;
-use crate::util::jc_diagnostic::JCDiagnostic;
 use crate::util::list::List;
 use crate::util::warner::Warner;
 

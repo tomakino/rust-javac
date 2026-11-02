@@ -1006,7 +1006,7 @@ impl Enter {
                     .map(|modules| modules.modules_initialized())
                     .unwrap_or(false);
                 if !modules_initialized {
-                    let mut current = trees;
+                    let current = trees;
                     for tree in &current {
                     if tree_info::get_module(ctx, tree).is_some() {
                         self.unfinished_modules.borrow_mut().push(tree);

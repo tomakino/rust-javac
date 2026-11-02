@@ -11,7 +11,6 @@
 // - adapter adapter: BindingSymbol lists are SymbolId lists (SymbolKind::BindingSymbol
 // carries the aliases field).
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::code::flags;

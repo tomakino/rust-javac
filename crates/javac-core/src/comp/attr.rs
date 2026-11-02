@@ -5206,7 +5206,7 @@ impl Attr {
                     typeargtypes.clone(),
                 );
                 drop(chk);
-                drop(rs);
+                let _ = rs;
                 local_env.info.borrow_mut().select_super = select_super_prev;
                 // Set method symbol to resolved constructor...
                 crate::tree::tree_info::set_symbol(ctx, meth, sym);
@@ -5699,7 +5699,7 @@ impl Attr {
                 .expect("AssertionError: rs service must be installed");
             let rs = &*rs_rc;
             rs.check_non_abstract(ctx, simple_diag_pos(ctx.tree(tree).pos), sym);
-            drop(rs);
+            let _ = rs;
             if self.types.is_raw_type_public(ctx, site) {
                 // Determine argument types for site.
                 let encl_class = env.encl_class.expect("enclClass");
@@ -6842,7 +6842,7 @@ impl Attr {
             }
             if opc == crate::jvm::byte_codes::IF_ACMPEQ || opc == crate::jvm::byte_codes::IF_ACMPNE
             {
-                let mut warn = crate::util::warner::Warner::new(None);
+                let warn = crate::util::warner::Warner::new(None);
                 if !self
                     .types
                     .is_castable_with_warn(ctx, syms, left, right, &warn)
@@ -9044,7 +9044,7 @@ impl Attr {
         expr_type: TypeId,
         patt_type: TypeId,
     ) -> bool {
-        let mut warn = crate::util::warner::Warner::new(None);
+        let warn = crate::util::warner::Warner::new(None);
         if !self
             .types
             .is_castable_with_warn(ctx, syms, expr_type, patt_type, &warn)
@@ -11006,7 +11006,7 @@ impl Attr {
             TreeKind::Modifiers { annotations, .. } => annotations.clone(),
             _ => List::nil(),
         };
-        let mut current = annotations;
+        let current = annotations;
         for anno in &current {
         let anno_type = match &ctx.tree(anno).kind {
             TreeKind::Annotation {
@@ -11214,7 +11214,7 @@ impl Attr {
                     self.scan(ctx, extending);
                     self.scan_list(ctx, &implementing);
                 }
-                let mut current = defs;
+                let current = defs;
                 for member in &current {
                 if ctx.tree(member).has_tag(Tag::CLASSDEF) {
                     continue;
@@ -11762,7 +11762,7 @@ impl Attr {
                             TreeKind::TypeUnion { alternatives } => alternatives.clone(),
                             _ => List::nil(),
                         };
-                        let mut current = alternatives;
+                        let current = alternatives;
                         for alternative in &current {
                         if let Some(alternative_ty) = ctx.tree(alternative).ty {
                             self.validate_annotated_type(ctx, alternative, alternative_ty);
@@ -11774,7 +11774,7 @@ impl Attr {
                             TreeKind::TypeIntersection { bounds } => bounds.clone(),
                             _ => List::nil(),
                         };
-                        let mut current = bounds;
+                        let current = bounds;
                         for bound in &current {
                         if let Some(bound_ty) = ctx.tree(bound).ty {
                             self.validate_annotated_type(ctx, bound, bound_ty);
@@ -12085,7 +12085,7 @@ impl Attr {
                 let no_module = syms.no_module;
                 let sealed_in_unnamed =
                     c_module == Some(unnamed_module) || c_module == Some(no_module);
-                let mut permitted_current = permitted.clone();
+                let permitted_current = permitted.clone();
                 // Java: the invalid-permits diagnostics point at the entry in
                 // the permits clause (not at the sealed class or the permitted
                 // class declaration).
@@ -12301,7 +12301,7 @@ impl Attr {
             // sealed supertypes checks (Attr.java:5307-5345)
             let direct = self.types.direct_supertypes(ctx, syms, c_ty);
             let mut sealed_supers: Vec<SymbolId> = Vec::new();
-            let mut direct_current = direct.clone();
+            let direct_current = direct.clone();
             for super_ty in &direct_current {
             if let Some(tsym) = ctx.typ(super_ty).tsym {
                 if ctx.sym(tsym).is_sealed() {
@@ -12312,7 +12312,7 @@ impl Attr {
             if sealed_supers.is_empty() {
                 if (ctx.sym(c).flags_field & crate::code::flags::NON_SEALED) != 0 {
                     let mut has_error_super = false;
-                    let mut direct_current = direct;
+                    let direct_current = direct;
                     for super_ty in &direct_current {
                     if ctx.typ(super_ty).tsym.map(|tsym| ctx.sym(tsym).kind)
                         == Some(crate::code::kinds::Kind::ERR)
@@ -12692,7 +12692,7 @@ impl Attr {
         }
         self.check_auto_closeable(ctx, syms, ctx.tree(tree).pos, env, c_ty);
         // Attribute the declarations.
-        let mut defs_current = defs;
+        let defs_current = defs;
         for def in &defs_current {
         self.attrib_stat(ctx, syms, def, env);
         // Check that declarations in inner classes are not static (JLS 8.1.2)
@@ -13607,7 +13607,7 @@ impl Attr {
             // For <>(){}, inferred types must also be accessible.
             let clazz_arguments =
                 crate::code::types::get_type_arguments_completed(ctx, syms, clazztype, None);
-            let mut arguments_current = clazz_arguments;
+            let arguments_current = clazz_arguments;
             for argument in &arguments_current {
             let rs_rc = self.rs.get().cloned()
                 .expect("AssertionError: rs service");
@@ -14467,7 +14467,7 @@ impl Attr {
             }
         }
         let method_scope = local_env.info.borrow().scope.expect("local env scope");
-        let mut type_params = typarams.clone();
+        let type_params = typarams.clone();
         for type_param in &type_params {
         if let Some(type_ty) = ctx.tree(type_param).ty
             && let Some(type_sym) = ctx.typ(type_ty).tsym
@@ -14485,7 +14485,7 @@ impl Attr {
                 crate::util::jc_diagnostic::Error::from(info),
             );
         }
-        let mut param_list = params.clone();
+        let param_list = params.clone();
         for param in &param_list {
         self.attrib_stat(ctx, syms, param, &local_env);
         }
@@ -14498,7 +14498,7 @@ impl Attr {
         {
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
-            let mut validate_list = typarams.clone();
+            let validate_list = typarams.clone();
             for item in &validate_list {
             chk.validate(ctx, syms, &local_env, item);
             }
@@ -14566,7 +14566,7 @@ impl Attr {
             }
         }
         {
-            let mut thrown_list = thrown.clone();
+            let thrown_list = thrown.clone();
             for thrown_tree in &thrown_list {
             let thrown_ty = ctx.tree(thrown_tree).ty.expect("thrown type");
             let chk_rc = Rc::clone(&self.chk);
@@ -14730,7 +14730,7 @@ impl Attr {
             _ => List::nil(),
         };
         // user-defined accessor checks
-        let mut current = components.clone();
+        let current = components.clone();
         for rc in &current {
         let accessor = match &ctx.sym(rc).kind_data {
             crate::code::symbol::SymbolKind::RecordComponent {
@@ -14878,7 +14878,7 @@ impl Attr {
             let record_fields =
                 crate::tree::tree_info::record_fields(ctx, env_of(self).encl_class.unwrap_or(tree));
             let mut field_types: Vec<TypeId> = Vec::new();
-            let mut l = record_fields;
+            let l = record_fields;
             for field in &l {
             if let Some(sym) = match &ctx.tree(field).kind {
                 TreeKind::VariableDecl { sym, .. } => *sym,
@@ -14889,7 +14889,7 @@ impl Attr {
             }
             }
             let mut index = 0usize;
-            let mut param_iter = params.clone();
+            let param_iter = params.clone();
             for param in &param_iter {
             let param_ty = match &ctx.tree(param).kind {
                 TreeKind::VariableDecl {
@@ -14925,7 +14925,7 @@ impl Attr {
             }
             let record_component_names = {
                 let mut names: Vec<Name> = Vec::new();
-                let mut components = components;
+                let components = components;
                 for rc in &components {
                 names.push(ctx.sym(rc).name.clone());
                 }
@@ -14933,7 +14933,7 @@ impl Attr {
             };
             let init_param_names = {
                 let mut names: Vec<Name> = Vec::new();
-                let mut p = params.clone();
+                let p = params.clone();
                 for param in &p {
                 let param_sym = match &ctx.tree(param).kind {
                     TreeKind::VariableDecl { sym, .. } => *sym,

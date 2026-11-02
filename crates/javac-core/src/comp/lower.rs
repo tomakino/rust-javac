@@ -2657,7 +2657,7 @@ impl Lower {
     }
 
     /// Translate a list of trees, preserving the list order.
-    fn translate_list(&mut self, ctx: &mut CompilerContext, mut trees: List<TreeId>) -> List<TreeId> {
+    fn translate_list(&mut self, ctx: &mut CompilerContext, trees: List<TreeId>) -> List<TreeId> {
         // Java: ListBuffer<T> buf = new ListBuffer<>(); buf.append(t); return buf.toList();
         // (Lower.java translate). Appending to an immutable List is O(n), so the
         // buffer is a Vec here and the list is built once at the end.
@@ -2673,7 +2673,7 @@ impl Lower {
     fn translate_list_with_type(
         &mut self,
         ctx: &mut CompilerContext,
-        mut trees: List<TreeId>,
+        trees: List<TreeId>,
         ty: TypeId,
     ) -> List<TreeId> {
         let mut out: Vec<TreeId> = Vec::new();
@@ -5834,7 +5834,7 @@ impl Lower {
                     self.types.as_super(ctx, &syms, current_class_ty, qualifier_tsym).is_some(),
                     "AssertionError: default super not a superclass"
                 );
-                drop(syms);
+                let _ = syms;
                 self.result = Some(tree);
                 return;
             }
@@ -6095,7 +6095,7 @@ impl Lower {
         if is_compound {
             let syms = &*self.syms;
             let iterable_erasure = self.types.erasure(ctx, &syms, iterable_type);
-            drop(syms);
+            let _ = syms;
             let cast_type = self.type_tree(ctx, iterable_erasure);
             expr = self.make.borrow_mut().type_cast(ctx, cast_type, expr);
             if let TreeKind::EnhancedForLoop { expr: slot, .. } = &mut ctx.tree_mut(tree).kind {
@@ -8865,7 +8865,7 @@ impl TreeBuilder for BoxedAssignopBuilder {
         let new_rhs = if self.boxing_req {
             let syms = &*lower.syms;
             let unboxed = lower.types.unboxed_type_ro(ctx, &syms, self.tree_ty);
-            drop(syms);
+            let _ = syms;
             let unboxed_tree = lower.type_tree(ctx, unboxed);
             lower.make.borrow_mut().type_cast(ctx, unboxed_tree, op_result)
         } else {

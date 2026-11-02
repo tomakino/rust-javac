@@ -143,7 +143,7 @@ impl TypeAnnotations {
             }
             _ => return None,
         };
-        let mut current = values;
+        let current = values;
         for pair in &current {
         if &ctx.sym(pair.fst).name == name {
             return Some(pair.snd);
@@ -189,7 +189,7 @@ impl TypeAnnotations {
             None => AnnotationType::DECLARATION,
             Some(targets) => {
                 let mut acc = AnnotationType::NONE;
-                let mut current = targets;
+                let current = targets;
                 for target in &current {
                 let at = self.target_to_annotation_type(ctx, target, s);
                 acc = self.combine_annotation_type(acc, at);
@@ -383,7 +383,7 @@ impl TypeAnnotations {
                     ctx,
                     Some(tree),
                 );
-                drop(syms);
+                let _ = syms;
                 let result: Result<(), crate::code::symbol::CompletionFailure> = Ok(());
                 crate::util::abstract_log::AbstractLog::use_source(
                     &*ta.log,
@@ -563,7 +563,7 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
                     }
                     _ => List::nil(),
                 };
-                let mut current = components;
+                let current = components;
                 for component in &current {
                 let accessor = match &ctx.sym(component).kind_data {
                     crate::code::symbol::SymbolKind::RecordComponent { accessor_meth, .. } => {
@@ -670,7 +670,7 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
                 }
             }
             let mut index = 0i32;
-            let mut params_current = params.clone();
+            let params_current = params.clone();
             for param in &params_current {
             let param_mods_annotations = match &ctx.tree(param).kind {
                 crate::tree::jc_tree::TreeKind::VariableDecl { mods, .. } => self.modifiers_annotations(ctx, *mods),
@@ -723,7 +723,7 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
             _ => List::nil(),
         };
         let mut index = 0i32;
-        let mut current = params.clone();
+        let current = params.clone();
         for param in &current {
         let annotations = match &ctx.tree(param).kind {
             crate::tree::jc_tree::TreeKind::VariableDecl { mods, .. } => self.modifiers_annotations(ctx, *mods),
@@ -864,7 +864,7 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
                         }
                         _ => List::nil(),
                     };
-                    let mut current = components;
+                    let current = components;
                     for component in &current {
                     let matches = match &ctx.sym(component).kind_data {
                         crate::code::symbol::SymbolKind::RecordComponent { pos, .. } => *pos == ctx.tree(tree).pos,
@@ -957,7 +957,7 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
         };
         self.find_position(ctx, tree, tree, &annotations);
         let mut depth: List<TypePathEntry> = List::nil();
-        let mut dim_current = dim_annotations.clone();
+        let dim_current = dim_annotations.clone();
         let mut dim_index = 0i32;
         for dim_annos in &dim_current {
         let mut location: List<TypePathEntry> = List::nil();
@@ -1039,7 +1039,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
         annotations: &List<crate::ids::TreeId>,
         position: crate::code::type_annotation_position::TypeAnnotationPosition,
     ) {
-        let mut current = annotations.clone();
+        let current = annotations.clone();
         for anno in &current {
         let attribute = match &ctx.tree(anno).kind {
             crate::tree::jc_tree::TreeKind::Annotation { attribute, .. } => *attribute,
@@ -1134,7 +1134,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
         let mut decl_annos: List<crate::ids::AttributeId> = List::nil();
         let mut type_annos: List<crate::ids::AttributeId> = List::nil();
         let mut only_type_annos: List<crate::ids::AttributeId> = List::nil();
-        let mut current = all_annotations;
+        let current = all_annotations;
         for a in &current {
         let target = self
             .type_annotations
@@ -2217,7 +2217,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
         let expected_location = self.locate_nested_types(ctx, clazz_ty);
         let old_attributes = ctx.sym(sym).get_raw_type_attributes();
         let mut new_attributes: List<crate::ids::AttributeId> = List::nil();
-        let mut current = old_attributes;
+        let current = old_attributes;
         for old in &current {
         let (old_ty, old_values, old_position, synthesized) = match &ctx.attr(old).kind {
             crate::code::attribute::AttributeKind::TypeCompound { values, position, synthesized } => {

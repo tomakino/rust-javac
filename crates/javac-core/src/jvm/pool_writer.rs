@@ -3,18 +3,16 @@
 //! Constant pool writer: turns class file entities (names, members, dynamic
 //! constants) into the constant pool byte buffer and the BootstrapMethods table.
 
-use std::collections::VecDeque;
 use std::rc::Rc;
 
 use crate::code::type_tag::TypeTag;
-use crate::code::types::{InvalidSignatureException, SignatureGenerator, Types};
+use crate::code::types::{SignatureGenerator, Types};
 use crate::compiler_context::CompilerContext;
 use crate::ids::{SymbolId, TypeId};
 use crate::jvm::class_file;
 use crate::jvm::pool_constant::{
     BasicConstant, BsmKey, LoadableConstantRef, NameAndType, PoolConstant, PoolKey,
 };
-use crate::util::byte_buffer::ByteBuffer;
 use crate::util::name::Name;
 use crate::util::names::Names;
 

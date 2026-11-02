@@ -43,7 +43,6 @@
 //! - these are all equivalent upstream-structure ports; the remaining lint
 //!   changes are stylistic and are scheduled for the parser-wiring.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use javac_strings::JavaString;

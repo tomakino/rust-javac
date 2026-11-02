@@ -27,7 +27,6 @@
 //!   toString views, and ErrorScope.lookup (synthetic entry).
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::rc::Weak;
 

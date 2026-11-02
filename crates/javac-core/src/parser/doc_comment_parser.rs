@@ -39,7 +39,6 @@
 //!   isWhitespace table. No std char classification is used.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use javac_source::doctree::attribute_tree::ValueKind;

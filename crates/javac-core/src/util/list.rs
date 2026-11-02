@@ -34,7 +34,7 @@ impl<A> Drop for ListNode<A> {
         let mut next = self.tail.take();
         while let Some(rc) = next {
             match Rc::try_unwrap(rc) {
-                Ok(mut node) => next = node.tail.take(),
+                Ok(node) => next = node.tail.take(),
                 Err(_) => break,
             }
         }

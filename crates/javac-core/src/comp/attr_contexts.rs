@@ -4,12 +4,9 @@
 use std::rc::Rc;
 
 use crate::code::symtab::Symtab;
-use crate::code::type_tag::TypeTag;
 use crate::code::types::Types;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{SymbolId, TreeId, TypeId};
-use crate::util::jc_diagnostic::Factory;
-use crate::util::warner::Warner;
 
 /// Java: Attr.conditionalContext(CheckContext) (Attr.java:2092-2106)
 pub struct ConditionalCheckContext {

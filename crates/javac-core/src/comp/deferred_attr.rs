@@ -2535,7 +2535,7 @@ impl DeferredAttrService {
         }
         self.dcfh.set_handler(ctx, prev_cf_handler);
         {
-            let mut log = &*self.log;
+            let log = &*self.log;
             log.nwarnings.set(log.nwarnings.get() + nwarnings);
         }
         if let Some(toplevel) = env.toplevel {
@@ -3025,7 +3025,7 @@ impl DeferredAttrService {
             _ => {}
         }
         drop(chk);
-        drop(rs);
+        let _ = rs;
         Ok(())
     }
     /// Java: StructuralStuckChecker.canLambdaBodyCompleteNormally(JCLambda)
@@ -3128,7 +3128,7 @@ impl DeferredAttrService {
             &unknown_expr_info,
         );
         drop(chk);
-        drop(rs);
+        let _ = rs;
         // Java: tree.params = oldParams (finally)
         if let crate::tree::jc_tree::TreeKind::Lambda { params, .. } =
             &mut ctx.tree_mut(tree).kind

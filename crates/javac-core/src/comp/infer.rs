@@ -18,7 +18,6 @@ use crate::code::types::Types;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{SymbolId, TreeId, TypeId};
 use crate::resources::compiler_properties::fragments;
-use crate::resources::diagnostic_contract::TypeArg;
 use crate::util::jc_diagnostic::{Factory, JCDiagnostic};
 use crate::util::list::List;
 use crate::util::names::Names;
@@ -902,7 +901,7 @@ pub use crate::comp::infer_graph::{
     InferenceStep, LeafSolver, NodeNotFoundException,
 };
 pub(crate) use crate::comp::infer_graph::{
-    bound_filter, legacy_inference_steps_eq_lower, legacy_inference_steps_eq_upper,
+    legacy_inference_steps_eq_lower, legacy_inference_steps_eq_upper,
 };
 
 pub use crate::comp::infer_support::ReachabilityVisitor;
@@ -911,9 +910,9 @@ pub(crate) use crate::comp::infer_support::{
 };
 pub(crate) use crate::comp::infer_support::{
     bounds_type_args, check_bound, check_compatible_upper_bounds, components_of, contains_any_list,
-    elemtype_of, get_bound_fragment, inference_context_free_placeholder, list_contains_all,
-    list_diff, list_remove, new_array_type_ctx, new_captured_type_ctx, new_type_variable_symbol,
-    report_bound_error_from_to, report_bound_error_two, report_inst_error,
+    elemtype_of,
+    list_diff, new_array_type_ctx, new_captured_type_ctx, new_type_variable_symbol,
+    report_bound_error_from_to, report_inst_error,
 };
 
 pub struct InferenceContext {

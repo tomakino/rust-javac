@@ -18,7 +18,6 @@ use crate::jvm::pool_constant::{
     loadable_to_pool_constant, BasicConstant, LoadableConstantRef, PoolKey,
 };
 use crate::jvm::pool_writer::PoolWriter;
-use crate::util::java_string::JavaString;
 
 pub use crate::jvm::item::{ImmediateValue, Item, ItemKind};
 

@@ -1329,7 +1329,7 @@ impl CompilerContext {
                     record_components, ..
                 } => {
                     let mut filtered: List<SymbolId> = List::nil();
-                    let mut current = record_components.clone();
+                    let current = record_components.clone();
                     for component in &current {
                     if component != existing {
                         filtered = filtered.append(component);

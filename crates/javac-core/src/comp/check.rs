@@ -2097,7 +2097,7 @@ impl Check {
                 if metadata_empty {
                     let mut filtered: crate::util::list::List<crate::ids::AttributeId> =
                         crate::util::list::List::nil();
-                    let mut current = ctx.sym(s).get_raw_attributes();
+                    let current = ctx.sym(s).get_raw_attributes();
                     for annotation in &current {
                     let anno_ty = ctx.attr(annotation).ty.expect("annotation type");
                     let anno_tsym = ctx.typ(anno_ty).tsym.expect("annotation tsym");
@@ -2738,7 +2738,7 @@ impl Check {
         req: TypeId,
         check_context: &dyn crate::comp::check::CheckContext,
     ) -> TypeId {
-        let mut warn = self.cast_warner(pos);
+        let warn = self.cast_warner(pos);
         if self
             .types
             .is_castable_with_warn(ctx, syms, found, req, &warn)
@@ -2796,7 +2796,7 @@ impl Check {
         syms: &Symtab,
         t: TypeId,
     ) -> Option<TypeId> {
-        use crate::code::type_::TypeKindData;
+        
         let tsym = ctx.typ(t).tsym;
         let formals = tsym
             .and_then(|tsym| ctx.sym(tsym).ty)
@@ -3109,7 +3109,7 @@ impl Check {
                 // javac then works with the error type instead of aborting.
                 let arg_type = ctx.tree(arg).ty.unwrap_or(syms.err_type);
                 let non_inferred_head = *non_inferred.head();
-                let mut warn = self.convert_warner(ctx.tree(arg).pos);
+                let warn = self.convert_warner(ctx.tree(arg).pos);
                 self.assert_convertible(
                     ctx,
                     syms,
@@ -3145,7 +3145,7 @@ impl Check {
                 while args_list.non_empty() && !args_list.tail().is_empty() {
                     let arg = *args_list.head();
                     let arg_type = ctx.tree(arg).ty.expect("attributed argument type");
-                    let mut warn = self.convert_warner(ctx.tree(arg).pos);
+                    let warn = self.convert_warner(ctx.tree(arg).pos);
                     self.assert_convertible(ctx, syms, arg, arg_type, var_arg, &warn);
                     if warn.has_non_silent_lint(LintCategory::UNCHECKED) {
                         self.warn_unchecked(
@@ -5733,7 +5733,7 @@ impl Check {
             crate::tree::jc_tree::TreeKind::ClassDecl { defs, .. } => defs.clone(),
             _ => List::nil(),
         };
-        let mut current = defs;
+        let current = defs;
         for def in &current {
         if !ctx.tree(def).has_tag(crate::tree::jc_tree::Tag::METHODDEF) {
             continue;
@@ -5869,7 +5869,7 @@ impl Check {
         };
         let mut call_map: std::collections::HashMap<SymbolId, SymbolId> =
             std::collections::HashMap::new();
-        let mut current = defs;
+        let current = defs;
         for def in &current {
         let app = match crate::tree::tree_info::first_constructor_call(ctx, def) {
             Some(app) => app,
@@ -6167,7 +6167,7 @@ impl Check {
                     crate::tree::jc_tree::TreeKind::Modifiers { annotations, .. } => annotations.clone(),
                     _ => List::nil(),
                 };
-                let mut current = annotations;
+                let current = annotations;
                 for anno in &current {
                 let anno_type_tree = match &ctx.tree(anno).kind {
                     crate::tree::jc_tree::TreeKind::Annotation {
@@ -7688,7 +7688,7 @@ fn find_export(
         crate::code::symbol::SymbolKind::ModuleSymbol { exports, .. } => exports.clone(),
         _ => return None,
     };
-    let mut current = exports;
+    let current = exports;
     for directive in &current {
     if let crate::code::directive::Directive::Exports { packge, modules, .. } = ctx.directive(directive) {
         if *packge == Some(pack) {
@@ -8236,7 +8236,7 @@ impl Check {
         let Some(top_level_scope) = top_level_scope else {
             return;
         };
-        let mut current = defs;
+        let current = defs;
         for def in &current {
         let import_scope = match &ctx.tree(def).kind {
             TreeKind::Import { import_scope, .. } => *import_scope,
@@ -8378,7 +8378,7 @@ impl Check {
         let Some(packge) = packge else {
             return;
         };
-        let mut current = defs;
+        let current = defs;
         for imp in &current {
         let (static_import, qualid) = match &ctx.tree(imp).kind {
             TreeKind::Import {
@@ -8475,7 +8475,7 @@ impl Check {
             let syms_ref: &crate::code::symtab::Symtab = syms;
             self.types.interfaces(ctx, syms_ref, ty)
         };
-        let mut interface_list = interfaces;
+        let interface_list = interfaces;
         for interface_ty in &interface_list {
         if let Some(interface_tsym) = ctx.typ(interface_ty).tsym
             && interface_tsym != tsym
@@ -8523,7 +8523,7 @@ impl Check {
             TreeKind::CompilationUnit { defs, .. } => defs.clone(),
             _ => return,
         };
-        let mut current = defs;
+        let current = defs;
         for imp in &current {
         let (static_import, qualid) = match &ctx.tree(imp).kind {
             TreeKind::Import {
@@ -8653,7 +8653,7 @@ impl Check {
         let owner = ctx.sym(s).owner.expect("method owner");
         let owner_ty = ctx.sym(owner).ty.expect("owner type");
         let closure = self.types.closure(ctx, syms, owner_ty);
-        let mut sup_types = closure;
+        let sup_types = closure;
         for sup in &sup_types {
         if sup == owner_ty {
             continue;
@@ -8738,7 +8738,7 @@ impl Check {
                 } => record_components.clone(),
                 _ => List::nil(),
             };
-            let mut current = components;
+            let current = components;
             for rc in &current {
             if let crate::code::symbol::SymbolKind::RecordComponent {
                 accessor: Some(accessor),
@@ -8768,7 +8768,7 @@ impl Check {
                 let syms: &crate::code::symtab::Symtab = syms;
                 self.types.interfaces(ctx, syms, t)
             };
-            let mut list = interfaces;
+            let list = interfaces;
             for t2 in &list {
             self.check_override_at(ctx, syms, tree, t2, origin, m);
             }
@@ -9969,7 +9969,7 @@ impl CycleChecker<'_> {
         self.seen_classes.insert(c);
         if ctx.typ(c_ty).has_tag(crate::code::type_tag::TypeTag::CLASS) {
             if supertypes.non_empty() {
-                let mut current = supertypes;
+                let current = supertypes;
                 for supertree in &current {
                 crate::tree::jc_tree::accept(ctx, supertree, self);
                 }
@@ -9991,7 +9991,7 @@ impl CycleChecker<'_> {
                 };
                 let super_tsym = ctx.typ(supertype_field).tsym;
                 self.check_symbol(ctx, pos.unwrap_or(crate::util::position::NOPOS), super_tsym);
-                let mut current = interfaces_field;
+                let current = interfaces_field;
                 for intf in &current {
                 let intf_tsym = ctx.typ(intf).tsym;
                 self.check_symbol(ctx, pos.unwrap_or(crate::util::position::NOPOS), intf_tsym);
@@ -10023,7 +10023,7 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for CycleChecker<'_> {
         if let Some(extending) = extending {
             supertypes = supertypes.prepend(extending);
         }
-        let mut current = implementing;
+        let current = implementing;
         for intf in &current {
         supertypes = supertypes.prepend(intf);
         }
@@ -10175,7 +10175,7 @@ impl Check {
                 .to_string(),
             _ => String::new(),
         };
-        let mut current = exports;
+        let current = exports;
         for directive in &current {
         if let crate::code::directive::Directive::Exports {
             packge: Some(exported_packge),

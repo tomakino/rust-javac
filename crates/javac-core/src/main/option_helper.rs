@@ -10,7 +10,6 @@
 //! The InvalidValueException is the ported Option.InvalidValueException: the
 //! message is the localized diagnostic text (Log.localize).
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::main::option::InvalidValueException;

@@ -23,7 +23,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 
 use javac_tools::tools::java_file_manager::{JavaFileManager, JavaFileObjectRef, Location, LocationRef};
-use javac_tools::tools::java_file_object::{JavaFileObject, Kind as FileKind};
+use javac_tools::tools::java_file_object::Kind as FileKind;
 use javac_tools::tools::standard_location::StandardLocation;
 
 use crate::code::directive::{Directive, RequiresFlag};

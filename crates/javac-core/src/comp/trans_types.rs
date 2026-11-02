@@ -172,7 +172,7 @@ impl TransTypes {
         trees: &List<TreeId>,
     ) -> List<TreeId> {
         let mut result: List<TreeId> = List::nil();
-        let mut current = trees.clone();
+        let current = trees.clone();
         for tree in &current {
         match self.translate(ctx, Some(tree)) {
             Some(translated) => result = result.append(translated),
@@ -288,7 +288,7 @@ impl TransTypes {
                 )
             })
             .unwrap_or(true);
-        drop(syms);
+        let _ = syms;
         if same {
             return tree;
         }
@@ -345,7 +345,7 @@ impl TransTypes {
         if ctx.typ(tree_ty).is_primitive() == ctx.typ(target).is_primitive() {
             let syms = &*self.syms;
             let assignable = self.types.is_assignable(ctx, &syms, tree_ty, base_target);
-            drop(syms);
+            let _ = syms;
             if assignable {
                 tree
             } else {
@@ -574,7 +574,7 @@ impl TransTypes {
                 let st = self.types.supertype(ctx, &syms, origin_ty, None);
                 let st_tsym = ctx.typ(st).tsym.expect("supertype symbol");
                 let st_erasure = self.symbol_erasure(ctx, st_tsym);
-                drop(syms);
+                let _ = syms;
                 self.make.borrow_mut().super_expr(ctx, st_erasure, origin)
             }
         };
@@ -1813,7 +1813,7 @@ impl TreeVisitor for TransTypes {
             if let Some(cast_ty) = cast_ty {
                 let syms = &*self.syms;
                 if self.types.is_same_type(ctx, &syms, cast_ty, erased) {
-                    drop(syms);
+                    let _ = syms;
                     final_expr = match &ctx.tree(final_expr).kind {
                         TreeKind::TypeCast { expr: Some(expr), .. } => *expr,
                         _ => final_expr,
@@ -1833,7 +1833,7 @@ impl TreeVisitor for TransTypes {
                     Some(pt) => self.types.is_same_type(ctx, &syms, ec, pt),
                     None => false,
                 };
-                drop(syms);
+                let _ = syms;
                 if !same_as_cast && !same_as_pt {
                     final_expr = self.coerce_tree(ctx, final_expr, ec);
                 }

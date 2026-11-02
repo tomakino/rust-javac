@@ -10413,7 +10413,7 @@ impl Types {
             crate::code::attribute::AttributeKind::Compound { values, .. } => values.clone(),
             _ => return vis,
         };
-        let mut current = values;
+        let current = values;
         for pair in &current {
         if ctx.sym(pair.fst).name != names.value {
             continue;

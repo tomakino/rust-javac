@@ -17,7 +17,6 @@
 //!   CharBuffer case) and newScanner(char[], int, boolean) takes &[u16]; the
 //!   keepDocComments selection constructs JavadocTokenizer or JavaTokenizer.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use javac_strings::JavaString;

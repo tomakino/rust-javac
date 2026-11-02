@@ -1,7 +1,6 @@
 //! Method resolution phases and the resolution step order.
 
 use crate::code::kinds::Kind;
-use crate::compiler_context::CompilerContext;
 use crate::ids::SymbolId;
 
 /// Java: enum Resolve.MethodResolutionPhase

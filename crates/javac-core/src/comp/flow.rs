@@ -1652,7 +1652,7 @@ impl<'a> AliveAnalyzer<'a> {
                     let supers = {
                         self.flow.types.direct_supertypes(ctx, self.syms, sym_type)
                     };
-                    let mut current = supers;
+                    let current = supers;
                     for sup in &current {
                     let Some(sup_tsym) = ctx.typ(sup).tsym else {
                         continue;
@@ -1707,7 +1707,7 @@ impl<'a> AliveAnalyzer<'a> {
                 if self.flow.types.is_compound_public(ctx, seltype) {
                     if ctx.typ(seltype).is_intersection() {
                         let components = ctx.typ(seltype).get_components();
-                        let mut current = components;
+                        let current = components;
                         for component in &current {
                         if self.is_exhaustive(ctx, component, covered) {
                             return true;
@@ -3210,7 +3210,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
             _ => panic!("expected a lambda"),
         };
         self.scan(ctx, body);
-        let mut exits = std::mem::take(&mut self.pending_exits);
+        let exits = std::mem::take(&mut self.pending_exits);
         for exit in &exits {
         match &exit {
             PendingExit::Thrown { .. } => {
@@ -3349,7 +3349,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                 } else {
                     List::of(resource_type)
                 };
-                let mut current = closeable_supertypes;
+                let current = closeable_supertypes;
                 for sup in &current {
                 let auto_closeable_tsym = {
                     let syms = self.syms;
@@ -3411,7 +3411,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                     crate::code::kinds::Kind::MTH
                 ) {
                     // Java: mt.getThrownTypes()
-                    let mut thrown =
+                    let thrown =
                         crate::code::types::Types::get_thrown_types_public(
                             &self.flow.types,
                             ctx,

@@ -397,7 +397,7 @@ impl Gen {
             let is_length_var = sym == syms.length_var;
             let owner = ctx.sym(sym).owner;
             let is_array_owner = owner == Some(syms.array_class);
-            drop(syms);
+            let _ = syms;
             if is_length_var || !is_array_owner {
                 return sym;
             }
@@ -491,7 +491,7 @@ impl Gen {
                     self.check_dimension_internal(ctx, pos, ret);
                 }
                 let params = ctx.typ(t).get_parameter_types(ctx);
-                let mut rest = params;
+                let rest = params;
                 for head in &rest {
                 self.check_dimension_internal(ctx, pos, head);
                 }
@@ -812,7 +812,7 @@ impl Gen {
         let mut clinit_code: Vec<TreeId> = Vec::new();
         let mut clinit_tas: Vec<crate::ids::AttributeId> = Vec::new();
         let mut method_defs: Vec<TreeId> = Vec::new();
-        let mut l = defs;
+        let l = defs;
         for def in &l {
         match &ctx.tree(def).kind {
             TreeKind::Block { flags, .. } => {
@@ -922,7 +922,7 @@ impl Gen {
                 clinit_ty,
                 c,
             ));
-            drop(syms_b);
+            let _ = syms_b;
             if let Some(members) = ctx.sym(c).members() {
                 ctx.scope_enter(members, clinit);
             }
@@ -1023,7 +1023,7 @@ impl Gen {
         let tas = ctx.sym(sym).get_raw_type_attributes();
         let mut field_tas: Vec<crate::ids::AttributeId> = Vec::new();
         let mut nonfield_tas: Vec<crate::ids::AttributeId> = Vec::new();
-        let mut current = tas;
+        let current = tas;
         for ta in &current {
         let pos = ctx
             .attr(ta)
@@ -1235,7 +1235,7 @@ impl Gen {
 
     /// Generate code for a statement list.
     fn gen_stats(&mut self, ctx: &mut CompilerContext, trees: List<TreeId>) {
-        let mut l = trees;
+        let l = trees;
         for head in &l {
         self.gen_stat_crt(ctx, head, CRT_STATEMENT);
         }
@@ -1440,7 +1440,7 @@ impl Gen {
 
     /// Generate code for a list of method arguments.
     fn gen_args(&mut self, ctx: &mut CompilerContext, trees: List<TreeId>, pts: List<TypeId>) {
-        let mut l = trees;
+        let l = trees;
         let mut pts = pts;
         for head in &l {
         let pt = *pts.head();
@@ -1851,7 +1851,7 @@ impl Gen {
             TreeKind::MethodDecl { params, .. } => params.clone(),
             _ => List::nil(),
         };
-        let mut l = params;
+        let l = params;
         let mut registered_symbols: Vec<crate::ids::SymbolId> = Vec::new();
         for head in &l {
         let param_sym = match &ctx.tree(head).kind {
@@ -1874,7 +1874,7 @@ impl Gen {
             } => (extra_params.clone(), captured_locals.clone()),
             _ => (List::nil(), List::nil()),
         };
-        let mut extra = extra_params;
+        let extra = extra_params;
         for param_sym in &extra {
         if registered_symbols.contains(&param_sym) {
             continue;
@@ -1883,7 +1883,7 @@ impl Gen {
         let reg = code.borrow_mut().new_local_symbol(ctx, param_sym);
         code.borrow_mut().set_defined_at(ctx, reg);
         }
-        let mut captured = captured_locals;
+        let captured = captured_locals;
         for param_sym in &captured {
         if registered_symbols.contains(&param_sym) {
             continue;
@@ -2969,7 +2969,7 @@ impl Gen {
         let mut res: Vec<(List<crate::ids::AttributeId>, TreeId)> = Vec::new();
         let head = *alts.head();
         res.push((first, head));
-        let mut rest = alts.tail();
+        let rest = alts.tail();
         for alt in &rest {
         if ctx.tree(alt).has_tag(Tag::ANNOTATED_TYPE) {
             if let TreeKind::AnnotatedType { annotations, .. } = &ctx.tree(alt).kind {
@@ -3526,7 +3526,7 @@ impl Gen {
                 self.load_int_const(ctx, len);
                 let arr = self.make_new_array(ctx, ctx.tree(tree).pos, tree_ty, 1);
                 let mut i = 0;
-                let mut l = elems;
+                let l = elems;
                 for head in &l {
                 self.item_duplicate(ctx, &arr);
                 self.load_int_const(ctx, i);
@@ -3545,7 +3545,7 @@ impl Gen {
                     _ => List::nil(),
                 };
                 let int_type = self.syms.int_type;
-                let mut l = dims.clone();
+                let l = dims.clone();
                 for head in &l {
                 let item = self.gen_expr(ctx, head, int_type);
                 self.item_load(ctx, &item);
@@ -4327,7 +4327,7 @@ impl Gen {
             base_clause: false,
         });
         self.env = Some(Rc::clone(&local_env));
-        let mut l = defs;
+        let l = defs;
         for head in &l {
         self.gen_def(ctx, head);
         }
@@ -4366,7 +4366,7 @@ fn fix_type_annotations(
     tree_pos: i32,
     cp: i32,
 ) {
-    let mut current = attrs;
+    let current = attrs;
     for attr in &current {
     let mut attribute = ctx.attr(attr).clone();
     if attribute.has_unknown_position() && attribute.try_fix_position(ctx) {

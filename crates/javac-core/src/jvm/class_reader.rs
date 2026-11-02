@@ -2736,7 +2736,7 @@ impl ClassReader {
                                     // Errors.CantAttachTypeAnnotations(attributes, s.owner, s.name,
                                     // ex.getDetailValue()))
                                     let mut annotation_args = Vec::new();
-                                    let mut attrs = ctx.sym(sym).get_raw_type_attributes();
+                                    let attrs = ctx.sym(sym).get_raw_type_attributes();
                                     for attr in &attrs {
                                     if let Some(ty) = ctx.attr(attr).ty {
                                         annotation_args.push(

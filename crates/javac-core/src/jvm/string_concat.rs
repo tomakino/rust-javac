@@ -233,7 +233,7 @@ impl StringConcat {
         self.append_string(ctx, generator, lhs);
         // Append all other strings to the builder.
         let args = self.collect_all(ctx, rhs);
-        let mut current = args;
+        let current = args;
         for t in &current {
         let ty = ctx.tree(t).ty.expect("argument type");
         let item = generator.gen_expr(ctx, t, ty);
@@ -251,7 +251,7 @@ impl StringConcat {
         let pos = ctx.tree(tree).pos;
         self.new_string_builder(ctx, generator, tree);
         let args = self.collect_all(ctx, tree);
-        let mut current = args;
+        let current = args;
         for t in &current {
         let ty = ctx.tree(t).ty.expect("argument type");
         let item = generator.gen_expr(ctx, t, ty);
@@ -404,7 +404,7 @@ impl StringConcat {
         let mut splits: Vec<Vec<TreeId>> = Vec::new();
         let mut slots = 0;
         let mut current: Vec<TreeId> = Vec::new();
-        let mut rest = args;
+        let rest = args;
         for t in &rest {
         let tag = ctx
             .tree(t)

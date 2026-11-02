@@ -1420,7 +1420,7 @@ impl MiniCompiler {
                 return Ok(Vec::new());
             }
             // JavaCompiler.generate(queue)
-            let mut current = defs;
+            let current = defs;
             for classdef in &current {
             self.generate_class(&env, classdef)?;
             }
@@ -1502,7 +1502,7 @@ impl MiniCompiler {
                 ..
             } => (*class_sym, *extending, defs.clone(), self.ctx.tree(tree).pos),
             crate::tree::jc_tree::TreeKind::CompilationUnit { defs, .. } => {
-                let mut current = defs.clone();
+                let current = defs.clone();
                 for def in &current {
                 self.check_enum_tree(def);
                 }
@@ -1544,7 +1544,7 @@ impl MiniCompiler {
                 );
             }
         }
-        let mut current = defs;
+        let current = defs;
         for def in &current {
         self.check_enum_tree(def);
         }

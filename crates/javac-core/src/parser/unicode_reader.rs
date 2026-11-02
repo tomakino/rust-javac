@@ -20,7 +20,6 @@
 //!   Unicode digit tables are not ported; registered GAP, the Java corpus does
 //!   not exercise it); LayoutCharacters EOI/tabulate are the ported ones.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::resources::compiler_properties::errors;
