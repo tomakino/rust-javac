@@ -17,7 +17,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! * the nested enum LintCategory (31 constants) keeps the Java declaration
 //!   order; `option`/`hidden` fields become accessors, and the static option map
 //!   the enum constructor fills becomes LintCategory::get (a linear match; the
@@ -154,7 +154,7 @@ impl Lint {
     /// the given annotation.
     ///
     /// Java: public Lint augment(Attribute.Compound attr) (Lint.java:65-67).
-    /// PORTING_RULES Porting rules adapter: the upstream AugmentVisitor is a context
+    /// Porting rules adapter: the upstream AugmentVisitor is a context
     /// singleton; the ported visitor takes the compiler context and symtab
     /// explicitly (ADR 0001).
     pub fn augment_compound(&self, ctx: &CompilerContext, syms: &Symtab, attr: AttributeId) -> Lint {
@@ -373,7 +373,7 @@ impl LintCategory {
 
     /// Java: {@code public final boolean hidden}.
     ///
-    /// PORTING_RULES: every upstream constant is created with the one-argument
+    /// every upstream constant is created with the one-argument
     /// constructor (hidden = false); the field is kept as an accessor.
     pub const fn hidden(self) -> bool {
         false

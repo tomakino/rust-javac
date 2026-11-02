@@ -1,7 +1,7 @@
 //! A skeletal visitor of types with default behavior appropriate for the
 //! RELEASE_6 source version.
 //!
-//! PORTING_RULES — class mapping:
+//! — class mapping:
 //! * Java abstract class -> Rust trait with the upstream default behavior.
 //! * the Java `final R visit(TypeMirror, P)` forwards to `t.accept(this, p)`;
 //!   Rust cannot call the generic `TypeMirror::accept` on `&dyn TypeMirror`, so
@@ -100,7 +100,7 @@ pub trait AbstractTypeVisitor6<R, P>: TypeVisitor<R, P> {
 
 /// Java: the type's own `accept(visitor, p)` performs the dispatch.
 ///
-/// PORTING_RULES: `TypeMirror::accept` is generic and therefore not callable on
+/// `TypeMirror::accept` is generic and therefore not callable on
 /// `&dyn TypeMirror`; the dispatch is reproduced from the type kind and the
 /// object-conversion accessors (registered adapter contract).  A missing
 /// accessor panics instead of silently mis-dispatching.

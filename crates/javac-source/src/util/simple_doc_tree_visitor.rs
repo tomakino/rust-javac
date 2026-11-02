@@ -1,6 +1,6 @@
 //! A simple visitor for doc tree nodes.
 //!
-//! PORTING_RULES (§14.7): Java class SimpleDocTreeVisitor<R,P> implements
+//! (§14.7): Java class SimpleDocTreeVisitor<R,P> implements
 //! DocTreeVisitor<R,P> -> Rust trait SimpleDocTreeVisitor<R: Clone, P: Clone>:
 //! DocTreeVisitor<R, P>; nullable DEFAULT_VALUE -> default_value() -> Option<&R>
 //! (default_action panics if it would return null); the final convenience

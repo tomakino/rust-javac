@@ -1,7 +1,7 @@
 //! Thrown when an application attempts to access a sequence of Class objects
 //! each corresponding to a TypeMirror.
 //!
-//! PORTING_RULES:
+//!
 //! * Java class inheritance -> embedded base-class state (message + types).
 //! * `List<? extends TypeMirror>` -> `Vec<Rc<dyn TypeMirror>>`; the upstream
 //!   list is unmodifiable and the exception keeps a defensive copy, which the
@@ -80,7 +80,7 @@ impl fmt::Display for MirroredTypesException {
 }
 
 impl fmt::Debug for MirroredTypesException {
-    // PORTING_RULES: Rust Debug is the nearest analogue of the Java
+    // Rust: Rust Debug is the nearest analogue of the Java
     // Throwable.toString() used for debugging; the payload holds trait objects
     // that have no Debug bound, so the message is printed instead.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

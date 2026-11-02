@@ -49,7 +49,7 @@ impl<A: Eq, B: Eq> Eq for Pair<A, B> {}
 
 impl<A: Hash, B: Hash> Hash for Pair<A, B> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        // PORTING_RULES: Java hashCode formula is not reproduced; equality consistency
+        // Rust: Java hashCode formula is not reproduced; equality consistency
         // is what matters (Pair is never hashed as a wire value).
         self.fst.hash(state);
         self.snd.hash(state);

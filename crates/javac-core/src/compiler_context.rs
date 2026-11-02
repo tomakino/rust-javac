@@ -1,13 +1,13 @@
 //! The compile-time object arena container of ADR 0001 (CompilerContext).
 //!
-//! PORTING_RULES: non-1:1 adapter file (Java mutable object graph -> arena + ID), see ADR 0001.
+//! non-1:1 adapter file (Java mutable object graph -> arena + ID), see ADR 0001.
 //! Six arenas: Symbol/Type/JCTree/Scope/Attribute/Directive; every *Id is valid only for the same
 //! CompilerContext and is released with the compilation.
 //!
 //! Borrow rules (ADR 0001 rules 3-4; all components must follow them):
 //! - CompilerContext exclusively owns the six arenas; component logic lives in functions/methods taking
 //!   ctx: &mut CompilerContext (Java x.field -> ctx.sym(x).field);
-//! - Rc<RefCell<...>> must not express the core object graph (except the PORTING_RULES Porting rules whitelist);
+//! - Rc<RefCell<...>> must not express the core object graph (except the Porting rules whitelist);
 //! - when several arenas are needed at once, split the borrow by field: Rust borrow checking is per field,
 //!   e.g. &mut ctx.scopes and &ctx.symbols can coexist;
 //! - accessor references borrow &self: while a reference is held the same ctx must not be borrowed mutably;

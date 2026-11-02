@@ -6,7 +6,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: the Java enum constructor stores (numericClass, superClasses,
+//! the Java enum constructor stores (numericClass, superClasses,
 //! isPrimitive) per constant; Rust expresses those as match-based accessors.
 //! Java enum name() is reproduced by Display (the derived Debug name).
 

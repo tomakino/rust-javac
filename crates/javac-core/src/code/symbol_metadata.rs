@@ -1,5 +1,5 @@
 //
-// PORTING_RULES adapters (registered):
+// Adapters (registered):
 // - the upstream sentinel values DECL_NOT_STARTED/DECL_IN_PROGRESS are
 // List.of(null) instances compared by identity; the port models the three
 // states with the DeclState enum;

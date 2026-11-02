@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: ADR 0001 (arena + IDs):
+//! ADR 0001 (arena + IDs):
 //! - the tree graph is printed through the CompilerContext; the upstream
 //!   JCTree.Visitor dispatch is reproduced by Pretty::dispatch (tag -> visit
 //!   method); the visitor trait itself lands in the visitor;
@@ -30,7 +30,7 @@
 
 // The upstream visitor algorithms are copied with their exact if/match nesting;
 // the clippy style suggestions to collapse them are not applied (registered in
-// PORTING_RULES section 9: control flow is kept 1:1 with the upstream source).
+// control flow is kept 1:1 with the upstream source).
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::collapsible_match)]
 
@@ -400,7 +400,7 @@ impl Pretty {
     /// toplevel, followed by class definition. If class definition is None,
     /// print all definitions in toplevel.
     ///
-    /// PORTING_RULES: the cdef != None path needs the isUsed scan (internal
+    /// the cdef != None path needs the isUsed scan (internal
     /// TreeScanner subclass used by isUsed; registered as unimplemented.
     pub fn print_unit(&mut self, ctx: &CompilerContext, tree: TreeId, cdef: Option<TreeId>) {
         let TreeKind::CompilationUnit {

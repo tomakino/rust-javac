@@ -5,7 +5,7 @@
 //! risk.  This code and its internal interfaces are subject to change
 //! or deletion without notice.</b></p>
 //!
-//! PORTING_RULES: ADR 0001 (arena + IDs) defines the representation of the tree
+//! ADR 0001 (arena + IDs) defines the representation of the tree
 //! nodes:
 //! - a node is a JCTree value in the tree arena (TreeId is the arena index);
 //! - child references are Option<TreeId> (Java null -> Option), child lists are
@@ -252,7 +252,7 @@ impl Tag {
 
     /// Java: public Tag noAssignOp()
     ///
-    /// PORTING_RULES: the upstream AssertionError for non-assignment tags is a
+    /// the upstream AssertionError for non-assignment tags is a
     /// panic with the same message.
     pub fn no_assign_op(self) -> Tag {
         match self {
@@ -307,7 +307,7 @@ impl Tag {
         self as i32 - Tag::POS as i32
     }
 
-    /// PORTING_RULES adapter: Java enum ordinal() is not available in Rust for
+    /// Adapter: Java enum ordinal() is not available in Rust for
     /// fieldless enums without a match; the declaration order is the ordinal
     /// (ADR 0005: the value order must mirror the upstream enum).
     pub fn ordinal(self) -> usize {
@@ -317,7 +317,7 @@ impl Tag {
 
 /// Java: public abstract class JCTree implements Tree, Cloneable, DiagnosticPosition
 ///
-/// PORTING_RULES: the Java object reference (identity) becomes an arena ID; the
+/// the Java object reference (identity) becomes an arena ID; the
 /// public fields of JCTree are the position, the type (filled during Attr) and
 /// the tag; the node-specific fields live in the TreeKind variant.
 #[allow(clippy::upper_case_acronyms)]
@@ -424,8 +424,8 @@ impl ReferenceKind {
 
 /// Java: JCTree.JCLiteral.value is an Object holding one of the literal wrapper
 /// values (Integer/Long/Float/Double/Character/Boolean/String).
-/// PORTING_RULES: Java Object literal values map to this enum (registered in
-/// PORTING_RULES section 9).
+/// Java Object literal values map to this enum (registered in
+/// ).
 #[derive(Clone, Debug, PartialEq)]
 pub enum LiteralValue {
     Integer(i32),
@@ -444,7 +444,7 @@ pub enum LiteralValue {
 
 /// The node-specific fields of the JCTree subclasses.
 ///
-/// PORTING_RULES: one variant per upstream concrete class (the JC prefix is
+/// one variant per upstream concrete class (the JC prefix is
 /// dropped, see the module doc); fields keep the upstream declaration order and
 /// names (snake_case); references are Option<TreeId>, lists List<TreeId>;
 /// inherited fields of the abstract base classes are merged into the variants.
@@ -1095,7 +1095,7 @@ pub const TREE_KIND_VARIANT_COUNT: usize = 67;
 
 /// Java: JCTree.Visitor
 ///
-/// PORTING_RULES: ADR 0001 (arena + IDs):
+/// ADR 0001 (arena + IDs):
 /// - the upstream "public void visitXxx(JCXxx that) { visitTree(that); }"
 ///   methods become trait methods with the CompilerContext passed explicitly
 ///   (the visitor needs the arena to read the node);

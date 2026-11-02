@@ -1,6 +1,6 @@
 //! Represents a declared type, either a class type or an interface type.
 //!
-//! PORTING_RULES: `List<? extends TypeMirror>` -> `Vec<Rc<dyn TypeMirror>>`;
+//! `List<? extends TypeMirror>` -> `Vec<Rc<dyn TypeMirror>>`;
 //! Java interface references -> `Rc<dyn Trait>`.
 
 use super::reference_type::ReferenceType;

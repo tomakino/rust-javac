@@ -1,4 +1,4 @@
-// PORTING_RULES: the thread_local initializer is already a const block; the lint fires on the
+// Rust: the thread_local initializer is already a const block; the lint fires on the
 // generated wrapper, so it is allowed here.
 #![allow(clippy::missing_const_for_thread_local)]
 
@@ -9,7 +9,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES (S3a):
+//! (S3a):
 //! * the jrt: FileSystem does not exist without a JVM, so the index is built from the
 //!   registered javac-jimage adapter over `<java.home>/lib/modules`: the module list
 //!   (`JImage::modules`) and the sorted resource names `<module>/<path>` stand in for
@@ -140,7 +140,7 @@ pub struct CtSym {
 impl CtSym {
     /// Java: static final CtSym EMPTY = new CtSym(false, false, null);
     ///
-    /// PORTING_RULES: JavaString is not const-constructible in Rust, so the Java constant
+    /// JavaString is not const-constructible in Rust, so the Java constant
     /// becomes this constructor (registered).
     pub fn empty() -> CtSym {
         CtSym {
@@ -180,7 +180,7 @@ impl fmt::Display for CtSym {
 impl JRTIndex {
     /// Java: private JRTIndex() throws IOException — opens the jrt: file system.
     ///
-    /// PORTING_RULES: the jrt: FileSystem is simulated by javac-jimage over the injected JDK
+    /// the jrt: FileSystem is simulated by javac-jimage over the injected JDK
     /// home (see the file header).
     pub fn open(java_home: &FsPath) -> Result<JRTIndex, javac_jimage::Error> {
         let modules_file = java_home.as_path().join("lib").join("modules");
@@ -238,7 +238,7 @@ impl JRTIndex {
 
     /// Java: public synchronized static JRTIndex getSharedInstance().
     ///
-    /// PORTING_RULES: the shared cache is per thread (a JVM-wide static has no Rust
+    /// the shared cache is per thread (a JVM-wide static has no Rust
     /// counterpart without a global lock and Rc is not Send); the JDK home is the injected
     /// argument (the first home wins, like the upstream single static instance).
     pub fn get_shared_instance(java_home: &FsPath) -> Rc<JRTIndex> {
@@ -259,7 +259,7 @@ impl JRTIndex {
 
     /// Java: public static JRTIndex instance(Context context).
     ///
-    /// PORTING_RULES: the JDK home is injected (see the file header).
+    /// the JDK home is injected (see the file header).
     pub fn instance(context: &mut Context, java_home: &FsPath) -> Rc<JRTIndex> {
         if let Some(instance) = context.get::<JRTIndex>() {
             return instance;
@@ -361,7 +361,7 @@ impl JRTIndex {
 
     /// Java: public boolean isInJRT(FileObject fo).
     ///
-    /// PORTING_RULES: the jrt FileSystem identity test becomes the JRTFileObject construction
+    /// the jrt FileSystem identity test becomes the JRTFileObject construction
     /// marker; the parameter is the concrete PathFileObject (Rust cannot downcast FileObject;
     /// registered, no upstream caller yet).
     pub fn is_in_jrt(&self, fo: &PathFileObject) -> bool {
@@ -429,7 +429,7 @@ mod tests {
         assert!(entry.get_file("no-such-file").is_none());
         assert!(entry.subdirs.contains(&RelativeDirectory::new(&js("java"))));
         let file_path = entry.get_file("module-info.class").expect("module-info");
-        // PORTING_RULES: the jrt: virtual path is carried in a javac-fs Path; on Windows its
+        // Rust: the jrt: virtual path is carried in a javac-fs Path; on Windows its
         // textual form uses '\', so the test normalizes the separator before comparing the
         // jrt-shaped path (the S3c file manager parses both forms).
         let text = file_path.to_java_string().replace('\\', "/");

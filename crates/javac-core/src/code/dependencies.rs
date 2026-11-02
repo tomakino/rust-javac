@@ -1,6 +1,6 @@
 //! Track dependencies in the javac symbol completion process.
 //!
-//! PORTING_RULES adapters (registered):
+//! Adapters (registered):
 //! - Java abstract class Dependencies -> Rust trait; the only implementation
 //!   needed by ClassFinder is DummyDependencies (the upstream default when no
 //!   GraphDependencies was pre-registered).

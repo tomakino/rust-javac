@@ -31,7 +31,7 @@
 //! @author Peter von der Ah&eacute;
 //! @since 1.6
 //!
-//! PORTING_RULES: the `javax.lang.model` interface layer is ported in this
+//! the `javax.lang.model` interface layer is ported in this
 //! crate so that `javax.tools`, `com.sun.source` and the API phase share one
 //! set of Java language-model types.  `javax.lang.model.util.Elements` and
 //! `Types` are deferred (registered in docs/STATUS.md as a P6 item).
@@ -43,7 +43,7 @@ pub mod type_;
 pub mod unknown_entity_exception;
 pub mod util;
 
-// PORTING_RULES: the source files are one-per-Java-file modules; these
+// Rust: the source files are one-per-Java-file modules; these
 // re-exports expose the Java package-level simple names (javax.lang.model.X)
 // at the module root, exactly like the Java package namespace.
 pub use annotated_construct::AnnotatedConstruct;

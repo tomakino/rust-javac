@@ -1,7 +1,7 @@
 //! A simple visitor of program elements with default behavior appropriate for
 //! source versions RELEASE_9 through RELEASE_14.
 //!
-//! PORTING_RULES: Java `SimpleElementVisitor9 extends SimpleElementVisitor8`
+//! Java `SimpleElementVisitor9 extends SimpleElementVisitor8`
 //! adds only constructors; the Rust trait is an empty subtrait that keeps the
 //! inherited default behavior.
 

@@ -15,7 +15,7 @@ use std::sync::{Arc, OnceLock};
 /// @author Peter von der Ah&eacute;
 /// @since 1.6
 ///
-/// PORTING_RULES — class mapping:
+/// — class mapping:
 /// * Java "public class ToolProvider" with a private constructor and static
 ///   methods -> Rust struct with a private field (so it cannot be
 ///   instantiated) and associated functions.
@@ -98,7 +98,7 @@ impl ToolProvider {
     /// by the jdk.javadoc module if that module is available,
     /// and null otherwise.
     ///
-    /// PORTING_RULES: the javadoc tool is out of scope for rust-javac, so the
+    /// the javadoc tool is out of scope for rust-javac, so the
     /// platform provides no documentation tool: null (None) is the faithful
     /// result, exactly like upstream on a platform without jdk.javadoc.
     /// Java constants of the upstream lookup:
@@ -119,7 +119,7 @@ impl ToolProvider {
     /// locate system tools as well as user-installed tools.
     /// @return a class loader, or null
     ///
-    /// PORTING_RULES: upstream always returns null, so None is exact.
+    /// upstream always returns null, so None is exact.
     pub fn get_system_tool_class_loader() -> Option<Rc<dyn ClassLoader>> {
         None
     }

@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: Java String arguments/returns are JavaString (UTF-16).
+//! Java String arguments/returns are JavaString (UTF-16).
 //! REGISTERED(P0): verify case mapping against JDK 17 String.toLowerCase(Locale.US)
 //! conditional mapping rules; the initial implementation uses the simple Unicode
 //! mapping, which is sufficient for the ASCII inputs used by javac itself.

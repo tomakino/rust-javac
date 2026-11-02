@@ -1,6 +1,6 @@
 //! A visitor of trees, in the style of the visitor design pattern.
 //!
-//! PORTING_RULES (docs/PORTING_RULES.md §14): visitor interface methods are
+//! (docs/PORTING_RULES.md §14): visitor interface methods are
 //! abstract in Java; in Rust they carry a panicking default so that the util
 //! class layers (TreeScanner, SimpleTreeVisitor, ...) can supply the real
 //! defaults through subtraits.  Methods take `&mut self` and the visited node as

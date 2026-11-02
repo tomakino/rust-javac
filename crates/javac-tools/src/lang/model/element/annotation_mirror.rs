@@ -1,6 +1,6 @@
 //! Represents an annotation.
 //!
-//! PORTING_RULES — signature mapping:
+//! — signature mapping:
 //! * `Map<? extends ExecutableElement, ? extends AnnotationValue>` ->
 //!   `Vec<(Rc<dyn ExecutableElement>, Rc<dyn AnnotationValue>)>`.  The upstream
 //!   Javadoc requires the order to match the order of the values in the

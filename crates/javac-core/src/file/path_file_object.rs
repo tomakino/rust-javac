@@ -16,7 +16,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! * the Java abstract class plus its four private nested subclasses become one
 //!   struct whose PathFileObjectKind selects the behavior (the factories keep
 //!   the upstream signatures); the common mutable flag hasParents stays a Cell;
@@ -286,7 +286,7 @@ impl PathFileObject {
     }
 
     /// Java: public Kind getKind() — the SimpleFileObject override uses userPath.
-    /// PORTING_RULES: JRTIndex.isInJRT tests `path.getFileSystem() == jrtfs` upstream;
+    /// JRTIndex.isInJRT tests `path.getFileSystem() == jrtfs` upstream;
     /// the jrt: FileSystem does not exist in the port, so the JRTFileObject construction kind
     /// is the marker (adapter; registered).
     pub fn is_jrt(&self) -> bool {
@@ -677,7 +677,7 @@ fn jar_entry_string(path: &FsPath) -> String {
 
 /// Java: java.net.URI.normalize() for the jar-file URI (PathFileObject.createJarUri).
 ///
-/// PORTING_RULES adapter: java.net.URI is REGISTERED as unavailable; this implements the
+/// Adapter: java.net.URI is REGISTERED as unavailable; this implements the
 /// normalize path-segment algorithm recorded from the JDK 17 oracle:
 /// - an opaque URI (scheme-specific part not starting with '/') is unchanged;
 /// - "." segments are removed, ".." pops the previous non-empty segment;

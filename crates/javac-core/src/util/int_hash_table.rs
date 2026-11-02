@@ -6,7 +6,7 @@
 //! @author Charles Turner
 //! @author Per Bothner
 //!
-//! PORTING_RULES: Java hashes keys with System.identityHashCode and compares them with the
+//! Java hashes keys with System.identityHashCode and compares them with the
 //! reference equality operator; Rust uses K: Hash + Eq. Callers instantiate K with an
 //! identity-preserving key type (an arena id or a pointer wrapper), which is exactly where javac
 //! relies on object identity (JavacParser's end-position map is keyed by trees). Only the bucket
@@ -18,7 +18,7 @@ use std::hash::{Hash, Hasher};
 
 const DEFAULT_INITIAL_SIZE: i32 = 64;
 
-/// PORTING_RULES: Java stores null in objs for an empty slot and the shared DELETED object for a
+/// Java stores null in objs for an empty slot and the shared DELETED object for a
 /// tombstone; both are modelled with an enum so that the lookup loop stays identical.
 #[derive(Clone)]
 enum Slot<K> {

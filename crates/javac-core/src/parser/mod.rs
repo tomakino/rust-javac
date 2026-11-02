@@ -1,12 +1,12 @@
 // Java package com.sun.tools.javac.parser maps to parser/mod.rs (upstream package
-// name kept, PORTING_RULES section 3); clippy's module_inception is expected.
+// name kept, ); clippy's module_inception is expected.
 #![allow(clippy::module_inception)]
 
 //! com.sun.tools.javac.parser
 //!
 //! The lexer/parser layer (Java: package com.sun.tools.javac.parser).
 //!
-//! PORTING_RULES / status:
+//! / status:
 //! * S6 lexical layer (ported from the upstream parser package): Tokens, UnicodeReader,
 //!   JavaTokenizer, TextBlockSupport, JavadocTokenizer, Lexer, Scanner, ScannerFactory
 //!   (+ the java.lang.String helpers JavaTokenizer needs);

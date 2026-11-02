@@ -1,7 +1,7 @@
 //! A skeletal visitor for annotation values with default behavior appropriate
 //! for the RELEASE_9 source version.
 //!
-//! PORTING_RULES: Java abstract class `AbstractAnnotationValueVisitor9
+//! Java abstract class `AbstractAnnotationValueVisitor9
 //! extends AbstractAnnotationValueVisitor8` adds only constructors; the Rust
 //! trait is an empty subtrait that keeps the inherited default behavior.
 //! Implementations implement each level of the Java class hierarchy explicitly

@@ -12,7 +12,7 @@ use std::rc::Rc;
 /// @author Peter von der Ah&eacute;
 /// @since 1.6
 ///
-/// PORTING_RULES:
+///
 /// * Diagnostic of "? extends S" -> Rc of dyn Diagnostic of S: the diagnostic
 ///   is a shared Java object reference, so Rc expresses the shared identity
 ///   that a collecting listener stores.  The wildcard "? extends S" cannot be

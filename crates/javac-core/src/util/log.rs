@@ -6,7 +6,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //!   - the Java PrintWriter table maps to Rc<RefCell<dyn std::io::Write>>
 //!     (interior mutability is white-listed for the log streams, registered
 //!     section 9); the Java println line separator is modelled as '\n' (the same
@@ -191,7 +191,7 @@ pub type DiagnosticFilter = Box<dyn Fn(&JCDiagnostic) -> bool>;
 
 /// DiagnosticHandler's provide the initial handling for diagnostics.
 ///
-/// PORTING_RULES: the Java abstract class and its two public subclasses map to
+/// the Java abstract class and its two public subclasses map to
 /// this closed enum; the upstream protected prev field is the prev field of the
 /// variant (registered section 9).
 pub enum DiagnosticHandler {
@@ -338,7 +338,7 @@ impl Log {
     ///
     /// Java: public static Log instance(Context context)
     ///
-    /// PORTING_RULES: the Java constructor registers the options listener with
+    /// the Java constructor registers the options listener with
     /// the Log reference; Rust needs the Rc first, so instance() creates the
     /// Rc, stores it in the Context and then registers the listener (the name
     /// allocation pattern is the same as JCDiagnostic.Factory.instance).
@@ -566,7 +566,7 @@ impl Log {
 
     /// Install a diagnostic handler, recording the previous one as its prev.
     ///
-    /// PORTING_RULES: the Java handlers install themselves in their
+    /// the Java handlers install themselves in their
     /// constructors; Rust cannot move self out of a constructor, so the caller
     /// installs the handler explicitly (registered section 9).
     pub fn install_diagnostic_handler(&mut self, mut handler: DiagnosticHandler) {
@@ -580,7 +580,7 @@ impl Log {
     ///
     /// Java: public void popDiagnosticHandler(DiagnosticHandler h)
     ///
-    /// PORTING_RULES: the Java identity check on h has no Rust form because the
+    /// the Java identity check on h has no Rust form because the
     /// closed enum is stored by value; the ported method restores the prev
     /// handler and panics if only the default handler is installed (registered).
     pub fn pop_diagnostic_handler(&mut self) {
@@ -813,7 +813,7 @@ impl Log {
 
     /// Java: public static void printRawLines(PrintWriter writer, String msg)
     ///
-    /// PORTING_RULES: the static PrintWriter overload maps to an associated
+    /// the static PrintWriter overload maps to an associated
     /// function taking the writer handle (no overloading, registered).
     pub fn print_raw_lines_to(writer: &WriterHandle, mut msg: &str) {
         while let Some(index) = msg.find('\n') {
@@ -1065,7 +1065,7 @@ fn code_recursive(result: &mut Vec<String>, diag: &JCDiagnostic) {
 /// Java: String.valueOf(Object) for the message arguments used by the Log
 /// entry points.
 ///
-/// PORTING_RULES: the Object varargs of localize/printLines are DiagnosticArg
+/// the Object varargs of localize/printLines are DiagnosticArg
 /// values; the supported set is String/JavaString, i32/i64, bool, Name, Option,
 /// Target, Source, JavaFileObject and JCDiagnostic (the types used by Log call
 /// sites). Unknown values are an assembly assertion (closed type domain).

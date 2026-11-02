@@ -6,7 +6,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: the Java tokenizer field type JavaTokenizer becomes
+//! the Java tokenizer field type JavaTokenizer becomes
 //! Box<dyn Tokenizer> (JavaTokenizer/JavadocTokenizer are the two
 //! implementations); the savedTokens List<Token> becomes Vec<Token>; Token
 //! values are cloned where Java keeps references.

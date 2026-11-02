@@ -1,7 +1,7 @@
 //! Interface to invoke Java programming language documentation tools from
 //! programs.
 //!
-//! PORTING_RULES: the javadoc tool itself is out of scope for rust-javac
+//! the javadoc tool itself is out of scope for rust-javac
 //! (docs/PLAN.md §1: the project ports javac).  This file ports the
 //! javax.tools API interface only, so that the javax.tools surface is complete
 //! and the JavaFileManager.Location enum can be used by callers.  The
@@ -24,7 +24,7 @@ use std::rc::Rc;
 ///
 /// @since 1.8
 ///
-/// PORTING_RULES — signature mapping (identical to JavaCompiler):
+/// — signature mapping (identical to JavaCompiler):
 /// * out Writer -> Option of Rc of RefCell of dyn Writer.
 /// * fileManager -> Option of Rc of dyn JavaFileManager.
 /// * DiagnosticListener of "? super JavaFileObject" ->
@@ -119,7 +119,7 @@ pub trait DocumentationTool: Tool + OptionChecker {
 /// task can be configured, for example, by calling the
 /// {@linkplain #setLocale setLocale} method.
 ///
-/// PORTING_RULES: Java nested interface DocumentationTool.DocumentationTask ->
+/// Java nested interface DocumentationTool.DocumentationTask ->
 /// Rust trait DocumentationTask; Callable of Boolean -> call() returning bool.
 pub trait DocumentationTask {
     /// Adds root modules to be taken into account during module
@@ -162,7 +162,7 @@ pub trait DocumentationTask {
 ///
 /// @see StandardLocation
 ///
-/// PORTING_RULES: Java nested enum DocumentationTool.Location implements
+/// Java nested enum DocumentationTool.Location implements
 /// JavaFileManager.Location.  In Rust the enum lives in this module and
 /// implements the Location trait through its import alias.
 #[allow(non_camel_case_types)]

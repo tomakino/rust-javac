@@ -1,7 +1,7 @@
 //! A visitor of program elements based on their kind with default behavior
 //! appropriate for source versions RELEASE_9 through RELEASE_14.
 //!
-//! PORTING_RULES: Java `ElementKindVisitor9 extends ElementKindVisitor8` only
+//! Java `ElementKindVisitor9 extends ElementKindVisitor8` only
 //! overrides `visitModule` (calls defaultAction).  The Rust trait is a subtrait
 //! re-declaring that method; calling it on a concrete type implementing both
 //! requires a fully qualified call (registered language-shape limitation).

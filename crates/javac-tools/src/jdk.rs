@@ -10,7 +10,7 @@
 //! `javax.annotation.processing` types that appear in `javax.tools`
 //! signatures but have no Rust counterpart.
 //!
-//! PORTING_RULES — JDK type mappings used by `javax.tools`:
+//! — JDK type mappings used by `javax.tools`:
 //!
 //! * `java.lang.Class<S>`       -> `Class<S>` handle; opaque for the
 //!   javax.tools signatures, and carrying the annotation type's binary name
@@ -97,7 +97,7 @@ pub trait ClassLoader {
 
 /// Mapping of `java.lang.annotation.Annotation`.
 ///
-/// PORTING_RULES: annotation instances are not modeled by the compiler port
+/// annotation instances are not modeled by the compiler port
 /// (annotation processing is out of scope, docs/PLAN.md §3.1); the trait is the
 /// type bound used by `AnnotatedConstruct.getAnnotation/getAnnotationsByType`.
 pub trait Annotation {}

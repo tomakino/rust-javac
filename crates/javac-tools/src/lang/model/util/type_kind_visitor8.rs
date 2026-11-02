@@ -1,7 +1,7 @@
 //! A visitor of types based on their kind with default behavior appropriate for
 //! the RELEASE_8 source version.
 //!
-//! PORTING_RULES: Java `TypeKindVisitor8 extends TypeKindVisitor7` only
+//! Java `TypeKindVisitor8 extends TypeKindVisitor7` only
 //! overrides `visitIntersection` (calls defaultAction).  The Rust trait is a
 //! subtrait re-declaring that method; calling it on a concrete type
 //! implementing both requires a fully qualified call (registered language-shape

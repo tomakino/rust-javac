@@ -11,7 +11,7 @@ use std::rc::Rc;
 /// @author Peter von der Ah&eacute;
 /// @since 1.6
 ///
-/// PORTING_RULES:
+///
 /// * implements JavaFileManager.Location -> impl Location for StandardLocation;
 ///   the Location trait is defined in java_file_manager (the Java nested
 ///   interface JavaFileManager.Location).
@@ -133,7 +133,7 @@ impl StandardLocation {
                 }
             }
             // Java: name.getClass(); /* null-check */
-            // PORTING_RULES: name is a JavaString, which cannot be null, so
+            // Rust: name is a JavaString, which cannot be null, so
             // the null check has no Rust form.
             locations
                 .entry(name.clone())

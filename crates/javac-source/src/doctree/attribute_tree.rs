@@ -1,6 +1,6 @@
 //! A tree node for an attribute in an HTML element.
 //!
-//! PORTING_RULES: Java interface -> Rust trait; the nested enum ValueKind lives
+//! Java interface -> Rust trait; the nested enum ValueKind lives
 //! in this file; `Name getName()` -> Rc<dyn Name>.
 
 use super::doc_tree::DocTree;
@@ -28,7 +28,7 @@ pub trait AttributeTree: DocTree {
 
 /// The kind of an attribute value.
 ///
-/// PORTING_RULES: Java nested enum AttributeTree.ValueKind ->
+/// Java nested enum AttributeTree.ValueKind ->
 /// attribute_tree::ValueKind.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

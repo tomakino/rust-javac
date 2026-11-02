@@ -1,4 +1,4 @@
-// PORTING_RULES: the explicit 'a lifetimes express the Java contract that the
+// Rust: the explicit 'a lifetimes express the Java contract that the
 // returned collections borrow from the argument (clippy::needless_lifetimes is
 // intentionally allowed).
 #![allow(clippy::needless_lifetimes)]
@@ -7,7 +7,7 @@
 //! Filters for selecting just the elements of interest from a collection of
 //! elements.
 //!
-//! PORTING_RULES — signature mapping:
+//! — signature mapping:
 //! * `Iterable<? extends Element>` / `Set<? extends Element>` arguments ->
 //!   `&[Rc<dyn Element>]`; returns -> `Vec<&dyn X>` borrowing from the
 //!   argument (Java returns new collections holding the same element
@@ -82,7 +82,7 @@ impl ElementFilter {
     /// {@return a set of fields in elements}
     /// @param elements the elements to filter
     ///
-    /// PORTING_RULES: overload `fieldsIn(Set<? extends Element>)`.
+    /// overload `fieldsIn(Set<? extends Element>)`.
     pub fn fields_in_set<'a>(elements: &'a [Rc<dyn Element>]) -> Vec<&'a dyn VariableElement> {
         Self::set_filter(elements, Self::FIELD_KINDS, |e| e.as_variable_element())
     }
@@ -102,7 +102,7 @@ impl ElementFilter {
     /// @param elements the elements to filter
     /// @since 16
     ///
-    /// PORTING_RULES: overload `recordComponentsIn(Set<? extends Element>)`.
+    /// overload `recordComponentsIn(Set<? extends Element>)`.
     pub fn record_components_in_set<'a>(
         elements: &'a [Rc<dyn Element>],
     ) -> Vec<&'a dyn RecordComponentElement> {
@@ -122,7 +122,7 @@ impl ElementFilter {
     /// {@return a set of constructors in elements}
     /// @param elements the elements to filter
     ///
-    /// PORTING_RULES: overload `constructorsIn(Set<? extends Element>)`.
+    /// overload `constructorsIn(Set<? extends Element>)`.
     pub fn constructors_in_set<'a>(
         elements: &'a [Rc<dyn Element>],
     ) -> Vec<&'a dyn ExecutableElement> {
@@ -138,7 +138,7 @@ impl ElementFilter {
     /// {@return a set of methods in elements}
     /// @param elements the elements to filter
     ///
-    /// PORTING_RULES: overload `methodsIn(Set<? extends Element>)`.
+    /// overload `methodsIn(Set<? extends Element>)`.
     pub fn methods_in_set<'a>(elements: &'a [Rc<dyn Element>]) -> Vec<&'a dyn ExecutableElement> {
         Self::set_filter(elements, Self::METHOD_KIND, |e| e.as_executable_element())
     }
@@ -152,7 +152,7 @@ impl ElementFilter {
     /// {@return a set of types in elements}
     /// @param elements the elements to filter
     ///
-    /// PORTING_RULES: overload `typesIn(Set<? extends Element>)`.
+    /// overload `typesIn(Set<? extends Element>)`.
     pub fn types_in_set<'a>(elements: &'a [Rc<dyn Element>]) -> Vec<&'a dyn TypeElement> {
         Self::set_filter(elements, Self::TYPE_KINDS, |e| e.as_type_element())
     }
@@ -166,7 +166,7 @@ impl ElementFilter {
     /// {@return a set of packages in elements}
     /// @param elements the elements to filter
     ///
-    /// PORTING_RULES: overload `packagesIn(Set<? extends Element>)`.
+    /// overload `packagesIn(Set<? extends Element>)`.
     pub fn packages_in_set<'a>(elements: &'a [Rc<dyn Element>]) -> Vec<&'a dyn PackageElement> {
         Self::set_filter(elements, Self::PACKAGE_KIND, |e| e.as_package_element())
     }
@@ -182,7 +182,7 @@ impl ElementFilter {
     /// @param elements the elements to filter
     /// @since 9
     ///
-    /// PORTING_RULES: overload `modulesIn(Set<? extends Element>)`.
+    /// overload `modulesIn(Set<? extends Element>)`.
     pub fn modules_in_set<'a>(elements: &'a [Rc<dyn Element>]) -> Vec<&'a dyn ModuleElement> {
         Self::set_filter(elements, Self::MODULE_KIND, |e| e.as_module_element())
     }
@@ -208,7 +208,7 @@ impl ElementFilter {
     // Assumes targetKinds and X are sensible.
     //
     // Java: private static <E extends Element> Set<E> setFilter(...)
-    // PORTING_RULES: the Java LinkedHashSet preserves the input iteration order
+    // Rust: the Java LinkedHashSet preserves the input iteration order
     // and the input is a Set (no duplicates), which a Vec over the slice
     // reproduces exactly.
     fn set_filter<'a, X: ?Sized>(
@@ -273,7 +273,7 @@ impl ElementFilter {
     // Assumes directiveKind and D are sensible.
     //
     // Java: private static <D extends Directive> List<D> listFilter(...)
-    // PORTING_RULES: overload `listFilter(Iterable of Directive, ...)`.
+    // Rust: overload `listFilter(Iterable of Directive, ...)`.
     fn list_filter_directives<'a, D: ?Sized>(
         directives: &'a [Rc<dyn Directive>],
         directive_kind: DirectiveKind,

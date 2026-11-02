@@ -13,7 +13,7 @@ use std::rc::Rc;
 /// @author Peter von der Ah&eacute;
 /// @since 1.6
 ///
-/// PORTING_RULES — class mapping:
+/// — class mapping:
 /// * field diagnostics (Java:
 ///   Collections.synchronizedList(new ArrayList&lt;Diagnostic&lt;? extends S&gt;&gt;()))
 ///   -> RefCell of Vec of Rc of dyn Diagnostic of S.  The Java file manager
@@ -45,7 +45,7 @@ impl<S> DiagnosticListener<S> for DiagnosticCollector<S> {
     // Java: public void report(Diagnostic<? extends S> diagnostic)
     //           Objects.requireNonNull(diagnostic);
     //           diagnostics.add(diagnostic);
-    // PORTING_RULES: Rc is non-nullable, so the null check has no Rust form.
+    // Rust: Rc is non-nullable, so the null check has no Rust form.
     fn report(&self, diagnostic: Rc<dyn Diagnostic<S>>) {
         self.diagnostics.borrow_mut().push(diagnostic);
     }

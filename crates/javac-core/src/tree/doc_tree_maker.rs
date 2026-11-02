@@ -8,7 +8,7 @@
 
 //! A factory for doc-comment trees.
 //!
-//! PORTING_RULES: adapter notes:
+//! adapter notes:
 //! - Java DocTreeFactory (com.sun.source.util.DocTreeFactory) is the P6 API view
 //!   and is not implemented here (registered in STATUS: the DocTreeFactory
 //!   implementation belongs to P6); the factory methods below take and return
@@ -60,7 +60,7 @@ pub struct DocTreeMaker {
     /// the upstream field visible to P4/P6 code.
     diags: Rc<Factory>,
     /// Java: private final ReferenceParser referenceParser;
-    /// PORTING_RULES: injected explicitly (registered adapter; see new()).
+    /// injected explicitly (registered adapter; see new()).
     reference_parser: Option<Rc<crate::parser::reference_parser::ReferenceParser>>,
 // REGISTERED P6: trees: JavacTrees (used by getSentenceBreak); ReferenceParser
 // is injected (reference_parser) for newReferenceTree.
@@ -69,7 +69,7 @@ pub struct DocTreeMaker {
 impl DocTreeMaker {
     /// Creates a doc tree maker with NOPOS as the initial position.
     ///
-    /// PORTING_RULES: upstream protected DocTreeMaker(Context context) obtains
+    /// upstream protected DocTreeMaker(Context context) obtains
     /// JCDiagnostic.Factory, JavacTrees and ReferenceParser from the context;
     /// the factory is passed in and the ReferenceParser is injected through
     /// set_reference_parser (registered adapter). JavacTrees remains a P6
@@ -211,7 +211,7 @@ impl DocTreeMaker {
     /// fullBody, List<? extends DocTree> tags, List<? extends DocTree> preamble,
     /// List<? extends DocTree> postamble)
     ///
-    /// PORTING_RULES: upstream uses an anonymous dummy Comment and does not set
+    /// upstream uses an anonymous dummy Comment and does not set
     /// tree.pos on this path (the Java field keeps its 0 default; reproduced by
     /// creating the node at position 0).
     pub fn new_doc_comment_tree_with_preamble(
@@ -279,7 +279,7 @@ impl DocTreeMaker {
     /// DiagnosticSource diagSource, String code, Object... args)
     /// (DocTreeMaker.java:292-296 / DCTree.java:375-428).
     ///
-    /// PORTING_RULES adapter: the upstream DCErroneous is its own
+    /// Adapter: the upstream DCErroneous is its own
     /// JCDiagnostic.DiagnosticPosition; the ported position object carries the
     /// same observable values (getTree null, start = pos, preferred =
     /// pos + body.length() - 1, end = pos + body.length()) without an Rc cycle.
@@ -810,7 +810,7 @@ fn skip_white_space(s: &JavaString, start: i32) -> i32 {
 /// Java: String.stripTrailing() -- removes trailing white space as defined by
 /// Character.isWhitespace.
 ///
-/// PORTING_RULES: JavaString has no stripTrailing yet; the port keeps the helper
+/// JavaString has no stripTrailing yet; the port keeps the helper
 /// here (to be moved to javac-strings when its API is extended; registered).
 fn strip_trailing(s: &JavaString) -> JavaString {
     let units = s.as_units();

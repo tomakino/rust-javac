@@ -1,7 +1,7 @@
 //! A visitor of the values of annotation interface elements, using a variant of
 //! the visitor design pattern.
 //!
-//! PORTING_RULES — signature mapping:
+//! — signature mapping:
 //! * visit methods take `&mut self`; the annotation value is `&dyn
 //!   AnnotationValue`; Java `char` -> `u16`; Java `String` ->
 //!   `&javac_strings::JavaString`; Java `int`/`long`/`short`/`byte`/
@@ -45,7 +45,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @param p a visitor-specified parameter
     /// @return  a visitor-specified result
     fn visit(&mut self, _av: &dyn AnnotationValue, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit: PORTING_RULES: visitor interface method not overridden")
@@ -56,7 +56,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @param p a visitor-specified parameter
     /// @return the result of the visit
     fn visit_boolean(&mut self, _b: bool, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_boolean: PORTING_RULES: visitor interface method not overridden")
@@ -67,7 +67,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @param  p a visitor-specified parameter
     /// @return the result of the visit
     fn visit_byte(&mut self, _b: i8, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_byte: PORTING_RULES: visitor interface method not overridden")
@@ -78,7 +78,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @param  p a visitor-specified parameter
     /// @return the result of the visit
     fn visit_char(&mut self, _c: u16, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_char: PORTING_RULES: visitor interface method not overridden")
@@ -89,7 +89,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @param  p a visitor-specified parameter
     /// @return the result of the visit
     fn visit_double(&mut self, _d: f64, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_double: PORTING_RULES: visitor interface method not overridden")
@@ -100,7 +100,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @param  p a visitor-specified parameter
     /// @return the result of the visit
     fn visit_float(&mut self, _f: f32, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_float: PORTING_RULES: visitor interface method not overridden")
@@ -111,7 +111,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @param  p a visitor-specified parameter
     /// @return the result of the visit
     fn visit_int(&mut self, _i: i32, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_int: PORTING_RULES: visitor interface method not overridden")
@@ -122,7 +122,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @param  p a visitor-specified parameter
     /// @return the result of the visit
     fn visit_long(&mut self, _i: i64, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_long: PORTING_RULES: visitor interface method not overridden")
@@ -133,7 +133,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @param  p a visitor-specified parameter
     /// @return the result of the visit
     fn visit_short(&mut self, _s: i16, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_short: PORTING_RULES: visitor interface method not overridden")
@@ -144,7 +144,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @param  p a visitor-specified parameter
     /// @return the result of the visit
     fn visit_string(&mut self, _s: &JavaString, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_string: PORTING_RULES: visitor interface method not overridden")
@@ -155,7 +155,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @param  p a visitor-specified parameter
     /// @return the result of the visit
     fn visit_type(&mut self, _t: &dyn TypeMirror, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_type: PORTING_RULES: visitor interface method not overridden")
@@ -166,7 +166,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @param  p a visitor-specified parameter
     /// @return the result of the visit
     fn visit_enum_constant(&mut self, _c: &dyn VariableElement, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_enum_constant: PORTING_RULES: visitor interface method not overridden")
@@ -177,7 +177,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @param  p a visitor-specified parameter
     /// @return the result of the visit
     fn visit_annotation(&mut self, _a: &dyn AnnotationMirror, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_annotation: PORTING_RULES: visitor interface method not overridden")
@@ -188,7 +188,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @param  p a visitor-specified parameter
     /// @return the result of the visit
     fn visit_array(&mut self, _vals: &[Rc<dyn AnnotationValue>], _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_array: PORTING_RULES: visitor interface method not overridden")
@@ -203,7 +203,7 @@ pub trait AnnotationValueVisitor<R, P> {
     /// @throws UnknownAnnotationValueException
     ///  a visitor implementation may optionally throw this exception
     fn visit_unknown(&mut self, _av: &dyn AnnotationValue, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_unknown: PORTING_RULES: visitor interface method not overridden")

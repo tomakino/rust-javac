@@ -1,6 +1,6 @@
 //! A tree node for a lambda expression.
 //!
-//! PORTING_RULES: Java interface -> Rust trait; the nested enum BodyKind lives
+//! Java interface -> Rust trait; the nested enum BodyKind lives
 //! in this file.
 
 use super::expression_tree::ExpressionTree;
@@ -37,7 +37,7 @@ pub trait LambdaExpressionTree: ExpressionTree {
 /// <li> statement lambdas, whose body is a block
 /// </ul>
 ///
-/// PORTING_RULES: Java nested enum LambdaExpressionTree.BodyKind ->
+/// Java nested enum LambdaExpressionTree.BodyKind ->
 /// lambda_expression_tree::BodyKind.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

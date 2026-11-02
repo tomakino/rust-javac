@@ -1,6 +1,6 @@
 //! Factory for creating {@code DocTree} nodes.
 //!
-//! PORTING_RULES (§12/§14):
+//! (§12/§14):
 //! * Java interface -> Rust trait; the implementation is provided by the P6
 //!   API layer (the DocTreeMaker behind com.sun.tools.javac.api.JavacTrees).
 //! * a single `DocTree`/`Name`/... parameter becomes `Rc<dyn ...>` so that an
@@ -418,7 +418,7 @@ pub trait DocTreeFactory {
     /// @param pos the position
     /// @return this object, to facilitate method chaining
     ///
-    /// PORTING_RULES: returns {@code ()} instead of {@code this} (see file header).
+    /// returns {@code ()} instead of {@code this} (see file header).
     fn at(&self, pos: i32);
 
     /// Gets the first sentence contained in a list of content.

@@ -24,7 +24,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: Java Context.Key<T> is a per-instance identity key; the Rust
+//! Java Context.Key<T> is a per-instance identity key; the Rust
 //! port keys the context tables by std::any::TypeId (one slot per Rust type,
 //! as decided for this port). Key<T> survives as a zero-sized type marker used
 //! in signatures/constants; two Key<T> instances of the same T designate the
@@ -32,7 +32,7 @@
 //! Factory<T> is FnOnce(&mut Context) -> Rc<T>; values are stored as Rc<T> so
 //! every get returns the same shared instance (Java reference semantics).
 //! Java checked-state/runtime assertions (AssertionError, IllegalStateException)
-//! map to panic! (PORTING_RULES section 6). Null stored values are impossible in
+//! map to panic! (). Null stored values are impossible in
 //! Rust; absence is modelled by Option, so Java's "null value" edge case is
 //! registered as a mapping difference.
 //!
@@ -48,7 +48,7 @@ use std::rc::Rc;
 /// The client creates an instance of this class for each key.
 ///
 /// Java: Context.Key<T> (identity equality is inherited from Object; here the
-/// key identity is the Rust type parameter, see the PORTING_RULES note).
+/// key identity is the Rust type parameter, see the note).
 pub struct Key<T> {
     _marker: PhantomData<fn() -> T>,
 }

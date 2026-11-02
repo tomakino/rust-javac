@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES — this file is ported in batches (S1 interface parts, S2 the
+//! — this file is ported in batches (S1 interface parts, S2 the
 //! --release platform set); getFileManager stays unimplemented until S3.
 //!
 //! ## Ported (S1 + S2)
@@ -96,7 +96,7 @@ const SYMBOL_FILE_LOCATION: [&str; 2] = ["lib", "ct.sym"];
 
 /// PlatformProvider for JDK N.
 ///
-/// PORTING_RULES: the JDK home is injected (the upstream reads the java.home system
+/// the JDK home is injected (the upstream reads the java.home system
 /// property, which does not exist without a JVM); see the file header.
 pub struct JDKPlatformProvider {
     /// Java: System.getProperty("java.home") — injected by the launcher (P6).
@@ -108,7 +108,7 @@ pub struct JDKPlatformProvider {
 impl JDKPlatformProvider {
     /// Creates the provider for the given JDK home (the upstream java.home property).
     ///
-    /// PORTING_RULES: upstream has only the implicit no-argument constructor; the JDK home
+    /// upstream has only the implicit no-argument constructor; the JDK home
     /// is injected because rust-javac runs without a JVM (registered deviation).
     pub fn new(java_home: FsPath) -> JDKPlatformProvider {
         JDKPlatformProvider {
@@ -129,7 +129,7 @@ impl JDKPlatformProvider {
     /// }
     /// </pre>
     ///
-    /// PORTING_RULES: java.nio.file.Path is the registered javac-fs adapter; the java.home
+    /// java.nio.file.Path is the registered javac-fs adapter; the java.home
     /// property is the injected argument.
     pub fn find_ct_sym(java_home: &FsPath) -> FsPath {
         let mut file = java_home.clone();
@@ -235,7 +235,7 @@ impl PlatformProvider for JDKPlatformProvider {
 
 /// Java: public static final Comparator<String> NUMERICAL_COMPARATOR = (s1, s2) -> { ... }.
 ///
-/// PORTING_RULES: java.util.Comparator<String> is not a ported type, so the comparator is a
+/// java.util.Comparator<String> is not a ported type, so the comparator is a
 /// free function returning Ordering (used with slice::sort_by).  Unparseable versions
 /// compare as Integer.MAX_VALUE and therefore sort last; equal numeric values fall back to
 /// String.compareTo.
@@ -260,7 +260,7 @@ pub fn numerical_comparator(s1: &JavaString, s2: &JavaString) -> Ordering {
 /// }
 /// </pre>
 ///
-/// PORTING_RULES: java.lang.Integer is not a ported surface; Rust's decimal parse accepts
+/// java.lang.Integer is not a ported surface; Rust's decimal parse accepts
 /// the same leading '+'/'-' as Integer.parseInt and rejects overflow (-> MAX_VALUE), but it
 /// does not accept the non-ASCII digits that Character.digit (used by parseInt) accepts.
 fn parse_int_or_max(s: &JavaString) -> i32 {
@@ -417,7 +417,7 @@ impl PlatformDescription for PlatformDescriptionImpl {
     /// }
     /// </pre>
     ///
-    /// PORTING_RULES: getFileManager opens ct.sym through javac-ctsym but keeps no
+    /// getFileManager opens ct.sym through javac-ctsym but keeps no
     /// FileSystem handle (the archive is read once and dropped), so the upstream loop
     /// over ctSym2FileSystem is the Ok(()) case here (REGISTERED adapter).
     fn close(&self) -> Result<(), Error> {
@@ -430,9 +430,9 @@ const CHARACTER_MAX_RADIX: u32 = 36;
 
 /// Java: java.lang.Integer.parseInt(String) — decimal only; malformed input throws
 /// NumberFormatException, which is an unchecked Java exception and becomes a panic
-/// (PORTING_RULES Porting rules).
+/// (Porting rules).
 ///
-/// PORTING_RULES: java.lang.Integer is not a ported surface; Rust's decimal parse accepts
+/// java.lang.Integer is not a ported surface; Rust's decimal parse accepts
 /// the same leading '+'/'-' and rejects whitespace like Integer.parseInt, but it does not
 /// accept the non-ASCII digits that Character.digit (used by parseInt) accepts.  Platform
 /// names are ASCII version strings produced by the JDK itself.

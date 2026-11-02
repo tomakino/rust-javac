@@ -2,7 +2,7 @@
 //! annotations, organizes the type annotation positions of a class tree and
 //! validates the type annotation applicability rules.
 //!
-//! PORTING_RULES:
+//!
 //! * Java class -> Rust struct; instance(Context) is the Java static factory.
 //! * the Java TypeAnnotationPositions/TypeAnnotationValidator inner TreeScanners
 //!   map to explicit visitor structs in this module (registered section 9).

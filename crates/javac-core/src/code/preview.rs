@@ -9,7 +9,7 @@
 //! diagnostics can be enabled using the {@link LintCategory#PREVIEW} lint category, and
 //! are suppressible by usual means.
 //!
-//! PORTING_RULES:
+//!
 //! * Java class -> Rust struct; instance(Context) is the Java static factory.
 //! * sourcesWithPreviewFeatures is a Java HashSet<JavaFileObject> relying on
 //!   JavaFileObject's identity equals/hashCode; Rust has no implicit identity hash,

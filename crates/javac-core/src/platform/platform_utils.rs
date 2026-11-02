@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! * Java static method -> free function; `String` -> `&JavaString`;
 //!   `String.indexOf(":")` uses `JavaString::index_of_char` (Porting rules UTF-16 code units)
 //!   and `String.substring` maps to `JavaString::substring`.
@@ -27,7 +27,7 @@ use std::rc::Rc;
 
 /// Java: {@code public static PlatformDescription lookupPlatformDescription(String platformString)}.
 ///
-/// PORTING_RULES: the provider set is an explicit parameter because the Java
+/// the provider set is an explicit parameter because the Java
 /// `ServiceLoader` discovery is not ported (see the file header); P6 passes the
 /// providers of the ported service registry.
 pub fn lookup_platform_description(

@@ -1,7 +1,7 @@
 //! A scanning visitor of program elements with default behavior appropriate for
 //! source versions RELEASE_9 through RELEASE_14.
 //!
-//! PORTING_RULES: Java `ElementScanner9 extends ElementScanner8` only overrides
+//! Java `ElementScanner9 extends ElementScanner8` only overrides
 //! `visitModule` (scans the enclosed elements).  The Rust trait is a subtrait
 //! re-declaring that method; calling it on a concrete type implementing both
 //! requires a fully qualified call (registered language-shape limitation).

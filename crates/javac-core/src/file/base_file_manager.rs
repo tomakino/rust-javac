@@ -15,7 +15,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES (S3a):
+//! (S3a):
 //! * Java abstract class (implements JavaFileManager) -> Rust struct holding the shared
 //!   state; the JavaFileManager methods are provided by JavacFileManager (S3c), which
 //!   delegates the two methods BaseFileManager implements (handleOption/isSupportedOption).
@@ -83,7 +83,7 @@ pub struct BaseFileManager {
 
     /// Java: protected Charset charset; (None = platform default, like a null charset).
     ///
-    /// PORTING_RULES: java.nio.charset is the registered javac-charset adapter.
+    /// java.nio.charset is the registered javac-charset adapter.
     charset: StdOption<Charset>,
 
     /// Java: protected Options options;
@@ -130,7 +130,7 @@ pub struct BaseFileManager {
 impl BaseFileManager {
     /// Java: protected BaseFileManager(Charset charset).
     ///
-    /// PORTING_RULES: the JDK home is injected (Java Locations reads the java.home system
+    /// the JDK home is injected (Java Locations reads the java.home system
     /// property); S3c constructs this through JavacFileManager.
     #[allow(dead_code)]
     pub(crate) fn new(charset: StdOption<Charset>, java_home: FsPath) -> BaseFileManager {
@@ -152,7 +152,7 @@ impl BaseFileManager {
 
     /// Java: protected Locations createLocations() { return new Locations(); }
     ///
-    /// PORTING_RULES: the JDK home is injected into Locations (see the file header).
+    /// the JDK home is injected into Locations (see the file header).
     #[allow(dead_code)]
     fn create_locations(java_home: FsPath) -> Locations {
         Locations::new(java_home)
@@ -280,7 +280,7 @@ impl BaseFileManager {
     /// Java: public boolean handleOption(String current, Iterator<String> remaining)
     /// (BaseFileManager.java:190-247).
     ///
-    /// PORTING_RULES: the upstream uncaught IllegalArgumentException
+    /// the upstream uncaught IllegalArgumentException
     /// (Option.InvalidValueException wrapped in IllegalArgumentException) is
     /// returned as Err(message); the JavaFileManager wrapper panics with it.
     ///
@@ -340,7 +340,7 @@ impl BaseFileManager {
 
     /// Java: public boolean handleOption(Option option, String value).
     ///
-    /// PORTING_RULES: the ENCODING branch is ported; every other option is forwarded to
+    /// the ENCODING branch is ported; every other option is forwarded to
     /// Locations.handleOption (S3b).  The MULTIRELEASE branch needs Option.MULTIRELEASE, which
     /// was restored (Option.MULTIRELEASE); the branch below sets multi_release_value.
     pub fn handle_option_value(&mut self, option: JavacOption, value: &str) -> bool {
@@ -361,7 +361,7 @@ impl BaseFileManager {
     /// Java: public boolean handleOptions(Map<Option, String> map)
     /// (BaseFileManager.java:275-291).
     ///
-    /// PORTING_RULES: the upstream catch (IllegalArgumentException) reports
+    /// the upstream catch (IllegalArgumentException) reports
     /// Errors.IllegalArgumentForOption; the ported Locations.handleOption
     /// reports through its own path instead of throwing (registered deviation,
     /// see the ported Locations), so the catch branch has no throwing source.
@@ -403,7 +403,7 @@ impl BaseFileManager {
 
     /// Java: Charset cs = (this.charset == null) ? Charset.forName(encodingName) : this.charset;
     ///
-    /// PORTING_RULES: the streaming CharsetDecoder of upstream getDecoder has no Rust
+    /// the streaming CharsetDecoder of upstream getDecoder has no Rust
     /// counterpart in the javac-charset adapter (whole-input decode/encode); only decode()
     /// below is expressed; the streaming decoder is REGISTERED as unavailable and
     /// PathFileObject.openReader is a separate registered unit.
@@ -428,7 +428,7 @@ impl BaseFileManager {
     /// Java: public CharBuffer decode(ByteBuffer inbuf, boolean
     /// ignoreEncodingErrors) (BaseFileManager.java:417-470).
     ///
-    /// PORTING_RULES: ByteBuffer -> &[u8] wrapped into the ported ByteBuffer
+    /// ByteBuffer -> &[u8] wrapped into the ported ByteBuffer
     /// view; CharBuffer -> JavaString; the decoder is the incremental
     /// javac-charset CharsetDecoder (the java.nio.charset state machine).
     pub fn decode(&self, inbuf: &[u8], ignore_encoding_errors: bool) -> JavaString {
@@ -531,7 +531,7 @@ impl BaseFileManager {
 
     /// Java: public ByteBuffer makeByteBuffer(InputStream in) throws IOException.
     ///
-    /// PORTING_RULES: InputStream -> &mut dyn Read (reads to EOF instead of using
+    /// InputStream -> &mut dyn Read (reads to EOF instead of using
     /// available()); ByteBuffer -> Vec<u8> (same observable bytes).
     pub fn make_byte_buffer(&self, input: &mut dyn Read) -> Result<Vec<u8>, Error> {
         let mut result = self.byte_buffer_cache.borrow_mut().get(1024);
@@ -606,7 +606,7 @@ impl BaseFileManager {
 
     /// Java: protected static <T> Collection<T> nullCheck(Collection<T> it).
     ///
-    /// PORTING_RULES: Rust collections cannot contain a null element, so the element check is
+    /// Rust collections cannot contain a null element, so the element check is
     /// guaranteed by the type system; the method keeps the upstream shape (registered).
     pub fn null_check_collection<T>(items: Vec<T>) -> Vec<T> {
         items

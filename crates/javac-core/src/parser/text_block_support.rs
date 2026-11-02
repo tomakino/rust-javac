@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: java.util.Set<WhitespaceChecks> -> std HashSet;
+//! java.util.Set<WhitespaceChecks> -> std HashSet;
 //! String.split("\\R") is expressed with the ported String.lines helper (the
 //! text block content has normalized line terminators); String.isBlank /
 //! stripLeading are the ported java_string_methods.

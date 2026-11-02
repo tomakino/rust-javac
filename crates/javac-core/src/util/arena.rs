@@ -4,7 +4,7 @@
 //! and are released with CompilerContext when compilation ends. This module only provides the container, not compiler entities;
 //! CompilerContext (later task) holds the Symbol/Type/Tree/Scope arenas per ADR 0001.
 //!
-//! PORTING_RULES: non-1:1 adapter file (Java mutable object graph -> arena + ID), see ADR 0001.
+//! non-1:1 adapter file (Java mutable object graph -> arena + ID), see ADR 0001.
 
 /// A grow-only arena: push returns the new element index; callers build the matching ID from it.
 ///

@@ -2,7 +2,7 @@
 //! helpers it uses, `MutableBigInteger`, `SignedMutableBigInteger` and
 //! `BitSieve`.
 //!
-//! PORTING_RULES (standard-library adapter):
+//! (standard-library adapter):
 //! * Java `int[] mag` (little-endian) becomes `Vec<i32>`; `byte[]` becomes
 //!   `Vec<u8>`; `long` stays `i64` and the two's-complement wraparound is
 //!   explicit.

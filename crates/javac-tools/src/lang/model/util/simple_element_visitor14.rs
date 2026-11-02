@@ -1,7 +1,7 @@
 //! A simple visitor of program elements with default behavior appropriate for
 //! the RELEASE_14 source version.
 //!
-//! PORTING_RULES: Java `SimpleElementVisitor14 extends SimpleElementVisitor9`
+//! Java `SimpleElementVisitor14 extends SimpleElementVisitor9`
 //! only overrides `visitRecordComponent` (calling defaultAction).  The Rust
 //! trait is a subtrait of `SimpleElementVisitor9` that re-declares that method;
 //! calling it on a concrete type that implements both requires a fully

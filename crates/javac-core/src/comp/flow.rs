@@ -1,5 +1,5 @@
 //
-// PORTING_RULES:
+// Rust:
 // - ADR 0001: the ported Flow takes the services explicitly (Flow.instance/
 // Flow(Context) are registered with the Context registration); the
 // visitor subclass hierarchy maps to the FlowVisitor trait (the default

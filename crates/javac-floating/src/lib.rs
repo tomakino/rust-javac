@@ -3,7 +3,7 @@
 //! parsing and `Float.toString`/`Double.toString` formatting) and its helper
 //! `jdk.internal.math.FDBigInteger`.
 //!
-//! PORTING_RULES §9.17 (standard-library adapter):
+//! §9.17 (standard-library adapter):
 //! * These classes are JDK standard library sources, not javac sources; the port
 //!   keeps the upstream algorithms, control flow, comments and constants 1:1 and
 //!   only adapts Java language constructs to Rust (see docs/DEPENDENCIES.md).
@@ -19,7 +19,7 @@
 //! The crate is dependency-free apart from the in-workspace `javac-unicode`
 //! crate (the JDK class library itself is never pulled in).
 //!
-//! PORTING_RULES §9.17/§17: the upstream control flow/structure is kept 1:1, so
+//! §9.17/§17: the upstream control flow/structure is kept 1:1, so
 //! clippy style lints that would require restructuring the ported code are
 //! allowed crate-wide (they are not behavioral changes):
 #![allow(

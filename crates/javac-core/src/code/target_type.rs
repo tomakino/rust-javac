@@ -6,7 +6,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: the Java enum constructor validates the target type value as an
+//! the Java enum constructor validates the target type value as an
 //! unsigned byte; all enum constants below are compile-time constants with valid
 //! values, so the check is documented here instead of being executed at runtime.
 //! The precomputed targets array of the Java static initializer is expressed as a

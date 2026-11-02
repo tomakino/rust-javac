@@ -1,6 +1,6 @@
 //! Represents a construct that can be annotated.
 //!
-//! PORTING_RULES — signature mapping:
+//! — signature mapping:
 //! * `List<? extends AnnotationMirror>` -> `Vec<Rc<dyn AnnotationMirror>>`
 //!   (an annotation mirror is a shared Java object reference).
 //! * `java.lang.Class<A>` -> the opaque `crate::jdk::Class<A>` placeholder;

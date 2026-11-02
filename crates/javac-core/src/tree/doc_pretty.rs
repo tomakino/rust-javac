@@ -14,7 +14,7 @@
 
 //! Prints out a doc-comment tree.
 //!
-//! PORTING_RULES: adapter notes (same policy as Pretty in this package):
+//! adapter notes (same policy as Pretty in this package):
 //! - Java Writer/IOException/UncheckedIOException become infallible: the output
 //!   is an in-memory JavaString buffer (registered section 9);
 //! - the upstream JCTree-style visitor dispatch (DocTreeVisitor) is reproduced

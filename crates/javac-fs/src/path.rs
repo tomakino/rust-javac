@@ -6,7 +6,7 @@
 //
 //! Path: a java.nio.file.Path equivalent.
 //!
-//! PORTING_RULES:
+//!
 //! * The path is parsed textually into (prefix, rooted, elements) like
 //!   sun.nio.fs.WindowsPathPathParser, so Path.toString() keeps "." / ".."
 //!   elements, collapses duplicate separators and drops the trailing
@@ -277,7 +277,7 @@ impl Path {
 
     /// Java: Path.relativize(Path).
     ///
-    /// PORTING_RULES: as in sun.nio.fs.WindowsPath.relativize, paths that
+    /// as in sun.nio.fs.WindowsPath.relativize, paths that
     /// contain "." / ".." elements are normalized before the element
     /// comparison, and equal paths produce the empty path.
     pub fn relativize(&self, other: &Path) -> Result<Path, Error> {

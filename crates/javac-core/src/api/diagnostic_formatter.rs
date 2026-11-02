@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: java.util.Locale -> util::javac_messages::Locale (None models
+//! java.util.Locale -> util::javac_messages::Locale (None models
 //! the Java null locale in the format() entry point, like JavacMessages
 //! getLocalizedString(Locale, ...)); the generic bound D extends Diagnostic<?>
 //! is carried by the implementations (JCDiagnostic) instead of the trait so

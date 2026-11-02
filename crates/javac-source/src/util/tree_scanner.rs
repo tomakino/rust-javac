@@ -1,6 +1,6 @@
 //! A TreeVisitor that visits all the child tree nodes.
 //!
-//! PORTING_RULES (§14):
+//! (§14):
 //! * Java class TreeScanner<R,P> implements TreeVisitor<R,P> -> Rust trait
 //!   `TreeScanner<R, P>: TreeVisitor<Option<R>, P>`: Java's nullable R results
 //!   (the default visit methods and scan() return null) are represented by

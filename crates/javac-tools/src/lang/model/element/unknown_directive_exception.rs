@@ -1,6 +1,6 @@
 //! Indicates that an unknown kind of module directive was encountered.
 //!
-//! PORTING_RULES: Java class inheritance -> embedded `UnknownEntityException`;
+//! Java class inheritance -> embedded `UnknownEntityException`;
 //! the `Object p` argument/`getArgument` are not ported (no Rust Object); the
 //! message is `"Unknown directive: " + d`, using the `Display` (toString)
 //! contract of `Directive`.
@@ -62,7 +62,7 @@ impl std::fmt::Display for UnknownDirectiveException {
 }
 
 impl fmt::Debug for UnknownDirectiveException {
-    // PORTING_RULES: Rust Debug is the nearest analogue of the Java
+    // Rust: Rust Debug is the nearest analogue of the Java
     // Throwable.toString() used for debugging; the payload holds trait objects
     // that have no Debug bound, so the message is printed instead.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

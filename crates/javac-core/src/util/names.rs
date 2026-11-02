@@ -6,7 +6,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: the standard-name fields live in NamesStd so that the name
+//! the standard-name fields live in NamesStd so that the name
 //! table can hold a Weak<NamesStd> (Java: Name.Table.names creates a cycle
 //! reclaimed by the GC). Names derefs to NamesStd, so Java call sites like
 //! names.init keep working. Field names are kept exactly as in Java (including
@@ -205,7 +205,7 @@ pub struct Names {
 impl Names {
     /// Java: public Names(Context context) { Options options = Options.instance(context); table = createTable(options); ... }
     ///
-    /// PORTING_RULES: the Context/Options dependency is passed as a plain flag so
+    /// the Context/Options dependency is passed as a plain flag so
     /// that P0 does not depend on the option layer; the caller passes
     /// options.isSet("useUnsharedTable").
     pub fn new(use_unshared_table: bool) -> Names {

@@ -7,7 +7,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b></p>
 //!
-//! PORTING_RULES:
+//!
 //! * the Java char[] buffer becomes Rc<[u16]> (shared with the
 //!   JavadocTokenizer position-tracking readers; no borrow lifetime);
 //! * the ScannerFactory constructor parameter is narrowed to the log it is used
@@ -479,7 +479,7 @@ impl UnicodeReader {
 
     /// Java: PositionTrackingReader.column().
     ///
-    /// PORTING_RULES: the method is kept 1:1 but is only exercised by the
+    /// the method is kept 1:1 but is only exercised by the
     /// UnicodeReader tests until the Javadoc position-tracking wiring uses it.
     #[cfg(test)]
     pub(crate) fn column(&self) -> i32 {

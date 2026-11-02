@@ -1,5 +1,5 @@
 //
-// PORTING_RULES adapters (registered):
+// Adapters (registered):
 // - DiagnosticPosition object identity -> Rc<dyn DiagnosticPosition> compared
 // with Rc::ptr_eq (the Java HashMap uses the default identity hashCode/equals);
 // - the Java anonymous IMMEDIATE_POSITION DiagnosticPosition -> CurrentPos::Immediate

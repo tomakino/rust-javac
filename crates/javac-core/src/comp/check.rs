@@ -1117,7 +1117,7 @@ impl Check {
 
     /// Java: boolean checkUnique(DiagnosticPosition pos, Symbol sym, Scope s)
     ///
-    /// PORTING_RULES adapter: the MTH branches need Types.hasSameArgs /
+    /// Adapter: the MTH branches need Types.hasSameArgs /
     /// containsType, which are not ported yet; those branches are explicitly
     /// unimplemented (registered, no substitute). The TYP/VAR paths (used by
     /// Enter.visitTypeParameter) are complete.
@@ -1359,7 +1359,7 @@ impl Check {
     /// Java: Type typeTagError(DiagnosticPosition pos, JCDiagnostic required,
     /// Object found) (Check.java:1007-1016)
     ///
-    /// PORTING_RULES Porting rules adapter: the Java Object found (a Type or a
+    /// Porting rules adapter: the Java Object found (a Type or a
     /// JCDiagnostic fragment) maps to the FoundArg enum.
     fn type_tag_error(
         &self,
@@ -1778,7 +1778,7 @@ impl CheckContext for BasicCheckContext {
 /// Java: the Object found parameter of Check.typeTagError (a Type or a
 /// JCDiagnostic fragment, Check.java:1007).
 ///
-/// PORTING_RULES Porting rules adapter: Rust needs the union represented explicitly.
+/// Porting rules adapter: Rust needs the union represented explicitly.
 pub enum FoundArg {
     /// Java: Object found instanceof Type
     Type(TypeId),
@@ -2902,7 +2902,7 @@ impl Check {
     /// Java: public Warner castWarner(DiagnosticPosition pos, Type found,
     /// Type expected) (Check.java:3970-3972).
     ///
-    /// PORTING_RULES Porting rules adapter: the upstream ConversionWarner subclass overrides
+    /// Porting rules adapter: the upstream ConversionWarner subclass overrides
     /// warn() to emit the detected unchecked warning immediately; Rust has no
     /// subclassing, so checkCastable records the lint on the plain Warner and
     /// reports it after isCastable returns (same single warning).

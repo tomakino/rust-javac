@@ -16,7 +16,7 @@
 //!
 //! <p><b>This is NOT part of any supported API.</b>
 //!
-//! PORTING_RULES: the abstract Attribute class is represented by
+//! the abstract Attribute class is represented by
 //! Attribute { ty: Option<TypeId>, kind: AttributeKind } (one variant per
 //! subclass); nested Attribute references use AttributeId (Attribute is an
 //! arena value with identity semantics, ADR 0001); the Java Object constant
@@ -32,7 +32,7 @@ use crate::compiler_context::CompilerContext;
 use crate::ids::{AttributeId, SymbolId, TypeId};
 use crate::util::constants::ConstantValue;
 
-/// PORTING_RULES adapter: the previous ConstValue enum is unified into
+/// Adapter: the previous ConstValue enum is unified into
 /// util::constants::ConstantValue (the same Java Object value domain;
 /// registered in section 9).
 pub type ConstValue = ConstantValue;
@@ -377,7 +377,7 @@ fn symbol_display(ctx: &CompilerContext, symbol: SymbolId) -> String {
 
 /// The node-specific fields of the Attribute subclasses.
 ///
-/// PORTING_RULES: one variant per upstream concrete class (TypeCompound is a
+/// one variant per upstream concrete class (TypeCompound is a
 /// distinct upstream class, hence a distinct variant).
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
@@ -670,7 +670,7 @@ mod tests {
 }
 
 /// Java: the Object returned by Attribute.getValue() (the AnnotationValue
-/// domain). PORTING_RULES Porting rules adapter: the union of the upstream return types
+/// domain). Porting rules adapter: the union of the upstream return types
 /// (Type / List<Attribute> / VarSymbol / String / this) is represented as an
 /// enum so callers can dispatch without any/object downcasts.
 #[derive(Clone, Debug)]

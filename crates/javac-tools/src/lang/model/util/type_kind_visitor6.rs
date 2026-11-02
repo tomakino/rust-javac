@@ -1,7 +1,7 @@
 //! A visitor of types based on their kind with default behavior appropriate for
 //! the RELEASE_6 source version.
 //!
-//! PORTING_RULES: Java concrete class -> Rust trait with the upstream default
+//! Java concrete class -> Rust trait with the upstream default
 //! behavior; the switch default arms that throw AssertionError unconditionally
 //! become panics with the upstream message.  Methods shared with
 //! SimpleTypeVisitor6 are re-declared by this subtrait with the

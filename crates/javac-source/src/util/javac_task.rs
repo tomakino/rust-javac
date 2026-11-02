@@ -1,6 +1,6 @@
 //! Provides access to functionality specific to the JDK Java Compiler, javac.
 //!
-//! PORTING_RULES (§14): the Java abstract class becomes a Rust trait whose
+//! (§14): the Java abstract class becomes a Rust trait whose
 //! implementation is provided by the P6 API layer (javac-core).  Notes:
 //! * the static `instance(ProcessingEnvironment)` factory depends on
 //!   javax.annotation.processing (not ported) and on the internal

@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! * the dependency fields are injected like ScannerFactory: Names/Source/
 //!   ScannerFactory are parameters and Preview is an optional explicit
 //!   injection (Preview.instance is ported; ADR 0001
@@ -47,7 +47,7 @@ pub struct ParserFactory {
 impl ParserFactory {
     /// Java: protected ParserFactory(Context context).
     ///
-    /// PORTING_RULES: Names/Source/ScannerFactory/Preview are injected (see the
+    /// Names/Source/ScannerFactory/Preview are injected (see the
     /// file header); the Context supplies Log/Options.
     pub fn new(
         context: &mut Context,

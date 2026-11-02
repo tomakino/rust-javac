@@ -1,7 +1,7 @@
 //! Type annotation positions and type paths, as read from classfiles and as
 //! used by the Annotate/Code layers.
 //!
-//! PORTING_RULES: JCLambda -> Option<TreeId> (tree arena, ADR 0001);
+//! JCLambda -> Option<TreeId> (tree arena, ADR 0001);
 //! java.util.List<Integer> for the type path binary form -> List<i32>;
 //! Assert.* checks -> assert!/panic (same invariant violations).
 

@@ -1,11 +1,11 @@
 //! A path of tree nodes, typically used to represent the sequence of ancestor
 //! nodes of a tree node up to the top-level DocCommentTree node.
 //!
-//! PORTING_RULES (§14.4/§14.6): Java concrete class -> Rust struct with Rc
+//! (§14.4/§14.6): Java concrete class -> Rust struct with Rc
 //! identity; `implements Iterable<DocTree>` -> iterator() returning
 //! Vec<Rc<dyn DocTree>> (leaf-to-root); the Java `Result extends Error` unwinding
 //! in the static getPath search is ported in the DocTreePathScanner batch (the
-//! two getPath methods are Implemented by the DocTreePathScanner batch (see PORTING_RULES §14.5).
+//! two getPath methods are Implemented by the DocTreePathScanner batch (see §14.5).
 //! TreePathScanner batch).
 
 use super::tree_path::TreePath;
@@ -33,7 +33,7 @@ impl DocTreePath {
     /// @param target a node within the doc comment
     /// @return a path identifying the target within the tree
     ///
-    /// PORTING_RULES: Implemented by the DocTreePathScanner batch (see PORTING_RULES §14.5).
+    /// Implemented by the DocTreePathScanner batch (see §14.5).
     /// DocTreePathScanner (next batch); filled in together with its port.
     pub fn get_path(
         tree_path: Rc<TreePath>,
@@ -49,7 +49,7 @@ impl DocTreePath {
     /// @param target a node to be located within the given node
     /// @return a path identifying the target node
     ///
-    /// PORTING_RULES: Implemented by the DocTreePathScanner batch (see PORTING_RULES §14.5).
+    /// Implemented by the DocTreePathScanner batch (see §14.5).
     pub fn get_path_in_path(
         path: Rc<DocTreePath>,
         target: Rc<dyn DocTree>,
@@ -123,7 +123,7 @@ impl DocTreePath {
 
 /// Java: the PathFinder class inside DocTreePath.getPath(DocTreePath, DocTree).
 ///
-/// PORTING_RULES: the Java implementation throws a private Error to unwind the
+/// the Java implementation throws a private Error to unwind the
 /// scan when the target is found; Rust records the result and short-circuits
 /// every subsequent scan (same observable result, no unwinding) — the same
 /// approach as TreePath's PathFinder.

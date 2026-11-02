@@ -19,7 +19,7 @@ use javac_strings::JavaString;
 /// @author Jonathan Gibbons
 /// @since 1.6
 ///
-/// PORTING_RULES — signature mapping:
+/// — signature mapping:
 /// * Locale -> Option of &javac_strings::JavaString (locale tag; null = no
 ///   locale).
 /// * Java String code/message -> Option of JavaString / JavaString.
@@ -116,7 +116,7 @@ pub const NOPOS: i64 = -1;
 /// of the diagnostic: for example, a tool might provide an
 /// option to report all warnings as errors.
 ///
-/// PORTING_RULES: Java enum Diagnostic.Kind -> Rust enum Kind in this module
+/// Java enum Diagnostic.Kind -> Rust enum Kind in this module
 /// (the Java name is nested in the interface).  Constant names and declaration
 /// order are preserved.
 #[allow(non_camel_case_types)]

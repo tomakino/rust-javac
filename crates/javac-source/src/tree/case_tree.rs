@@ -1,6 +1,6 @@
 //! A tree node for a case in a switch statement or expression.
 //!
-//! PORTING_RULES: Java interface -> Rust trait; the two Java `default` methods
+//! Java interface -> Rust trait; the two Java `default` methods
 //! are expressible as Rust default methods (`getBody` returns null -> None,
 //! `getCaseKind` returns STATEMENT).  The nested enum CaseKind lives in this
 //! file (Rust cannot nest types in traits).
@@ -82,7 +82,7 @@ pub trait CaseTree: Tree {
 ///
 /// @since 12
 ///
-/// PORTING_RULES: Java nested enum CaseTree.CaseKind -> case_tree::CaseKind.
+/// Java nested enum CaseTree.CaseKind -> case_tree::CaseKind.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CaseKind {

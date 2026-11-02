@@ -4,7 +4,7 @@
 // the AnnotationTypeCompleter interface and the AnnotationTypeMetadata class
 // (Annotate.java:1310-1460). The Annotate class body itself follows in 3.5b.
 //
-// PORTING_RULES:
+// Rust:
 // - the Java AnnotationTypeMetadata holds a ClassSymbol and a completer; the
 // port stores the SymbolId and Rc<RefCell<dyn AnnotationTypeCompleter>>
 // (arena identity + ADR 0001 explicit context).
@@ -343,7 +343,7 @@ impl AnnotationTypeMetadata {
 // ---------------------------------------------------------------------------
 // Java: public class Annotate (Annotate.java:78-1426) —.
 //
-// PORTING_RULES (ADR 0001): the upstream Context-injected services are held in
+// (ADR 0001): the upstream Context-injected services are held in
 // an Rc<AnnotateServices> so the queued closures (the Java Runnable queues) can
 // capture the service set without borrowing the Annotate object; the queue
 // state itself is Rc<RefCell<AnnotateQueues>> because the Java Queues object is
@@ -551,7 +551,7 @@ impl Annotate {
 
     /// Java: public static Annotate instance(Context context) (Annotate.java:100-120).
     ///
-    /// PORTING_RULES: the ported Annotate is created by the service wiring with
+    /// the ported Annotate is created by the service wiring with
     /// its explicit dependencies; the Context registration makes the instance
     /// reachable like the Java Context singleton (registered adapter: the
     /// instance must be registered by the compiler entry point).
@@ -744,7 +744,7 @@ impl Annotate {
 
 // Annotate : scheduling/entry of annotations.
 //
-// PORTING_RULES: the queued closures capture the Rc<AnnotateServices> and the
+// Rust: the queued closures capture the Rc<AnnotateServices> and the
 // tree/symbol ids; the CompilerContext is passed to flush and forwarded to each
 // closure (ADR 0001). The Java methods that used the implicit Context keep the
 // explicit ctx parameter.

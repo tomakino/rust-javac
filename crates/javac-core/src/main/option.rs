@@ -20,7 +20,7 @@
 //! risk.  This code and its internal interfaces are subject to change
 //! or deletion without notice.</b></p>
 //!
-//! PORTING_RULES:
+//!
 //! * Java enum -> Rust enum; every constant's constructor data (names, argsNameKey,
 //!   descrKey, OptionKind, OptionGroup, ArgKind, ChoiceKind, choices) becomes
 //!   match-based accessors (the code/TypeTag pattern).  The primary name is
@@ -549,7 +549,7 @@ impl Option {
 
     /// Java: public static Option lookup(String arg, Set<Option> options).
     ///
-    /// PORTING_RULES: Java overload renamed (Porting rules); EnumSet order = declaration order.
+    /// Java overload renamed (Porting rules); EnumSet order = declaration order.
     pub fn lookup_in(arg: &str, options: &[Option]) -> StdOption<Option> {
         options.iter().copied().find(|option| option.matches(arg))
     }
@@ -617,7 +617,7 @@ fn split_commas_plus(arg: &str) -> Vec<&str> {
 
 /// Java: private static Set<String> getXLintChoices().
 ///
-/// PORTING_RULES: LinkedHashSet order: "all", then each LintCategory option and
+/// LinkedHashSet order: "all", then each LintCategory option and
 /// its negated form in enum declaration order, then "none".
 fn get_xlint_choices() -> Vec<String> {
     let mut choices = Vec::new();
@@ -713,7 +713,7 @@ impl fmt::Display for OptionKind {
 ///
 /// Java: enum OptionGroup (package-private)
 ///
-/// PORTING_RULES: Java constant names kept (BASIC/FILEMANAGER/INFO/OPERAND); no
+/// Java constant names kept (BASIC/FILEMANAGER/INFO/OPERAND); no
 /// camel-case renaming (Porting rules), so the acronym lint is allowed here.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -728,7 +728,7 @@ pub(crate) enum OptionGroup {
     INFO,
     /// A command-line "option" representing a file or class name.
     ///
-    /// PORTING_RULES: kept 1:1 from upstream; no kept Option constant uses this
+    /// kept 1:1 from upstream; no kept Option constant uses this
     /// group yet (upstream does not either), the Arguments/CommandLine will.
     #[allow(dead_code)]
     OPERAND,
@@ -738,7 +738,7 @@ pub(crate) enum OptionGroup {
 ///
 /// Java: enum ChoiceKind (package-private)
 ///
-/// PORTING_RULES: Java constant names kept (ONEOF/ANYOF); no camel-case renaming
+/// Java constant names kept (ONEOF/ANYOF); no camel-case renaming
 /// (Porting rules), so the acronym lint is allowed here.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

@@ -1,6 +1,6 @@
 //! Indicates that an unknown kind of element was encountered.
 //!
-//! PORTING_RULES:
+//!
 //! * Java class inheritance -> embedded `UnknownEntityException`.
 //! * the Java `Object p` "additional argument" is stored upstream only for
 //!   `getArgument()`; `Object` has no Rust counterpart in this API, so the
@@ -69,7 +69,7 @@ impl std::fmt::Display for UnknownElementException {
 }
 
 impl fmt::Debug for UnknownElementException {
-    // PORTING_RULES: Rust Debug is the nearest analogue of the Java
+    // Rust: Rust Debug is the nearest analogue of the Java
     // Throwable.toString() used for debugging; the payload holds trait objects
     // that have no Debug bound, so the message is printed instead.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

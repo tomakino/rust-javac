@@ -1,7 +1,7 @@
 //! A simple visitor of types with default behavior appropriate for the
 //! RELEASE_14 source version.
 //!
-//! PORTING_RULES: Java `SimpleTypeVisitor14 extends SimpleTypeVisitor9` adds
+//! Java `SimpleTypeVisitor14 extends SimpleTypeVisitor9` adds
 //! only constructors; the Rust trait is an empty subtrait that keeps the
 //! inherited default behavior.
 

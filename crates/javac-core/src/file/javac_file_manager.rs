@@ -33,7 +33,7 @@
 //!
 //! <p><b>This is NOT part of any supported API.</b>
 //!
-//! PORTING_RULES (S3c):
+//! (S3c):
 //! * Java JavacFileManager extends BaseFileManager implements StandardJavaFileManager; the Rust
 //!   value composes BaseFileManager (base: RefCell<...>) and implements the JavaFileManager and
 //!   StandardJavaFileManager traits (javac-tools).  The mutable shared object of javac is exposed
@@ -714,7 +714,7 @@ impl JavacFileManager {
     }
     /// Java: public JavacFileManager(Context, boolean, Charset) + setContext.
     ///
-    /// PORTING_RULES: the services and java.home are injected (see the file header).
+    /// the services and java.home are injected (see the file header).
     pub fn new(
         charset: StdOption<Charset>,
         java_home: FsPath,

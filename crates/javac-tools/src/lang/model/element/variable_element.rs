@@ -1,7 +1,7 @@
 //! Represents a field, enum constant, method or constructor parameter, local
 //! variable, resource variable, or exception parameter.
 //!
-//! PORTING_RULES:
+//!
 //! * `Object getConstantValue()` returns null when the variable is not a
 //!   compile-time constant, so the Rust method returns
 //!   `Option<ConstantValue>`.  The upstream documentation says the value is "of
@@ -16,7 +16,7 @@ use javac_strings::JavaString;
 
 /// The value of a compile-time constant variable.
 ///
-/// PORTING_RULES: representation of the Java `Object` returned by
+/// representation of the Java `Object` returned by
 /// `VariableElement.getConstantValue`; the upstream documentation restricts it
 /// to a primitive wrapper or a String.
 #[derive(Debug, Clone, PartialEq)]

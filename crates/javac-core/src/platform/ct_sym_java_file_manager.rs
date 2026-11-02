@@ -2,7 +2,7 @@
 //! (JDKPlatformProvider.java:154-359): the Java anonymous JavacFileManager
 //! subclass and its private SigJavaFileObject.
 //!
-//! PORTING_RULES:
+//!
 //! * the Java anonymous subclass -> CtSymJavaFileManager, which forwards to the
 //!   inner JavacFileManager and overrides the ct.sym-backed input paths
 //!   (hasLocation/getJavaFileForInput/list/inferBinaryName);

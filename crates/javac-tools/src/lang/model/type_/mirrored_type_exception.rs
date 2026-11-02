@@ -1,7 +1,7 @@
 //! Thrown when an application attempts to access the Class object
 //! corresponding to a TypeMirror.
 //!
-//! PORTING_RULES: Java `extends MirroredTypesException` -> embedded base-class
+//! Java `extends MirroredTypesException` -> embedded base-class
 //! instance (`super_`); the inherited `types` list contains exactly the single
 //! type, exactly as upstream.  Serialization (`readObject`) is not ported.
 
@@ -63,7 +63,7 @@ impl fmt::Display for MirroredTypeException {
 }
 
 impl fmt::Debug for MirroredTypeException {
-    // PORTING_RULES: Rust Debug is the nearest analogue of the Java
+    // Rust: Rust Debug is the nearest analogue of the Java
     // Throwable.toString() used for debugging; the payload holds trait objects
     // that have no Debug bound, so the message is printed instead.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

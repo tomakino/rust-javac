@@ -8,7 +8,7 @@
 //! Mapping of the Java exceptions that participate in the `javax.tools`
 //! contract.
 //!
-//! PORTING_RULES: the `javax.tools` methods declare `java.io.IOException`
+//! the `javax.tools` methods declare `java.io.IOException`
 //! and two further classes of failures are part of the observable contract:
 //! `UnsupportedOperationException` (the documented result of several default
 //! implementations) and programming-error exceptions

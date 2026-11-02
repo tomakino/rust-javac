@@ -15,7 +15,7 @@
 // MessageFormat behaviour, e.g. {5} with two arguments stays "{5}")
 // - IllegalArgument-equivalent patterns (unclosed brace, non-numeric index,
 // negative index, index overflow, incomplete sub-format) panic, matching
-// Java's IllegalArgumentException (PORTING_RULES section 6).
+// Java's IllegalArgumentException ().
 //
 // REGISTERED: number/date/time/choice sub-formats are not implemented
 // ({n,number}, {n,choice,...}) - a scan of all javac message resources found

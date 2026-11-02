@@ -5,13 +5,13 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: the Java Object constant value/parameter maps to the closed
+//! the Java Object constant value/parameter maps to the closed
 //! ConstantValue enum (the Java primitive wrapper types and String; the Java
 //! null value is not representable inside the enum and is documented at the
-//! call sites, registered in PORTING_RULES section 9); Type stays the ported
+//! call sites, registered in ); Type stays the ported
 //! code::type_::Type.
 //!
-//! PORTING_RULES Porting rules.17: formatFloat/formatDouble use the JDK
+//! Porting rules.17: formatFloat/formatDouble use the JDK
 //! java.lang.FloatingDecimal semantics (Float.toString/Double.toString), ported
 //! 1:1 from jdk/internal/math/FloatingDecimal.java @ 982d53c in the
 //! javac-floating adapter crate (registered in docs/DEPENDENCIES.md).

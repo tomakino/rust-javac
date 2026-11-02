@@ -14,7 +14,7 @@
 //!   javax/lang/model/X.java          -> src/lang/model/x.rs
 //!   javax/lang/model/element/X.java  -> src/lang/model/element/x.rs
 //!
-//! PORTING_RULES — language-shape mapping used by this crate
+//! — language-shape mapping used by this crate
 //! ---------------------------------------------------------
 //!
 //! * Java interface -> Rust trait; Java default method -> trait default method.

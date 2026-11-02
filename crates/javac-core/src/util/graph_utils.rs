@@ -12,23 +12,23 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: the interface/abstract-class hierarchy of GraphUtils (DependencyKind, Node,
+//! the interface/abstract-class hierarchy of GraphUtils (DependencyKind, Node,
 //! NodeVisitor, AbstractNode, TarjanNode) maps to traits, as recorded in PLAN.md section 5.
 //! Java's mutable TarjanNode fields (int index = -1, int lowlink, boolean active) are read and
 //! written by Tarjan through shared node references; they are modelled with Cell in TarjanState
 //! so that the algorithm stays a literal translation while nodes are shared.
-//! PORTING_RULES: AbstractNode.accept's shared implementation is the free function
+//! AbstractNode.accept's shared implementation is the free function
 //! accept_abstract_node because Rust does not allow a default trait method to turn &Self into &N
 //! (the Java cast (N)this). Ported node classes delegate their Node::accept implementation to it
 //! exactly like they inherit AbstractNode.accept in Java.
-//! PORTING_RULES: the Collection/Iterable parameters of NodeVisitor.visit and
+//! the Collection/Iterable parameters of NodeVisitor.visit and
 //! TarjanNode.getDependenciesByKind map to slices/Vec; the defensive new ArrayList(nodes) copy in
 //! visit is not reproduced because javac nodes cannot be mutated while visited under Rust's
 //! borrow rules.
-//! PORTING_RULES: Java compares dependencies with List.contains, i.e. Object.equals. Tarjan
+//! Java compares dependencies with List.contains, i.e. Object.equals. Tarjan
 //! therefore requires N: PartialEq, and tarjan's n != v reference comparison is expressed with
 //! std::ptr::eq.
-//! PORTING_RULES: TRIMMED and registered in docs/STATUS.md and docs/SUPPORT_MATRIX.md:
+//! TRIMMED and registered in docs/STATUS.md and docs/SUPPORT_MATRIX.md:
 //! DottableNode, DotVisitor and toDot are not ported. Their output depends on Object.hashCode()
 //! (identity hash) and java.util.Properties.toString() (Hashtable iteration order), which cannot
 //! be reproduced byte-for-byte; they only feed debugging -X output. Re-evaluate if that
@@ -63,14 +63,14 @@ pub trait NodeVisitor<D, N: Node<D, N>, A> {
     ///     for (N n : new ArrayList<>(nodes)) { n.accept(this, arg); }
     /// }
     ///
-    /// PORTING_RULES: Collection<? extends N> maps to an iterator of node references, because
+    /// Collection<? extends N> maps to an iterator of node references, because
     /// javac nodes are shared objects held elsewhere (arena entries in the port).
     fn visit<'a>(&mut self, nodes: impl IntoIterator<Item = &'a N>, arg: &mut A)
     where
         Self: Sized,
         N: 'a,
     {
-        // PORTING_RULES: the Java defensive copy is not needed, see the file comment.
+        // Rust: the Java defensive copy is not needed, see the file comment.
         for n in nodes {
             n.accept(self, arg);
         }
@@ -84,7 +84,7 @@ pub trait AbstractNode<D, N: AbstractNode<D, N>>: Node<D, N> {
     fn data(&self) -> &D;
 
     // Java: public String toString() { return data.toString(); }
-    // PORTING_RULES: implementors provide Display; a default method would conflict with the
+    // Rust: implementors provide Display; a default method would conflict with the
     // Display impl required by the Rust idiom.
 
     /// Get an array of the dependency kinds supported by this node.
@@ -113,7 +113,7 @@ pub fn accept_abstract_node<D, N, A>(
 
 /// The Tarjan computation state of a node.
 ///
-/// PORTING_RULES: Java keeps these three fields on the node object; the algorithm mutates them
+/// Java keeps these three fields on the node object; the algorithm mutates them
 /// through shared references, hence Cell.
 pub struct TarjanState {
     /// Java: int index = -1;

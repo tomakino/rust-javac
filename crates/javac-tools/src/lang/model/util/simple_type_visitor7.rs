@@ -1,7 +1,7 @@
 //! A simple visitor of types with default behavior appropriate for the
 //! RELEASE_7 source version.
 //!
-//! PORTING_RULES: Java `SimpleTypeVisitor7 extends SimpleTypeVisitor6` only
+//! Java `SimpleTypeVisitor7 extends SimpleTypeVisitor6` only
 //! overrides `visitUnion` (calls defaultAction).  The Rust trait is a subtrait
 //! re-declaring that method; calling it on a concrete type implementing both
 //! requires a fully qualified call (registered language-shape limitation).

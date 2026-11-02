@@ -1,6 +1,6 @@
 //! A tree node for a literal expression.
 //!
-//! PORTING_RULES: Java `Object getValue()` returns a boxed primitive value or a
+//! Java `Object getValue()` returns a boxed primitive value or a
 //! String; the port reuses the closed `javac_tools::lang::model::element::Value`
 //! representation (the literal sub-set of its variants is used by
 //! implementations) and maps null -> None (registered representation).

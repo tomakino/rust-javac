@@ -7,7 +7,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: Java mixed-case constants (AccessFlags, MemberClassFlags, ...)
+//! Java mixed-case constants (AccessFlags, MemberClassFlags, ...)
 //! keep their Java names to stay diffable against upstream; the Flag enum keeps
 //! Java constant names with #[allow(non_camel_case_types)]. The Java
 //! ConcurrentHashMap modifier-set cache is a pure performance detail with no
@@ -306,7 +306,7 @@ pub const ReceiverParamFlags: i64 = PARAMETER;
 
 /// Java: public static String toString(long flags)
 ///
-/// PORTING_RULES: Java String results are JavaString (PORTING_RULES Porting rules); this is
+/// Java String results are JavaString (Porting rules); this is
 /// the overloaded static toString, so it gets a descriptive Rust name.
 pub fn to_java_string(flags: i64) -> JavaString {
     let mut buf = String::new();

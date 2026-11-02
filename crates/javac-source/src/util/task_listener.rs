@@ -1,6 +1,6 @@
 //! Provides a listener to monitor the activity of the JDK Java Compiler, javac.
 //!
-//! PORTING_RULES: Java interface -> Rust trait; the two Java `default` methods
+//! Java interface -> Rust trait; the two Java `default` methods
 //! do nothing and are Rust default methods.
 
 use super::task_event::TaskEvent;

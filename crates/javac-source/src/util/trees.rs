@@ -1,6 +1,6 @@
 //! Bridges JSR 199, JSR 269, and the Tree API.
 //!
-//! PORTING_RULES (§14.6):
+//! (§14.6):
 //! * Java abstract class -> Rust trait; the implementation is provided by the
 //!   P6 API layer (com.sun.tools.javac.api.JavacTrees).
 //! * the two static `instance` factories use reflection over the internal

@@ -6,9 +6,9 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: Java's interface ByteCodes is a pure constant container (no imports, no
+//! Java's interface ByteCodes is a pure constant container (no imports, no
 //! methods), so it maps to the constants of this module. Constant names follow
-//! UPPER_SNAKE_CASE (PORTING_RULES section 3); Java names that carry a trailing underscore
+//! UPPER_SNAKE_CASE (); Java names that carry a trailing underscore
 //! because they collide with Java keywords (goto_, return_, new_, instanceof_) become
 //! GOTO / RETURN / NEW / INSTANCEOF here, since those are not Rust keywords.
 

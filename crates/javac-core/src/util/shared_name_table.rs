@@ -17,7 +17,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: the static SoftReference freelist from the Java
+//! the static SoftReference freelist from the Java
 //! implementation is a memory optimization with no observable effect; Rust
 //! creates a fresh table (registered deviation, see docs/STATUS.md).
 

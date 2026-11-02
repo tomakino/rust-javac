@@ -15,7 +15,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: the Java implementation keeps weak references to entries so
+//! the Java implementation keeps weak references to entries so
 //! that unreachable names can be collected; Rust ownership already bounds the
 //! lifetime of name table entries, so entries are kept until dispose(). This is
 //! a memory-management deviation with no observable compiler behavior.

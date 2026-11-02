@@ -16,7 +16,7 @@ use std::rc::Rc;
 /// @author Peter von der Ah&eacute;
 /// @since 1.6
 ///
-/// PORTING_RULES — class mapping:
+/// — class mapping:
 /// * Java inheritance is not available in Rust; the class is expressed as a
 ///   struct with the upstream protected field and explicit forwarding (the
 ///   same shape as the single upstream field plus its overrides).

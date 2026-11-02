@@ -1,6 +1,6 @@
 //! Port of \`jdk.internal.math.FDBigInteger\` (JDK 17).
 //!
-//! PORTING_RULES §9.17 (standard-library adapter):
+//! §9.17 (standard-library adapter):
 //! * Java \`int[]\` words become \`Vec<i32>\`; Java \`long\` arithmetic uses \`i64\`;
 //!   logical right shifts go through \`u32\`; every place where Java relies on
 //!   two's-complement wraparound uses the explicit wrapping operations.
@@ -547,7 +547,7 @@ impl FDBigInteger {
 
     /// Java: public FDBigInteger leftInplaceSub(FDBigInteger subtrahend)
     ///
-    /// PORTING_RULES §9.17 adaptation: upstream mutates and returns \`this\`
+    /// §9.17 adaptation: upstream mutates and returns \`this\`
     /// when it is not immutable; the Rust port returns an equal value instead
     /// (value semantics), keeping every arithmetic step 1:1.
     pub(crate) fn left_inplace_sub(&self, subtrahend: &FDBigInteger) -> FDBigInteger {
@@ -603,10 +603,10 @@ impl FDBigInteger {
 
     /// Java: public FDBigInteger rightInplaceSub(FDBigInteger subtrahend)
     ///
-    /// PORTING_RULES §9.17 adaptation: upstream mutates the \`subtrahend\`
+    /// §9.17 adaptation: upstream mutates the \`subtrahend\`
     /// argument and returns it; the Rust port takes it by value and returns the
     /// mutated value (value semantics), keeping every arithmetic step 1:1.
-    // PORTING_RULES §9.17: upstream assigns `subLen -= offsetDiff` but does
+    // §9.17: upstream assigns `subLen -= offsetDiff` but does
     // not read subLen afterwards; the assignment is kept 1:1.
     #[allow(unused_assignments)]
     pub(crate) fn right_inplace_sub(&self, mut subtrahend: FDBigInteger) -> FDBigInteger {

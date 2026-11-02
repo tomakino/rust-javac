@@ -24,7 +24,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: ADR 0001 (arena + IDs) defines the representation:
+//! ADR 0001 (arena + IDs) defines the representation:
 //! - a Type is a value in the type arena (TypeId is the arena index);
 //! - nested types are Option<TypeId> / List<TypeId>; the type symbol is
 //!   Option<SymbolId> (Symbol is not ported yet, so only its arena ID is used);
@@ -36,7 +36,7 @@
 //! - the Java constructors take a TypeMetadata argument; TypeMetadata (and the
 //!   annotation-based metadata machinery) is not ported yet, so the adapter
 //!   constructor Type::new takes the already mapped fields; this is registered
-//!   in PORTING_RULES section 9.
+//!   in .
 //!
 //! NOT PORTED IN THIS STEP (see docs/STATUS.md; do not add placeholder logic):
 //! - TypeMetadata/Attribute annotations: the metadata field, cloneWithMetadata,
@@ -130,7 +130,7 @@ use crate::util::list::List;
 
 /// This class represents Java types (upstream abstract class Type).
 ///
-/// PORTING_RULES: the shared fields of the upstream Type class are the tag, the
+/// the shared fields of the upstream Type class are the tag, the
 /// type symbol and the node-specific fields (TypeKindData).
 #[derive(Clone)]
 pub struct Type {
@@ -143,7 +143,7 @@ pub struct Type {
     pub kind: TypeKindData,
     /// Java: the constValue() override of the constant type subclasses
     /// (JCPrimitiveType/ClassType anonymous subclasses created by constType).
-    /// PORTING_RULES adapter: a const type is the same Type with a constant
+    /// Adapter: a const type is the same Type with a constant
     /// value attached (the upstream anonymous subclasses only override
     /// constValue and baseType; registered in section 9).
     pub const_value: Option<ConstantValue>,
@@ -603,7 +603,7 @@ impl Type {
 
 /// The node-specific fields of the Type subclasses.
 ///
-/// PORTING_RULES: one variant per upstream concrete class; inherited fields of
+/// one variant per upstream concrete class; inherited fields of
 /// ClassType (outer/typarams/allparams/supertype/interfaces/all_interfaces) are
 /// repeated in the subclasses that inherit from it (as in the Java class
 /// hierarchy). Field names keep the upstream names (snake_case).

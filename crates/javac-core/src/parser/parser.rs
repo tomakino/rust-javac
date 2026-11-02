@@ -6,7 +6,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: the JCTree results are arena TreeIds (ADR 0001); the parse
+//! the JCTree results are arena TreeIds (ADR 0001); the parse
 //! methods take the CompilerContext because tree creation needs the arena.
 
 use crate::compiler_context::CompilerContext;

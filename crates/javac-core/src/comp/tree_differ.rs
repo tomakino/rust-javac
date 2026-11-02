@@ -1,7 +1,7 @@
 //! A visitor that compares two lambda bodies for structural equality
 //! (TreeDiffer.java).
 //!
-//! PORTING_RULES: TreeDiffer extends TreeScanner; the port is a struct that
+//! TreeDiffer extends TreeScanner; the port is a struct that
 //! implements TreeVisitor. The two-argument scan method is the upstream
 //! context-passing comparison (TreeDiffer.java); node kinds the upstream
 //! class does not override keep a no-op implementation, which is behaviourally

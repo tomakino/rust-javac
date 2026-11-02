@@ -13,7 +13,7 @@
 //
 //! java.nio.charset platform layer for the P2 file layer.
 //!
-//! PORTING_RULES:
+//!
 //! * supported charsets: UTF-8, US-ASCII, ISO-8859-1, UTF-16, UTF-16BE,
 //!   UTF-16LE (with the Java BOM behavior);
 //! * names: canonical names plus the aliases recorded from the JDK, matched

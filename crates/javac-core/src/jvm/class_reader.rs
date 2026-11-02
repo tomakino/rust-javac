@@ -55,7 +55,7 @@
 //! in the classfile. Top-level Classes themselves appear as members of the
 //! scopes of PackageSymbols.
 //!
-//! PORTING_RULES status (P2/S1):
+//! status (P2/S1):
 //! * ported in this file: ClassReader structure/constructor (dependency injection
 //!   in place of the Context singletons), readClassFile / readClassBuffer
 //!   (magic, version, preview checks and the PoolReader wiring), buffer access
@@ -102,7 +102,7 @@ use crate::util::pair::Pair;
 
 /// Java: public class ClassReader
 ///
-/// PORTING_RULES: several fields are consumed by the S2/S3 method bodies that
+/// several fields are consumed by the S2/S3 method bodies that
 /// are still unimplemented (signature state machine / attribute readers /
 /// annotations); they are registered here until those bodies are ported.
 #[allow(dead_code)]
@@ -135,7 +135,7 @@ pub struct ClassReader {
     preview: Rc<Preview>,
     /// Java: protected WriteableScope typevars
     ///
-    /// PORTING_RULES: Scope.WriteableScope is ported as ScopeId; the field is
+    /// Scope.WriteableScope is ported as ScopeId; the field is
     /// Some while readTypeVar/enterTypevars process a signature.
     typevars: Option<crate::ids::ScopeId>,
     /// Java: protected JavaFileObject currentClassFile = null
@@ -252,7 +252,7 @@ impl ClassReader {
     /// Java: public static ClassReader instance(Context context) /
     /// protected ClassReader(Context context)
     ///
-    /// PORTING_RULES: the Context singletons (Annotate/Types/Symtab/
+    /// the Context singletons (Annotate/Types/Symtab/
     /// JavaFileManager/JCDiagnostic.Factory/DeferredCompletionFailureHandler/
     /// Options/Source/Preview/Profile/WriteableScope) are injected instead;
     /// Annotate/fileManager/Lint are not ported yet (S3 wiring, registered).
@@ -1276,7 +1276,7 @@ impl ClassReader {
         // currentModule.usesProvidesCompleter = new UsesProvidesCompleter(...)
         // } }
         //
-        // PORTING_RULES adapter: UsesProvidesCompleter / ModuleSymbol.completer are not
+        // Adapter: UsesProvidesCompleter / ModuleSymbol.completer are not
         // ported yet, so the interim names are resolved to ClassSymbols and recorded as
         // UsesDirective/ProvidesDirective here (the same result the upstream completer
         // produces on completion; registered structural adapter). The use of a
@@ -4839,7 +4839,7 @@ fn class_module(ctx: &CompilerContext, c: SymbolId) -> SymbolId {
 
 /// Java: protected enum AttributeKind { CLASS, MEMBER }
 ///
-/// PORTING_RULES section 3: the upstream constant names CLASS/MEMBER are kept
+/// the upstream constant names CLASS/MEMBER are kept
 /// (they are Java identifiers, not Rust naming style).
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, PartialEq, Eq)]

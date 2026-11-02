@@ -12,7 +12,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! * extends JavaTokenizer -> composition (base: JavaTokenizer; the dispatch of
 //!   processComment is the javadoc_comments flag of the base, registered);
 //! * JavadocComment extends BasicComment -> a separate struct reusing the same

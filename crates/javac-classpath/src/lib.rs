@@ -19,7 +19,7 @@
 //! preferred; when there is no jimage, the `<jdk_home>/jmods` directory is used;
 //! otherwise construction fails with [`Error::NoSystemLibraries`].
 //!
-//! PORTING_RULES:
+//!
 //! * this is a new adapter crate, not a 1:1 Java file; the class bytes read are
 //!   exactly the container bytes (the jimage/jmod readers are the ported ones).
 //! * caches: repeated reads are O(1) lookups ([std::collections::HashMap]);
@@ -112,7 +112,7 @@ type ClassCache = HashMap<ClassCacheKey, Option<Rc<Vec<u8>>>>;
 
 /// A system class library byte source for one JDK installation.
 ///
-/// PORTING_RULES: single-threaded (RefCell for the jmod state and the caches).
+/// single-threaded (RefCell for the jmod state and the caches).
 pub struct ClassPath {
     home: PathBuf,
     source: Source,

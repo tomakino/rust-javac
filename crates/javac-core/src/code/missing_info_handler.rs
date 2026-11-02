@@ -1,5 +1,5 @@
 //
-// PORTING_RULES:
+// Rust:
 // - the Context singleton instance is not expressed (ADR 0001); Symtab creates
 //   one handler and stores it on the RootPackageSymbol like upstream;
 // - the upstream getParameterName(ParamSymbol) uses ParamSymbol's

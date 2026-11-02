@@ -17,7 +17,7 @@ use javac_strings::JavaString;
 
 /// Java: java.nio.charset.CodingErrorAction (the subset javac uses).
 ///
-/// PORTING_RULES: BaseFileManager selects REPLACE when ignoreEncodingErrors is
+/// BaseFileManager selects REPLACE when ignoreEncodingErrors is
 /// true and REPORT otherwise; the port keeps the two actions (IGNORE is not
 /// needed by javac and is not modeled).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -229,7 +229,7 @@ pub fn new_encoder(self) -> crate::coder::CharsetEncoder {
 
 /// Java: Charset.defaultCharset() — the platform default charset adapter.
 ///
-/// PORTING_RULES: the JVM default comes from the launcher's file.encoding /
+/// the JVM default comes from the launcher's file.encoding /
 /// platform locale; the port takes the launcher-injected
 /// JAVAC_DEFAULT_ENCODING variable first (registered adapter), then the POSIX
 /// locale (LC_ALL/LC_CTYPE/LANG), and falls back to UTF-8 (the recorded
@@ -271,7 +271,7 @@ pub fn default_charset_name() -> JavaString {
 
 /// Java: Charset.defaultCharset() — the launcher/platform default charset.
 ///
-/// PORTING_RULES: the JVM default comes from file.encoding/native.encoding;
+/// the JVM default comes from file.encoding/native.encoding;
 /// the port resolves the name via default_charset_name() (launcher override,
 /// POSIX locale, Windows ANSI code page) and maps it through the implemented
 /// charset set; a name outside the implemented set falls back to UTF-8 (the

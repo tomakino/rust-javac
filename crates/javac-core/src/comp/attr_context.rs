@@ -1,7 +1,7 @@
 //! Contains information specific to the attribute and enter passes, to be used
 //! in place of the generic field in environments.
 //!
-//! PORTING_RULES adapters (registered):
+//! Adapters (registered):
 //! - Scope.WriteableScope -> ScopeId; Symbol -> SymbolId; Type -> TypeId;
 //!   JCTree -> TreeId; Lint object reference -> Rc<Lint>;
 //! - Attr.ResultInfo (returnResult/yieldResult) is not ported (Attr): the

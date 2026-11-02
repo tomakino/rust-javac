@@ -1,6 +1,6 @@
 //! Represents a package program element.
 //!
-//! PORTING_RULES: `extends Element, QualifiedNameable` -> Rust supertraits.
+//! `extends Element, QualifiedNameable` -> Rust supertraits.
 //! The Java `@Override` re-declarations of `asType`, `getQualifiedName`,
 //! `getSimpleName`, `getEnclosedElements` and `getEnclosingElement` only narrow
 //! their documentation (the signatures are inherited verbatim); they are not

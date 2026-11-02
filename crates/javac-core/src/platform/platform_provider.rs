@@ -7,7 +7,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES (Porting rules/Porting rules):
+//! (Porting rules/Porting rules):
 //! * Java interface -> Rust trait (used as `dyn PlatformProvider`; the providers are
 //!   shared references, `Rc<dyn PlatformProvider>`, because the Java API hands out
 //!   the same provider instance from the service loader).

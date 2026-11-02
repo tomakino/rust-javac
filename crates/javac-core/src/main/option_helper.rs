@@ -1,7 +1,7 @@
 //! Helper object used by Option.process, providing access to the compilation
 //! environment.
 //!
-//! PORTING_RULES: the Java abstract class maps to this trait; the GrumpyHelper
+//! the Java abstract class maps to this trait; the GrumpyHelper
 //! subclass keeps the upstream behavior (the value/environment accessors throw
 //! IllegalArgumentException, getOwnName throws IllegalStateException), which is
 //! expressed with panics because the Java exceptions are unchecked runtime

@@ -2,7 +2,7 @@
 //! methods and/or fields annotated with `@Native`, ported 1:1 from
 //! JNIWriter.java.
 //!
-//! PORTING_RULES:
+//!
 //! - the Java compiler instance and Context are replaced by explicit
 //!   CompilerContext/Symtab arguments on every method (registered adapter);
 //! - the Java PrintWriter is a String buffer here and the finished header is

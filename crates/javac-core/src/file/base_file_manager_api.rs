@@ -14,7 +14,7 @@ use javac_fs::Path as FsPath;
 
 /// Minimal interface of the file manager used by [PathFileObject].
 ///
-/// PORTING_RULES: the 1:1 com.sun.tools.javac.file.BaseFileManager struct implements this
+/// the 1:1 com.sun.tools.javac.file.BaseFileManager struct implements this
 /// interface; it exists so PathFileObject can hold the manager through Rc<dyn ...> without
 /// a self-referential Rc cycle (registered adapter, section 9).
 pub trait BaseFileManagerApi {

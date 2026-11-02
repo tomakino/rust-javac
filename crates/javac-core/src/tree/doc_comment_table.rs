@@ -1,6 +1,6 @@
 //! A table giving the doc comment, if any, for any tree node.
 //!
-//! PORTING_RULES: Java JCTree keys -> arena TreeId (ADR 0001). The Comment and
+//! Java JCTree keys -> arena TreeId (ADR 0001). The Comment and
 //! CommentStyle types are the upstream parser/Tokens.Comment types; they now
 //! live in parser/tokens.rs and are re-exported here for the tree layer.
 //! The upstream getCommentTree(JCTree) result type DCDocComment is represented

@@ -1,6 +1,6 @@
 //! A tree node for an {@code @return} block tag.
 //!
-//! PORTING_RULES: Java interface -> Rust trait; the Java `default boolean
+//! Java interface -> Rust trait; the Java `default boolean
 //! isInline()` returns false and is a Rust default method.
 
 use super::block_tag_tree::BlockTagTree;

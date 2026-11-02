@@ -22,7 +22,7 @@ use std::io::{Read, Write};
 /// @author Jonathan Gibbons
 /// @since 1.6
 ///
-/// PORTING_RULES — signature mapping:
+/// — signature mapping:
 /// * `java.net.URI` -> `crate::uri::URI` (minimal mapping, see uri.rs).
 /// * Java `String`/`CharSequence` -> `javac_strings::JavaString` (UTF-16
 ///   semantics, docs/PORTING_RULES.md §7).  `getName` -> `JavaString`,
@@ -123,7 +123,7 @@ pub trait FileObject {
     /// deleted; false otherwise
     fn delete(&self) -> bool;
 
-    /// PORTING_RULES adapter: the upstream jrt FileSystem identity test
+    /// Adapter: the upstream jrt FileSystem identity test
     /// (JRTIndex.isInJRT(FileObject)) is expressed as a trait method because
     /// Rust cannot downcast a JavaFileObject (registered adapter).
     fn is_in_jrt(&self) -> bool {

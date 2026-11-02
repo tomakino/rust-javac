@@ -122,7 +122,7 @@ pub enum TypeFilter {
 /// Java: Infer.IncorporationAction (the action hierarchy: CheckBounds/
 /// EqCheckLegacy/CheckInst/SubstBounds/CheckUpperBounds/PropagateBounds).
 ///
-/// PORTING_RULES: the Java class hierarchy maps to one enum; the
+/// the Java class hierarchy maps to one enum; the
 /// BiFunction/BiPredicate fields map to TypeFunc/TypeFilter.
 #[derive(Clone)]
 pub enum IncorporationAction {
@@ -3977,7 +3977,7 @@ impl Infer {
     /// Java: Infer.PartiallyInferredMethodType.check(Attr.ResultInfo)
     /// (Infer.java:312-365).
     ///
-    /// PORTING_RULES: the upstream method returns a Type and reports the
+    /// the upstream method returns a Type and reports the
     /// inference failure through ResultInfo.checkContext.report + Assert.error;
     /// the ported path returns the InferenceException (the Attr caller
     /// propagates/reports it) — registered Porting rules adapter.

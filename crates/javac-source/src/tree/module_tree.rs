@@ -1,6 +1,6 @@
 //! A tree node for a module declaration.
 //!
-//! PORTING_RULES: Java interface -> Rust trait; the nested enum ModuleKind
+//! Java interface -> Rust trait; the nested enum ModuleKind
 //! lives in this file.
 
 use super::annotation_tree::AnnotationTree;
@@ -41,7 +41,7 @@ pub trait ModuleTree: Tree {
 
 /// The kind of the module.
 ///
-/// PORTING_RULES: Java nested enum ModuleTree.ModuleKind ->
+/// Java nested enum ModuleTree.ModuleKind ->
 /// module_tree::ModuleKind.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

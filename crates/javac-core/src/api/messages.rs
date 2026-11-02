@@ -6,7 +6,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: java.util.Locale -> crate::util::javac_messages::Locale
+//! java.util.Locale -> crate::util::javac_messages::Locale
 //! (minimal locale-tag adapter); Object... args -> &[String] because the
 //! formatting layer renders diagnostic arguments before substitution (ADR 0004).
 //! The Java add() declares MissingResourceException; in the Rust mapping bundle

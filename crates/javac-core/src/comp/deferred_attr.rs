@@ -144,7 +144,7 @@ impl SpeculativeCache {
 
 /// Java: public class DeferredType extends Type (tag DEFERRED)
 ///
-/// PORTING_RULES: the upstream DeferredType instance is a Type object; the port
+/// the upstream DeferredType instance is a Type object; the port
 /// stores the fields in TypeKindData::Deferred (code/type_.rs) and the methods
 /// are free functions taking the arena context.
 pub fn deferred_type_new(
@@ -946,14 +946,14 @@ fn check_with_policy(
 
 /// Java: class DeferredAttr.DeferredTypeMap<T> extends StructuralTypeMapping<T>
 ///
-/// PORTING_RULES: the upstream class extends the Type.StructuralTypeMapping
+/// the upstream class extends the Type.StructuralTypeMapping
 /// visitor (not ported as a trait); the port reproduces the visitor's dispatch
 /// for the type variants (identity for non-deferred types, structural recursion
 /// for class/array/wildcard/method/forall, visitTypeVar for captured types)
 /// (adapter adapter registered).
 /// Java: class DeferredAttr.DeferredTypeMap<T> / RecoveryDeferredTypeMap
 ///
-/// PORTING_RULES adapter adapters:
+/// Adapter adapters:
 ///   - the upstream generic parameter T (Void for the plain mapping, Type for the
 ///     recovery mapping) is unified to Option<TypeId> (the Java nullable Type / the
 ///     Void payload is unused); the two concrete classes are one struct plus the
@@ -1563,7 +1563,7 @@ impl ResolveDeferredRecoveryMap {
 
 /// Java: abstract static class FilterScanner extends TreeScanner
 ///
-/// PORTING_RULES: the upstream subclass overrides scan(JCTree) to visit only
+/// the upstream subclass overrides scan(JCTree) to visit only
 /// the nodes whose tag is in validTags; the port reproduces the same dispatch
 /// with explicit tag matching (TreeScanner has no virtual scan hook in the
 /// port) — adapter adapter registered. The traversal order follows the upstream
@@ -2158,7 +2158,7 @@ pub fn check_stuck_policy_new(
 /// Java: class OverloadStuckPolicy extends CheckStuckPolicy implements
 /// DeferredStuckPolicy
 ///
-/// PORTING_RULES: the upstream constructor's scan dispatches to the overridden
+/// the upstream constructor's scan dispatches to the overridden
 /// visitLambda/visitReference (Java virtual dispatch). The ported
 /// visitLambda/visitReference are registered as unimplemented (FunctionDescriptor
 ///), so the overload-specific stuck flag is only produced by those two

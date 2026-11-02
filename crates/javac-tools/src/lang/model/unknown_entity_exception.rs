@@ -1,7 +1,7 @@
 //! Superclass of exceptions which indicate that an unknown kind of entity was
 //! encountered.
 //!
-//! PORTING_RULES: Java class hierarchy is not available in Rust.  This struct
+//! Java class hierarchy is not available in Rust.  This struct
 //! keeps the upstream state (detail message, Java String) and the exception
 //! behavior; the subclasses (UnknownElementException, ...) embed it as their
 //! first member instead of extending it.  Java `RuntimeException` maps to a

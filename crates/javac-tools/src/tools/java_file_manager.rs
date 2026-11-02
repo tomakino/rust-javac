@@ -13,7 +13,7 @@ use crate::jdk::{Class, ClassLoader, ServiceLoader};
 use javac_strings::JavaString;
 use std::rc::Rc;
 
-// PORTING_RULES: shared-reference aliases for the Java interfaces, so the
+// Rust: shared-reference aliases for the Java interfaces, so the
 // signatures below read like the upstream ones.
 /// FileObject reference (Java: a FileObject instance).
 pub type FileObjectRef = Rc<dyn FileObject>;
@@ -47,7 +47,7 @@ pub type LocationRef = Rc<dyn Location>;
 /// using methods like {@link JavaFileManager#getLocationForModule} or
 /// {@link JavaFileManager#listLocationsForModules}.
 ///
-/// PORTING_RULES: Java nested interface JavaFileManager.Location -> Rust trait
+/// Java nested interface JavaFileManager.Location -> Rust trait
 /// Location in the module of JavaFileManager (Rust traits cannot be nested
 /// inside traits).  get_name returns a Java String (javac_strings::JavaString).
 pub trait Location {
@@ -80,7 +80,7 @@ pub trait Location {
     /// @since 9
     fn is_module_oriented_location(&self) -> bool {
         // Java: return getName().matches("\\bMODULE\\b");
-        // PORTING_RULES: java.util.regex.Matcher.matches requires the entire
+        // Rust: java.util.regex.Matcher.matches requires the entire
         // input sequence to match the pattern.  A word boundary (backslash-b)
         // matches between a word character and a non-word character (or the
         // ends of the input); therefore the pattern matches an input only if
@@ -163,7 +163,7 @@ fn name_matches_module_word(name: &JavaString) -> bool {
 /// @see FileObject
 /// @since 1.6
 ///
-/// PORTING_RULES — signature mapping:
+/// — signature mapping:
 /// * Closeable/Flushable -> flush()/close() methods returning Result of
 ///   Error (close is not Drop: Java close is explicit and observable).
 /// * Iterable of JavaFileObject -> Vec of JavaFileObjectRef (the ported file
@@ -499,7 +499,7 @@ pub trait JavaFileManager: OptionChecker {
     /// module-oriented location
     /// @since 9
     ///
-    /// PORTING_RULES: overload getLocationForModule(Location, JavaFileObject)
+    /// overload getLocationForModule(Location, JavaFileObject)
     /// -> get_location_for_module_of_file.
     fn get_location_for_module_of_file(
         &self,
@@ -572,7 +572,7 @@ pub trait JavaFileManager: OptionChecker {
     /// @throws IllegalArgumentException if the location is not a module-oriented location
     /// @since 9
     ///
-    /// PORTING_RULES: Iterable of Set of Location -> Vec of Vec of LocationRef.
+    /// Iterable of Set of Location -> Vec of Vec of LocationRef.
     fn list_locations_for_modules(
         &self,
         location: &dyn Location,

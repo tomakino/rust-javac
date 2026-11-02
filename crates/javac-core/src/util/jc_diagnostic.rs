@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! - Java nested types keep their upstream names and declaration order
 //!   (DiagnosticType / DiagnosticFlag / DiagnosticPosition /
 //!   SimpleDiagnosticPosition / DiagnosticInfo + Error/Warning/Note/Fragment /
@@ -19,7 +19,7 @@
 //!   so a DiagnosticFormatter can inspect the real argument type instead of
 //!   receiving pre-formatted text;
 //! - Java EnumSet<DiagnosticFlag> maps to Vec<DiagnosticFlag> (the upstream
-//!   operations are membership tests only; registered in PORTING_RULES section
+//!   operations are membership tests only; registered in section
 //!   9);
 //! - JCDiagnostic implements javac_tools::tools::diagnostic::Diagnostic with
 //!   S = Rc<dyn JavaFileObject> like the upstream Diagnostic<JavaFileObject>;
@@ -27,7 +27,7 @@
 //!   upstream subclasses are Error / Warning / Note / Fragment newtypes used
 //!   by the Factory keys (Java type distinction is kept, registered section 9).
 //!
-//! PORTING_RULES (diagnostic formatter):
+//! (diagnostic formatter):
 //! - DiagnosticSource is now ported (util/diagnostic_source.rs), so the source
 //!   field, getSource() / getDiagnosticSource(), the line/column computation and
 //!   the upstream constructor check are restored; the Factory methods take the
@@ -37,7 +37,7 @@
 //!   diagnostics that are created by the factory can be formatted;
 //! - MultilineDiagnostic: the upstream subclass is expressed by the
 //!   subdiagnostics field of JCDiagnostic (isMultiline() is true when the list
-//!   is not empty; registered in PORTING_RULES section 9).
+//!   is not empty; registered in ).
 //!
 //! REGISTERED (dependencies/hooks not wired; no substitute logic):
 //! - Options (next): Factory::instance does not run initOptions (the
@@ -130,7 +130,7 @@ pub enum DiagnosticFlag {
 pub trait DiagnosticPosition {
     /// Gets the tree node, if any, to which the diagnostic applies.
     ///
-    /// PORTING_RULES: Java JCTree -> arena TreeId; null -> None.
+    /// Java JCTree -> arena TreeId; null -> None.
     fn get_tree(&self) -> Option<TreeId>;
 
     /// If there is a tree node, get the start position of the tree node.
@@ -309,7 +309,7 @@ impl DiagnosticInfo {
     /// Static factory method; build a custom diagnostic key using the given
     /// kind, prefix, code and args.
     ///
-    /// PORTING_RULES: the upstream returns one of the four DiagnosticInfo
+    /// the upstream returns one of the four DiagnosticInfo
     /// subclasses; the adapter returns the base DiagnosticInfo (the type field
     /// carries the kind), the four newtypes are used at the Factory key
     /// boundary.
@@ -421,7 +421,7 @@ pub(crate) fn contract_args_to_args(args: &[contract::DiagnosticArg]) -> Vec<Dia
 
 /// Java: Lint.LintCategory
 ///
-/// PORTING_RULES: the Lint ported the real class in code/lint.rs; the
+/// the Lint ported the real class in code/lint.rs; the
 /// temporary dependency holder of the JCDiagnostic step is replaced by this
 /// re-export (registered section 9).
 pub use crate::code::lint::LintCategory;
@@ -591,7 +591,7 @@ impl JCDiagnostic {
 
     /// Java: public long getLineNumber()
     ///
-    /// PORTING_RULES: the upstream SourcePosition computes line and column from
+    /// the upstream SourcePosition computes line and column from
     /// the DiagnosticSource; the Rust port computes them on demand (no lazy
     /// cache, registered in the module doc).
     pub fn get_line_number(&self) -> i64 {
@@ -791,7 +791,7 @@ impl Diagnostic<Rc<dyn JavaFileObject>> for JCDiagnostic {
 ///
 /// Java: public static class JCDiagnostic.MultilineDiagnostic extends JCDiagnostic
 ///
-/// PORTING_RULES: the upstream subclass is expressed by composition (the inner
+/// the upstream subclass is expressed by composition (the inner
 /// diagnostic keeps every JCDiagnostic method) plus the overridden methods
 /// (getSubdiagnostics / isMultiline).
 #[derive(Clone, Debug)]
@@ -1070,7 +1070,7 @@ impl Factory {
     // The 8-parameter signature is the upstream create(DiagnosticType,
     // LintCategory, Set<DiagnosticFlag>, DiagnosticSource, DiagnosticPosition,
     // String, Object...) method; the lint allow keeps the 1:1 signature
-    // (PORTING_RULES section 9).
+    // ().
     #[allow(clippy::too_many_arguments)]
     pub fn create_with_flags(
         &self,

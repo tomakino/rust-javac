@@ -1,7 +1,7 @@
 //! A simple visitor of program elements with default behavior appropriate for
 //! the RELEASE_7 source version.
 //!
-//! PORTING_RULES: Java `SimpleElementVisitor7 extends SimpleElementVisitor6`
+//! Java `SimpleElementVisitor7 extends SimpleElementVisitor6`
 //! only overrides `visitVariable` (it calls defaultAction for every variable,
 //! dropping the RELEASE_6 RESOURCE_VARIABLE special case).  The Rust trait is a
 //! subtrait of `SimpleElementVisitor6` that re-declares that one method with the

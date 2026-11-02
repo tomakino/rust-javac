@@ -1,6 +1,6 @@
 //! Port of \`jdk.internal.math.FloatingDecimal\` (JDK 17).
 //!
-//! PORTING_RULES §9.17 (standard-library adapter): upstream algorithms,
+//! §9.17 (standard-library adapter): upstream algorithms,
 //! control flow, constants and comments are preserved; Java language
 //! constructs are adapted as described in lib.rs (char[] -> Vec<u16>,
 //! StringBuilder/Appendable -> String, ThreadLocal converter -> freshly

@@ -6,7 +6,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! * extends UnicodeReader -> composition with Deref/DerefMut (the inherited
 //!   reader API is available unchanged on the tokenizer);
 //! * the ScannerFactory field is replaced by the concrete dependencies it is

@@ -1,7 +1,7 @@
 //! Port of `java.math.MutableBigInteger` (JDK 17), the mutable magnitude helper
 //! used by `java.math.BigInteger`.
 //!
-//! PORTING_RULES (standard-library adapter):
+//! (standard-library adapter):
 //! * Java `int[]` magnitude words become `Vec<i32>`; `long` arithmetic uses
 //!   `i64` and two's-complement wraparound is explicit (`wrapping_*`, `as u32`
 //!   for logical shifts).

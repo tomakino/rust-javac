@@ -33,7 +33,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: ADR 0001 (arena + IDs) defines the representation:
+//! ADR 0001 (arena + IDs) defines the representation:
 //! - a Symbol is a value in the symbol arena (SymbolId is the arena index);
 //! - the owner, its type and the erasure cache are Option<SymbolId> /
 //!   Option<TypeId>; the members scope is Option<ScopeId>;
@@ -41,7 +41,7 @@
 //! - the Kinds.Kind enum is needed by the Symbol.kind field and is declared in
 //!   the kinds module of this file for now (the parser/compiler need it before
 //!   the Kinds.java lands; it will move to code/kinds.rs then, registered
-//!   in PORTING_RULES section 9).
+//!   in ).
 //!
 //! NOT PORTED IN THIS STEP (see docs/STATUS.md; no placeholder logic):
 //! - SymbolMetadata/AnnoConstruct attribute methods, the metadata field,
@@ -79,7 +79,7 @@ use crate::util::name::Name;
 
 /// A class representing Java symbols.
 ///
-/// PORTING_RULES: the shared fields of the upstream Symbol class plus the
+/// the shared fields of the upstream Symbol class plus the
 /// node-specific fields (SymbolKind). The completer is represented (the metadata
 /// fields are not, see the module doc).
 pub struct Symbol {
@@ -679,7 +679,7 @@ impl Clone for Symbol {
 
 /// The node-specific fields of the Symbol subclasses.
 ///
-/// PORTING_RULES: one variant per upstream concrete class whose fields can be
+/// one variant per upstream concrete class whose fields can be
 /// expressed with the ported types; inherited fields of TypeSymbol are not
 /// repeated (TypeSymbol has no fields). See the module doc for the variants
 /// that are not ported yet.
@@ -988,7 +988,7 @@ pub enum SymbolKind {
     ParamSymbol,
     /// Java: Symbol.MethodSymbol
     ///
-    /// PORTING_RULES: the upstream code field (jvm/Code) and defaultValue field
+    /// the upstream code field (jvm/Code) and defaultValue field
     /// (Attribute) are not ported yet (see the module doc).
     MethodSymbol {
         /// The extra parameter symbols.
@@ -1126,7 +1126,7 @@ pub type CompleterFactory = Rc<dyn Fn() -> CompleterRef>;
 
 /// Java: Symbol.Completer
 ///
-/// PORTING_RULES: Java throws CompletionFailure; the Rust port returns
+/// Java throws CompletionFailure; the Rust port returns
 /// Result<(), CompletionFailure> from complete(). The compiler context and the
 /// symbol table are passed explicitly because symbols are arena values and there
 /// is no global Context (ADR 0001).
@@ -1183,7 +1183,7 @@ impl Completer for NullCompleter {
 
 /// Java: public static class Symbol.CompletionFailure extends RuntimeException
 ///
-/// PORTING_RULES: Rust has no unchecked exceptions, so CompletionFailure is a
+/// Rust has no unchecked exceptions, so CompletionFailure is a
 /// plain error value returned in Result; diagSupplier -> a boxed closure that is
 /// evaluated lazily (RefCell cache like the upstream lazy diag field).
 pub struct CompletionFailure {
@@ -1197,7 +1197,7 @@ pub struct CompletionFailure {
     pub sym: Option<SymbolId>,
     /// Java: private transient JCDiagnostic diag
     ///
-    /// PORTING_RULES: boxed so that CompletionFailure stays a small error
+    /// boxed so that CompletionFailure stays a small error
     /// value (upstream Java has no error-size concern; the field semantics are
     /// unchanged).
     diag: std::cell::RefCell<Option<Box<crate::util::jc_diagnostic::JCDiagnostic>>>,

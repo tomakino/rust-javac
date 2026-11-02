@@ -1,7 +1,7 @@
 //! Represents a method, constructor, or initializer (static or instance) of a
 //! class or interface, including annotation type elements.
 //!
-//! PORTING_RULES:
+//!
 //! * `List<? extends X>` -> `Vec<Rc<dyn X>>`;
 //!   nullable `AnnotationValue getDefaultValue()` -> `Option<...>`.
 //! * `getTypeParameters` and `getSimpleName` are the same methods inherited

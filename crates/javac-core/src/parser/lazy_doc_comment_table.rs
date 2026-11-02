@@ -1,12 +1,12 @@
 //! A table giving the doc comment, if any, for any tree node, parsing the doc
 //! comment on demand.
 //!
-//! PORTING_RULES: adapter notes:
+//! adapter notes:
 //! - Java JCTree keys -> arena TreeId (ADR 0001); the table is a HashMap (no
 //!   iteration order is observable in this class);
 //! - Entry.tree is a lazily computed cache; the upstream non-final field is a
 //!   RefCell<Option<Rc<DCTree>>> (registered RefCell whitelist: local single
-//!   threaded cache, PORTING_RULES section 9);
+//!   threaded cache, );
 //! - upstream LazyDocCommentTable(ParserFactory fac) reads fac.log.currentSource()
 //!   and constructs DocCommentParser(fac, diagSource, comment). ParserFactory is
 //!   ported; the same dependencies are injected:
@@ -61,7 +61,7 @@ pub struct LazyDocCommentTable {
 impl LazyDocCommentTable {
     /// Creates the lazy table.
     ///
-    /// PORTING_RULES: the upstream constructor takes ParserFactory and reads
+    /// the upstream constructor takes ParserFactory and reads
     /// log.currentSource(); the port receives the same factory and dependencies.
     pub fn new(
         fac: Rc<crate::parser::parser_factory::ParserFactory>,

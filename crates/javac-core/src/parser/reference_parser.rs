@@ -7,7 +7,7 @@
 //! A utility class to parse a string in a doc comment containing a reference to
 //! an API element, such as a type, field or method.
 //!
-//! PORTING_RULES: the upstream parse() creates fragments through
+//! the upstream parse() creates fragments through
 //! ParserFactory.newParser(...) and collects the diagnostics through
 //! Log.DeferredDiagnosticHandler; both are ported, but the local JavacParser
 //! allocates the fragment trees in the CompilerContext arena, so the context is
@@ -93,7 +93,7 @@ pub struct ReferenceParser {
 impl ReferenceParser {
     /// Java: public ReferenceParser(ParserFactory fac)
     ///
-    /// PORTING_RULES: the factory is the explicit dependency (the local
+    /// the factory is the explicit dependency (the local
     /// ParserFactory is not registered in a Context singleton).
     pub fn new(fac: Rc<ParserFactory>) -> ReferenceParser {
         ReferenceParser { fac }
@@ -101,7 +101,7 @@ impl ReferenceParser {
 
     /// Parse a reference to an API element as may be found in a doc comment.
     ///
-    /// PORTING_RULES: ctx is the explicit arena for the fragment trees
+    /// ctx is the explicit arena for the fragment trees
     /// (registered adapter; Java uses the global services).
     pub fn parse(
         &self,

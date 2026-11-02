@@ -1,6 +1,6 @@
 //! A tree node for an expression to create a new instance of an array.
 //!
-//! PORTING_RULES: nested generic lists map to nested Vecs;
+//! nested generic lists map to nested Vecs;
 //! `List<? extends List<? extends AnnotationTree>>` ->
 //! `Vec<Vec<Rc<dyn AnnotationTree>>>`.
 

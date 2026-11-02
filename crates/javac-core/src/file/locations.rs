@@ -9,7 +9,7 @@
 //   Locations::new(java_home)/LocationCtx services (ADR 0001).
 // End of Gap registration.
 
-// PORTING_RULES: the handler code keeps the upstream deeply nested `if let` structure
+// Rust: the handler code keeps the upstream deeply nested `if let` structure
 // (Java style); the collapsible-if/match suggestions are allowed rather than rewriting it.
 #![allow(clippy::collapsible_if, clippy::collapsible_match)]
 
@@ -19,7 +19,7 @@
 //!
 //! <p><b>This is NOT part of any supported API.</b>
 //!
-//! PORTING_RULES (S3b):
+//! (S3b):
 //! * Java class plus its nested LocationHandler hierarchy become one Locations struct
 //!   holding a Vec<Handler>; a Handler keeps the upstream (location name, options,
 //!   explicit) triple plus a HandlerKind state enum (the Java handler subclasses), and
@@ -2223,7 +2223,7 @@ fn module_path_infer_module_name(
         match module_path_read_module_name_bytes(&bytes) {
             Ok(module_name) => {
                 if is_module_name(&module_name) {
-                    // PORTING_RULES: the upstream returns the jmod file system
+                    // Rust: the upstream returns the jmod file system
                     // "classes" path; the ported file layer has no jmod
                     // FileSystem, so the module path is the jmod file itself
                     // (registered adapter; the container layer resolves entries).

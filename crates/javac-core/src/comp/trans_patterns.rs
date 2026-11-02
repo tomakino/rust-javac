@@ -1,6 +1,6 @@
 //! This pass translates pattern-matching constructs, such as instanceof <pattern>.
 //!
-//! PORTING_RULES: the upstream class extends TreeTranslator; the port keeps a
+//! the upstream class extends TreeTranslator; the port keeps a
 //! TreeTranslator delegate (base) whose default navigation is reached through a
 //! TreeVisitor::visit_tree override, so every node kind that TransPatterns does
 //! not specialise is translated by the shared TreeTranslator (registered adapter

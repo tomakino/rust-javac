@@ -1,6 +1,6 @@
 //! Represents a program element such as a module, package, class, or method.
 //!
-//! PORTING_RULES — signature mapping:
+//! — signature mapping:
 //! * `List<? extends Element>` -> `Vec<Rc<dyn Element>>`;
 //!   `Set<Modifier>` -> `Vec<Modifier>` (upstream returns an `EnumSet`, whose
 //!   iteration order is the declaration order; the port keeps that order and
@@ -192,13 +192,13 @@ pub trait Element: AnnotatedConstruct + std::fmt::Display {
     /// @param p   additional parameter to the visitor
     /// @return a visitor-specified result
     ///
-    /// PORTING_RULES: `where Self: Sized` keeps Element object safe; see the
+    /// `where Self: Sized` keeps Element object safe; see the
     /// file header.
     fn accept<R, P>(&self, v: &mut dyn ElementVisitor<R, P>, p: P) -> R
     where
         Self: Sized;
 
-    // PORTING_RULES: Object conversion contract.  Java code (for example
+    // Rust: Object conversion contract.  Java code (for example
     // ElementFilter) uses `clazz.cast(element)` / `instanceof` to obtain a
     // subinterface reference from an Element after checking getKind().  Rust has
     // no instanceof and `&dyn Element` cannot be upcast downwards, so the

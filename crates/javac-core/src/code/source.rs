@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! * the Java enum constructor stores `name` per constant; Rust expresses it as
 //!   a match-based accessor (same pattern as code/TypeTag).  Java enum `name()`
 //!   (the constant name) is reproduced by Display, while the upstream `name`
@@ -144,7 +144,7 @@ impl Source {
 
     /// Java: public static Source lookup(String name).
     ///
-    /// PORTING_RULES: the upstream HashMap is filled from the enum values and
+    /// the upstream HashMap is filled from the enum values and
     /// then extended with the legacy 1.x aliases ("1.5".."1.10"); upstream
     /// deliberately does NOT alias "1.11" for 11.
     pub fn lookup(name: &str) -> Option<Source> {
@@ -315,7 +315,7 @@ pub enum Feature {
 
 /// Java: the nested enum {@code Source.Feature.DiagKind}.
 ///
-/// PORTING_RULES: Java constant names are kept (NORMAL/PLURAL); no camel-case
+/// Java constant names are kept (NORMAL/PLURAL); no camel-case
 /// renaming (Porting rules), so the acronym lint is allowed here.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

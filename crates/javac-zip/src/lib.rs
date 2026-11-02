@@ -6,7 +6,7 @@
 //! local headers (parsed by rawzip), entries by name, stored (0) and deflate
 //! (8) payloads (inflated by zlib-rs), UTF-8 / IBM437 entry names.
 //!
-//! PORTING_RULES: registered adapter (PORTING_RULES section 9). The zip reader
+//! registered adapter (). The zip reader
 //! is implemented on pure-Rust dependencies (rawzip + zlib-rs); rawzip also
 //! accepts zip64 archives, which java.util.zip.ZipFile supports.
 

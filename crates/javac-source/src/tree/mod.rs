@@ -1,4 +1,4 @@
-// PORTING_RULES: the Java class Tree lives in the package tree; the Rust module
+// Rust: the Java class Tree lives in the package tree; the Rust module
 // tree::tree mirrors that (clippy::module_inception is expected).
 #![allow(clippy::module_inception)]
 
@@ -10,7 +10,7 @@
 //! @author Jonathan Gibbons
 //! @since 1.6
 //!
-//! PORTING_RULES: this module holds one Rust file per Java file of the package.
+//! this module holds one Rust file per Java file of the package.
 
 pub mod annotated_type_tree;
 pub mod annotation_tree;

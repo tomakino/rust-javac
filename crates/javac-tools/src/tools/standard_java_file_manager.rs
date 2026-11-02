@@ -92,7 +92,7 @@ use std::rc::Rc;
 /// @author Peter von der Ah&eacute;
 /// @since 1.6
 ///
-/// PORTING_RULES — signature mapping:
+/// — signature mapping:
 /// * java.io.File and java.nio.file.Path both map to std::path::PathBuf (Rust
 ///   has a single OS path type).  The File and Path variants of the upstream
 ///   methods are kept as separate methods with distinct names so that the
@@ -133,7 +133,7 @@ pub trait StandardJavaFileManager: JavaFileManager {
     ///
     /// @since 13
     ///
-    /// PORTING_RULES: overload getJavaFileObjectsFromPaths(Collection of Path)
+    /// overload getJavaFileObjectsFromPaths(Collection of Path)
     /// -> get_java_file_objects_from_paths.
     fn get_java_file_objects_from_paths(&self, paths: &[PathBuf]) -> Vec<JavaFileObjectRef> {
         // Java: return getJavaFileObjectsFromFiles(asFiles(paths));
@@ -162,7 +162,7 @@ pub trait StandardJavaFileManager: JavaFileManager {
     /// Path and have it be treated as an Iterable of its
     /// components.
     ///
-    /// PORTING_RULES: overload getJavaFileObjectsFromPaths(Iterable of Path)
+    /// overload getJavaFileObjectsFromPaths(Iterable of Path)
     /// -> get_java_file_objects_from_paths_iterable.
     #[deprecated(
         note = "Java: deprecated since 13; use get_java_file_objects_from_paths(Collection)"
@@ -214,7 +214,7 @@ pub trait StandardJavaFileManager: JavaFileManager {
     ///
     /// @since 9
     ///
-    /// PORTING_RULES: overload getJavaFileObjects(Path...)
+    /// overload getJavaFileObjects(Path...)
     /// -> get_java_file_objects_paths.
     fn get_java_file_objects_paths(&self, paths: &[PathBuf]) -> Vec<JavaFileObjectRef> {
         // Java: return getJavaFileObjectsFromPaths(Arrays.asList(paths));
@@ -247,7 +247,7 @@ pub trait StandardJavaFileManager: JavaFileManager {
     ///
     /// Java: getJavaFileObjects(String...).
     ///
-    /// PORTING_RULES: overload getJavaFileObjects(String...)
+    /// overload getJavaFileObjects(String...)
     /// -> get_java_file_objects_strings.
     fn get_java_file_objects_strings(&self, names: &[JavaString]) -> Vec<JavaFileObjectRef>;
 
@@ -414,7 +414,7 @@ pub trait StandardJavaFileManager: JavaFileManager {
 
 /// Factory to create Path objects from strings.
 ///
-/// PORTING_RULES: Java nested interface StandardJavaFileManager.PathFactory ->
+/// Java nested interface StandardJavaFileManager.PathFactory ->
 /// Rust trait PathFactory (traits cannot be nested inside traits).  The path
 /// strings are Java Strings; converting them to an OS path is the platform
 /// boundary handled by the file layer (REGISTERED P2: platform path encoding).
@@ -748,7 +748,7 @@ mod tests {
 
     impl PathFactory for TestPathFactory {
         fn get_path(&self, first: &JavaString, more: &[JavaString]) -> PathBuf {
-            // PORTING_RULES: converting a Java String to an OS path is the
+            // Rust: converting a Java String to an OS path is the
             // platform-encoding boundary of the file layer (REGISTERED P2); the
             // lossy view is only used for this test factory.
             let mut path = PathBuf::from(first.to_string_lossy());

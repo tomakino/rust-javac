@@ -7,7 +7,7 @@
 //! <p>Note that additional source version constants will be added to
 //! model future releases of the language.
 //!
-//! PORTING_RULES — string/collection mapping:
+//! — string/collection mapping:
 //! * `CharSequence` parameters -> `&javac_strings::JavaString` (Java String
 //!   semantics; docs/PORTING_RULES.md §7).
 //! * `SourceVersion` overloads are expressed with distinct function names
@@ -36,7 +36,7 @@ use javac_strings::JavaString;
 /// @author Peter von der Ah&eacute;
 /// @since 1.6
 ///
-/// PORTING_RULES: Java enum constants keep their Java names
+/// Java enum constants keep their Java names
 /// (UPPER_SNAKE_CASE); declaration order is preserved because it defines
 /// `compareTo`, which upstream uses (`version.compareTo(RELEASE_2) >= 0`).
 #[allow(non_camel_case_types)]
@@ -236,7 +236,7 @@ impl SourceVersion {
 
     /// Java: `enum SourceVersion#valueOf(String)`.
     ///
-    /// PORTING_RULES: an unknown name raises `IllegalArgumentException`
+    /// an unknown name raises `IllegalArgumentException`
     /// upstream, which is API misuse and maps to `panic!`.
     pub fn value_of(name: &JavaString) -> SourceVersion {
         SourceVersion::values()
@@ -278,7 +278,7 @@ impl SourceVersion {
     /// is running on a platform version different than the latest
     /// version modeled by the API.
     ///
-    /// PORTING_RULES: upstream computes this from
+    /// upstream computes this from
     /// `Runtime.version().feature()`; rust-javac targets the JDK 17 platform
     /// (docs/PLAN.md baseline), so the execution environment always supports
     /// `RELEASE_17`, exactly as upstream does when running on JDK 17.
@@ -320,7 +320,7 @@ impl SourceVersion {
         //     }
         //     return true;
         //
-        // PORTING_RULES: Character.isJavaIdentifierStart/Part are provided by
+        // Rust: Character.isJavaIdentifierStart/Part are provided by
         // the registered javac-unicode adapter (JDK 17 Character data).
         if name.is_empty() {
             return false;
@@ -375,7 +375,7 @@ impl SourceVersion {
     /// @jls 6.2 Names and Identifiers
     /// @since 9
     ///
-    /// PORTING_RULES: overload `isName(CharSequence, SourceVersion)`.
+    /// overload `isName(CharSequence, SourceVersion)`.
     /// Java: for (String s : id.split("\\.", -1)).  `split_char` keeps the
     /// trailing empty strings like `String.split(regex, -1)`.
     pub fn is_name_version(name: &JavaString, version: SourceVersion) -> bool {
@@ -417,7 +417,7 @@ impl SourceVersion {
     /// @jls 3.10.8 The Null Literal
     /// @since 9
     ///
-    /// PORTING_RULES: overload `isKeyword(CharSequence, SourceVersion)`.
+    /// overload `isKeyword(CharSequence, SourceVersion)`.
     /// The Java switch on a String is a chain of equals() comparisons; it is
     /// transcribed as an if/else chain over JavaString equality.
     /// `version.compareTo(X) >= 0` becomes `version >= X` because the enum
@@ -532,7 +532,7 @@ impl SourceVersion {
 
 /// Java: `private static SourceVersion getLatestSupported()`.
 ///
-/// PORTING_RULES: upstream maps the runtime feature version to a constant:
+/// upstream maps the runtime feature version to a constant:
 /// `(intVersion >= 11) ? valueOf("RELEASE_" + Math.min(17, intVersion))
 ///  : RELEASE_10`. rust-javac runs as the JDK 17 platform
 /// (docs/PLAN.md baseline), so the execution environment is JDK 17 and the

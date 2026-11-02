@@ -1,7 +1,7 @@
 //! Provides methods to obtain the position of a DocTree within a javadoc
 //! comment.
 //!
-//! PORTING_RULES: Java interface -> Rust trait; the two overloaded methods are
+//! Java interface -> Rust trait; the two overloaded methods are
 //! re-declared in the sub-trait with the DocTree parameters (the same Java
 //! method name with different signatures cannot be expressed by a single Rust
 //! method; calling them on a concrete implementation requires the fully

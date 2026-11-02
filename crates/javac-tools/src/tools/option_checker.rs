@@ -7,7 +7,7 @@ use javac_strings::JavaString;
 /// @author Peter von der Ah&eacute;
 /// @since 1.6
 ///
-/// PORTING_RULES: Java String -> &javac_strings::JavaString; the int result is
+/// Java String -> &javac_strings::JavaString; the int result is
 /// kept (-1 means "not supported").
 pub trait OptionChecker {
     /// Determines if the given option is supported and if so, the

@@ -3,7 +3,7 @@
 //! type, just override the corresponding visitXYZ method.  Inside your method,
 //! call super.visitXYZ to visit descendant nodes.
 //!
-//! PORTING_RULES (§14.4):
+//! (§14.4):
 //! * Java `TreePathScanner<R,P> extends TreeScanner<R,P>` is ported as an
 //!   **independent** trait (not a TreeScanner subtrait): the Java scan(Tree, P)
 //!   override must be visible to the default visit methods that call `this.scan`,

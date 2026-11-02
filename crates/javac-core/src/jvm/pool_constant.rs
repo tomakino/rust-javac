@@ -4,7 +4,7 @@
 //! the desired pool entry (so as to avoid duplicate entries when writing the
 //! constant pool).
 //!
-//! PORTING_RULES: the ported subset covers the LoadableConstant hierarchy used
+//! the ported subset covers the LoadableConstant hierarchy used
 //! by the Lower pass; the Dynamic/BsmKey/NameAndType members of the upstream
 //! file are registered for the Gen/PoolWriter batch (they need the UniqueType
 //! adapter and the bootstrap-method pool machinery).

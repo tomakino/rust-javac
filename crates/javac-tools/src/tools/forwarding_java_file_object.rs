@@ -19,7 +19,7 @@ use std::io::{Read, Write};
 /// @author Peter von der Ah&eacute;
 /// @since 1.6
 ///
-/// PORTING_RULES — class mapping:
+/// — class mapping:
 /// * Java: "class ForwardingJavaFileObject<F extends JavaFileObject>
 ///   extends ForwardingFileObject<F> implements JavaFileObject".
 ///   Rust has no inheritance, so the superclass instance is embedded in the

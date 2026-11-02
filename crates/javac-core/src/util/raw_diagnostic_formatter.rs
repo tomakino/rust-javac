@@ -10,7 +10,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! - the Java subclass (RawDiagnosticFormatter extends
 //!   AbstractDiagnosticFormatter) maps to implementing the
 //!   AbstractDiagnosticFormatter trait;

@@ -1,6 +1,6 @@
 //! Utility methods for operating on program elements.
 //!
-//! PORTING_RULES (§6/§14):
+//! (§6/§14):
 //! * Java interface -> Rust trait; Java default methods -> Rust default methods.
 //! * Java overloads (getPackageElement/getTypeElement/getOrigin) -> distinct Rust
 //!   names (documented per method; §14 overload rule).
@@ -367,7 +367,7 @@ pub trait Elements {
     /// Returns the record component for the given accessor. Returns null if the
     /// given method is not a record component accessor.
     ///
-    /// PORTING_RULES: the Java default implementation returns a component from a
+    /// the Java default implementation returns a component from a
     /// temporary list through ElementFilter's borrowed references (§13), which
     /// cannot produce an owned Rc; the Rust default panics and implementors (P6)
     /// must override it (registered language-shape limitation).
@@ -390,7 +390,7 @@ pub trait Elements {
 
 /// The origin of an element or other language model item.
 ///
-/// PORTING_RULES: Java nested enum Elements.Origin -> elements::Origin.
+/// Java nested enum Elements.Origin -> elements::Origin.
 ///
 /// @jls 13.1 The Form of a Binary
 /// @since 9

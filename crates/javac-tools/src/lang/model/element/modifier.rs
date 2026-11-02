@@ -25,7 +25,7 @@ use javac_strings::JavaString;
 /// @author Peter von der Ah&eacute;
 /// @since 1.6
 ///
-/// PORTING_RULES: Java enum constants keep their Java names
+/// Java enum constants keep their Java names
 /// (UPPER_SNAKE_CASE).
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -118,7 +118,7 @@ impl std::fmt::Display for Modifier {
     /// replaced with hyphens ("{@code -}").
     /// @return the modifier's name
     ///
-    /// PORTING_RULES: upstream implements this as
+    /// upstream implements this as
     /// `name().toLowerCase(java.util.Locale.US)`, i.e. lowercase only, and
     /// overrides `NON_SEALED.toString()` to return "non-sealed" (the hyphen
     /// replacement is only stated in the Javadoc, not performed by the shared

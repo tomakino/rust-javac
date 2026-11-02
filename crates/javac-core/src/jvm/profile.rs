@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! * the Java enum constructor stores (name, value, targets); the DEFAULT
 //!   constant overrides isValid.  Rust expresses the constructor data as
 //!   match-based accessors and the isValid override as the DEFAULT arm.
@@ -69,7 +69,7 @@ impl Profile {
 
     /// Java: final Set<Target> targets (null for DEFAULT -> None).
     ///
-    /// PORTING_RULES: the upstream EnumSet.of(t) always has exactly one element.
+    /// the upstream EnumSet.of(t) always has exactly one element.
     pub fn targets(self) -> Option<[Target; 1]> {
         match self {
             Profile::COMPACT1 | Profile::COMPACT2 | Profile::COMPACT3 => Some([Target::JDK1_8]),
@@ -79,7 +79,7 @@ impl Profile {
 
     /// Java: public static Profile lookup(String name).
     ///
-    /// PORTING_RULES: Java calls name.equals(p.name); a null p.name (DEFAULT)
+    /// Java calls name.equals(p.name); a null p.name (DEFAULT)
     /// never matches.
     pub fn lookup(name: &str) -> Option<Profile> {
         Profile::values()
@@ -90,7 +90,7 @@ impl Profile {
 
     /// Java: public static Profile lookup(int value).
     ///
-    /// PORTING_RULES: upstream searches by the integer value, so
+    /// upstream searches by the integer value, so
     /// lookup_value(Integer.MAX_VALUE) returns DEFAULT (its value field is
     /// Integer.MAX_VALUE) — kept as upstream.
     pub fn lookup_value(value: i32) -> Option<Profile> {
@@ -102,7 +102,7 @@ impl Profile {
 
     /// Java: public boolean isValid(Target t).
     ///
-    /// PORTING_RULES: DEFAULT overrides isValid to return true; the compact
+    /// DEFAULT overrides isValid to return true; the compact
     /// profiles check membership in their target set.
     pub fn is_valid(self, target: Target) -> bool {
         match self.targets() {

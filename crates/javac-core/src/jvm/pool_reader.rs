@@ -6,7 +6,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES (1:1 where the dependency is ported; the rest is reported):
+//! (1:1 where the dependency is ported; the rest is reported):
 //! * ported dependencies: ClassFile constants/internalize (crate::jvm::class_file),
 //!   ByteBuffer (crate::util::byte_buffer), Convert.utf2string
 //!   (crate::util::convert), Name/Names (crate::util::name/names).
@@ -30,7 +30,7 @@
 //! resolve/getUtf8/peekName/peekClassName/peekPackageName/peekModuleName/
 //! hasTag/getConstant/sizeof.
 //! 
-//! PORTING_RULES: the getClass/getModule/getPackage/getType/getNameAndType
+//! the getClass/getModule/getPackage/getType/getNameAndType
 //! names are kept with their upstream shape; the symbol/type-producing step is
 //! performed by the ClassReader wrappers listed above (the raw PoolValue seam).
 #![allow(dead_code)]
@@ -51,7 +51,7 @@ use std::fmt;
 
 /// The raw representation of a lazily resolved constant pool value.
 ///
-/// PORTING_RULES: PoolConstant/PoolConstant.NameAndType are represented by this
+/// PoolConstant/PoolConstant.NameAndType are represented by this
 /// raw-value adapter; the ClassSymbol/ModuleSymbol/PackageSymbol/Type creation
 /// happens in the ClassReader get_* seam (see the file header).
 #[derive(Clone)]
@@ -85,7 +85,7 @@ pub(crate) enum PoolValue {
 /// Error channel matching the ClassReader.badClassFile call sites used by this
 /// class.
 ///
-/// PORTING_RULES: upstream reader.badClassFile throws a ClassFileError with
+/// upstream reader.badClassFile throws a ClassFileError with
 /// these message keys; ClassReader.pool_error maps this enum onto the ported
 /// badClassFile channel (class_reader.rs:360-386).
 #[derive(Clone, PartialEq, Eq)]
@@ -122,7 +122,7 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// PORTING_RULES: java.util.BitSet classCP/constantCP/moduleCP/packageCP/
+/// java.util.BitSet classCP/constantCP/moduleCP/packageCP/
 /// utf8CP/nameAndTypeCP are replaced by this closed enum (same membership).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TagSet {
@@ -151,7 +151,7 @@ impl TagSet {
 
 /// The constant pool reader.
 ///
-/// PORTING_RULES: single-threaded; the lazily filled values array is a
+/// single-threaded; the lazily filled values array is a
 /// RefCell.  Java stores the buffer/names in fields; here they are passed to the
 /// decoding methods (signature-level adaptation, see the file header).
 pub(crate) struct PoolReader {
@@ -208,7 +208,7 @@ impl PoolReader {
     /// Java: peekName(int index, NameMapper<Z> mapper) — Peek a name from the
     /// pool at given index without resolving.
     ///
-    /// PORTING_RULES: the generic NameMapper<Z> is represented by the
+    /// the generic NameMapper<Z> is represented by the
     /// internalize_name flag (the two mappers ModuleNameReader constructs).
     pub(crate) fn peek_name(
         &self,
@@ -413,7 +413,7 @@ impl PoolReader {
 
     /// Java: ImmutablePoolHelper.readIfNeeded(int index, BitSet expectedTags)
     ///
-    /// PORTING_RULES: Java is generic over the expected value type (P); the raw
+    /// Java is generic over the expected value type (P); the raw
     /// PoolValue adapter is returned instead (see the file header).
     pub(crate) fn read_if_needed(
         &self,

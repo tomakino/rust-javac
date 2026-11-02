@@ -1,6 +1,6 @@
 //! The top-level representation of a documentation comment.
 //!
-//! PORTING_RULES: Java interface -> Rust trait; the 3 Java `default` methods
+//! Java interface -> Rust trait; the 3 Java `default` methods
 //! are expressible as Rust default methods (getFullBody concatenates
 //! firstSentence and body; getPreamble/getPostamble return an empty list).
 

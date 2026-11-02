@@ -171,7 +171,7 @@ use std::rc::Rc;
 /// @see JavaFileManager
 /// @since 1.6
 ///
-/// PORTING_RULES — signature mapping:
+/// — signature mapping:
 /// * out Writer can be null ("use the compiler's default") -> Option of
 ///   Rc of RefCell of dyn Writer.  A Java Writer is a shared mutable
 ///   reference; Rc<RefCell<..>> is the only Rust representation (the crate
@@ -264,7 +264,7 @@ pub trait JavaCompiler: Tool + OptionChecker {
 /// task can be configured, for example, by calling the
 /// {@linkplain #setProcessors setProcessors} method.
 ///
-/// PORTING_RULES: Java nested interface JavaCompiler.CompilationTask ->
+/// Java nested interface JavaCompiler.CompilationTask ->
 /// Rust trait CompilationTask.  Callable of Boolean -> call() returning bool.
 /// The configuring methods and call() take &mut self: a Java task mutates
 /// itself and call() may only be invoked once (IllegalStateException

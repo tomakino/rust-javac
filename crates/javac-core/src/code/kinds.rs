@@ -7,7 +7,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: the Java enum constructors store (category, kindName/
+//! the Java enum constructors store (category, kindName/
 //! absentKind, selector) per constant; Rust expresses those as match-based
 //! accessors. KindSelector/RequiresFlag-style EnumSet helpers are reproduced
 //! with the upstream bit values. kindName(Symbol)/typeKindName(Type) read the

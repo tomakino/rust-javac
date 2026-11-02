@@ -7,12 +7,12 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: Java byte[] is Vec<u8>. The two public fields stay public because javac reads
+//! Java byte[] is Vec<u8>. The two public fields stay public because javac reads
 //! them directly (PoolWriter: out.write(pool.poolbuf.elems, 0, pool.poolbuf.length)).
-//! PORTING_RULES: appendLong/appendFloat/appendDouble and getLong/getFloat/getDouble use the
+//! appendLong/appendFloat/appendDouble and getLong/getFloat/getDouble use the
 //! Java DataOutputStream/DataInputStream big-endian byte order; Rust uses the equivalent
 //! to_be_bytes/from_be_bytes conversions of the same bit patterns.
-//! PORTING_RULES: appendStream takes std::io::Read instead of java.io.InputStream.
+//! appendStream takes std::io::Read instead of java.io.InputStream.
 //! InputStream.available() only pre-sizes the array and has no std::io::Read equivalent, so no
 //! pre-allocation is performed (it cannot change the bytes read); the Java finally-close is the
 //! caller's responsibility in Rust. The upstream quirk that appendStream does not update the
@@ -166,7 +166,7 @@ impl ByteBuffer {
         // Java: int start = length;
         let start = self.length;
         // Java: int initialSize = is.available();
-        // PORTING_RULES: no equivalent on std::io::Read; only pre-sizing, see the file comment.
+        // Rust: no equivalent on std::io::Read; only pre-sizing, see the file comment.
         let initial_size: i32 = 0;
         self.elems = array_utils::ensure_capacity_bytes(
             std::mem::take(&mut self.elems),

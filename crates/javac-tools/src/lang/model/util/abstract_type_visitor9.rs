@@ -1,7 +1,7 @@
 //! A skeletal visitor of types with default behavior appropriate for the
 //! RELEASE_9 through RELEASE_14 source version.
 //!
-//! PORTING_RULES: Java abstract class `AbstractTypeVisitor9 extends
+//! Java abstract class `AbstractTypeVisitor9 extends
 //! AbstractTypeVisitor8` adds only constructors; the Rust trait is an
 //! empty subtrait of the previous level, which keeps the same default
 //! behavior.  Implementations implement each level of the Java class hierarchy

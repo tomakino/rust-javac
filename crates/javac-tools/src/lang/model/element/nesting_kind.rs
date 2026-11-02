@@ -16,7 +16,7 @@ use javac_strings::JavaString;
 /// @author Peter von der Ah&eacute;
 /// @since 1.6
 ///
-/// PORTING_RULES: Java enum constants keep their Java names
+/// Java enum constants keep their Java names
 /// (UPPER_SNAKE_CASE).
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

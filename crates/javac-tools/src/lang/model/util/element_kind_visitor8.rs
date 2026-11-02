@@ -1,7 +1,7 @@
 //! A visitor of program elements based on their kind with default behavior
 //! appropriate for the RELEASE_8 source version.
 //!
-//! PORTING_RULES: Java `ElementKindVisitor8 extends ElementKindVisitor7` adds
+//! Java `ElementKindVisitor8 extends ElementKindVisitor7` adds
 //! only constructors; the Rust trait is an empty subtrait that keeps the
 //! inherited default behavior.
 

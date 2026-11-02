@@ -7,7 +7,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! * Java objects are shared mutable references; the Rust Options table is shared
 //!   through Rc<Options> (Context-cached) and every method takes &self, so the
 //!   mutable state lives in RefCell.  This is a registered interior-mutability
@@ -75,7 +75,7 @@ impl Options {
     /// Java: protected Options(Context context) { values = new LinkedHashMap<>();
     ///       context.put(optionsKey, this); }
     ///
-    /// PORTING_RULES: the context registration is done by instance(), because a
+    /// the context registration is done by instance(), because a
     /// Java constructor can register "this" while Rust needs the Rc first.
     fn new_table() -> Options {
         Options {
@@ -86,7 +86,7 @@ impl Options {
 
     /// Get the value for an undocumented option.
     ///
-    /// PORTING_RULES: returns a copy of the stored value (see the header).
+    /// returns a copy of the stored value (see the header).
     pub fn get(&self, name: &str) -> StdOption<String> {
         self.values
             .borrow()
@@ -241,7 +241,7 @@ impl Options {
 
     /// Java: public Set<String> keySet().
     ///
-    /// PORTING_RULES: Java Set -> Vec snapshot (Porting rules), in insertion (LinkedHashMap) order.
+    /// Java Set -> Vec snapshot (Porting rules), in insertion (LinkedHashMap) order.
     pub fn key_set(&self) -> Vec<String> {
         self.values
             .borrow()

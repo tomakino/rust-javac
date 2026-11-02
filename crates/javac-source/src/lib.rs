@@ -8,7 +8,7 @@
 //! (`com.sun.tools.javac.tree.JCTree`) live in javac-core (P1) and the API
 //! implementation (`JavacTask`, `Trees`, ...) in the P6 API phase.
 //!
-//! PORTING_RULES — language-shape mapping (docs/PORTING_RULES.md §12/§13/§14):
+//! — language-shape mapping (docs/PORTING_RULES.md §12/§13/§14):
 //! * Java interface -> Rust trait; Java abstract class -> Rust trait with the
 //!   upstream default behavior (core version) and subtraits for the versioned
 //!   class hierarchy.

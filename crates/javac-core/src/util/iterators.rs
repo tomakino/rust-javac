@@ -5,12 +5,12 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: Java java.util.Iterator<O> maps to std::iter::Iterator<Item = O>; Java
+//! Java java.util.Iterator<O> maps to std::iter::Iterator<Item = O>; Java
 //! Iterable<I> parameters map to a Rust Iterator (the call site performs iterable.iterator()).
 //! The explicit Java iterator contract is kept where it is observable: hasNext is has_next and
 //! the Java NoSuchElementException paths panic. FilterIterator.next() returns the null
 //! "current" element in Java when exhausted; Option models that null.
-//! PORTING_RULES: Iterator.remove() throws UnsupportedOperationException in both classes and has
+//! Iterator.remove() throws UnsupportedOperationException in both classes and has
 //! no callers; std::iter::Iterator has no remove, so it is not ported (registered in STATUS.md).
 
 /// Java: public static <I, O> Iterator<O> createCompoundIterator(Iterable<I> inputs,
@@ -28,7 +28,7 @@ where
     }
 }
 
-/// PORTING_RULES: Java distinguishes three states for currentIterator: the EMPTY sentinel
+/// Java distinguishes three states for currentIterator: the EMPTY sentinel
 /// (initial), null (exhausted) and a real iterator; the enum keeps that distinction because the
 /// next()/hasNext() interaction depends on it.
 enum CurrentIterator<CI: Iterator> {

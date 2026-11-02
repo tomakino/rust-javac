@@ -1,7 +1,7 @@
 //! A simple visitor of program elements with default behavior appropriate for
 //! the RELEASE_6 source version.
 //!
-//! PORTING_RULES — class mapping:
+//! — class mapping:
 //! * Java concrete class -> Rust trait with the upstream default behavior.
 //! * the Java `protected final R DEFAULT_VALUE` field (whose null default is one
 //!   of the two upstream constructors) -> the object-safe accessor

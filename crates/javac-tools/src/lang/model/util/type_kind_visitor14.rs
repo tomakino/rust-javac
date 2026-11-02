@@ -1,7 +1,7 @@
 //! A visitor of types based on their kind with default behavior appropriate for
 //! the RELEASE_14 source version.
 //!
-//! PORTING_RULES: Java `TypeKindVisitor14 extends TypeKindVisitor9` adds only
+//! Java `TypeKindVisitor14 extends TypeKindVisitor9` adds only
 //! constructors; the Rust trait is an empty subtrait that keeps the inherited
 //! default behavior.
 

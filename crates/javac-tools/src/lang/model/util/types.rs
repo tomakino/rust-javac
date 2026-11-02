@@ -1,6 +1,6 @@
 //! Utility methods for operating on types.
 //!
-//! PORTING_RULES (§6/§14):
+//! (§6/§14):
 //! * Java interface -> Rust trait.
 //! * Java overloads of getDeclaredType -> distinct Rust names
 //!   (get_declared_type / get_declared_type_in; §14 overload rule).

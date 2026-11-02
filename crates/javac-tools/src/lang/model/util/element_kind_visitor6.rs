@@ -1,7 +1,7 @@
 //! A visitor of program elements based on their kind with default behavior
 //! appropriate for the RELEASE_6 source version.
 //!
-//! PORTING_RULES — class mapping:
+//! — class mapping:
 //! * Java concrete class -> Rust trait with the upstream default behavior.
 //! * the Java `assert e.getKind() == PACKAGE` statements (disabled by default in
 //!   Java) -> `debug_assert_eq!` (enabled in debug builds); the switch default

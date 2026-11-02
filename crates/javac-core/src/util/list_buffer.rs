@@ -6,7 +6,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: the four Java fields and the incremental algorithm are kept one-for-one:
+//! the four Java fields and the incremental algorithm are kept one-for-one:
 //! elems/last/count/shared, append splices a node after the last data node with set_tail,
 //! toList hands out the internal list in O(1) and sets shared, append after a toList first
 //! runs the private copy() (copy-on-write). The only representational change is that the
@@ -14,10 +14,10 @@
 //! (remove/removeAll/retainAll) are not ported: remove(Object) throws
 //! UnsupportedOperationException in javac and none of the three is called (grep over the
 //! upstream tree); they are registered in docs/STATUS.md.
-//! PORTING_RULES: toList is a &self method here because it only updates the mutable
+//! toList is a &self method here because it only updates the mutable
 //! Java "shared" field, which is modelled with Cell<bool>; keeping it callable on a shared
 //! reference mirrors the upstream call sites (e.g. List.appendList(ListBuffer)).
-//! PORTING_RULES: Java's anonymous Iterator in iterator() is expressed with the ListIter used
+//! Java's anonymous Iterator in iterator() is expressed with the ListIter used
 //! by List.iterator(); hasNext/next semantics are identical.
 
 use std::cell::Cell;
@@ -174,7 +174,7 @@ impl<A> ListBuffer<A> {
     ///     count++;
     ///     return this;
     /// }
-    // PORTING_RULES: Java needs no Clone here; the Rust copy() (run when shared) must rebuild
+    // Rust: Java needs no Clone here; the Rust copy() (run when shared) must rebuild
     // the existing chain, so appending requires A: Clone. A is a handle or an id in javac, so
     // the clone is O(1).
     pub fn append(&mut self, x: A) -> &mut Self
@@ -289,7 +289,7 @@ impl<A> ListBuffer<A> {
     ///     return x;
     /// }
     ///
-    /// PORTING_RULES: Java returns the null head for an empty buffer; Option<A> models that
+    /// Java returns the null head for an empty buffer; Option<A> models that
     /// null (None when the buffer is empty). The Java method name next() is kept, so the method
     /// is not a std::iter::Iterator::next.
     #[allow(clippy::should_implement_trait)]
@@ -379,7 +379,7 @@ impl<A> ListBuffer<A> {
         self.last.as_ref().map(|last| last.head())
     }
 
-    // PORTING_RULES: the remaining java.util.Queue/Collection obligations of ListBuffer
+    // Rust: the remaining java.util.Queue/Collection obligations of ListBuffer
     // (remove(Object), removeAll, retainAll) throw UnsupportedOperationException in javac and
     // have no callers (grep over the upstream tree); see docs/STATUS.md.
 }

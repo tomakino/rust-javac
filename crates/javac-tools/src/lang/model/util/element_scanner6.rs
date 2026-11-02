@@ -1,7 +1,7 @@
 //! A scanning visitor of program elements with default behavior appropriate for
 //! the RELEASE_6 source version.
 //!
-//! PORTING_RULES — class mapping:
+//! — class mapping:
 //! * Java concrete class -> Rust trait with the upstream default behavior.
 //! * `Iterable<? extends Element>` -> `&[Rc<dyn Element>]`.
 //! * the Java `public final R scan(Iterable, P)` becomes `scan_all` (overload
@@ -63,7 +63,7 @@ pub trait ElementScanner6<R: Clone, P: Clone>: AbstractElementVisitor6<R, P> {
     /// @param  p additional parameter
     /// @return the scan of the last element or DEFAULT_VALUE if no elements
     ///
-    /// PORTING_RULES: overload `scan(Iterable, P)` -> `scan_all`.
+    /// overload `scan(Iterable, P)` -> `scan_all`.
     fn scan_all(&mut self, iterable: &[Rc<dyn Element>], p: P) -> R {
         let mut result: Option<R> = self.default_value().cloned();
         for e in iterable {
@@ -86,7 +86,7 @@ pub trait ElementScanner6<R: Clone, P: Clone>: AbstractElementVisitor6<R, P> {
     /// @return the result of visiting e.
     fn scan(&mut self, e: &dyn Element, p: P) -> R {
         // Java: return e.accept(this, p);
-        // PORTING_RULES: Element::accept is generic and cannot be called on
+        // Rust: Element::accept is generic and cannot be called on
         // &dyn Element; the Rust dispatch through the ElementVisitor trait
         // would bypass the scanner's default visit methods, so this base
         // implementation is not expressible.  Subclasses must override scan (a
@@ -177,7 +177,7 @@ mod tests {
             None
         }
         fn scan(&mut self, e: &dyn crate::lang::model::element::Element, _p: ()) -> usize {
-            // PORTING_RULES: the base scan needs a concrete-type override; this
+            // Rust: the base scan needs a concrete-type override; this
             // test records the traversal instead of dispatching.
             self.log.push(e.get_kind());
             0

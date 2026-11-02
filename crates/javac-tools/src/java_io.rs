@@ -8,7 +8,7 @@
 //! Minimal mapping of `java.io.Reader` / `java.io.Writer` (character
 //! streams) for the `javax.tools` layer.
 //!
-//! PORTING_RULES: a Java Reader/Writer transports UTF-16 `char` values;
+//! a Java Reader/Writer transports UTF-16 `char` values;
 //! Rust has no std equivalent (std::io is byte oriented), so the traits below
 //! are the minimal representation.  Encoding/decoding belongs to the ports of
 //! `java.io.InputStreamReader` / `OutputStreamWriter` (done by the
@@ -107,7 +107,7 @@ impl Reader for StringReader {
 /// Java: java.io.InputStreamReader (a byte stream decoded by a
 /// java.nio.charset.CharsetDecoder).
 ///
-/// PORTING_RULES: charset decoding is the javac-charset CharsetDecoder (the
+/// charset decoding is the javac-charset CharsetDecoder (the
 /// java.nio.charset state machine); the java.io character-stream semantics are
 /// represented by the Reader trait.
 pub struct InputStreamReader {
@@ -220,7 +220,7 @@ impl Reader for InputStreamReader {
 /// Java: java.io.OutputStreamWriter (a byte stream encoded by a
 /// java.nio.charset.CharsetEncoder).
 ///
-/// PORTING_RULES: charset encoding is the javac-charset CharsetEncoder (the
+/// charset encoding is the javac-charset CharsetEncoder (the
 /// java.nio.charset state machine); the java.io character-stream semantics are
 /// represented by the Writer trait.
 pub struct OutputStreamWriter {

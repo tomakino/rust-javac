@@ -1,6 +1,6 @@
 //! A tree visitor that computes a hash code (TreeHasher.java).
 //!
-//! PORTING_RULES: TreeHasher extends TreeScanner; the port implements TreeVisitor
+//! TreeHasher extends TreeScanner; the port implements TreeVisitor
 //! with the TreeScanner default navigation copied for the node kinds TreeHasher
 //! does not override (registered adapter for Java inheritance), and overrides
 //! scan/visitLiteral/visitIdent/visitSelect/visitVarDef exactly as upstream.

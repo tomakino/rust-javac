@@ -1,6 +1,6 @@
 //! Represents a module program element.
 //!
-//! PORTING_RULES:
+//!
 //! * The nested types of the Java interface (`DirectiveKind`, `Directive`,
 //!   `DirectiveVisitor`, `RequiresDirective`, `ExportsDirective`,
 //!   `OpensDirective`, `ProvidesDirective`, `UsesDirective`) become types of
@@ -58,7 +58,7 @@ pub trait ModuleElement: Element + QualifiedNameable {
 ///
 /// @since 9
 ///
-/// PORTING_RULES: Java enum constants keep their Java names and order.
+/// Java enum constants keep their Java names and order.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DirectiveKind {
@@ -111,7 +111,7 @@ impl std::fmt::Display for DirectiveKind {
 ///
 /// @since 9
 ///
-/// PORTING_RULES: Java nested interface ModuleElement.Directive ->
+/// Java nested interface ModuleElement.Directive ->
 /// module_element::Directive; `Object.toString()` -> Display supertrait.
 pub trait Directive: std::fmt::Display {
     /// {@return the kind of this directive}
@@ -138,12 +138,12 @@ pub trait Directive: std::fmt::Display {
     /// @param p   additional parameter to the visitor
     /// @return a visitor-specified result
     ///
-    /// PORTING_RULES: `where Self: Sized` keeps Directive object safe.
+    /// `where Self: Sized` keeps Directive object safe.
     fn accept<R, P>(&self, v: &mut dyn DirectiveVisitor<R, P>, p: P) -> R
     where
         Self: Sized;
 
-    // PORTING_RULES: Object conversion contract (same rationale as
+    // Rust: Object conversion contract (same rationale as
     // Element::as_*): Java DirectiveFilter code casts a Directive to its
     // subinterface after checking getKind(); Rust needs an object-safe accessor.
     // Default None, overridden by concrete implementations.
@@ -220,7 +220,7 @@ pub trait DirectiveVisitor<R, P> {
     /// @throws UnknownDirectiveException a visitor implementation may optionally throw this exception
     /// @implSpec The default implementation throws new UnknownDirectiveException(d, p).
     ///
-    /// PORTING_RULES: the upstream default throws; the Rust default panics with
+    /// the upstream default throws; the Rust default panics with
     /// the same message (the exception object cannot hold a `&dyn Directive`;
     /// see unknown_directive_exception.rs).
     fn visit_unknown(&mut self, d: &dyn Directive, p: P) -> R {

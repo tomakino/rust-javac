@@ -20,7 +20,7 @@ use javac_strings::JavaString;
 /// @see JavaFileManager
 /// @since 1.6
 ///
-/// PORTING_RULES:
+///
 /// * `javax.lang.model.element.NestingKind` and `Modifier` are ported in
 ///   `crate::lang::model::element` because this interface signature needs them.
 /// * Java returns `null` from `getNestingKind`/`getAccessLevel` when the
@@ -66,7 +66,7 @@ pub trait JavaFileObject: FileObject {
 
 /// Kinds of JavaFileObjects.
 ///
-/// PORTING_RULES: Java `enum JavaFileObject.Kind` (nested enum) -> Rust enum
+/// Java `enum JavaFileObject.Kind` (nested enum) -> Rust enum
 /// `Kind` in this module.  The Java `public final String extension` field is
 /// expressed as the `extension()` accessor because Rust enum variants cannot
 /// carry a per-variant field; the `Kind(String extension)` constructor is

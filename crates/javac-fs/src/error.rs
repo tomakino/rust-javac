@@ -10,7 +10,7 @@
 
 //! Errors of the path/file layer.
 //!
-//! PORTING_RULES: the declared java.io.IOException is mapped to [std::io::Error];
+//! the declared java.io.IOException is mapped to [std::io::Error];
 //! java.nio.file.InvalidPathException and IllegalArgumentException (thrown by
 //! Path.relativize for mismatched roots) keep their Java roles/classes here so
 //! the P2 file layer can map them onto javac diagnostics.

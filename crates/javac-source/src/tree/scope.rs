@@ -1,7 +1,7 @@
 //! Interface for determining locally available program elements, such as local
 //! variables and imports.
 //!
-//! PORTING_RULES: Java interface -> Rust trait.  `Scope` is not a Tree
+//! Java interface -> Rust trait.  `Scope` is not a Tree
 //! subinterface (no getKind/accept).  The Java documentation does not state
 //! nullable returns for the enclosing scope/class/method; the port uses Option
 //! because the outermost scope has no enclosing scope (registered).

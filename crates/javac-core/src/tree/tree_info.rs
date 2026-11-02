@@ -27,7 +27,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: ADR 0001 (arena + IDs):
+//! ADR 0001 (arena + IDs):
 //! - the upstream static methods become free functions; functions that inspect
 //!   child/symbol/type fields take (ctx: &CompilerContext, tree: TreeId) (the
 //!   Java static methods had the object graph at hand);
@@ -52,7 +52,7 @@
 
 // The upstream algorithms are copied with their exact if/match nesting; the
 // clippy style suggestions to collapse them are not applied (registered in
-// PORTING_RULES section 9: control flow is kept 1:1 with the upstream source).
+// control flow is kept 1:1 with the upstream source).
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::collapsible_match)]
 #![allow(clippy::question_mark)]
@@ -70,7 +70,7 @@ use crate::util::list::List;
 use crate::util::name::Name;
 use crate::util::position::NOPOS;
 
-/// PORTING_RULES adapter: the upstream List API is accessed through the ported
+/// Adapter: the upstream List API is accessed through the ported
 /// util::list::List; this helper trait adds the nullable-head/tail accessors
 /// used by the copied algorithms (Java: List.head/list.last with empty checks).
 trait ListExt<A> {
@@ -159,7 +159,7 @@ pub fn has_constructors(ctx: &CompilerContext, trees: &List<TreeId>) -> bool {
 
 /// Is there a constructor invocation in the given list of trees?
 ///
-/// PORTING_RULES: the upstream returns names.empty when no call is found; the
+/// the upstream returns names.empty when no call is found; the
 /// adapter returns None for that case.
 pub fn get_constructor_invocation_name(
     ctx: &CompilerContext,
@@ -354,7 +354,7 @@ pub fn record_fields(ctx: &CompilerContext, tree: TreeId) -> List<TreeId> {
 
 /// Java: public static List<Type> recordFieldTypes(JCClassDecl tree)
 ///
-/// PORTING_RULES: JCVariableDecl.type may be null before Attr, so the result is
+/// JCVariableDecl.type may be null before Attr, so the result is
 /// List<Option<TypeId>> (the upstream List<Type> may contain null).
 pub fn record_field_types(ctx: &CompilerContext, tree: TreeId) -> List<Option<TypeId>> {
     let mut result = List::nil();
@@ -1685,7 +1685,7 @@ pub fn is_expression(ctx: &CompilerContext, tree: TreeId) -> bool {
 ///   - none.
 ///
 /// Adapter: the ported surface resolves to the tree start position (the
-/// declaration-position visitor is registered in PORTING_RULES section 9).
+/// declaration-position visitor is registered in ).
 /// Upstream: TreeInfo.java:715-735.
 pub fn diagnostic_position_for_with_flag(
     ctx: &mut CompilerContext,

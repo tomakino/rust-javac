@@ -7,7 +7,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: the Java class hierarchy (abstract RelativePath with the
+//! the Java class hierarchy (abstract RelativePath with the
 //! nested RelativeDirectory/RelativeFile subclasses) becomes a base struct plus
 //! two wrapper structs holding the base.  The base keeps the dynamic kind
 //! (RelativePathKind) so the abstract dirname()/basename() dispatch stays 1:1;
@@ -75,7 +75,7 @@ impl RelativePath {
 
     /// Java: public Path resolveAgainst(Path directory) throws InvalidPathException.
     ///
-    /// PORTING_RULES: java.nio.file.Path is the javac-fs Path; the separator is
+    /// java.nio.file.Path is the javac-fs Path; the separator is
     /// the platform separator (Java: directory.getFileSystem().getSeparator()).
     pub fn resolve_against(&self, directory: &FsPath) -> Result<FsPath, javac_fs::Error> {
         let separator = std::path::MAIN_SEPARATOR;
@@ -88,7 +88,7 @@ impl RelativePath {
     /// no java.nio.file.FileSystem object; callers use resolveAgainst(Path).
     /// Java: public Path resolveAgainst(FileSystem fs) throws InvalidPathException.
     ///
-    /// PORTING_RULES: java.nio.file.FileSystem is REGISTERED as unavailable; the caller supplies
+    /// java.nio.file.FileSystem is REGISTERED as unavailable; the caller supplies
     /// the root directory and separator (Java: fs.getRootDirectories().iterator().next()
     /// and fs.getSeparator()).  The resolution algorithm is the upstream one.
     pub fn resolve_against_fs(
@@ -258,7 +258,7 @@ impl RelativeFile {
     /// ZipArchive/entry names, not java.util.zip.ZipFile/ZipEntry.
     /// Java: public ZipEntry getZipEntry(ZipFile zip) { return zip.getEntry(path); }
     ///
-    /// PORTING_RULES: java.util.zip.ZipEntry is REGISTERED as unavailable; the archive entry lookup
+    /// java.util.zip.ZipEntry is REGISTERED as unavailable; the archive entry lookup
     /// returns the entry contents through javac-zip (registered adapter: the
     /// upstream ZipEntry object is replaced by its data).
     pub fn get_zip_entry(&self, archive: &javac_zip::ZipArchive) -> std::option::Option<Vec<u8>> {

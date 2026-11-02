@@ -1,7 +1,7 @@
 //! This class provides operations to locate module definitions from the source
 //! and class files on the paths provided to javac.
 //!
-//! PORTING_RULES: ModuleFinder.java:71-416 is ported: findModule(Name),
+//! ModuleFinder.java:71-416 is ported: findModule(Name),
 //! findModule(ModuleSymbol), findAllModules, findSingleModule, readModule,
 //! readModuleName, scanModulePath, findModuleInfo, moduleLocationIterator,
 //! getModuleInfoFromLocation, preferredFileObject and getDescription.

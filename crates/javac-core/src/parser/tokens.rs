@@ -12,7 +12,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! - TokenKind keeps the upstream names verbatim (allow(non_camel_case_types))
 //!   and the upstream name/tag table recorded from the token oracle (114 values);
 //! - the Java Token/NamedToken/StringToken/NumericToken hierarchy becomes one

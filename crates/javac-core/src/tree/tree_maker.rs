@@ -20,7 +20,7 @@
 //!
 //! <p><b>This is NOT part of any supported API.</b>
 //!
-//! PORTING_RULES (S3):
+//! (S3):
 //! * JCTree is a value in the CompilerContext tree arena: Java "new JCxxx(); tree.pos = pos"
 //!   becomes ctx.alloc_tree(JCTree { pos, ty: None, tag, kind }) (TreeId returned; see ADR 0001).
 //! * Java null child references are Option<TreeId>; child lists are List<TreeId>. A Java
@@ -152,7 +152,7 @@ impl TreeMaker {
 
     /// Java: public TreeMaker at(DiagnosticPosition pos).
     ///
-    /// PORTING_RULES: Java null -> NOPOS; the Rust parameter is Option<&dyn DiagnosticPosition>.
+    /// Java null -> NOPOS; the Rust parameter is Option<&dyn DiagnosticPosition>.
     pub fn at_diagnostic(&mut self, pos: StdOption<&dyn DiagnosticPosition>) -> &mut TreeMaker {
         self.pos = match pos {
             Some(pos) => pos.get_start_position(),
@@ -225,7 +225,7 @@ impl TreeMaker {
 
 /// Java: JCTree.Factory — the node factory interface implemented by TreeMaker.
 ///
-/// PORTING_RULES: Java nested interface JCTree.Factory -> trait TreeFactory (Rust traits cannot
+/// Java nested interface JCTree.Factory -> trait TreeFactory (Rust traits cannot
 /// be nested); every method takes the CompilerContext arena first, and returns TreeId. Java
 /// overloads are renamed with a suffix (docs/PORTING_RULES.md section 3): class_def (6 args) /
 /// class_def_permitting (7), method_def (with recvparam) / method_def_simple (without),

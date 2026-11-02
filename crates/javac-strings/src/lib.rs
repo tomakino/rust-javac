@@ -86,7 +86,7 @@ impl fmt::Display for JavaString {
 
 // ---------------------------------------------------------------------------
 // Java String API subset used by the interface layer and compiler port.
-// PORTING_RULES §7: all operations are defined on UTF-16 code units exactly
+// §7: all operations are defined on UTF-16 code units exactly
 // like java.lang.String; they must not be reimplemented ad hoc in dependents.
 // ---------------------------------------------------------------------------
 

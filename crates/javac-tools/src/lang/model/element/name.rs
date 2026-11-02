@@ -1,6 +1,6 @@
 //! An immutable sequence of characters.
 //!
-//! PORTING_RULES — signature mapping:
+//! — signature mapping:
 //! * Java `Name extends CharSequence`: the `CharSequence` methods used by this
 //!   API are represented explicitly with Java String semantics
 //!   (`javac_strings::JavaString`): `length`, `char_at`, `to_java_string`
@@ -44,7 +44,7 @@ pub trait Name {
 
     /// Java: `CharSequence.subSequence(int start, int end)`.
     ///
-    /// PORTING_RULES: returns the minimal CharSequence representation
+    /// returns the minimal CharSequence representation
     /// (`JavaString`); see the file header.
     fn sub_sequence(&self, start: usize, end: usize) -> JavaString;
 

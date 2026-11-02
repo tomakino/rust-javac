@@ -11,9 +11,9 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: Java's `Position` class is a namespace (private constructor); it maps to free
+//! Java's `Position` class is a namespace (private constructor); it maps to free
 //! functions and constants here.
-//! PORTING_RULES: overloads:
+//! overloads:
 //! - LineMap.getStartPosition(int)  -> get_start_position
 //! - LineMap.getStartPosition(long) -> get_start_position_long
 //! - LineMap.getPosition(int,int)   -> get_position
@@ -23,7 +23,7 @@
 //! - LineMap.getColumnNumber(int)   -> get_column_number
 //! - LineMap.getColumnNumber(long)  -> get_column_number_long
 //!
-//! PORTING_RULES: LineTabMapImpl extends LineMapImpl; per PLAN.md Porting rules the Java subclass fields are
+//! LineTabMapImpl extends LineMapImpl; per PLAN.md Porting rules the Java subclass fields are
 //! modelled with an enum kind in the outer struct, and the virtual call to setTabPosition is a
 //! match on that kind. Neither LineMapImpl nor LineTabMapImpl is instantiated outside
 //! Position.makeLineMap in javac (verified by grep over the upstream tree).
@@ -90,7 +90,7 @@ pub trait LineMap {
 
 // Java: private Position() {}
 //
-// PORTING_RULES: not represented; the class only holds constants and static factories.
+// Rust: not represented; the class only holds constants and static factories.
 
 /// Java: public static LineMap makeLineMap(char[] src, int max, boolean expandTabs)
 pub fn make_line_map(src: &[u16], max: i32, expand_tabs: bool) -> LineMapImpl {
@@ -140,7 +140,7 @@ enum LineMapKind {
     Tab {
         /// Java: private BitSet tabMap; // bits set for tab positions.
         ///
-        /// PORTING_RULES: java.util.BitSet maps to Vec<bool>; BitSet.get(index) returns false for
+        /// java.util.BitSet maps to Vec<bool>; BitSet.get(index) returns false for
         /// indices past the end, which is modelled with `get(index).copied().unwrap_or(false)`.
         tab_map: Vec<bool>,
     },

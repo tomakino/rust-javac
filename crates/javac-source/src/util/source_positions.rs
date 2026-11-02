@@ -1,6 +1,6 @@
 //! Provides methods to obtain the position of a Tree within a CompilationUnit.
 //!
-//! PORTING_RULES: Java interface -> Rust trait; `long` -> i64 (the Java
+//! Java interface -> Rust trait; `long` -> i64 (the Java
 //! NOPOS/-1 convention is preserved by the implementations).
 
 use crate::tree::compilation_unit_tree::CompilationUnitTree;

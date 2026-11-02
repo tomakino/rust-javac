@@ -1,7 +1,7 @@
 //! A skeletal visitor of program elements with default behavior appropriate
 //! for the RELEASE_6 source version.
 //!
-//! PORTING_RULES — class mapping:
+//! — class mapping:
 //! * Java abstract class -> Rust trait with the upstream default behavior.
 //! * the Java `final R visit(Element, P)` forwards to `e.accept(this, p)`;
 //!   Rust cannot call the generic `Element::accept` on `&dyn Element` (see the
@@ -58,7 +58,7 @@ pub trait AbstractElementVisitor6<R, P>: ElementVisitor<R, P> {
     /// @param p  a visitor-specified parameter
     /// @return a visitor-specified result
     ///
-    /// PORTING_RULES: see the file header; the Java implementation is
+    /// see the file header; the Java implementation is
     /// `return e.accept(this, p);`.
     fn visit(&mut self, e: &dyn Element, p: P) -> R {
         dispatch_element(self, e, p)
@@ -114,7 +114,7 @@ pub trait AbstractElementVisitor6<R, P>: ElementVisitor<R, P> {
 /// Java: the element's own `accept(visitor, p)` method performs the dispatch to
 /// the most specific `visitXyz` method.
 ///
-/// PORTING_RULES: `Element::accept` is generic and therefore not callable on
+/// `Element::accept` is generic and therefore not callable on
 /// `&dyn Element`; the dispatch is reproduced from the element kind and the
 /// object-conversion accessors (`Element::as_xxx`), which is exactly the
 /// information the Java dispatch uses.  Concrete Element implementations must

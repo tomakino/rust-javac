@@ -10,7 +10,7 @@
 //
 //! Minimal java.nio.file platform layer for the P2 file layer.
 //!
-//! PORTING_RULES:
+//!
 //! * Path wraps [std::path::PathBuf]; the API keeps the Java method names in
 //!   snake_case (is_absolute, to_absolute_path, normalize, relativize, resolve,
 //!   starts_with, ends_with, file_name, parent, root, to_uri, from_uri).

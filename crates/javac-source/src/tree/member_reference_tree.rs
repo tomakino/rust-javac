@@ -1,6 +1,6 @@
 //! A tree node for a member reference expression.
 //!
-//! PORTING_RULES: Java interface -> Rust trait; the nested enum ReferenceMode
+//! Java interface -> Rust trait; the nested enum ReferenceMode
 //! lives in this file; `Name getName()` -> Rc<dyn Name>.
 
 use super::expression_tree::ExpressionTree;
@@ -37,7 +37,7 @@ pub trait MemberReferenceTree: ExpressionTree {
 /// There are two kinds of member references: (i) method references and
 /// (ii) constructor references
 ///
-/// PORTING_RULES: Java nested enum MemberReferenceTree.ReferenceMode ->
+/// Java nested enum MemberReferenceTree.ReferenceMode ->
 /// member_reference_tree::ReferenceMode.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -5,7 +5,7 @@
 //! "cargo xtask gen-unicode"; the repository checks in the result so that
 //! building rust-javac never needs a JVM.
 //!
-//! PORTING_RULES: registered adapter (PORTING_RULES section 9). javac calls the static methods of
+//! registered adapter (). javac calls the static methods of
 //! java.lang.Character; the port exposes them as free functions over the generated tables. The
 //! observable semantics are those of the JDK 17 java.lang.Character int overloads:
 //! - code points outside MIN_CODE_POINT..=MAX_CODE_POINT are not members of any property
@@ -141,7 +141,7 @@ pub fn digit(code_point: i32, radix: i32) -> i32 {
     if !(MIN_RADIX..=MAX_RADIX).contains(&radix) {
         return -1;
     }
-    // PORTING_RULES: GenUnicode.java verifies
+    // Rust: GenUnicode.java verifies
     // Character.digit(cp, radix) == (d36 >= 0 && d36 < radix) ? d36 : -1 for every code point and
     // every radix 2..=36 against the running JDK; the generated DIGIT_VALUES table is that d36.
     let digit36 = digit36(code_point);

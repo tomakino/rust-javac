@@ -40,7 +40,7 @@
 //! - a class descriptor ("module-info") is stored once per module; classes excludes it and
 //!   modules / has_system_modules / system_modules expose the module layer instead.
 //!
-//! PORTING_RULES: registered PORTING_RULES section 9 adapter (not a 1:1 javac class port). The
+//! registered adapter (not a 1:1 javac class port). The
 //! observable selection behaviour mirrors JDKPlatformProvider of the same JDK 17 baseline; the
 //! container work that javac delegates to the zip filesystem is implemented on javac-zip, the
 //! project's in-house zip reader.

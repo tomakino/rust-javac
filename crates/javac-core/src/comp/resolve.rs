@@ -1,15 +1,15 @@
-// PORTING_RULES: the upstream-shaped method-check code keeps large error
+// Rust: the upstream-shaped method-check code keeps large error
 // enums and nested conditionals; the lints are allowed locally (registered).
 #![allow(clippy::result_large_err, clippy::collapsible_if)]
 
 //! Name/method resolution (Java: com.sun.tools.javac.comp.Resolve).
 //!
-//! PORTING_RULES:
+//!
 //! * the resolution services are injected through the explicit-context adapter
 //!   (ADR 0001): Symtab/Types are passed as parameters, not stored global
 //!   singletons; the ported Resolve state keeps names/log/types/diags/source/
 //!   options only.
-//! * the Java overload sets become distinct Rust names (PORTING_RULES Porting rules):
+//! * the Java overload sets become distinct Rust names (Porting rules):
 //!   isAccessible(Env, TypeSymbol) -> is_accessible_class,
 //!   isAccessible(Env, Type) -> is_accessible_type,
 //!   isAccessible(Env, Type, Symbol) -> is_accessible_member.
@@ -312,7 +312,7 @@ impl Resolve {
 
     /// Java: public static Resolve instance(Context context) (Resolve.java:167)
     ///
-    /// PORTING_RULES: the ported Resolve is created by the service wiring with
+    /// the ported Resolve is created by the service wiring with
     /// its explicit dependencies; the Context registration makes the instance
     /// reachable like the Java Context singleton (registered adapter: the
     /// instance must be registered by the compiler entry point).
@@ -4354,7 +4354,7 @@ impl MethodCheckDiag {
 
 /// Java: interface Resolve.MethodCheck (Resolve.java:694-711).
 ///
-/// PORTING_RULES: the upstream methods throw InapplicableMethodException (and
+/// the upstream methods throw InapplicableMethodException (and
 /// InferenceException from Infer); the port models both with MethodCheckFailure
 /// (Porting rules adapter registered).
 pub trait MethodCheck {
@@ -4450,7 +4450,7 @@ impl MethodCheck for NilMethodCheck {
 
 /// Java: class Resolve.AbstractMethodCheck (Resolve.java:767-860)
 ///
-/// PORTING_RULES: the flyweight SharedInapplicableMethodException is modelled by
+/// the flyweight SharedInapplicableMethodException is modelled by
 /// returning MethodCheckFailure values (the callers propagate them unchanged).
 pub trait AbstractMethodCheck: MethodCheck {
     /// Java: abstract void checkArg(DiagnosticPosition pos, boolean varargs,
@@ -4976,7 +4976,7 @@ impl From<InapplicableMethodException> for MethodCheckFailure {
 
 /// Java: class Resolve.MethodReferenceCheck (Resolve.java:1000-1070).
 ///
-/// PORTING_RULES: the reference-specific check context (pending inference
+/// the reference-specific check context (pending inference
 /// variables in argtypes) depends on the member-reference resolution
 /// (Resolve.java:3000-3200 + FunctionDescriptor): the port registers the class
 /// and the argumentsAcceptable entry, which is reached only from

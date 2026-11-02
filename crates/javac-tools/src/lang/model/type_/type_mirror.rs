@@ -1,6 +1,6 @@
 //! Represents a type in the Java programming language.
 //!
-//! PORTING_RULES:
+//!
 //! * `TypeMirror extends AnnotatedConstruct` -> Rust supertraits.  Java
 //!   declares `toString()` and re-declares the AnnotatedConstruct methods; the
 //!   former is the `std::fmt::Display` supertrait, the latter are inherited and
@@ -101,12 +101,12 @@ pub trait TypeMirror: AnnotatedConstruct + std::fmt::Display {
     /// @param p   additional parameter to the visitor
     /// @return a visitor-specified result
     ///
-    /// PORTING_RULES: `where Self: Sized` keeps TypeMirror object safe.
+    /// `where Self: Sized` keeps TypeMirror object safe.
     fn accept<R, P>(&self, v: &mut dyn TypeVisitor<R, P>, p: P) -> R
     where
         Self: Sized;
 
-    // PORTING_RULES: Object conversion contract of the visitor adapter.  Java
+    // Rust: Object conversion contract of the visitor adapter.  Java
     // visitors dispatch through `TypeMirror.accept`, which is generic and cannot
     // be called on `&dyn TypeMirror`; the Rust visitor layer instead dispatches
     // from getKind() plus these object-safe accessors (the same information the

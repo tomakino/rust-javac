@@ -1,6 +1,6 @@
 //! A DocTreeVisitor that visits all the child doc tree nodes.
 //!
-//! PORTING_RULES (§14.7): Java class DocTreeScanner<R,P> implements
+//! (§14.7): Java class DocTreeScanner<R,P> implements
 //! DocTreeVisitor<R,P> -> Rust trait DocTreeScanner<R, P: Clone>:
 //! DocTreeVisitor<Option<R>, P>; nullable R -> Option<R>; scan(DocTree, P)
 //! double dispatch goes through crate::util::dispatch::dispatch_doc_tree_scanner

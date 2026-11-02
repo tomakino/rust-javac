@@ -1,6 +1,6 @@
 //! Represents a class or interface program element.
 //!
-//! PORTING_RULES:
+//!
 //! * `List<? extends X>` -> `Vec<Rc<dyn X>>`.
 //! * the `default` methods `getRecordComponents`/`getPermittedSubclasses` that
 //!   return `List.of()` upstream become trait default methods returning an

@@ -2,7 +2,7 @@
 //!
 //! ADR 0001: the upstream Context services are injected explicitly.
 //!
-//! PORTING_RULES: the Java base class TreeTranslator is expressed here by the
+//! the Java base class TreeTranslator is expressed here by the
 //! same visitor-framework methods (translate/translateList/...) ported from
 //! TreeTranslator.java:139-355 (see the batch report); this mirrors the
 //! upstream inheritance relationship without changing tree_translator.rs.

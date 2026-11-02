@@ -12,7 +12,7 @@
 //! your own risk. This code and its internal interfaces are subject to change or deletion without
 //! notice.</b>
 //!
-//! PORTING_RULES (1:1 where the dependency is ported; the rest is reported):
+//! (1:1 where the dependency is ported; the rest is reported):
 //! * ported dependencies: ClassFile.JAVA_MAGIC (crate::jvm::class_file),
 //!   ByteBuffer (crate::util::byte_buffer), Convert.utf2string
 //!   (crate::util::convert), Names (crate::util::names), PoolReader
@@ -65,7 +65,7 @@ impl std::error::Error for BadClassFile {}
 
 /// The errors of the module name reader.
 ///
-/// PORTING_RULES: the declared IOException -> io::Error and BadClassFile keeps
+/// the declared IOException -> io::Error and BadClassFile keeps
 /// its Java role; the JavaFileObject open error is kept as the javac-tools
 /// error value.
 pub enum Error {
@@ -135,7 +135,7 @@ pub struct ModuleNameReader {
     bp: i32,
     /// Java: private PoolReader reader;
     reader: PoolReader,
-    /// PORTING_RULES: the Java PoolReader holds the Names; the port passes it
+    /// the Java PoolReader holds the Names; the port passes it
     /// explicitly to the decoding methods.
     names: Names,
 }

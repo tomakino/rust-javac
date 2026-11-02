@@ -20,7 +20,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: ADR 0001 (arena + IDs):
+//! ADR 0001 (arena + IDs):
 //! - the Java object fields become arena IDs (SymbolId/TypeId/DirectiveId/
 //!   ScopeId); the class/package/module tables keep their Java shape (name ->
 //!   module -> symbol maps, expressed as Vec rows because Name/SymbolId are not
@@ -723,7 +723,7 @@ fn enter_class_named(
 ) -> TypeId {
     // Java: Symtab constructor uses enterClass(javaBase, flatname), which is
     // lookupPackage(msym, packagePart) + defineClass(shortName, package).
-    // PORTING_RULES: the local enterClass(msym, flatname) overload is on the
+    // Rust: the local enterClass(msym, flatname) overload is on the
     // Symtab value; this free helper is called from the constructor, so the
     // same two steps are performed here (owner = the entered package).
     let flat = name_of(names, text);
@@ -1170,11 +1170,11 @@ impl Symtab {
     /// Constructor; enters all predefined identifiers and operators into the
     /// symbol table.
     ///
-    /// PORTING_RULES: the Java protected Symtab(Context) constructor needs the
+    /// the Java protected Symtab(Context) constructor needs the
     /// CompilerContext (arena) and the ported Names; the Context registration
     /// (context.put(symtabKey, this)) is done by the caller until the
     /// Symtab/Context integration.
-    /// PORTING_RULES: Target/Source are ported; this constructor receives them
+    /// Target/Source are ported; this constructor receives them
     /// explicitly because Symtab is constructed before the Context service
     /// graph (ADR 0001 explicit-service adapter; no Options.instance lookup).
     /// The caller passes them like the Names parameter (registered section 9).

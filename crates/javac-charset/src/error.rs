@@ -10,7 +10,7 @@
 
 //! Errors of the charset layer.
 //!
-//! PORTING_RULES: java.nio.charset.IllegalCharsetNameException and
+//! java.nio.charset.IllegalCharsetNameException and
 //! UnsupportedCharsetException map to [CharsetError]; CharacterCodingException
 //! (MalformedInputException / UnmappableCharacterException) maps to
 //! [CharacterCodingError].  The Java getInputLength() value is kept as

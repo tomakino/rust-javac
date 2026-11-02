@@ -13,7 +13,7 @@
 //! - checkMagic accepts version <= 1.0 and requires the "JM" magic;
 //! - entries are named "<section>/<name>", with the sections below.
 //!
-//! PORTING_RULES: registered PORTING_RULES section 9 adapter. Container reading uses
+//! registered adapter. Container reading uses
 //! javac-zip, the project's in-house zip reader (no platform build prerequisites); it derives
 //! the archive offset from the central directory position, so the 4-byte jmod header is
 //! transparently tolerated.

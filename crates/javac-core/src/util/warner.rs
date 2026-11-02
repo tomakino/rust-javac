@@ -6,12 +6,12 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! - the Java DiagnosticPosition object reference (nullable) maps to
 //!   Option<Rc<dyn DiagnosticPosition>>;
 //! - the Java EnumSet<LintCategory> fields map to Vec<LintCategory>: the only
 //!   operations in the class are add / clear / contains, and LintCategory is
-//!   Copy + Eq (registered in PORTING_RULES section 9);
+//!   Copy + Eq (registered in );
 //! - the protected warned field is a public Rust field (the Java subclasses -
 //!   e.g. Warner's users in Attr/Check - read it; Rust has no protected).
 

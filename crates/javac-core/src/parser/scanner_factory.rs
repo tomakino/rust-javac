@@ -5,7 +5,7 @@
 //! risk.  This code and its internal interfaces are subject to change
 //! or deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! * the dependency fields are injected: Names has no Context registration in
 //!   the port; Source.instance/Preview.instance/Lint.instance are ported, so
 //!   new()/instance() take Names/Source/Preview/Lint explicitly (ADR 0001),
@@ -69,7 +69,7 @@ impl ScannerFactory {
 
     /// Java: public static ScannerFactory instance(Context context).
     ///
-    /// PORTING_RULES: names and source are parameters (see the file header);
+    /// names and source are parameters (see the file header);
     /// the factory is registered in the Context under its own type.
     pub fn instance(context: &mut Context, names: Rc<Names>, source: Source) -> Rc<ScannerFactory> {
         if let Some(instance) = context.get::<ScannerFactory>() {

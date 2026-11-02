@@ -1,7 +1,7 @@
 //! A visitor of program elements based on their kind with default behavior
 //! appropriate for the RELEASE_7 source version.
 //!
-//! PORTING_RULES: Java `ElementKindVisitor7 extends ElementKindVisitor6` only
+//! Java `ElementKindVisitor7 extends ElementKindVisitor6` only
 //! overrides `visitVariableAsResourceVariable` (calls defaultAction instead of
 //! visitUnknown).  The Rust trait is a subtrait re-declaring that method;
 //! calling it on a concrete type implementing both requires a fully qualified

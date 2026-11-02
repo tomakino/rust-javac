@@ -1,7 +1,7 @@
 //! A scanning visitor of program elements with default behavior appropriate for
 //! the RELEASE_14 source version.
 //!
-//! PORTING_RULES: Java `ElementScanner14 extends ElementScanner9` overrides
+//! Java `ElementScanner14 extends ElementScanner9` overrides
 //! `visitType` and `visitExecutable` to scan the type parameters before the
 //! enclosed elements / parameters, and `visitRecordComponent`.  The Rust trait
 //! re-declares those methods; calling them on a concrete type implementing both

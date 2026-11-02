@@ -11,9 +11,9 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: java.util.ResourceBundle / java.util.Locale /
+//! java.util.ResourceBundle / java.util.Locale /
 //! java.text.MessageFormat have no direct Rust equivalent, mapped as adapters
-//! (registered in PORTING_RULES section 9):
+//! (registered in ):
 //! - Locale: minimal mapping Locale { tag: "en", "zh_CN", ... }; the default
 //!   locale is detected from LC_ALL/LC_MESSAGES/LANG (Java Locale.getDefault
 //!   equivalent); C/POSIX/unknown falls back to "en";
@@ -279,7 +279,7 @@ fn lookup_bundle(bundle_name: &str, locale: &Locale) -> Option<ResourceBundle> {
 
 /// Java: public class JavacMessages implements Messages.
 ///
-/// PORTING_RULES: the bundle cache is a RefCell because upstream mutates the
+/// the bundle cache is a RefCell because upstream mutates the
 /// cache from non-mutating-looking methods (SoftReference cache); this is a
 /// registered interior-mutability adapter for the diagnostic layer.
 pub struct JavacMessages {
@@ -347,7 +347,7 @@ impl JavacMessages {
 
     /// Java: void add(ResourceBundleHelper ma) -- the Java overload is mapped to
     /// a distinct Rust method name because Rust has no overloading
-    /// (PORTING_RULES section 3).
+    /// ().
     pub fn add_helper(&mut self, helper: Box<dyn ResourceBundleHelper>) {
         // Java: bundleHelpers = bundleHelpers.prepend(ma) -- the last added
         // helper is searched first.
@@ -389,7 +389,7 @@ impl JavacMessages {
     }
 
     /// Java: String getLocalizedString(Locale l, String key, Object... args)
-    /// (the Locale overload gets a distinct Rust name, PORTING_RULES section 3).
+    /// (the Locale overload gets a distinct Rust name, ).
     pub fn get_localized_string_for(
         &self,
         locale: Option<&Locale>,

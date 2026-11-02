@@ -1,7 +1,7 @@
 //! A visitor of types based on their kind with default behavior appropriate for
 //! source versions RELEASE_9 through RELEASE_14.
 //!
-//! PORTING_RULES: Java `TypeKindVisitor9 extends TypeKindVisitor8` only
+//! Java `TypeKindVisitor9 extends TypeKindVisitor8` only
 //! overrides `visitNoTypeAsModule` (calls defaultAction).  The Rust trait is a
 //! subtrait re-declaring that method; calling it on a concrete type
 //! implementing both requires a fully qualified call (registered language-shape

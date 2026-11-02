@@ -17,7 +17,7 @@ use std::io::{Read, Write};
 /// @author Jonathan Gibbons
 /// @since 1.6
 ///
-/// PORTING_RULES — signature mapping:
+/// — signature mapping:
 /// * InputStream/OutputStream -> std::io::Read/std::io::Write;
 ///   the Java null ("use System.in/out/err") is an Option argument.
 /// * String name() and String... arguments -> javac_strings::JavaString.
@@ -51,7 +51,7 @@ pub trait Tool {
     /// @throws NullPointerException if the array of arguments contains
     /// any null elements.
     ///
-    /// PORTING_RULES: the null channels ("use System.in/out/err") become
+    /// the null channels ("use System.in/out/err") become
     /// None; the Rust tool decides which standard channel to use, exactly
     /// like the upstream implementation does.  A null argument element is
     /// impossible for a slice of JavaString.

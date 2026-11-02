@@ -1,6 +1,6 @@
 //! Common interface for all nodes in an abstract syntax tree.
 //!
-//! PORTING_RULES:
+//!
 //! * Java interface -> Rust trait.  The nested `Tree.Kind` enum is declared in
 //!   this module, complete (111 constants) and in the Java
 //!   declaration order (javac's code/TypeTag.getKindLiteral depends on it).
@@ -115,358 +115,358 @@ pub trait Tree {
     /// @param data a value to be passed to the visitor
     /// @return the result returned from calling the visitor
     ///
-    /// PORTING_RULES: `where Self: Sized` keeps Tree object safe; the dispatch is
+    /// `where Self: Sized` keeps Tree object safe; the dispatch is
     /// reproduced by the util layer.
     fn accept<R, D>(&self, visitor: &mut dyn TreeVisitor<R, D>, data: D) -> R
     where
         Self: Sized;
 
-    /// PORTING_RULES: object conversion for `instanceof AnnotatedTypeTree` (see file header).
+    /// object conversion for `instanceof AnnotatedTypeTree` (see file header).
     fn as_annotated_type_tree(&self) -> Option<&dyn AnnotatedTypeTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof AnnotationTree` (see file header).
+    /// object conversion for `instanceof AnnotationTree` (see file header).
     fn as_annotation_tree(&self) -> Option<&dyn AnnotationTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ArrayAccessTree` (see file header).
+    /// object conversion for `instanceof ArrayAccessTree` (see file header).
     fn as_array_access_tree(&self) -> Option<&dyn ArrayAccessTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ArrayTypeTree` (see file header).
+    /// object conversion for `instanceof ArrayTypeTree` (see file header).
     fn as_array_type_tree(&self) -> Option<&dyn ArrayTypeTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof AssertTree` (see file header).
+    /// object conversion for `instanceof AssertTree` (see file header).
     fn as_assert_tree(&self) -> Option<&dyn AssertTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof AssignmentTree` (see file header).
+    /// object conversion for `instanceof AssignmentTree` (see file header).
     fn as_assignment_tree(&self) -> Option<&dyn AssignmentTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof BinaryTree` (see file header).
+    /// object conversion for `instanceof BinaryTree` (see file header).
     fn as_binary_tree(&self) -> Option<&dyn BinaryTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof BindingPatternTree` (see file header).
+    /// object conversion for `instanceof BindingPatternTree` (see file header).
     fn as_binding_pattern_tree(&self) -> Option<&dyn BindingPatternTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof BlockTree` (see file header).
+    /// object conversion for `instanceof BlockTree` (see file header).
     fn as_block_tree(&self) -> Option<&dyn BlockTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof BreakTree` (see file header).
+    /// object conversion for `instanceof BreakTree` (see file header).
     fn as_break_tree(&self) -> Option<&dyn BreakTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof CaseLabelTree` (see file header).
+    /// object conversion for `instanceof CaseLabelTree` (see file header).
     fn as_case_label_tree(&self) -> Option<&dyn CaseLabelTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof CaseTree` (see file header).
+    /// object conversion for `instanceof CaseTree` (see file header).
     fn as_case_tree(&self) -> Option<&dyn CaseTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof CatchTree` (see file header).
+    /// object conversion for `instanceof CatchTree` (see file header).
     fn as_catch_tree(&self) -> Option<&dyn CatchTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ClassTree` (see file header).
+    /// object conversion for `instanceof ClassTree` (see file header).
     fn as_class_tree(&self) -> Option<&dyn ClassTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof CompilationUnitTree` (see file header).
+    /// object conversion for `instanceof CompilationUnitTree` (see file header).
     fn as_compilation_unit_tree(&self) -> Option<&dyn CompilationUnitTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof CompoundAssignmentTree` (see file header).
+    /// object conversion for `instanceof CompoundAssignmentTree` (see file header).
     fn as_compound_assignment_tree(&self) -> Option<&dyn CompoundAssignmentTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ConditionalExpressionTree` (see file header).
+    /// object conversion for `instanceof ConditionalExpressionTree` (see file header).
     fn as_conditional_expression_tree(&self) -> Option<&dyn ConditionalExpressionTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ContinueTree` (see file header).
+    /// object conversion for `instanceof ContinueTree` (see file header).
     fn as_continue_tree(&self) -> Option<&dyn ContinueTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof DefaultCaseLabelTree` (see file header).
+    /// object conversion for `instanceof DefaultCaseLabelTree` (see file header).
     fn as_default_case_label_tree(&self) -> Option<&dyn DefaultCaseLabelTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof DirectiveTree` (see file header).
+    /// object conversion for `instanceof DirectiveTree` (see file header).
     fn as_directive_tree(&self) -> Option<&dyn DirectiveTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof DoWhileLoopTree` (see file header).
+    /// object conversion for `instanceof DoWhileLoopTree` (see file header).
     fn as_do_while_loop_tree(&self) -> Option<&dyn DoWhileLoopTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof EmptyStatementTree` (see file header).
+    /// object conversion for `instanceof EmptyStatementTree` (see file header).
     fn as_empty_statement_tree(&self) -> Option<&dyn EmptyStatementTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof EnhancedForLoopTree` (see file header).
+    /// object conversion for `instanceof EnhancedForLoopTree` (see file header).
     fn as_enhanced_for_loop_tree(&self) -> Option<&dyn EnhancedForLoopTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ErroneousTree` (see file header).
+    /// object conversion for `instanceof ErroneousTree` (see file header).
     fn as_erroneous_tree(&self) -> Option<&dyn ErroneousTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ExportsTree` (see file header).
+    /// object conversion for `instanceof ExportsTree` (see file header).
     fn as_exports_tree(&self) -> Option<&dyn ExportsTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ExpressionStatementTree` (see file header).
+    /// object conversion for `instanceof ExpressionStatementTree` (see file header).
     fn as_expression_statement_tree(&self) -> Option<&dyn ExpressionStatementTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ExpressionTree` (see file header).
+    /// object conversion for `instanceof ExpressionTree` (see file header).
     fn as_expression_tree(&self) -> Option<&dyn ExpressionTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ForLoopTree` (see file header).
+    /// object conversion for `instanceof ForLoopTree` (see file header).
     fn as_for_loop_tree(&self) -> Option<&dyn ForLoopTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof GuardedPatternTree` (see file header).
+    /// object conversion for `instanceof GuardedPatternTree` (see file header).
     fn as_guarded_pattern_tree(&self) -> Option<&dyn GuardedPatternTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof IdentifierTree` (see file header).
+    /// object conversion for `instanceof IdentifierTree` (see file header).
     fn as_identifier_tree(&self) -> Option<&dyn IdentifierTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof IfTree` (see file header).
+    /// object conversion for `instanceof IfTree` (see file header).
     fn as_if_tree(&self) -> Option<&dyn IfTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ImportTree` (see file header).
+    /// object conversion for `instanceof ImportTree` (see file header).
     fn as_import_tree(&self) -> Option<&dyn ImportTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof InstanceOfTree` (see file header).
+    /// object conversion for `instanceof InstanceOfTree` (see file header).
     fn as_instance_of_tree(&self) -> Option<&dyn InstanceOfTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof IntersectionTypeTree` (see file header).
+    /// object conversion for `instanceof IntersectionTypeTree` (see file header).
     fn as_intersection_type_tree(&self) -> Option<&dyn IntersectionTypeTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof LabeledStatementTree` (see file header).
+    /// object conversion for `instanceof LabeledStatementTree` (see file header).
     fn as_labeled_statement_tree(&self) -> Option<&dyn LabeledStatementTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof LambdaExpressionTree` (see file header).
+    /// object conversion for `instanceof LambdaExpressionTree` (see file header).
     fn as_lambda_expression_tree(&self) -> Option<&dyn LambdaExpressionTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof LiteralTree` (see file header).
+    /// object conversion for `instanceof LiteralTree` (see file header).
     fn as_literal_tree(&self) -> Option<&dyn LiteralTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof MemberReferenceTree` (see file header).
+    /// object conversion for `instanceof MemberReferenceTree` (see file header).
     fn as_member_reference_tree(&self) -> Option<&dyn MemberReferenceTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof MemberSelectTree` (see file header).
+    /// object conversion for `instanceof MemberSelectTree` (see file header).
     fn as_member_select_tree(&self) -> Option<&dyn MemberSelectTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof MethodInvocationTree` (see file header).
+    /// object conversion for `instanceof MethodInvocationTree` (see file header).
     fn as_method_invocation_tree(&self) -> Option<&dyn MethodInvocationTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof MethodTree` (see file header).
+    /// object conversion for `instanceof MethodTree` (see file header).
     fn as_method_tree(&self) -> Option<&dyn MethodTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ModifiersTree` (see file header).
+    /// object conversion for `instanceof ModifiersTree` (see file header).
     fn as_modifiers_tree(&self) -> Option<&dyn ModifiersTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ModuleTree` (see file header).
+    /// object conversion for `instanceof ModuleTree` (see file header).
     fn as_module_tree(&self) -> Option<&dyn ModuleTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof NewArrayTree` (see file header).
+    /// object conversion for `instanceof NewArrayTree` (see file header).
     fn as_new_array_tree(&self) -> Option<&dyn NewArrayTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof NewClassTree` (see file header).
+    /// object conversion for `instanceof NewClassTree` (see file header).
     fn as_new_class_tree(&self) -> Option<&dyn NewClassTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof OpensTree` (see file header).
+    /// object conversion for `instanceof OpensTree` (see file header).
     fn as_opens_tree(&self) -> Option<&dyn OpensTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof PackageTree` (see file header).
+    /// object conversion for `instanceof PackageTree` (see file header).
     fn as_package_tree(&self) -> Option<&dyn PackageTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ParameterizedTypeTree` (see file header).
+    /// object conversion for `instanceof ParameterizedTypeTree` (see file header).
     fn as_parameterized_type_tree(&self) -> Option<&dyn ParameterizedTypeTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ParenthesizedPatternTree` (see file header).
+    /// object conversion for `instanceof ParenthesizedPatternTree` (see file header).
     fn as_parenthesized_pattern_tree(&self) -> Option<&dyn ParenthesizedPatternTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ParenthesizedTree` (see file header).
+    /// object conversion for `instanceof ParenthesizedTree` (see file header).
     fn as_parenthesized_tree(&self) -> Option<&dyn ParenthesizedTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof PatternTree` (see file header).
+    /// object conversion for `instanceof PatternTree` (see file header).
     fn as_pattern_tree(&self) -> Option<&dyn PatternTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof PrimitiveTypeTree` (see file header).
+    /// object conversion for `instanceof PrimitiveTypeTree` (see file header).
     fn as_primitive_type_tree(&self) -> Option<&dyn PrimitiveTypeTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ProvidesTree` (see file header).
+    /// object conversion for `instanceof ProvidesTree` (see file header).
     fn as_provides_tree(&self) -> Option<&dyn ProvidesTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof RequiresTree` (see file header).
+    /// object conversion for `instanceof RequiresTree` (see file header).
     fn as_requires_tree(&self) -> Option<&dyn RequiresTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ReturnTree` (see file header).
+    /// object conversion for `instanceof ReturnTree` (see file header).
     fn as_return_tree(&self) -> Option<&dyn ReturnTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof StatementTree` (see file header).
+    /// object conversion for `instanceof StatementTree` (see file header).
     fn as_statement_tree(&self) -> Option<&dyn StatementTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof SwitchExpressionTree` (see file header).
+    /// object conversion for `instanceof SwitchExpressionTree` (see file header).
     fn as_switch_expression_tree(&self) -> Option<&dyn SwitchExpressionTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof SwitchTree` (see file header).
+    /// object conversion for `instanceof SwitchTree` (see file header).
     fn as_switch_tree(&self) -> Option<&dyn SwitchTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof SynchronizedTree` (see file header).
+    /// object conversion for `instanceof SynchronizedTree` (see file header).
     fn as_synchronized_tree(&self) -> Option<&dyn SynchronizedTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ThrowTree` (see file header).
+    /// object conversion for `instanceof ThrowTree` (see file header).
     fn as_throw_tree(&self) -> Option<&dyn ThrowTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof TryTree` (see file header).
+    /// object conversion for `instanceof TryTree` (see file header).
     fn as_try_tree(&self) -> Option<&dyn TryTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof TypeCastTree` (see file header).
+    /// object conversion for `instanceof TypeCastTree` (see file header).
     fn as_type_cast_tree(&self) -> Option<&dyn TypeCastTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof TypeParameterTree` (see file header).
+    /// object conversion for `instanceof TypeParameterTree` (see file header).
     fn as_type_parameter_tree(&self) -> Option<&dyn TypeParameterTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof UnaryTree` (see file header).
+    /// object conversion for `instanceof UnaryTree` (see file header).
     fn as_unary_tree(&self) -> Option<&dyn UnaryTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof UnionTypeTree` (see file header).
+    /// object conversion for `instanceof UnionTypeTree` (see file header).
     fn as_union_type_tree(&self) -> Option<&dyn UnionTypeTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof UsesTree` (see file header).
+    /// object conversion for `instanceof UsesTree` (see file header).
     fn as_uses_tree(&self) -> Option<&dyn UsesTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof VariableTree` (see file header).
+    /// object conversion for `instanceof VariableTree` (see file header).
     fn as_variable_tree(&self) -> Option<&dyn VariableTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof WhileLoopTree` (see file header).
+    /// object conversion for `instanceof WhileLoopTree` (see file header).
     fn as_while_loop_tree(&self) -> Option<&dyn WhileLoopTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof WildcardTree` (see file header).
+    /// object conversion for `instanceof WildcardTree` (see file header).
     fn as_wildcard_tree(&self) -> Option<&dyn WildcardTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof YieldTree` (see file header).
+    /// object conversion for `instanceof YieldTree` (see file header).
     fn as_yield_tree(&self) -> Option<&dyn YieldTree> {
         None
     }
@@ -474,7 +474,7 @@ pub trait Tree {
 
 /// Enumerates all kinds of trees.
 ///
-/// PORTING_RULES: Java enum constants keep their Java names (UPPER_SNAKE_CASE)
+/// Java enum constants keep their Java names (UPPER_SNAKE_CASE)
 /// and declaration order.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

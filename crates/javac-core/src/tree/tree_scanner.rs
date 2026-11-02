@@ -10,7 +10,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: ADR 0001 (arena + IDs):
+//! ADR 0001 (arena + IDs):
 //! - the upstream subclassing (TreeScanner extends Visitor, subclasses override
 //!   visitXxx) maps to a TreeScanner struct plus the TreeVisitor trait; a
 //!   specialized scanner implements TreeVisitor and overrides the visit methods

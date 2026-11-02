@@ -6,10 +6,10 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: java.util.Locale -> util::javac_messages::Locale; Messages ->
+//! java.util.Locale -> util::javac_messages::Locale; Messages ->
 //! &dyn Messages; the Java overloads toString(Locale, Messages) / toString()
 //! map to to_string_with_locale() / the Rust Display implementation
-//! (PORTING_RULES section 3, Java overloads get distinct Rust names).
+//! (Java overloads get distinct Rust names).
 
 use std::fmt;
 

@@ -1,6 +1,6 @@
 // (jdk-17.0.19-ga)
 //
-// PORTING_RULES:
+// Rust:
 // - ADR 0001: the ported MatchBindingsComputer receives the Log/Factory
 // services explicitly; MatchBindingsComputer.instance(Context) is registered
 // with the Context registration.

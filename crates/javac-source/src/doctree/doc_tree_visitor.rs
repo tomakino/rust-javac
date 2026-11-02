@@ -1,7 +1,7 @@
 //! A visitor of documentation trees, in the style of the visitor design
 //! pattern.
 //!
-//! PORTING_RULES (§14): abstract interface methods carry a panicking Rust
+//! (§14): abstract interface methods carry a panicking Rust
 //! default; the 7 Java `default` methods that forward to `visitOther` keep that
 //! forwarding as the Rust default.
 

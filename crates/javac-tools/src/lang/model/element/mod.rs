@@ -1,4 +1,4 @@
-// PORTING_RULES: the Java class Element lives in the package element; the Rust
+// Rust: the Java class Element lives in the package element; the Rust
 // module element::element mirrors that (clippy::module_inception is expected).
 #![allow(clippy::module_inception)]
 
@@ -100,7 +100,7 @@
 //! @jls 9.1 Interface Declarations
 //! @since 1.6
 //!
-//! PORTING_RULES: the nested interfaces of `ModuleElement` (Directive family)
+//! the nested interfaces of `ModuleElement` (Directive family)
 //! live in `module_element.rs` as types of that module (Rust cannot nest traits
 //! in traits); the remaining one-file-per-Java-file mapping is kept.
 
@@ -126,7 +126,7 @@ pub mod unknown_directive_exception;
 pub mod unknown_element_exception;
 pub mod variable_element;
 
-// PORTING_RULES: the source files are one-per-Java-file modules; these
+// Rust: the source files are one-per-Java-file modules; these
 // re-exports expose the Java package-level simple names
 // (javax.lang.model.element.X) at the module root, exactly like the Java
 // package namespace.

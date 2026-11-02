@@ -6,7 +6,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! * java.nio.file.Path -> javac-fs Path; Files.* -> javac_fs::Files.
 //! * getJarClassPath is implemented (manifest parse + URL resolution via the
 //!   javac-zip/javac-fs adapters). REGISTERED dependencies: java.nio.file.spi.
@@ -21,7 +21,7 @@ use javac_fs::{Files, Path as FsPath};
 /// The minimal java.nio.file.attribute.BasicFileAttributes representation used
 /// by CacheFSInfo.
 ///
-/// PORTING_RULES: java.nio.file.attribute is REGISTERED as unavailable; this struct carries
+/// java.nio.file.attribute is REGISTERED as unavailable; this struct carries
 /// the attributes the caching FSInfo consults (registered adapter).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FileAttributes {
@@ -63,7 +63,7 @@ pub(crate) fn strip_verbatim_prefix(path: std::path::PathBuf) -> std::path::Path
 impl FSInfo {
     /// Java: protected FSInfo() / protected FSInfo(Context context).
     ///
-    /// PORTING_RULES: the Context constructor is deferred together with the
+    /// the Context constructor is deferred together with the
     /// Context-based instance() registration (see the file header).
     pub fn new() -> FSInfo {
         FSInfo
@@ -100,7 +100,7 @@ impl FSInfo {
     /// Java: public List<Path> getJarClassPath(Path file) throws IOException
     /// (FSInfo.java:100-137).
     ///
-    /// PORTING_RULES adapter: java.util.jar.JarFile/Manifest and
+    /// Adapter: java.util.jar.JarFile/Manifest and
     /// java.net.URL is REGISTERED as unavailable; the jar manifest main
     /// attributes are parsed by [parse_manifest_main_attributes] (the JDK 17
     /// oracle records the format rules) and the URL resolution of each

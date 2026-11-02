@@ -15,7 +15,7 @@ use std::io::{Read, Write};
 /// @author Peter von der Ah&eacute;
 /// @since 1.6
 ///
-/// PORTING_RULES — class mapping:
+/// — class mapping:
 /// * Java class inheritance is not available in Rust.  This struct keeps the
 ///   single upstream field and forwards every method; extension is done by
 ///   composition (hold the forwarding object) instead of subclassing.
@@ -36,7 +36,7 @@ impl<F: FileObject> ForwardingFileObject<F> {
     ///
     /// Java: protected ForwardingFileObject(F fileObject) {
     ///           this.fileObject = Objects.requireNonNull(fileObject); }
-    /// PORTING_RULES: Rust has no null, so requireNonNull has no Rust form.
+    /// Rust has no null, so requireNonNull has no Rust form.
     pub fn new(file_object: F) -> ForwardingFileObject<F> {
         ForwardingFileObject { file_object }
     }

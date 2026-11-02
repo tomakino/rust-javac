@@ -1,6 +1,6 @@
 //! Represents the type of an executable.
 //!
-//! PORTING_RULES: `List<? extends X>` -> `Vec<Rc<dyn X>>`.
+//! `List<? extends X>` -> `Vec<Rc<dyn X>>`.
 
 use super::type_mirror::TypeMirror;
 use super::type_variable::TypeVariable;

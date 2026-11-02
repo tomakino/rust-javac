@@ -1,7 +1,7 @@
 //! A fast, non-cryptographic hasher for compiler-internal maps keyed by
 //! `Name`.
 //!
-//! PORTING_RULES: performance adapter (not a 1:1 port). Java uses
+//! performance adapter (not a 1:1 port). Java uses
 //! `Name.hashCode()` (the name-table index) in its HashMaps; the port keeps
 //! the same key/lookup semantics but avoids the default SipHash cost for
 //! the high-frequency Name-keyed maps. Map behavior is unchanged.

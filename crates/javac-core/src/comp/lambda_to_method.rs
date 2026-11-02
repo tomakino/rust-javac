@@ -1,7 +1,7 @@
 //! This pass desugars lambda expressions into static methods
 //! (LambdaToMethod.java).
 //!
-//! PORTING_RULES: LambdaToMethod extends TreeTranslator; the port keeps an
+//! LambdaToMethod extends TreeTranslator; the port keeps an
 //! embedded TreeTranslator base for the default navigation (registered adapter
 //! for Java inheritance) and implements the lambda-specific visitors itself.
 //! The Java inner classes (DedupedLambda, KlassInfo, LambdaAnalyzerPreprocessor,
@@ -958,7 +958,7 @@ impl LambdaToMethod {
 /// More specifically, it keeps track of the enclosing contexts and captured locals
 /// accessed by the lambda being translated (as well as other useful info).
 /// It also translates away problems for LambdaToMethod.
-/// PORTING_RULES: the analyzer shares the translation contexts and the compiler
+/// the analyzer shares the translation contexts and the compiler
 /// services with the enclosing pass through Rc/RefCell (registered adapter).
 pub struct LambdaAnalyzerPreprocessor {
     pub context_map: Rc<RefCell<HashMap<TreeId, TranslationContext>>>,

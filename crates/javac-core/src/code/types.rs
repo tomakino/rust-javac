@@ -103,7 +103,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES (ADR 0001, arena + IDs): this ports ONLY the Types
+//! (ADR 0001, arena + IDs): this ports ONLY the Types
 //! subset needed to unlock TreeMaker/class-fields (see the task):
 //! hashCode, isSameType, erasure, boxedClass, and the helpers they need.
 //! The Java Types instance state (Symtab, Names, Source, Check, Enter,
@@ -116,12 +116,12 @@
 //! Remaining dependencies are needsStripping, TypeVar.rank_field reset and lub
 //! Names injection (registered above).
 //!
-//! PORTING_RULES: the Type.java helpers getEnclosingType/getTypeArguments/
+//! the Type.java helpers getEnclosingType/getTypeArguments/
 //! getParameterTypes/getReturnType are ported as Type methods in type_.rs; the
 //! free helpers below delegate to those methods (no duplicate matching logic).
 //! TypeMetadata remains unported (equalsIgnoreMetadata == equals).
 //!
-//! PORTING_RULES (hashCode): the upstream Name.hashCode() is
+//! (hashCode): the upstream Name.hashCode() is
 //! Object.identityHashCode (Name.java has no hashCode override), which is not
 //! reproducible across processes; the port uses the javac name-table hash
 //! (NameTable.hashValue over the name bytes) as a stable equivalent (any stable
@@ -178,7 +178,7 @@ impl Drop for TypeRecursionGuard {
 ///
 /// Java: public class Types
 ///
-/// PORTING_RULES: the Java instance fields (syms/...) are not stored; the
+/// the Java instance fields (syms/...) are not stored; the
 /// ported methods take them as parameters. The Names service is stored (the
 /// captured-name creation of capture() needs it, Types.java:94/101/122).
 #[derive(Clone)]
@@ -478,7 +478,7 @@ impl Types {
     /// Get a Types instance whose Names service is the shared thread-local
     /// default table.
     ///
-    /// PORTING_RULES: upstream always reads `Names.instance(context)`, i.e. one
+    /// upstream always reads `Names.instance(context)`, i.e. one
     /// table per compiler context. Runtime services that can compare Name
     /// identity against compiler symbols MUST use `with_names` with the
     /// compiler's table instead; `new` is reserved for tests and for helpers
@@ -2409,7 +2409,7 @@ impl Types {
 
     /// Java: public Type capture(Type t)
     ///
-    /// PORTING_RULES: the freshTypeVariables/glb parts use the ported
+    /// the freshTypeVariables/glb parts use the ported
     /// CapturedType and Types::glb; a type that does not need capture conversion
     /// is returned as-is (the early returns of the upstream method).
     pub fn capture(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
@@ -3130,7 +3130,7 @@ impl Types {
 
     /// Java: public boolean isReifiable(Type t)
     ///
-    /// PORTING_RULES: upstream isReifiable takes only Type; syms is threaded
+    /// upstream isReifiable takes only Type; syms is threaded
     /// through recursion for the Rust arena/context API (expression adapter).
     #[allow(clippy::only_used_in_recursion)]
     pub fn is_reifiable(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> bool {
@@ -3164,7 +3164,7 @@ impl Types {
 
     /// Java: public int rank(Type t)
     ///
-    /// PORTING_RULES: the upstream rank_field caches (Type, not ported)
+    /// the upstream rank_field caches (Type, not ported)
     /// are not used; the rank is recomputed each time (same result).
     pub fn rank(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> i32 {
         let tag = ctx.typ(t).get_tag();
@@ -3842,7 +3842,7 @@ impl Types {
     /// Java: public boolean isCastable(Type t, Type s, Warner warn)
     /// (Types.java:1640-1670)
     ///
-    /// PORTING_RULES Porting rules adapter: the upstream TypeRelation.warnStack (a stack
+    /// Porting rules adapter: the upstream TypeRelation.warnStack (a stack
     /// pushed around visit) is expressed by passing the Warner explicitly; the
     /// recursive calls that upstream makes with noWarnings construct a local
     /// Warner (noWarnings has no observable state). checkUnsafeVarargsConversion
@@ -4244,7 +4244,7 @@ fn get_enclosing_type(ctx: &CompilerContext, t: TypeId) -> Option<TypeId> {
 /// Java: Type.getTypeArguments() (ClassType: typarams_field, lazily nil after
 /// complete(); other types: List.nil()).
 ///
-/// PORTING_RULES: reads the cached typarams_field via the ported Type method
+/// reads the cached typarams_field via the ported Type method
 /// (type_.rs:1022-1036). Callers that may need the upstream lazy complete() use
 /// get_type_arguments_completed below, which routes through
 /// complete_class_symbol[_with_attr] (the ported Symbol.complete).
@@ -4327,7 +4327,7 @@ pub(crate) fn get_type_arguments_completed(
 
 /// Java: Type.getParameterTypes() (MethodType: argtypes; other types: List.nil()).
 ///
-/// PORTING_RULES: delegates to Type.getParameterTypes (type_.rs:977-987),
+/// delegates to Type.getParameterTypes (type_.rs:977-987),
 /// including the ForAll qtype delegation.
 pub(crate) fn get_parameter_types(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
     ctx.typ(t).get_parameter_types(ctx)
@@ -4336,7 +4336,7 @@ pub(crate) fn get_parameter_types(ctx: &CompilerContext, t: TypeId) -> List<Type
 // ---------------------------------------------------------------------------
 // Types helpers.
 //
-// PORTING_RULES: upstream these helpers are methods of Type.java
+// Rust: upstream these helpers are methods of Type.java
 // (getThrownTypes/allparams/isParameterized/isRaw/hasErasedSupertypes/
 // getSuperclass/getInterfaces/classBound/cvarUpperBound/cvarLowerBound/elemtype)
 // or of Types.java (classBound/isUnbounded). Those with a ported Type method
@@ -5052,7 +5052,7 @@ impl Types {
 
 // ----------------------------------------------------------------------
 // Java: Types.createErrorType overloads (P3/Enter). The three Java
-// overloads get distinct Rust names (PORTING_RULES section 3).
+// overloads get distinct Rust names ().
 // ----------------------------------------------------------------------
 
 impl Types {
@@ -8387,7 +8387,7 @@ impl Types {
     /// origin, boolean checkResult, Predicate<Symbol> implFilter)
     /// (Types.java:3003-3005).
     ///
-    /// PORTING_RULES Porting rules adapter: the only upstream implFilter is
+    /// Porting rules adapter: the only upstream implFilter is
     /// MethodSymbol.implementation_filter (non-synthetic methods), so the port
     /// applies that filter directly (see implementation_internal).
     pub fn implementation(
@@ -10360,7 +10360,7 @@ impl Types {
     /// Java: public Collector<Type, ClosureHolder, List<Type>> closureCollector(...)
     /// (Types.java:3735-3740)
     ///
-    /// PORTING_RULES: the Java Collector/Stream abstraction is not part of the
+    /// the Java Collector/Stream abstraction is not part of the
     /// port; the same builder lifecycle (supplier/add/merge/finish) is exposed
     /// explicitly by ClosureCollector (registered adapter).
     pub fn closure_collector(&self, min_closure: bool, should_skip: ClosureSkip) -> ClosureCollector {

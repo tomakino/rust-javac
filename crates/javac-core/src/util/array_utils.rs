@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: Java overloads map to distinct Rust functions:
+//! Java overloads map to distinct Rust functions:
 //! - ensureCapacity(byte[]) -> ensure_capacity_bytes
 //! - ensureCapacity(char[]) -> ensure_capacity_u16
 //! - ensureCapacity(int[])  -> ensure_capacity_i32

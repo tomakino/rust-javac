@@ -1,6 +1,6 @@
 //! Provides access to syntax trees for doc comments.
 //!
-//! PORTING_RULES (§14.6):
+//! (§14.6):
 //! * Java abstract class DocTrees extends Trees -> Rust trait DocTrees: Trees;
 //!   the implementation is provided by the P6 API layer.
 //! * the static instance factories use reflection / ProcessingEnvironment and

@@ -1,7 +1,7 @@
 //! This class contains the type environments used by Enter, MemberEnter, Attr,
 //! DeferredAttr, and Lower.
 //!
-//! PORTING_RULES adapters (registered):
+//! Adapters (registered):
 //! - TypeSymbol/Env object references -> SymbolId / Rc<Env<AttrContext>>;
 //! - Context.Key instance() -> explicit construction (no Context singletons).
 

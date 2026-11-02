@@ -1,5 +1,5 @@
 //
-// PORTING_RULES:
+// Rust:
 // - TypeMetadata is an immutable EnumMap<Entry.Kind, Entry>; the port uses a
 // BTreeMap keyed by EntryKind (unique key per kind, deterministic iteration).
 // - The Java EMPTY singleton identity comparisons map to the empty-contents

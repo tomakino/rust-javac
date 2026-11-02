@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! * java.util.concurrent.ConcurrentHashMap -> RefCell<HashMap> (the compiler
 //!   model is single-threaded; registered; no observable behavior change);
 //! * java.util.Optional<BasicFileAttributes> -> Option<FileAttributes> where

@@ -1,7 +1,7 @@
 //! Represents the abstract syntax tree for ordinary compilation units and
 //! modular compilation units.
 //!
-//! PORTING_RULES: Java interface -> Rust trait; the Java `default` method
+//! Java interface -> Rust trait; the Java `default` method
 //! `getModule` throws UnsupportedOperationException and is expressed as a
 //! panicking Rust default method; nullable returns -> Option.
 

@@ -1,17 +1,17 @@
 //! Doc tree node family (Java: DCTree and its nested node classes).
 //!
-//! PORTING_RULES: doc-tree adapter notes (same policy as JCTree in ADR 0005):
+//! doc-tree adapter notes (same policy as JCTree in ADR 0005):
 //! - the Java subclass hierarchy becomes one outer struct plus a DCKind enum
 //!   (ADR 0005 section 1); the 35 concrete node classes are 35 variants;
 //! - child nodes are Rc<DCTree> (doc trees are immutable after construction;
-//!   PORTING_RULES section 4 allows Rc for immutable shared data). List<DCTree>
+//!   allows Rc for immutable shared data). List<DCTree>
 //!   stays util::List<Rc<DCTree>>, Java String becomes JavaString and
 //!   javax.lang.model.element.Name stays util::Name;
 //! - DCEndPosTree.endPos is a mutable (non-final) int field; in the variants
 //!   that extend DCEndPosTree it becomes a Cell<i32> (upstream setEndPos);
 //! - getKind() maps to the javac-source doctree Kind. The com.sun.source
 //!   doctree interface implementations are the P6 API view and are not written
-//!   here (same rule as JCTree, ADR 0005, registered PORTING_RULES section 9);
+//!   here (same rule as JCTree, ADR 0005, registered );
 //! - the upstream Comment type is parser/Tokens.Comment (imported from
 //!   crate::parser::tokens; the old placeholder in tree/doc_comment_table.rs
 //!   now re-exports the same trait);
@@ -54,7 +54,7 @@ pub struct DCTree {
 
 /// The concrete doc tree node classes (Java: the 35 nested DCTree subclasses).
 ///
-/// PORTING_RULES: Java subclass fields become variant fields; the variants that
+/// Java subclass fields become variant fields; the variants that
 /// extend DCEndPosTree carry the upstream endPos as Cell<i32>.
 #[allow(clippy::large_enum_variant)]
 pub enum DCKind {
@@ -301,7 +301,7 @@ impl DCTree {
 
     /// Java: public T setEndPos(int endPos) (DCEndPosTree)
     ///
-    /// PORTING_RULES: the upstream method returns this; the Rust caller keeps
+    /// the upstream method returns this; the Rust caller keeps
     /// the &Self reference. Panics for nodes that do not extend DCEndPosTree
     /// (the Java cast would throw ClassCastException).
     pub fn set_end_pos(&self, end_pos: i32) -> &Self {

@@ -1,6 +1,6 @@
 //! Indicates that an unknown kind of annotation value was encountered.
 //!
-//! PORTING_RULES: Java class inheritance -> embedded `UnknownEntityException`;
+//! Java class inheritance -> embedded `UnknownEntityException`;
 //! the `Object p` argument/`getArgument` are not ported (no Rust Object); the
 //! message is `"Unknown annotation value: \"" + av + "\""`, using the
 //! `Display` (toString) contract of `AnnotationValue`.
@@ -63,7 +63,7 @@ impl std::fmt::Display for UnknownAnnotationValueException {
 }
 
 impl fmt::Debug for UnknownAnnotationValueException {
-    // PORTING_RULES: Rust Debug is the nearest analogue of the Java
+    // Rust: Rust Debug is the nearest analogue of the Java
     // Throwable.toString() used for debugging; the payload holds trait objects
     // that have no Debug bound, so the message is printed instead.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

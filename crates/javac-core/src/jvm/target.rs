@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! * the Java enum constructor stores (name, majorVersion, minorVersion) per
 //!   constant; Rust expresses those as match-based accessors (same pattern as
 //!   code/TypeTag).  Java enum `name()` (the constant name) is reproduced by
@@ -209,7 +209,7 @@ impl Target {
 
     /// Value of platform release used to access multi-release jar files.
     ///
-    /// PORTING_RULES: Java String -> JavaString (Porting rules).
+    /// Java String -> JavaString (Porting rules).
     pub fn multi_release_value(self) -> JavaString {
         let value = self.ordinal() - Target::JDK1_1.ordinal() + 1;
         JavaString::from(value.to_string().as_str())

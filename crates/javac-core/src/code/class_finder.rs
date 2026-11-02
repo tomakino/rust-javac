@@ -134,19 +134,19 @@ pub struct ClassFinder {
     pub prefer_current: std::cell::Cell<bool>,
     /// Java: final Annotate annotate (ClassFinder.java:116)
     ///
-    /// PORTING_RULES adapter: the Annotate service is created after the
+    /// Adapter: the Annotate service is created after the
     /// ClassFinder by the bootstrap; the shared injection cell mirrors the
     /// ClassReader/Enter/MemberEnter adapter (registered section 9).
     pub annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
     /// Java: private final Completer thisCompleter = this::complete;
-    /// PORTING_RULES adapter: a Weak self reference breaks the Rc cycle.
+    /// Adapter: a Weak self reference breaks the Rc cycle.
     pub self_ref: std::rc::Weak<ClassFinder>,
 }
 
 impl ClassFinder {
     /// Java: protected ClassFinder(Context context)
     ///
-    /// PORTING_RULES adapter: dependencies are injected; the upstream
+    /// Adapter: dependencies are injected; the upstream
     /// useCtProps/jrtIndex computation (JavacFileManager instanceof checks) is
     /// passed as jrt_index by the bootstrap (registered).
     #[allow(clippy::too_many_arguments)]
@@ -515,7 +515,7 @@ impl ClassFinder {
         c: SymbolId,
         fragment: crate::resources::diagnostic_contract::FragmentInfo,
     ) -> CompletionFailure {
-        // PORTING_RULES adapter: the upstream reuses one cached CompletionFailure;
+        // Adapter: the upstream reuses one cached CompletionFailure;
         // the port allocates a fresh value (the reuse is a pure allocation
         // optimization, registered).
         let diag = self.diag_factory.fragment(Fragment::from(fragment));
@@ -898,7 +898,7 @@ impl ClassFinder {
     /// Java: Iterable<JavaFileObject> list(Location location, PackageSymbol p,
     /// String packageName, Set<Kind> kinds)
     ///
-    /// PORTING_RULES adapter: the upstream lazy Iterator is expressed as a Vec
+    /// Adapter: the upstream lazy Iterator is expressed as a Vec
     /// with the same filtering and the HAS_RESOURCE marking.
     fn list(
         &self,
@@ -955,7 +955,7 @@ impl ClassFinder {
 /// Java: ex.getLocalizedMessage() for the IOException caught by ClassFinder
 /// (ClassFinder.java:300-306). The Rust Error enum models the checked
 /// IOException and UnsupportedOperationException; the latter is a runtime
-/// exception that upstream does not catch here (PORTING_RULES section 6: a
+/// exception that upstream does not catch here (a
 /// runtime exception maps to panic).
 pub(crate) fn io_failure_message(error: &Error) -> javac_strings::JavaString {
     match error {
@@ -1147,7 +1147,7 @@ pub fn create_bad_class_file_diagnostic(
     diag_factory: &Rc<Factory>,
 ) -> JCDiagnostic {
     let is_source = file.get_kind() == Kind::SOURCE;
-    // PORTING_RULES: P4 placeholder arguments (ADR 0002); the file and the
+    // Rust: P4 placeholder arguments (ADR 0002); the file and the
     // nested diagnostic are carried as their text until the typed diagnostic
     // arguments land.
     // Java: diagFactory.fragment(key, file, diag) formats the file object as

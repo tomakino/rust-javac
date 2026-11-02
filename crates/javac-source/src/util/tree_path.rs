@@ -1,7 +1,7 @@
 //! A path of tree nodes, typically used to represent the sequence of ancestor
 //! nodes of a tree node up to the top-level CompilationUnitTree node.
 //!
-//! PORTING_RULES: Java concrete class -> Rust struct (values are immutable;
+//! Java concrete class -> Rust struct (values are immutable;
 //! Java's reference identity is preserved through Rc).  `implements
 //! Iterable<Tree>` -> `iterator()` returning `Vec<Rc<dyn Tree>>` (§14
 //! collection mapping; Iterator.remove()'s UnsupportedOperationException is not
@@ -37,7 +37,7 @@ impl TreePath {
     /// @param target the node to locate
     /// @return the tree path
     ///
-    /// PORTING_RULES: REGISTERED(P1) — the Java implementation searches with a
+    /// REGISTERED(P1) — the Java implementation searches with a
     /// TreePathScanner; it is filled in with the TreeScanner batch.
     pub fn get_path(
         unit: Rc<dyn CompilationUnitTree>,
@@ -52,7 +52,7 @@ impl TreePath {
     /// @param target the node to locate
     /// @return the tree path of the target node
     ///
-    /// PORTING_RULES: Implemented (see PORTING_RULES §14.5).
+    /// Implemented (see §14.5).
     pub fn get_path_in_path(path: Rc<TreePath>, target: Rc<dyn Tree>) -> Option<Rc<TreePath>> {
         if Rc::ptr_eq(&path.get_leaf(), &target) {
             return Some(path);
@@ -64,7 +64,7 @@ impl TreePath {
 
     /// Java: new TreePath(null, node) for a compilation unit root.
     ///
-    /// PORTING_RULES: used by TreePathScanner when the current path is null
+    /// used by TreePathScanner when the current path is null
     /// (Java's TreePath(null, tree) is only legal for a compilation unit).
     pub(crate) fn new_root_tree(tree: Rc<dyn Tree>) -> TreePath {
         debug_assert_eq!(tree.get_kind(), Kind::COMPILATION_UNIT);
@@ -92,7 +92,7 @@ impl TreePath {
     /// Returns the compilation unit associated with this path.
     /// @return the compilation unit
     ///
-    /// PORTING_RULES: the Java field is typed CompilationUnitTree; the Rust
+    /// the Java field is typed CompilationUnitTree; the Rust
     /// struct stores the trait-object tree and converts through the §13
     /// accessor (a ClassCastException/panic if the invariant is violated).
     pub fn get_compilation_unit(&self) -> &dyn CompilationUnitTree {
@@ -127,7 +127,7 @@ impl TreePath {
 
 /// Java: the PathFinder class inside TreePath.getPath(TreePath, Tree).
 ///
-/// PORTING_RULES: the Java implementation throws a private Error to unwind the
+/// the Java implementation throws a private Error to unwind the
 /// scan when the target is found; Rust records the result and short-circuits
 /// every subsequent scan (same observable result, no unwinding).
 struct PathFinder {

@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: the upstream abstract Directive class is represented by the
+//! the upstream abstract Directive class is represented by the
 //! Directive enum (one variant per subclass); Symbol references are
 //! Option<SymbolId>; List<ModuleSymbol> is Option<List<SymbolId>> (the field is
 //! nullable upstream); Set<RequiresFlag>/Set<ExportsFlag>/Set<OpensFlag>

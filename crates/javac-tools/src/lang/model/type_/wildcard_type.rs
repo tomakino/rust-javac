@@ -1,6 +1,6 @@
 //! Represents a wildcard type argument.
 //!
-//! PORTING_RULES: nullable bounds -> `Option<Rc<dyn TypeMirror>>`.
+//! nullable bounds -> `Option<Rc<dyn TypeMirror>>`.
 
 use super::type_mirror::TypeMirror;
 use std::rc::Rc;

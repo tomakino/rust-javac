@@ -6,13 +6,13 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: the Java abstract class Name plus its two concrete
+//! the Java abstract class Name plus its two concrete
 //! implementations (SharedNameTable.NameImpl, UnsharedNameTable.NameImpl) are
 //! expressed as one Rust struct Name (a handle) whose bytes are snapshotted when
 //! the name is interned. Name.Table is expressed as NameTableHandle, with the
 //! two implementations selected by NameTableInner. The table itself is shared and
 //! internally mutable (interning), which is a registered Rc<RefCell<...>>
-//! exception (see PORTING_RULES section 9).
+//! exception (see ).
 //!
 //! Equality mirrors Java: names are equal iff they come from the same table and
 //! have the same index (identity within a table).
@@ -303,7 +303,7 @@ impl Name {
         mapper(&bytes, 0, self.get_byte_length())
     }
 
-    /// PORTING_RULES adapter: access to the standard names table (Java:
+    /// Adapter: access to the standard names table (Java:
     /// name.table.names). Call sites use name.names().
     pub fn names(&self) -> Rc<NamesStd> {
         self.table.names()

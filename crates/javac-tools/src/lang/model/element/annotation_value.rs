@@ -1,6 +1,6 @@
 //! Represents a value of an annotation interface element.
 //!
-//! PORTING_RULES — the Java `Object getValue()` is mapped to the closed
+//! — the Java `Object getValue()` is mapped to the closed
 //! `Value` enum below, which lists exactly the value shapes documented by the
 //! upstream interface:
 //! <ul><li> a wrapper class (such as Integer) for a primitive type
@@ -25,7 +25,7 @@ use std::rc::Rc;
 
 /// The value of an annotation interface element.
 ///
-/// PORTING_RULES: representation of the Java `Object` returned by
+/// representation of the Java `Object` returned by
 /// `AnnotationValue.getValue`; see the file header.  Rust `PartialEq`/`Debug`
 /// cannot be derived because the trait object alternatives have no such
 /// bounds (the Java `Object` has no value equality contract either).
@@ -61,7 +61,7 @@ pub enum Value {
 
 /// Borrowing representation of `AnnotationValue.getValue()`.
 ///
-/// PORTING_RULES: the Java visitor callbacks (`SimpleAnnotationValueVisitor6.
+/// the Java visitor callbacks (`SimpleAnnotationValueVisitor6.
 /// defaultAction(Object, P)` and the visitXyz methods) pass the unboxed value as
 /// an `Object`; `ValueRef` is the borrowing form of that closed set, used so the
 /// ported callbacks do not clone the referenced mirrors (representation choice,
@@ -114,7 +114,7 @@ pub trait AnnotationValue: std::fmt::Display {
     /// @param p   additional parameter to the visitor
     /// @return a visitor-specified result
     ///
-    /// PORTING_RULES: `where Self: Sized` keeps AnnotationValue object safe
+    /// `where Self: Sized` keeps AnnotationValue object safe
     /// (the upstream method is generic).
     fn accept<R, P>(&self, v: &mut dyn AnnotationValueVisitor<R, P>, p: P) -> R
     where

@@ -6,7 +6,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! - Java generics <D extends Diagnostic<?>, F extends DiagnosticFormatter<D>>
 //!   map to a single type parameter D and an Rc<RefCell<dyn
 //!   DiagnosticFormatter<D>>> delegate: the upstream class keeps a reference to
@@ -108,7 +108,7 @@ impl<D> ForwardingConfiguration<D> {
     ///
     /// Java: public Configuration getDelegatedConfiguration()
     ///
-    /// PORTING_RULES: the upstream returns a borrowed reference; the RefCell
+    /// the upstream returns a borrowed reference; the RefCell
     /// delegate cannot hand one out, so the closure form is provided.
     pub fn with_configuration<R>(&self, f: impl FnOnce(&mut dyn Configuration) -> R) -> R {
         f(self.formatter.borrow_mut().get_configuration())

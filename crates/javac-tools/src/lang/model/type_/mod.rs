@@ -21,7 +21,7 @@
 //! @jls 10.1 Array Types
 //! @since 1.6
 //!
-//! PORTING_RULES: the Java package name `type` is a Rust keyword, so the
+//! the Java package name `type` is a Rust keyword, so the
 //! module is named `type_` (docs/PORTING_RULES.md §3); the file names mirror
 //! the Java class names in snake_case.
 
@@ -44,7 +44,7 @@ pub mod union_type;
 pub mod unknown_type_exception;
 pub mod wildcard_type;
 
-// PORTING_RULES: the source files are one-per-Java-file modules; these
+// Rust: the source files are one-per-Java-file modules; these
 // re-exports expose the Java package-level simple names
 // (javax.lang.model.type.X) at the module root.
 pub use array_type::ArrayType;

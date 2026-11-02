@@ -4,7 +4,7 @@
 //! @author Jonathan Gibbons
 //! @since 1.6
 //!
-//! PORTING_RULES: one Rust file per Java file of the package; abstract classes
+//! one Rust file per Java file of the package; abstract classes
 //! (JavacTask/Trees/DocTrees) become traits whose implementations are provided by
 //! the P6 API layer, and the visitor/scanner class hierarchy follows §14 as in
 //! javax.lang.model.util.  This package is being ported in batches (task board);

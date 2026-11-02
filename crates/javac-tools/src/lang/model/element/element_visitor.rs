@@ -1,6 +1,6 @@
 //! A visitor of program elements, in the style of the visitor design pattern.
 //!
-//! PORTING_RULES — signature mapping:
+//! — signature mapping:
 //! * visit methods take `&mut self` (a Java visitor is a mutable object; the
 //!   ported visitors keep state in `&mut self`), the visited element as
 //!   `&dyn X`, and the parameter `P` by value.
@@ -55,7 +55,7 @@ pub trait ElementVisitor<R, P> {
     /// @param p  a visitor-specified parameter
     /// @return a visitor-specified result
     fn visit(&mut self, _e: &dyn Element, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit: PORTING_RULES: visitor interface method not overridden")
@@ -66,7 +66,7 @@ pub trait ElementVisitor<R, P> {
     /// @param p  a visitor-specified parameter
     /// @return a visitor-specified result
     fn visit_package(&mut self, _e: &dyn PackageElement, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_package: PORTING_RULES: visitor interface method not overridden")
@@ -77,7 +77,7 @@ pub trait ElementVisitor<R, P> {
     /// @param p  a visitor-specified parameter
     /// @return a visitor-specified result
     fn visit_type(&mut self, _e: &dyn TypeElement, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_type: PORTING_RULES: visitor interface method not overridden")
@@ -88,7 +88,7 @@ pub trait ElementVisitor<R, P> {
     /// @param p  a visitor-specified parameter
     /// @return a visitor-specified result
     fn visit_variable(&mut self, _e: &dyn VariableElement, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_variable: PORTING_RULES: visitor interface method not overridden")
@@ -99,7 +99,7 @@ pub trait ElementVisitor<R, P> {
     /// @param p  a visitor-specified parameter
     /// @return a visitor-specified result
     fn visit_executable(&mut self, _e: &dyn ExecutableElement, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_executable: PORTING_RULES: visitor interface method not overridden")
@@ -110,7 +110,7 @@ pub trait ElementVisitor<R, P> {
     /// @param p  a visitor-specified parameter
     /// @return a visitor-specified result
     fn visit_type_parameter(&mut self, _e: &dyn TypeParameterElement, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_type_parameter: PORTING_RULES: visitor interface method not overridden")
@@ -126,7 +126,7 @@ pub trait ElementVisitor<R, P> {
     /// @throws UnknownElementException
     ///  a visitor implementation may optionally throw this exception
     fn visit_unknown(&mut self, _e: &dyn Element, _p: P) -> R {
-        // PORTING_RULES: the Java interface method is abstract; the Rust default
+        // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
         panic!("AbstractMethodError: visit_unknown: PORTING_RULES: visitor interface method not overridden")

@@ -6,7 +6,7 @@
 //! compilation instances. Attribute/Directive are immutable objects with identity semantics (Java does not override
 //! equals by value), so they also use arena+ID (ADR 0001 addendum).
 //!
-//! PORTING_RULES: non-1:1 adapter file (Java object references -> u32 arena index), see ADR 0001.
+//! non-1:1 adapter file (Java object references -> u32 arena index), see ADR 0001.
 
 /// Generate one arena-index ID type (the four domain types share the same representation).
 macro_rules! arena_id {

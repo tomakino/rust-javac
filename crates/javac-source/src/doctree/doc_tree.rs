@@ -1,6 +1,6 @@
 //! Common interface for all nodes in a documentation syntax tree.
 //!
-//! PORTING_RULES (docs/PORTING_RULES.md §14):
+//! (docs/PORTING_RULES.md §14):
 //! * Java interface -> Rust trait; the nested DocTree.Kind enum is declared in
 //!   this module (39 constants, Java order) and its Java
 //!   `public final String tagName` field is expressed by `tag_name()`, with
@@ -69,192 +69,192 @@ pub trait DocTree {
     /// @param data a parameter value to be passed to the visitor method
     /// @return the value returned from the visitor method
     ///
-    /// PORTING_RULES: `where Self: Sized` keeps DocTree object safe.
+    /// `where Self: Sized` keeps DocTree object safe.
     fn accept<R, D>(&self, visitor: &mut dyn DocTreeVisitor<R, D>, data: D) -> R
     where
         Self: Sized;
 
-    /// PORTING_RULES: object conversion for `instanceof AttributeTree` (see file header).
+    /// object conversion for `instanceof AttributeTree` (see file header).
     fn as_attribute_tree(&self) -> Option<&dyn AttributeTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof AuthorTree` (see file header).
+    /// object conversion for `instanceof AuthorTree` (see file header).
     fn as_author_tree(&self) -> Option<&dyn AuthorTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof BlockTagTree` (see file header).
+    /// object conversion for `instanceof BlockTagTree` (see file header).
     fn as_block_tag_tree(&self) -> Option<&dyn BlockTagTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof CommentTree` (see file header).
+    /// object conversion for `instanceof CommentTree` (see file header).
     fn as_comment_tree(&self) -> Option<&dyn CommentTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof DeprecatedTree` (see file header).
+    /// object conversion for `instanceof DeprecatedTree` (see file header).
     fn as_deprecated_tree(&self) -> Option<&dyn DeprecatedTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof DocCommentTree` (see file header).
+    /// object conversion for `instanceof DocCommentTree` (see file header).
     fn as_doc_comment_tree(&self) -> Option<&dyn DocCommentTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof DocRootTree` (see file header).
+    /// object conversion for `instanceof DocRootTree` (see file header).
     fn as_doc_root_tree(&self) -> Option<&dyn DocRootTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof DocTypeTree` (see file header).
+    /// object conversion for `instanceof DocTypeTree` (see file header).
     fn as_doc_type_tree(&self) -> Option<&dyn DocTypeTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof EndElementTree` (see file header).
+    /// object conversion for `instanceof EndElementTree` (see file header).
     fn as_end_element_tree(&self) -> Option<&dyn EndElementTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof EntityTree` (see file header).
+    /// object conversion for `instanceof EntityTree` (see file header).
     fn as_entity_tree(&self) -> Option<&dyn EntityTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ErroneousTree` (see file header).
+    /// object conversion for `instanceof ErroneousTree` (see file header).
     fn as_erroneous_tree(&self) -> Option<&dyn ErroneousTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof HiddenTree` (see file header).
+    /// object conversion for `instanceof HiddenTree` (see file header).
     fn as_hidden_tree(&self) -> Option<&dyn HiddenTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof IdentifierTree` (see file header).
+    /// object conversion for `instanceof IdentifierTree` (see file header).
     fn as_identifier_tree(&self) -> Option<&dyn IdentifierTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof IndexTree` (see file header).
+    /// object conversion for `instanceof IndexTree` (see file header).
     fn as_index_tree(&self) -> Option<&dyn IndexTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof InheritDocTree` (see file header).
+    /// object conversion for `instanceof InheritDocTree` (see file header).
     fn as_inherit_doc_tree(&self) -> Option<&dyn InheritDocTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof InlineTagTree` (see file header).
+    /// object conversion for `instanceof InlineTagTree` (see file header).
     fn as_inline_tag_tree(&self) -> Option<&dyn InlineTagTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof LinkTree` (see file header).
+    /// object conversion for `instanceof LinkTree` (see file header).
     fn as_link_tree(&self) -> Option<&dyn LinkTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof LiteralTree` (see file header).
+    /// object conversion for `instanceof LiteralTree` (see file header).
     fn as_literal_tree(&self) -> Option<&dyn LiteralTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ParamTree` (see file header).
+    /// object conversion for `instanceof ParamTree` (see file header).
     fn as_param_tree(&self) -> Option<&dyn ParamTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ProvidesTree` (see file header).
+    /// object conversion for `instanceof ProvidesTree` (see file header).
     fn as_provides_tree(&self) -> Option<&dyn ProvidesTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ReferenceTree` (see file header).
+    /// object conversion for `instanceof ReferenceTree` (see file header).
     fn as_reference_tree(&self) -> Option<&dyn ReferenceTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ReturnTree` (see file header).
+    /// object conversion for `instanceof ReturnTree` (see file header).
     fn as_return_tree(&self) -> Option<&dyn ReturnTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof SeeTree` (see file header).
+    /// object conversion for `instanceof SeeTree` (see file header).
     fn as_see_tree(&self) -> Option<&dyn SeeTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof SerialDataTree` (see file header).
+    /// object conversion for `instanceof SerialDataTree` (see file header).
     fn as_serial_data_tree(&self) -> Option<&dyn SerialDataTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof SerialFieldTree` (see file header).
+    /// object conversion for `instanceof SerialFieldTree` (see file header).
     fn as_serial_field_tree(&self) -> Option<&dyn SerialFieldTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof SerialTree` (see file header).
+    /// object conversion for `instanceof SerialTree` (see file header).
     fn as_serial_tree(&self) -> Option<&dyn SerialTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof SinceTree` (see file header).
+    /// object conversion for `instanceof SinceTree` (see file header).
     fn as_since_tree(&self) -> Option<&dyn SinceTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof StartElementTree` (see file header).
+    /// object conversion for `instanceof StartElementTree` (see file header).
     fn as_start_element_tree(&self) -> Option<&dyn StartElementTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof SummaryTree` (see file header).
+    /// object conversion for `instanceof SummaryTree` (see file header).
     fn as_summary_tree(&self) -> Option<&dyn SummaryTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof SystemPropertyTree` (see file header).
+    /// object conversion for `instanceof SystemPropertyTree` (see file header).
     fn as_system_property_tree(&self) -> Option<&dyn SystemPropertyTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof TextTree` (see file header).
+    /// object conversion for `instanceof TextTree` (see file header).
     fn as_text_tree(&self) -> Option<&dyn TextTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ThrowsTree` (see file header).
+    /// object conversion for `instanceof ThrowsTree` (see file header).
     fn as_throws_tree(&self) -> Option<&dyn ThrowsTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof UnknownBlockTagTree` (see file header).
+    /// object conversion for `instanceof UnknownBlockTagTree` (see file header).
     fn as_unknown_block_tag_tree(&self) -> Option<&dyn UnknownBlockTagTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof UnknownInlineTagTree` (see file header).
+    /// object conversion for `instanceof UnknownInlineTagTree` (see file header).
     fn as_unknown_inline_tag_tree(&self) -> Option<&dyn UnknownInlineTagTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof UsesTree` (see file header).
+    /// object conversion for `instanceof UsesTree` (see file header).
     fn as_uses_tree(&self) -> Option<&dyn UsesTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof ValueTree` (see file header).
+    /// object conversion for `instanceof ValueTree` (see file header).
     fn as_value_tree(&self) -> Option<&dyn ValueTree> {
         None
     }
 
-    /// PORTING_RULES: object conversion for `instanceof VersionTree` (see file header).
+    /// object conversion for `instanceof VersionTree` (see file header).
     fn as_version_tree(&self) -> Option<&dyn VersionTree> {
         None
     }
@@ -262,7 +262,7 @@ pub trait DocTree {
 
 /// Enumerates all kinds of trees.
 ///
-/// PORTING_RULES: Java enum constants keep their Java names (UPPER_SNAKE_CASE)
+/// Java enum constants keep their Java names (UPPER_SNAKE_CASE)
 /// and declaration order.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

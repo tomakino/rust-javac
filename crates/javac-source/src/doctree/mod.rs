@@ -1,4 +1,4 @@
-// PORTING_RULES: the Java class DocTree lives in the package doctree; the Rust
+// Rust: the Java class DocTree lives in the package doctree; the Rust
 // module doctree::doc_tree mirrors that (clippy::module_inception is expected).
 #![allow(clippy::module_inception)]
 
@@ -6,7 +6,7 @@
 //! Provides interfaces to represent documentation comments as abstract syntax
 //! trees (AST).
 //!
-//! PORTING_RULES: one Rust file per Java file of the package.
+//! one Rust file per Java file of the package.
 
 pub mod attribute_tree;
 pub mod author_tree;

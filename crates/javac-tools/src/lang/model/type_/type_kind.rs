@@ -14,7 +14,7 @@ use javac_strings::JavaString;
 /// @see TypeMirror
 /// @since 1.6
 ///
-/// PORTING_RULES: Java enum constants keep their Java names and order.
+/// Java enum constants keep their Java names and order.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TypeKind {

@@ -1,7 +1,7 @@
 //! A provider for parameter names when the parameter names are not determined
 //! from a reliable source, like a classfile.
 //!
-//! PORTING_RULES: Java interface -> Rust trait; `CharSequence` (may be null) ->
+//! Java interface -> Rust trait; `CharSequence` (may be null) ->
 //! `Option<JavaString>`.
 
 use javac_strings::JavaString;

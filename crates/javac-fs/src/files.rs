@@ -2,7 +2,7 @@
 //
 // Adapter for: java.nio.file.Files (the subset used by javac.file.*: exists,
 // isDirectory, isRegularFile, readAllBytes, list, size, getLastModifiedTime).
-// PORTING_RULES: the Java static methods are Rust associated functions;
+// Rust: the Java static methods are Rust associated functions;
 // declared IOException -> Result<_, Error>; the Java "false on error" behavior
 // of Files.exists/isDirectory/isRegularFile is preserved.
 

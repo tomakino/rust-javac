@@ -12,13 +12,13 @@
 
 //! A parser for doc comments, producing DocTree nodes.
 //!
-//! PORTING_RULES: adapter notes:
+//! adapter notes:
 //! - upstream holds ParserFactory fac; the ported ParserFactory is stored in
 //!   fac and constructs DocTreeMaker/ReferenceParser. DocTreeMaker is shared as
 //!   Rc<RefCell<...>> (its position changes while parsing; registered RefCell
 //!   whitelist) and the DiagnosticSource is injected (Log.currentSource).
 //! - Java char[]/String buffers become Vec<u16>/JavaString (UTF-16 code unit
-//!   semantics, PORTING_RULES section 7); EOI is LayoutCharacters.EOI;
+//!   semantics, ); EOI is LayoutCharacters.EOI;
 //! - the anonymous TagParser subclasses of createTagParsers() become a
 //!   TagParserSpec table plus parse_tag (one match arm per tag), registered as
 //!   the Java anonymous-class adaptation;
@@ -156,7 +156,7 @@ pub struct DocCommentParser {
 }
 
 impl DocCommentParser {
-    /// PORTING_RULES: upstream DocCommentParser(ParserFactory fac,
+    /// upstream DocCommentParser(ParserFactory fac,
     /// DiagnosticSource diagSource, Comment comment, boolean isFileContent);
     /// the ParserFactory dependencies are injected until parser S7.
     pub fn new(
@@ -204,7 +204,7 @@ impl DocCommentParser {
 
     /// Java: public DCDocComment parse()
     ///
-    /// PORTING_RULES: returns the single DCTree node whose kind is
+    /// returns the single DCTree node whose kind is
     /// DCKind::DocComment (the port has one node type; see tree/dc_tree.rs).
     pub fn parse(&mut self, ctx: &mut CompilerContext) -> Rc<DCTree> {
         let text = self.comment.get_text().unwrap_or_else(|| {

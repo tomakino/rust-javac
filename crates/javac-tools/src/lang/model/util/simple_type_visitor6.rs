@@ -1,7 +1,7 @@
 //! A simple visitor of types with default behavior appropriate for the
 //! RELEASE_6 source version.
 //!
-//! PORTING_RULES — class mapping:
+//! — class mapping:
 //! * Java concrete class -> Rust trait with the upstream default behavior.
 //! * the Java `protected final R DEFAULT_VALUE` field (null default from the
 //!   no-arg constructor) -> `default_value() -> Option<&R>`; `default_action`

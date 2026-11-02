@@ -1,7 +1,7 @@
 //! A skeletal visitor for annotation values with default behavior appropriate
 //! for the RELEASE_6 source version.
 //!
-//! PORTING_RULES — class mapping:
+//! — class mapping:
 //! * Java abstract class -> Rust trait with the upstream default behavior.
 //! * the Java `final R visit(AnnotationValue, P)` forwards to `av.accept(this, p)`;
 //!   Rust cannot call the generic `AnnotationValue::accept` on
@@ -67,7 +67,7 @@ pub trait AbstractAnnotationValueVisitor6<R, P>: AnnotationValueVisitor<R, P> {
 
 /// Java: the value's own `accept(visitor, p)` performs the dispatch.
 ///
-/// PORTING_RULES: `AnnotationValue::accept` is generic and therefore not callable
+/// `AnnotationValue::accept` is generic and therefore not callable
 /// on `&dyn AnnotationValue`; the dispatch is reproduced from the closed
 /// `Value` representation of `get_value()`, which is exactly what the Java
 /// accept implementations dispatch on (registered adapter contract).

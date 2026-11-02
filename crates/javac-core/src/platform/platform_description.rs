@@ -5,7 +5,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES (Porting rules/Porting rules):
+//! (Porting rules/Porting rules):
 //! * Java interface -> Rust trait (used as `dyn PlatformDescription`).
 //!   The Java `PlatformDescription extends Closeable`: java.io.Closeable is not a
 //!   ported type, so the interface's own `close()` re-declaration is kept and the
@@ -88,7 +88,7 @@ pub trait PluginInfo<T> {
     /// Returns the options for the Processor or Plugin. For plugin, the map will be converted
     /// to a collection by concatenating the map's keys, the '=' sign and the map's values.
     ///
-    /// PORTING_RULES: Java {@code Map<String, String>} -> {@code Vec<(JavaString, JavaString)>}
+    /// Java {@code Map<String, String>} -> {@code Vec<(JavaString, JavaString)>}
     /// (Porting rules); the iteration order is the one of the implementation.
     ///
     /// @return the options

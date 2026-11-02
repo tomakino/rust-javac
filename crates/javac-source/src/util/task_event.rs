@@ -1,7 +1,7 @@
 //! Provides details about work that has been done by the JDK Java Compiler,
 //! javac.
 //!
-//! PORTING_RULES: Java final class -> Rust struct; nullable fields -> Option;
+//! Java final class -> Rust struct; nullable fields -> Option;
 //! the four Java constructors are overloads of one name and become distinct
 //! Rust constructors (new/new_with_source_file/new_with_unit/
 //! new_with_unit_and_type) plus the private all-fields form; the Java
@@ -123,7 +123,7 @@ impl std::fmt::Display for TaskEvent {
 /// Kind of task event.
 /// @since 1.6
 ///
-/// PORTING_RULES: Java nested enum TaskEvent.Kind -> task_event::Kind.
+/// Java nested enum TaskEvent.Kind -> task_event::Kind.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {

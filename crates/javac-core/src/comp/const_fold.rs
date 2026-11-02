@@ -1,5 +1,5 @@
 //
-// PORTING_RULES:
+// Rust:
 // - ADR 0001: the ported ConstFold takes the services explicitly; the upstream
 // ConstFold.instance(Context)/(Context) constructor is registered with the
 // Context registration.

@@ -27,7 +27,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! - the Java abstract class becomes a trait with default methods for the
 //!   concrete methods; the upstream protected fields are provided by the
 //!   implementor through accessor methods (messages / depth via Cell /
@@ -384,7 +384,7 @@ pub trait AbstractDiagnosticFormatter {
 
 /// The body of the default formatArgument implementation.
 ///
-/// PORTING_RULES: Rust cannot call a trait's default method implementation from
+/// Rust cannot call a trait's default method implementation from
 /// an override (the qualified trait call dispatches to the override and would
 /// recurse); the default body therefore lives in this free function and the
 /// trait default / the Raw override both call it (registered section 9).

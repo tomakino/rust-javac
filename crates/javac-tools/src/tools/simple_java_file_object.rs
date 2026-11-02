@@ -19,7 +19,7 @@ use std::io::{Read, Write};
 /// @author Peter von der Ah&eacute;
 /// @since 1.6
 ///
-/// PORTING_RULES — class mapping:
+/// — class mapping:
 /// * Java "this class is designed to be subclassed" cannot be expressed in
 ///   Rust (no inheritance).  The struct keeps the upstream state and default
 ///   implementations; a Rust implementation that wants different behavior
@@ -49,7 +49,7 @@ impl SimpleJavaFileObject {
     /// @param uri  the URI for this file object
     /// @param kind the kind of this file object
     ///
-    /// PORTING_RULES: the upstream constructor throws
+    /// the upstream constructor throws
     /// IllegalArgumentException("URI must have a path: " + uri) for a URI
     /// without a path; that is API misuse and maps to panic! (crate::error).
     /// The Objects.requireNonNull checks have no Rust form.
@@ -68,7 +68,7 @@ impl FileObject for SimpleJavaFileObject {
 
     fn get_name(&self) -> JavaString {
         // Java: return toUri().getPath();
-        // PORTING_RULES: toUri() cannot be overridden in Rust and the
+        // Rust: toUri() cannot be overridden in Rust and the
         // constructor guarantees a path, so the Java null case is unreachable.
         self.to_uri().get_path().expect("SimpleJavaFileObject URI has a path")
     }
@@ -99,7 +99,7 @@ impl FileObject for SimpleJavaFileObject {
     /// @throws UnsupportedOperationException {@inheritDoc}
     /// @throws IOException {@inheritDoc}
     ///
-    /// PORTING_RULES: the upstream CharBuffer special case (CharArrayReader
+    /// the upstream CharBuffer special case (CharArrayReader
     /// over the backing array) is representation-only; the interface returns
     /// the character content of getCharContent and the same characters are
     /// read back through StringReader.  The Java null result maps to
@@ -220,7 +220,7 @@ impl std::fmt::Display for SimpleJavaFileObject {
     /// Java: public String toString() {
     ///           return getClass().getName() + "[" + toUri() + "]"; }
     ///
-    /// PORTING_RULES: Rust has no getClass(); the upstream binary class name
+    /// Rust has no getClass(); the upstream binary class name
     /// of this class is used.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "javax.tools.SimpleJavaFileObject[{}]", self.to_uri())
@@ -297,7 +297,7 @@ mod tests {
     fn open_reader_wraps_char_content() {
         // Emulates the upstream "JavaSourceFromString" pattern: a subtype that
         // overrides getCharContent.  In Rust the equivalent is a wrapper type
-        // that re-implements openReader (see the class PORTING_RULES note).
+        // that re-implements openReader (see the class note).
         struct SourceFromString(SimpleJavaFileObject);
 
         impl FileObject for SourceFromString {

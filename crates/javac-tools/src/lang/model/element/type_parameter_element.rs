@@ -1,7 +1,7 @@
 //! Represents a formal type parameter of a generic class, interface, method,
 //! or constructor element.
 //!
-//! PORTING_RULES:
+//!
 //! * `List<? extends TypeMirror>` -> `Vec<Rc<dyn TypeMirror>>`.
 //! * the Java `@Override` re-declarations of `asType` and
 //!   `getEnclosingElement` only narrow their documentation and return type in

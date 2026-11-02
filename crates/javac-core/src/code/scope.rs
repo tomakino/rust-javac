@@ -165,7 +165,7 @@ pub enum ScopeData {
         next: Option<ScopeId>,
         /// A hash table for the scope's entries.
         ///
-        /// PORTING_RULES Porting rules adapter: upstream dup()/dupUnshared() share the
+        /// Porting rules adapter: upstream dup()/dupUnshared() share the
         /// Entry[] table object between scope instances; Rust represents the
         /// shared table/entry object graph with Rc<RefCell<...>> (borrow rule:
         /// never hold a borrow across a nested scope operation; the methods

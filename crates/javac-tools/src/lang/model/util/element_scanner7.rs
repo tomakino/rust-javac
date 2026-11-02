@@ -1,7 +1,7 @@
 //! A scanning visitor of program elements with default behavior appropriate for
 //! the RELEASE_7 source version.
 //!
-//! PORTING_RULES: Java `ElementScanner7 extends ElementScanner6` only overrides
+//! Java `ElementScanner7 extends ElementScanner6` only overrides
 //! `visitVariable` (it scans the enclosed elements for every variable, dropping
 //! the RELEASE_6 RESOURCE_VARIABLE special case).  The Rust trait is a subtrait
 //! re-declaring that method; calling it on a concrete type implementing both
@@ -64,7 +64,7 @@ mod tests {
             None
         }
         fn scan(&mut self, e: &dyn Element, _p: ()) -> usize {
-            // PORTING_RULES: the base scan needs a concrete-type override; this
+            // Rust: the base scan needs a concrete-type override; this
             // test records the traversal instead of dispatching.
             self.log.push(e.get_kind());
             0

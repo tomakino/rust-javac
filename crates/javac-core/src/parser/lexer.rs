@@ -1,6 +1,6 @@
 //! The lexical analyzer interface (Java: public interface Lexer).
 //!
-//! PORTING_RULES: the Java interface becomes a Rust trait; the token(int
+//! the Java interface becomes a Rust trait; the token(int
 //! lookahead) overload becomes lookahead_token (no overloading); the inner
 //! Position.LineMap type becomes position::LineMapImpl.
 

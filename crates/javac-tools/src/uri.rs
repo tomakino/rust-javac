@@ -7,7 +7,7 @@
 //              (com.sun.tools.javac.file), see the REGISTERED notes below.
 //! Minimal mapping of `java.net.URI` (java.base) for the `javax.tools` layer.
 //!
-//! PORTING_RULES: only the parts of `java.net.URI` that `javax.tools` observes
+//! only the parts of `java.net.URI` that `javax.tools` observes
 //! are implemented here:
 //!
 //! * creation with syntax validation (`URI.create` / `new URI(String)`),
@@ -46,7 +46,7 @@ pub struct URI {
 impl URI {
     /// Java: `URI.create(String)`.
     ///
-    /// PORTING_RULES: an invalid URI raises `IllegalArgumentException`
+    /// an invalid URI raises `IllegalArgumentException`
     /// upstream, which is API misuse and maps to `panic!` (see crate::error).
     pub fn create(s: &JavaString) -> URI {
         match parse(s) {

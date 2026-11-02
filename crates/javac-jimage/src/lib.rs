@@ -11,7 +11,7 @@
 //! ImageHeader / ImageStringsReader / ImageLocation / BasicImageReader one-for-one (including
 //! the PerfectHashBuilder redirect-table lookup) and loads the index into memory once.
 //!
-//! PORTING_RULES: registered PORTING_RULES section 9 adapter: it is not a javac class port but
+//! registered adapter: it is not a javac class port but
 //! the pure-Rust replacement for the JVM jrt filesystem used by com.sun.tools.javac.file (P2).
 //! The observable behaviour (resource names, resource bytes, error cases) mirrors
 //! BasicImageReader / ImageReader of the same JDK 17 baseline.

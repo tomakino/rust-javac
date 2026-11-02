@@ -1,7 +1,7 @@
 //! A simple visitor for annotation values with default behavior appropriate for
 //! the RELEASE_8 source version.
 //!
-//! PORTING_RULES: Java `SimpleAnnotationValueVisitor8 extends
+//! Java `SimpleAnnotationValueVisitor8 extends
 //! SimpleAnnotationValueVisitor7` adds only constructors; the Rust trait is
 //! an empty subtrait that keeps the inherited default behavior.
 //! Implementations implement each level of the Java class hierarchy explicitly

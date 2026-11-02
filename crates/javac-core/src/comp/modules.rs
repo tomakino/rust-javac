@@ -3,7 +3,7 @@
 //! visible packages and --add-exports/--add-reads/--add-modules handling are
 //! ported 1:1 from Modules.java.
 //!
-//! PORTING_RULES:
+//!
 //! - the service fields are injected explicitly (ADR 0001); the class is
 //!   shared as Rc<Modules> and its mutable Java fields are RefCell/Cell values,
 //!   so the completed Symbol.completer callbacks can re-enter the module graph

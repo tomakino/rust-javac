@@ -30,7 +30,7 @@ struct ListNode<A> {
     ///
     /// Java: public List<A> tail;
     ///
-    /// PORTING_RULES: None is Java's null tail (the sentinel); the Cell models the mutability of
+    /// None is Java's null tail (the sentinel); the Cell models the mutability of
     /// the Java field for setTail.
     tail: Cell<Option<Rc<ListNode<A>>>>,
 }
@@ -84,7 +84,7 @@ impl<A> ListNode<A> {
 
 /// A class for generic linked lists.
 pub struct List<A> {
-    /// PORTING_RULES: the Java List reference. None is the Java null reference, i.e. the
+    /// the Java List reference. None is the Java null reference, i.e. the
     /// sentinel that terminates every list (an empty list is represented by that null).
     node: Option<Rc<ListNode<A>>>,
 }
@@ -545,7 +545,7 @@ impl<A> List<A> {
         F: FnMut(&A) -> Z,
     {
         // Java: boolean changed = false;... changed |= (z != a);
-        // PORTING_RULES: Java compares the mapped value with the input reference and returns
+        // Rust: Java compares the mapped value with the input reference and returns
         // this when the mapper is the identity; Rust cannot compare values of unrelated types
         // and the list is immutable, so a fresh list with the same elements is returned instead.
         // The only observable difference would be List reference identity, not contents.
@@ -559,7 +559,7 @@ impl<A> List<A> {
 
     // REGISTERED(P3): public static <T> List<T> convert(Class<T> klass, List<?> list)
     //
-    // PORTING_RULES: convert runs a reflective element-type check (klass.cast) before the
+    // Rust: convert runs a reflective element-type check (klass.cast) before the
     // unchecked cast; Rust's type system performs that check statically at the ported call site
     // (Type.getTypeArguments returns List<Type> whose elements are TypeVar), so no 1:1 runtime
     // equivalent exists. Registered in docs/STATUS.md.
@@ -703,7 +703,7 @@ impl<A: Hash> Hash for List<A> {
         while let Some(node) = cur {
             let mut elem_hasher = std::collections::hash_map::DefaultHasher::new();
             node.head.hash(&mut elem_hasher);
-            // PORTING_RULES: elements hash through Rust's Hasher; the exact int is not the Java
+            // Rust: elements hash through Rust's Hasher; the exact int is not the Java
             // Object.hashCode value, but the formula and its wrapping follow List.hashCode.
             h = h.wrapping_mul(31).wrapping_add(elem_hasher.finish() as i32);
             cur = node.tail();

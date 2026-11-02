@@ -1,7 +1,7 @@
 //! A simple visitor for annotation values with default behavior appropriate for
 //! the RELEASE_6 source version.
 //!
-//! PORTING_RULES — class mapping:
+//! — class mapping:
 //! * Java concrete class -> Rust trait with the upstream default behavior.
 //! * the Java `protected R defaultAction(Object o, P p)` parameter is an
 //!   `Object` holding the unboxed value; it is represented by the borrowing

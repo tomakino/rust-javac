@@ -18,7 +18,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES / status (S7b):
+//! / status (S7b):
 //! * JCTree values are arena TreeIds (ADR 0001); every parse method takes the
 //!   CompilerContext because tree creation needs the arena;
 //! * the Java nested Abstract/Simple/Empty EndPosTable classes are ported in
@@ -88,7 +88,7 @@ use crate::util::position::NOPOS;
 /// module only re-exports them as i64 for the Java long-typed parser API. Do
 /// not add or copy constant values here: future flags.rs changes must flow
 /// through automatically.
-// Java: JavacParser.Flags imports (upstream name kept, PORTING_RULES section 3).
+// Java: JavacParser.Flags imports (upstream name kept, ).
 #[allow(non_snake_case, non_upper_case_globals)]
 mod Flags {
     pub const StandardFlags: i64 = crate::code::flags::StandardFlags as i64;
@@ -227,7 +227,7 @@ pub struct JavacParser {
     #[allow(non_snake_case)]
     S: Scanner,
     /// The factory to be used for abstract syntax tree construction (Java name
-    /// F kept, PORTING_RULES section 3; registered naming deviation).
+    /// F kept, ; registered naming deviation).
     #[allow(non_snake_case)]
     F: TreeMaker,
     /// The log to be used for error diagnostics.
@@ -295,7 +295,7 @@ pub(crate) trait AbstractEndPosTable: EndPosTable {
     fn to_p(&mut self, t: TreeId, end_pos: i32) -> TreeId;
 
     /// Coerce the table into the plain EndPosTable used by the compilation unit.
-    /// PORTING_RULES Porting rules adapter: Rust object-safety helper for the Java
+    /// Porting rules adapter: Rust object-safety helper for the Java
     /// EndPosTable reference (upstream uses the Java object directly).
     fn boxed(self: Box<Self>) -> Box<dyn EndPosTable>;
 }
@@ -1793,7 +1793,7 @@ impl JavacParser {
     /// Java: Source restrictedTypeNameStartingAtSource(Name name, int pos,
     /// boolean shouldWarn)
     ///
-    /// PORTING_RULES: the diagnostic argument Source is the generated
+    /// the diagnostic argument Source is the generated
     /// SourceArg placeholder (P4 contract), registered.
     fn restricted_type_name_starting_at_source(
         &mut self,
@@ -2001,7 +2001,7 @@ impl JavacParser {
                 self.log
                     .borrow_mut()
                     .error_flag_at(DiagnosticFlag::SYNTAX, t_pos, key);
-                // PORTING_RULES: upstream F.Erroneous(...) uses the TreeMaker's
+                // Rust: upstream F.Erroneous(...) uses the TreeMaker's
                 // current position; the Rust factory requires an explicit at(pos)
                 // (registered adapter).
                 mi = self.F.at(pos).erroneous(ctx, List::of(mi));
@@ -2399,7 +2399,7 @@ impl JavacParser {
     }
 
     /// Java: term() infix assignment check, factored into a helper (upstream
-    /// JavacParser has no isAssignop method; PORTING_RULES Porting rules adapter).
+    /// JavacParser has no isAssignop method; Porting rules adapter).
     fn is_assignop(kind: TokenKind) -> bool {
         matches!(
             kind,
@@ -5873,7 +5873,7 @@ impl JavacParser {
 
     /// Java: JCVariableDecl variableDeclaratorId(JCModifiers mods, JCExpression type,
     /// boolean lambdaParameter, boolean recordComponent) — the overload is named with
-    /// the _full suffix (PORTING_RULES section 3).
+    /// the _full suffix ().
     fn variable_declarator_id_full(
         &mut self,
         ctx: &mut CompilerContext,
@@ -5963,7 +5963,7 @@ impl JavacParser {
             let key = JCDiagnosticError::from(errors::record_component_and_old_array_syntax());
             self.log.borrow_mut().error_at(self.token.pos, key);
         }
-        // PORTING_RULES adapter: type is Some in every current call site; the
+        // Adapter: type is Some in every current call site; the
         // null type of implicit lambda parameters is parsed by the lambda.
         let type_ = type_.map(|t| self.brackets_opt_simple(ctx, t));
         let declared_using_var = match type_ {
@@ -6285,7 +6285,7 @@ impl JavacParser {
 
     /// Java: JCTree typeDeclaration(JCModifiers mods, Comment docComment)
     ///
-    /// PORTING_RULES: the doc comment received here is attached to the created
+    /// the doc comment received here is attached to the created
     /// declaration through JavacParser.attach when keepDocComments is set.
     fn type_declaration(
         &mut self,

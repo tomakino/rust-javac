@@ -5,7 +5,7 @@
 //! risk.  This code and its internal interfaces are subject to change
 //! or deletion without notice.</b></p>
 //!
-//! PORTING_RULES: Java JCTree keys -> arena TreeId (ADR 0001); positions are
+//! Java JCTree keys -> arena TreeId (ADR 0001); positions are
 //! the encoded int positions of util/Position.
 
 use crate::ids::TreeId;

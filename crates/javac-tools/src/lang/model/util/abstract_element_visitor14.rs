@@ -1,7 +1,7 @@
 //! A skeletal visitor of program elements with default behavior appropriate
 //! for the RELEASE_14 source version.
 //!
-//! PORTING_RULES: Java abstract class `AbstractElementVisitor14 extends
+//! Java abstract class `AbstractElementVisitor14 extends
 //! AbstractElementVisitor6` adds only constructors; in addition it makes visitRecordComponent abstract (Rust cannot cancel a default method in a subtrait, registered difference); the Rust trait is
 //! an empty subtrait of `AbstractElementVisitor6`, which keeps the same default
 //! behavior.  Implementations implement each level of the Java class hierarchy

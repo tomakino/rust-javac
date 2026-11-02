@@ -1,6 +1,6 @@
 //! Represents a record component.
 //!
-//! PORTING_RULES: the Java `@Override` re-declarations of
+//! the Java `@Override` re-declarations of
 //! `getEnclosingElement` and `getSimpleName` only narrow their documentation;
 //! Rust inherits both from `Element` (with the `Option` form of
 //! `get_enclosing_element`), so they are not repeated (registered difference).

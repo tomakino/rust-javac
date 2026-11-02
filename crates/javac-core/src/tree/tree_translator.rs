@@ -11,7 +11,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: ADR 0001 (arena + IDs):
+//! ADR 0001 (arena + IDs):
 //! - the visitor result field maps to Option<TreeId>; translate(JCTree)
 //!   returns Option<TreeId> (Java null -> None);
 //! - the in-place write-back (tree.child = translate(tree.child)) first takes a

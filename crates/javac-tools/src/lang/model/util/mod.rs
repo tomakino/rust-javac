@@ -14,7 +14,7 @@
 //! @author Peter von der Ah&eacute;
 //! @since 1.6
 //!
-//! PORTING_RULES: `javax.lang.model.util.Elements` and `Types` are deferred
+//! `javax.lang.model.util.Elements` and `Types` are deferred
 //! (registered P6 item); this package ports `ElementFilter` and the visitor /
 //! scanner families (46 files).
 

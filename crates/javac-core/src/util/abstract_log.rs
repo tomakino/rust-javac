@@ -6,13 +6,13 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! - the Java abstract class becomes a trait: the upstream protected fields
 //!   (diags / source / sourceMap) are exposed through accessor methods that the
 //!   implementor provides (Rust has no inherited fields), and the two abstract
 //!   methods (report / directError) are required trait methods. The concrete
 //!   methods are default methods;
-//! - the Java overloads map to distinct Rust names (PORTING_RULES section 3:
+//! - the Java overloads map to distinct Rust names (
 //!   no overloading); each method documents its upstream signature;
 //! - DiagnosticPosition parameters are Option<Rc<dyn DiagnosticPosition>> (the
 //!   Java null position); the private wrap(int pos) helper maps NOPOS to None;

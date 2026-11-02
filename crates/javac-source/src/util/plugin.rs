@@ -1,6 +1,6 @@
 //! The interface for a javac plug-in.
 //!
-//! PORTING_RULES (§14): Java interface -> Rust trait; `String` -> JavaString;
+//! (§14): Java interface -> Rust trait; `String` -> JavaString;
 //! `String... args` -> `&[JavaString]`; the Java `default boolean autoStart()`
 //! is a Rust default method returning false.  The JavacTask parameter is held as
 //! `Rc<RefCell<dyn JavacTask>>` because init() registers task listeners and the

@@ -21,7 +21,7 @@ use super::assert;
 // | |
 // -----------
 // any
-/// PORTING_RULES: Java enum constants keep their upstream names so that diffs against
+/// Java enum constants keep their upstream names so that diffs against
 /// Bits.java stay mechanical.
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -45,7 +45,7 @@ pub enum BitsState {
     NORMAL,
 }
 
-/// PORTING_RULES: Java keeps three distinguishable values in `int[] bits`: null (UNKNOWN),
+/// Java keeps three distinguishable values in `int[] bits`: null (UNKNOWN),
 /// the shared empty `unassignedBits` array (identity marker of UNINIT) and a real array.
 /// Rust has no array-reference identity, so the three cases are modelled explicitly; this keeps
 /// `BitsState.getState` and the protected constructor assertion identical.
@@ -103,7 +103,7 @@ const WORDMASK: i32 = WORDLEN - 1;
 pub struct Bits {
     /// Java: public int[] bits = null;
     ///
-    /// PORTING_RULES: private here because a Rust `Vec<i32>` cannot model the null/shared-empty
+    /// private here because a Rust `Vec<i32>` cannot model the null/shared-empty
     /// cases; `BitsArray` is the faithful representation. javac never reads this field outside
     /// of Bits.java (verified by grep over the upstream tree).
     bits: BitsArray,

@@ -4,7 +4,7 @@
 //! enclosing toplevel node. They also contain a generic component to carry
 //! further information specific to individual passes.
 //!
-//! PORTING_RULES adapters (registered):
+//! Adapters (registered):
 //! - JCTree references -> arena TreeId (Option<TreeId> for the upstream null);
 //! - the upstream Env<A> node is mutated by dupto; the port keeps envs in Rc
 //!   chains and returns a new node from dupto (the resulting Env has identical
@@ -138,7 +138,7 @@ impl<A> Env<A> {
 
     /// Java: public Env<A> dupto(Env<A> that)
     ///
-    /// PORTING_RULES adapter: returns a new Env with that.tree/that.info and
+    /// Adapter: returns a new Env with that.tree/that.info and
     /// this.outer/toplevel/enclClass/enclMethod, next = this (the upstream
     /// mutates `that` in place and returns it; the fields are identical).
     pub fn dupto(this: &Rc<Env<A>>, that: Env<A>) -> Rc<Env<A>> {

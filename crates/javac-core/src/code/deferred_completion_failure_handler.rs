@@ -2,7 +2,7 @@
 //! thrown out to the client code, but rather skipped, and then rethrown later if
 //! javac itself will complete the Symbol.
 //!
-//! PORTING_RULES adapters (registered):
+//! Adapters (registered):
 //! - Java unchecked CompletionFailure -> Result<(), CompletionFailure>; the
 //!   handlers therefore operate on Rust error values instead of throwing.
 //! - Symbol fields changed by FlipSymbolDescription are arena values reached
@@ -272,7 +272,7 @@ impl DeferredCompletionFailureHandler {
 
     /// Java: public Handler setHandler(Handler h)
     ///
-    /// PORTING_RULES adapter: handler install/uninstall mutate symbols through
+    /// Adapter: handler install/uninstall mutate symbols through
     /// CompilerContext, so the context is passed explicitly (Rust has no
     /// Context.current()).
     pub fn set_handler(

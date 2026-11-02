@@ -1,7 +1,7 @@
 //! A scanning visitor of program elements with default behavior appropriate for
 //! the RELEASE_8 source version.
 //!
-//! PORTING_RULES: Java `ElementScanner8 extends ElementScanner7` adds only
+//! Java `ElementScanner8 extends ElementScanner7` adds only
 //! constructors; the Rust trait is an empty subtrait that keeps the inherited
 //! default behavior.
 

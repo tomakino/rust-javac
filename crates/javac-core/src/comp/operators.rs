@@ -1,5 +1,5 @@
 //
-// PORTING_RULES:
+// Rust:
 // - ADR 0001: the ported Operators receives the services explicitly (the
 // upstream Context lookup Operators.instance/Operators(Context) is
 // registered with the Context registration).

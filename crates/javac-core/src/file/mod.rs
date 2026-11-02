@@ -2,7 +2,7 @@
 //!
 //! The file layer of the compiler (Java: package com.sun.tools.javac.file).
 //!
-//! PORTING_RULES / status:
+//! / status:
 //! * ported earlier: RelativePath (relative_path.rs), PathFileObject
 //!   (path_file_object.rs), FSInfo (fs_info.rs), CacheFSInfo (cache_fs_info.rs) and the
 //!   minimal file-manager interface injected into PathFileObject

@@ -1,6 +1,6 @@
 //! A simple visitor for tree nodes.
 //!
-//! PORTING_RULES (§14.5):
+//! (§14.5):
 //! * Java class SimpleTreeVisitor<R,P> implements TreeVisitor<R,P> -> Rust trait
 //!   SimpleTreeVisitor<R: Clone, P: Clone>: TreeVisitor<R, P>; the Java nullable
 //!   DEFAULT_VALUE field -> default_value() -> Option<&R> (the no-arg

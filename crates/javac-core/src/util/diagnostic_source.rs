@@ -7,10 +7,10 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! - javax.tools.JavaFileObject -> Rc<dyn JavaFileObject>; the Java null file
 //!   object (NO_SOURCE) maps to no_source(), a stateless instance (a Rust
-//!   static cannot hold RefCell state; registered in PORTING_RULES section 9);
+//!   static cannot hold RefCell state; registered in );
 //! - char[] -> Vec<u16> (the ported JavaString uses UTF-16 code units);
 //!   SoftReference<char[]> -> Rc<Vec<u16>> cache (the reference is kept alive
 //!   for the lifetime of the DiagnosticSource; Rust has no soft references and
@@ -39,7 +39,7 @@ use crate::util::position::NOPOS;
 /// The directError hook of AbstractLog that DiagnosticSource needs for
 /// reporting a source.unavailable error.
 ///
-/// PORTING_RULES: the Java code holds an AbstractLog reference; the port uses
+/// the Java code holds an AbstractLog reference; the port uses
 /// this small trait so diagnostic_source has no dependency on abstract_log
 /// (the Log implements it for the concrete log). direct_error takes
 /// &self because the Java log owns mutable writers (the implementation is
@@ -96,7 +96,7 @@ impl DiagnosticSource {
     /// The constant DiagnosticSource used when sourcefile is missing
     /// (Java: public static final DiagnosticSource NO_SOURCE).
     ///
-    /// PORTING_RULES: a stateless constructor instead of a static instance
+    /// a stateless constructor instead of a static instance
     /// (registered section 9).
     pub fn no_source() -> DiagnosticSource {
         DiagnosticSource {

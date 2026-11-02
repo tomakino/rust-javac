@@ -10,7 +10,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: Java overloads map to distinct Rust function names
+//! Java overloads map to distinct Rust function names
 //! (utf2chars / utf2chars_into / utf2chars_range, chars2utf / chars2utf_into /
 //!  chars2utf_range, quote / quote_char, short_name / short_name_str, ...).
 //! REGISTERED(P1): Unicode digits in Character.digit; the parser only feeds ASCII

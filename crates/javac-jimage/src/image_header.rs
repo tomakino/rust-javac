@@ -48,7 +48,7 @@ pub struct ImageHeader {
 impl ImageHeader {
     /// Java: static ImageHeader readFrom(IntBuffer buffer)
     ///
-    /// PORTING_RULES: the JDK reads an IntBuffer in native byte order; the baseline images are
+    /// the JDK reads an IntBuffer in native byte order; the baseline images are
     /// little-endian, which is what this reader decodes.
     pub fn read_from(bytes: &[u8]) -> Result<ImageHeader, Error> {
         if bytes.len() < HEADER_SIZE {
@@ -72,7 +72,7 @@ impl ImageHeader {
         let locations_size = word(5);
         let strings_size = word(6);
 
-        // PORTING_RULES: the JDK would fail later (negative capacities / huge index) for corrupt
+        // Rust: the JDK would fail later (negative capacities / huge index) for corrupt
         // headers; rejecting the nonsensical values here keeps the arithmetic checked.
         if table_length < 0 || locations_size < 0 || strings_size < 0 || resource_count < 0 {
             return Err(Error::Corrupted(

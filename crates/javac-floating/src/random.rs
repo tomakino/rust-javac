@@ -1,7 +1,7 @@
 //! Port of the parts of `java.util.Random` used by the ported
 //! `java.math.BigInteger` (candidate generation and Miller-Rabin bases).
 //!
-//! PORTING_RULES (standard-library adapter):
+//! (standard-library adapter):
 //! * the 48-bit LCG algorithms (`next`, `nextBytes`, `nextInt`,
 //!   `nextInt(bound)`) are kept 1:1;
 //! * Java's `synchronized` methods take `&mut self`;

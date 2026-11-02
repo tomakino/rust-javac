@@ -49,7 +49,7 @@
 //! @author Jonathan Gibbons
 //! @since 1.6
 //!
-//! PORTING_RULES: this module holds one Rust file per Java file of the
+//! this module holds one Rust file per Java file of the
 //! package; the package documentation above is the `package-info.java` port.
 //! Method signature mappings are documented per file.
 

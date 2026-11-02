@@ -13,7 +13,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES:
+//!
 //! - the Java Log dependency (Log is not ported yet) becomes the
 //!   MandatoryWarningLog trait, exposing exactly the members used by the
 //!   upstream class; the Log implements the trait (registered section 9);
@@ -43,7 +43,7 @@ use crate::util::jc_diagnostic::{DiagnosticArg, DiagnosticPosition, Note, Warnin
 /// The subset of com.sun.tools.javac.util.Log needed by
 /// MandatoryWarningHandler.
 ///
-/// PORTING_RULES: the upstream class holds a concrete Log reference; the port
+/// the upstream class holds a concrete Log reference; the port
 /// uses a trait so the handler is testable and the Log can implement it
 /// (registered section 9).
 pub trait MandatoryWarningLog {
@@ -118,7 +118,7 @@ impl DeferredDiagnosticKind {
 ///
 /// Java: public class MandatoryWarningHandler
 ///
-/// PORTING_RULES: the Java Log field becomes the generic L: MandatoryWarningLog
+/// the Java Log field becomes the generic L: MandatoryWarningLog
 /// parameter (registered section 9).
 pub struct MandatoryWarningHandler<L: MandatoryWarningLog> {
     /// The log to which to report warnings.
@@ -177,7 +177,7 @@ impl<L: MandatoryWarningLog> MandatoryWarningHandler<L> {
 
     /// Java: private static boolean sameFile(JavaFileObject a, JavaFileObject b)
     ///
-    /// PORTING_RULES: Objects.equals on the JavaFileObject references (the
+    /// Objects.equals on the JavaFileObject references (the
     /// interface does not override equals) -> identity comparison, with two
     /// nulls equal (registered section 9).
     fn same_file(a: &Option<Rc<dyn JavaFileObject>>, b: &Option<Rc<dyn JavaFileObject>>) -> bool {
