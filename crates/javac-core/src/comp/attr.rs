@@ -9211,9 +9211,7 @@ impl crate::comp::infer::FreeTypeListener for AccessibleTypesListener {
         let accessible = instantiated;
         for t in &accessible {
         if let Some(rs) = &self.rs {
-            crate::comp::with_reentrant_mut(rs.as_ref(), |rs| {
-                rs.check_accessible_type(ctx, syms, &self.env, t);
-            });
+            rs.borrow().check_accessible_type(ctx, syms, &self.env, t);
         }
         }
         let _ = self.pos;
