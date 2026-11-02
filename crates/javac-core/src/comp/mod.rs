@@ -21,6 +21,7 @@ pub mod annotate;
 pub mod analyzer;
 pub mod argument_attr;
 pub mod attr;
+pub mod attr_contexts;
 pub mod attr_recover;
 pub mod attr_context;
 pub mod check;
