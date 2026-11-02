@@ -6,6 +6,7 @@ pub mod codegen;
 pub mod class_file;
 pub mod class_writer;
 pub mod cr_table;
+pub mod item;
 pub mod items;
 pub mod jni_writer;
 pub mod crt_flags;
