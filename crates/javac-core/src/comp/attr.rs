@@ -11939,6 +11939,10 @@ impl Attr {
     ///
     /// Upstream: Attr.java:5143-5155.
     pub fn attrib(&mut self, ctx: &mut CompilerContext, syms: &Symtab, env: &Rc<Env<AttrContext>>) {
+        {
+            let type_enter = Rc::clone(&self.type_enter);
+            type_enter.borrow().drain_pending_imports(ctx, syms, self);
+        }
         let tree = env.tree.expect("env tree");
         match ctx.tree(tree).tag {
             Tag::MODULEDEF => {

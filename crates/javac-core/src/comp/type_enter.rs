@@ -383,29 +383,46 @@ impl TypeEnter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         trees: List<TreeId>,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) {
-        let current = trees;
-        for tree in &current {
-        let star_scope = compilation_unit_star_import_scope(ctx, tree);
-        let filled = star_scope
-            .map(|scope| ctx.scope_is_filled(scope))
-            .unwrap_or(false);
-        if !filled {
-            let top_env = self.enter.get_top_level_env(ctx, tree);
-            {
-                let attr_rc = self
-                    .attr
-                    .borrow()
-                    .clone()
-                    .expect("TypeEnter.attr must be injected");
-                // This entry point is the Enter.complete path (Enter.java:627),
-                // which runs outside any Attr call: no enclosing &mut Attr can
-                // be live, so the local RefMut is the only borrow of the
-                // shared Attr. Attr-inside callers use the explicit-attr paths.
-                let mut attr = attr_rc.borrow_mut();
-                self.finish_imports(ctx, syms, tree, Some(&top_env), &mut attr);
+        let Some(attr) = attr else {
+            let mut pending = self.pending_import_checks.borrow_mut();
+            for tree in &trees {
+                if !pending.contains(&tree) {
+                    pending.push(tree);
+                }
+            }
+            return;
+        };
+        self.drain_pending_imports(ctx, syms, attr);
+        for tree in &trees {
+            let star_scope = compilation_unit_star_import_scope(ctx, tree);
+            let filled = star_scope
+                .map(|scope| ctx.scope_is_filled(scope))
+                .unwrap_or(false);
+            if !filled {
+                let top_env = self.enter.get_top_level_env(ctx, tree);
+                self.finish_imports(ctx, syms, tree, Some(&top_env), attr);
             }
         }
+    }
+
+    /// Finish import checks that were deferred because no `Attr` was available.
+    pub(crate) fn drain_pending_imports(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        attr: &mut crate::comp::attr::Attr,
+    ) {
+        loop {
+            let pending = std::mem::take(&mut *self.pending_import_checks.borrow_mut());
+            if pending.is_empty() {
+                break;
+            }
+            for toplevel in pending {
+                let top_env = self.enter.get_top_level_env(ctx, toplevel);
+                self.finish_imports(ctx, syms, toplevel, Some(&top_env), attr);
+            }
         }
     }
 
@@ -610,18 +627,7 @@ impl TypeEnter {
             }
         }
         if self.completion_depth.get() == 0 {
-            loop {
-                let pending = std::mem::take(&mut *self.pending_import_checks.borrow_mut());
-                if pending.is_empty() {
-                    break;
-                }
-                let mut seen: HashSet<TreeId> = HashSet::new();
-                for toplevel in pending {
-                    if seen.insert(toplevel) {
-                        self.finish_imports(ctx, syms, toplevel, None, attr);
-                    }
-                }
-            }
+            self.drain_pending_imports(ctx, syms, attr);
         }
         annotate
             .unblock_annotations_with_attr(ctx, syms, attr)

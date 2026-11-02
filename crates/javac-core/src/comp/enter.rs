@@ -930,7 +930,19 @@ impl Enter {
         syms: &Symtab,
         trees: List<TreeId>,
     ) -> Result<(), CompletionFailure> {
-        self.complete(ctx, syms, trees, None)
+        let result = self.complete(ctx, syms, trees, None);
+        if result.is_ok()
+            && let Some(type_enter) = self.type_enter.borrow().clone()
+        {
+            let attr = type_enter.borrow().attr.borrow().clone();
+            if let Some(attr) = attr {
+                let mut attr = attr.borrow_mut();
+                type_enter
+                    .borrow()
+                    .drain_pending_imports(ctx, syms, &mut attr);
+            }
+        }
+        result
     }
 
     /// Java: public void complete(List<JCCompilationUnit> trees, ClassSymbol c)
@@ -1011,14 +1023,14 @@ impl Enter {
                     if tree_info::get_module(ctx, tree).is_some() {
                         self.unfinished_modules.borrow_mut().push(tree);
                     } else {
-                        self.ensure_imports_checked(ctx, syms, List::of(tree));
+                        self.ensure_imports_checked(ctx, syms, List::of(tree), None);
                     }
                     }
                 } else {
                     let unfinished =
                         List::from_iterable(self.unfinished_modules.borrow_mut().drain(..));
-                    self.ensure_imports_checked(ctx, syms, unfinished);
-                    self.ensure_imports_checked(ctx, syms, trees);
+                    self.ensure_imports_checked(ctx, syms, unfinished, None);
+                    self.ensure_imports_checked(ctx, syms, trees, None);
                 }
             }
             Ok(())
@@ -1038,6 +1050,7 @@ impl Enter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         trees: List<TreeId>,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) {
         let type_enter = self
             .type_enter
@@ -1050,7 +1063,7 @@ impl Enter {
         // mutable), so the shared borrow keeps that re-entrancy valid.
         type_enter
             .borrow()
-            .ensure_imports_checked(ctx, syms, trees);
+            .ensure_imports_checked(ctx, syms, trees, attr);
     }
 
     pub fn new_round(&self) {
