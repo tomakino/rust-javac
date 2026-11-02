@@ -63,7 +63,7 @@ use crate::util::names::Names;
 pub struct TypeEnter {
     pub names: Rc<Names>,
     pub enter: Rc<RefCell<Enter>>,
-    pub member_enter: Rc<RefCell<MemberEnter>>,
+    pub member_enter: Rc<MemberEnter>,
     pub log: Rc<RefCell<Log>>,
     pub chk: Rc<Check>,
     pub types: Rc<Types>,
@@ -296,7 +296,7 @@ impl TypeEnter {
     pub fn new(
         names: Rc<Names>,
         enter: Rc<RefCell<Enter>>,
-        member_enter: Rc<RefCell<MemberEnter>>,
+        member_enter: Rc<MemberEnter>,
         log: Rc<RefCell<Log>>,
         chk: Rc<Check>,
         types: Rc<Types>,
@@ -2236,7 +2236,7 @@ impl TypeEnter {
         }
         {
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter.borrow()
+            member_enter
                 .member_enter(ctx, syms, field, env, attr);
         }
         let field_sym = match &ctx.tree(field).kind {
@@ -2320,7 +2320,7 @@ impl TypeEnter {
         for def in &current {
         if tree_info::is_constructor(ctx, def) {
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter.borrow()
+            member_enter
                 .member_enter(ctx, syms, def, env, attr);
         }
         }
@@ -2459,7 +2459,7 @@ impl TypeEnter {
         };
         {
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter.borrow()
+            member_enter
                 .member_enter_list(ctx, syms, defs_to_enter, env, attr);
         }
         if is_record {
@@ -2599,7 +2599,7 @@ impl TypeEnter {
             };
             {
                 let member_enter = Rc::clone(&self.member_enter);
-                member_enter.borrow()
+                member_enter
                     .member_enter(ctx, syms, getter, env, attr);
             }
             let getter_sym = match &ctx.tree(getter).kind {
@@ -2671,7 +2671,7 @@ impl TypeEnter {
         };
         {
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter.borrow()
+            member_enter
                 .member_enter(ctx, syms, values, env, attr);
         }
         let value_of = {
@@ -2706,7 +2706,7 @@ impl TypeEnter {
         };
         {
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter.borrow()
+            member_enter
                 .member_enter(ctx, syms, value_of, env, attr);
         }
     }
@@ -2770,7 +2770,7 @@ impl TypeEnter {
                 syms.string_type,
             );
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter.borrow()
+            member_enter
                 .member_enter(ctx, syms, to_string, env, attr);
         }
         if self
@@ -2785,7 +2785,7 @@ impl TypeEnter {
                 syms.int_type,
             );
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter.borrow()
+            member_enter
                 .member_enter(ctx, syms, hash_code, env, attr);
         }
         if self
@@ -2826,7 +2826,7 @@ impl TypeEnter {
                 )
             };
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter.borrow()
+            member_enter
                 .member_enter(ctx, syms, equals, env, attr);
         }
         // fields can't be varargs: clear the flag.
@@ -4604,14 +4604,14 @@ mod tests {
             Rc::clone(&type_envs)
         )));
         let annotate_cell: Rc<RefCell<Option<Rc<Annotate>>>> = Rc::new(RefCell::new(None));
-        let member_enter = Rc::new(RefCell::new(MemberEnter::new(
+        let member_enter = Rc::new(MemberEnter::new(
             Rc::clone(&enter),
             Rc::clone(&log),
             Rc::clone(&chk),
             Rc::clone(&types),
             Rc::clone(&deferred),
             Rc::clone(&annotate_cell)
-        )));
+        ));
         let dependencies: Rc<RefCell<dyn Dependencies>> =
             Rc::new(RefCell::new(crate::code::dependencies::DummyDependencies));
         let make = Rc::new(RefCell::new(crate::tree::tree_maker::TreeMaker::new(Some(

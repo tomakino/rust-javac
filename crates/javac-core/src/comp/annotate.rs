@@ -2776,14 +2776,14 @@ struct UnusedFileManager;
             Rc::clone(&type_envs)
         )));
         let annotate_cell: Rc<RefCell<Option<Rc<Annotate>>>> = Rc::new(RefCell::new(None));
-        let member_enter = Rc::new(RefCell::new(MemberEnter::new(
+        let member_enter = Rc::new(MemberEnter::new(
             Rc::clone(&enter),
             Rc::clone(&log),
             Rc::clone(&check),
             Rc::clone(&types),
             Rc::clone(&deferred),
             Rc::clone(&annotate_cell)
-        )));
+        ));
         let type_enter = Rc::new(RefCell::new(TypeEnter::new(
             Rc::clone(&names),
             Rc::clone(&enter),

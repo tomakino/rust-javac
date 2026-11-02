@@ -127,7 +127,7 @@ pub struct MiniCompiler {
     /// The enter pass.
     pub enter: Rc<RefCell<Enter>>,
     /// The member enter pass.
-    pub member_enter: Rc<RefCell<MemberEnter>>,
+    pub member_enter: Rc<MemberEnter>,
     /// The type enter pass.
     pub type_enter: Rc<RefCell<TypeEnter>>,
     /// The type environments.
@@ -560,14 +560,14 @@ impl MiniCompiler {
             Rc::clone(&todo),
             Rc::clone(&type_envs)
         )));
-        let member_enter = Rc::new(RefCell::new(MemberEnter::new(
+        let member_enter = Rc::new(MemberEnter::new(
             Rc::clone(&enter),
             Rc::clone(&log),
             Rc::clone(&chk),
             Rc::clone(&types),
             Rc::clone(&deferred_lint_handler),
             Rc::clone(&annotate_cell),
-        )));
+        ));
         let dependencies: Rc<RefCell<dyn crate::code::dependencies::Dependencies>> =
             Rc::new(RefCell::new(DummyDependencies));
         let type_enter = Rc::new(RefCell::new(TypeEnter::new(

@@ -345,7 +345,7 @@ pub struct Attr {
     pub names: Rc<Names>,
     pub log: Rc<RefCell<Log>>,
     pub chk: Rc<Check>,
-    pub member_enter: Rc<RefCell<MemberEnter>>,
+    pub member_enter: Rc<MemberEnter>,
     pub type_enter: Rc<RefCell<TypeEnter>>,
     pub make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
     pub enter: Rc<RefCell<Enter>>,
@@ -482,7 +482,7 @@ impl Attr {
         names: Rc<Names>,
         log: Rc<RefCell<Log>>,
         chk: Rc<Check>,
-        member_enter: Rc<RefCell<MemberEnter>>,
+        member_enter: Rc<MemberEnter>,
         type_enter: Rc<RefCell<TypeEnter>>,
         make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
         enter: Rc<RefCell<Enter>>,
@@ -12374,8 +12374,8 @@ pub fn wire_attr_services(
         *annotate_cell.borrow_mut() = Some(Rc::clone(&annotate));
         *attr.borrow().type_annotations.borrow_mut() = Some(Rc::clone(&type_annotations));
         *chk.type_annotations.borrow_mut() = Some(type_annotations);
-        *a.member_enter.borrow().attr.borrow_mut() = Some(Rc::clone(&attr));
-        *a.member_enter.borrow().annotate.borrow_mut() = Some(Rc::clone(&annotate));
+        *a.member_enter.attr.borrow_mut() = Some(Rc::clone(&attr));
+        *a.member_enter.annotate.borrow_mut() = Some(Rc::clone(&annotate));
         *a.type_enter.borrow().annotate.borrow_mut() = Some(Rc::clone(&annotate));
         let deferred = match Rc::try_unwrap(deferred) {
             Ok(service) => service,
@@ -15829,7 +15829,7 @@ impl Attr {
         }
         let local_env = {
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter.borrow().method_env(ctx, tree, &env)
+            member_enter.method_env(ctx, tree, &env)
         };
         local_env.info.borrow_mut().lint = Some(Rc::clone(&lint_rc));
         self.attrib_stats(ctx, syms, typarams.clone(), &local_env);
@@ -15925,7 +15925,7 @@ impl Attr {
         if let Some(recvparam) = recvparam {
             let new_env = {
                 let member_enter = Rc::clone(&self.member_enter);
-                member_enter.borrow().method_env(ctx, tree, &env)
+                member_enter.method_env(ctx, tree, &env)
             };
             self.attrib_type(ctx, syms, recvparam, &new_env);
             let chk_rc = Rc::clone(&self.chk);
@@ -16589,7 +16589,6 @@ impl Attr {
                 {
                     let member_enter = Rc::clone(&self.member_enter);
                     member_enter
-                        .borrow()
                         .member_enter(ctx, syms, tree, &env, self);
                     // Java: memberEnter stores the new VarSymbol in tree.sym;
                     // the port keeps the tree slot as the shared location.
@@ -16657,12 +16656,12 @@ impl Attr {
             && ((ctx.sym(v).flags_field & flags::FINAL as i64) == 0
                 || !{
                     let member_enter = Rc::clone(&self.member_enter);
-                    member_enter.borrow().needs_lazy_const_value(ctx, init)
+                    member_enter.needs_lazy_const_value(ctx, init)
                 })
         {
             let init_env = {
                 let member_enter = Rc::clone(&self.member_enter);
-                member_enter.borrow().init_env(ctx, tree, &env)
+                member_enter.init_env(ctx, tree, &env)
             };
             init_env.info.borrow_mut().lint = Some(Rc::clone(&lint_rc));
             init_env.info.borrow_mut().encl_var = Some(v);
@@ -17833,14 +17832,14 @@ mod tests {
             Rc::clone(&todo),
             Rc::clone(&type_envs),
         )));
-        let member_enter = Rc::new(RefCell::new(MemberEnter::new(
+        let member_enter = Rc::new(MemberEnter::new(
             Rc::clone(&enter),
             Rc::clone(&log),
             Rc::clone(&chk),
             Rc::clone(&types),
             Rc::clone(&deferred),
             Rc::new(RefCell::new(None)),
-        )));
+        ));
         let type_enter = Rc::new(RefCell::new(TypeEnter::new(
             Rc::clone(&names),
             Rc::clone(&enter),
