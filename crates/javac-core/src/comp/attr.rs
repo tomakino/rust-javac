@@ -3158,6 +3158,7 @@ fn class_tree_symbol(ctx: &CompilerContext, tree: TreeId) -> Option<SymbolId> {
 pub use crate::comp::attr_contexts::{
     CastCheckContext, ConditionalCheckContext, DiamondCheckContext,
     ExpressionLambdaReturnContext, FunctionalReturnContext, RecoveryCheckContext,
+    SwitchExpressionCheckContext, TryCheckContext,
 };
 
 impl Attr {
@@ -7498,71 +7499,6 @@ impl Attr {
     }
 }
 
-/// Java: the anonymous Check.NestedCheckContext in visitTry (Attr.java:1893-1905)
-/// reporting TryNotApplicableToType (§9: named struct).
-pub struct TryCheckContext {
-    pub enclosing: Rc<dyn crate::comp::check::CheckContext>,
-    pub basic_handler: Rc<dyn crate::comp::check::CheckContext>,
-    pub diags: Rc<crate::util::jc_diagnostic::Factory>,
-}
-
-impl crate::comp::check::CheckContext for TryCheckContext {
-    fn compatible(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        types: &Types,
-        found: TypeId,
-        req: TypeId,
-        warn: &crate::util::warner::Warner,
-    ) -> bool {
-        self.enclosing
-            .compatible(ctx, syms, types, found, req, warn)
-    }
-
-    fn report(
-        &self,
-        ctx: &mut CompilerContext,
-        pos: i32,
-        details: &crate::util::jc_diagnostic::JCDiagnostic,
-    ) {
-        // Java: chk.basicHandler.report(pos,
-        //     diags.fragment(Fragments.TryNotApplicableToType(details)));
-        let message = details.get_message(None);
-        let fragment = self
-            .diags
-            .fragment(crate::util::jc_diagnostic::Fragment::from(
-                crate::resources::compiler_properties::fragments::try_not_applicable_to_type(
-                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                        message.to_string(),
-                    ),
-                ),
-            ));
-        self.basic_handler.report(ctx, pos, &fragment);
-    }
-
-    fn check_warner(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        types: &Types,
-        pos: i32,
-        found: TypeId,
-        req: TypeId,
-    ) -> crate::util::warner::Warner {
-        self.enclosing
-            .check_warner(ctx, syms, types, pos, found, req)
-    }
-
-    fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
-        self.enclosing.inference_context()
-    }
-
-    fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
-        self.enclosing.deferred_attr_context()
-    }
-}
-
 impl Attr {
     /// Java: public void visitSynchronized(JCSynchronized tree) (Attr.java:1871-1883).
     ///
@@ -8488,66 +8424,6 @@ impl Attr {
     }
 }
 
-/// Java: the anonymous Check.NestedCheckContext in visitSwitchExpression
-/// (Attr.java:1650-1665) reporting IncompatibleTypeInSwitchExpression.
-pub struct SwitchExpressionCheckContext {
-    pub enclosing: Rc<dyn crate::comp::check::CheckContext>,
-    pub diags: Rc<crate::util::jc_diagnostic::Factory>,
-}
-
-impl crate::comp::check::CheckContext for SwitchExpressionCheckContext {
-    fn compatible(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        types: &Types,
-        found: TypeId,
-        req: TypeId,
-        warn: &crate::util::warner::Warner,
-    ) -> bool {
-        self.enclosing
-            .compatible(ctx, syms, types, found, req, warn)
-    }
-
-    fn report(
-        &self,
-        ctx: &mut CompilerContext,
-        pos: i32,
-        details: &crate::util::jc_diagnostic::JCDiagnostic,
-    ) {
-        let message = details.get_message(None);
-        let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-            crate::resources::compiler_properties::fragments::incompatible_type_in_switch_expression(
-                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                    message.to_string(),
-                ),
-            ),
-        ));
-        self.enclosing.report(ctx, pos, &fragment);
-    }
-
-    fn check_warner(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        types: &Types,
-        pos: i32,
-        found: TypeId,
-        req: TypeId,
-    ) -> crate::util::warner::Warner {
-        self.enclosing
-            .check_warner(ctx, syms, types, pos, found, req)
-    }
-
-    fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
-        self.enclosing.inference_context()
-    }
-
-    fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
-        self.enclosing.deferred_attr_context()
-    }
-}
-
 /// Java: the TreeScanner in visitSwitchExpression collecting yield
 /// expression types (Attr.java:1630-1650).
 pub struct YieldCollector {
@@ -8588,6 +8464,7 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for YieldCollector {
     /// Java: public void visitLambda(JCLambda tree) — do nothing.
     fn visit_lambda(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 }
+
 
 crate::tree::tree_scanner::tree_scanner_visitor_delegate!(YieldCollector);
 
