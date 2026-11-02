@@ -210,6 +210,10 @@ pub struct Types {
         std::cell::RefCell<std::collections::HashMap<(TypeId, SymbolId), Vec<SymbolId>>>,
     /// Java: Map<Type,Boolean> isDerivedRawCache (Types.java:2668).
     is_derived_raw_cache: std::cell::RefCell<std::collections::HashMap<TypeId, bool>>,
+    /// Port adapter: Java caches the rank in Type.rank_field; the port keys a
+    /// side map by the arena TypeId. Entries are written only when the
+    /// supertype graph is final (completed classes, type variables).
+    rank_cache: std::cell::RefCell<std::collections::HashMap<TypeId, i32>>,
     /// Java: Types.Lub.mergeCache (Types.java:3855): the per-Types guard that
     /// stops merge -> lub -> merge recursion.
     merge_cache: std::cell::RefCell<Vec<(TypeId, TypeId)>>,
@@ -350,12 +354,14 @@ fn init_new_types_fields() -> (
     std::cell::RefCell<std::collections::HashSet<SymbolId>>,
     std::cell::RefCell<std::collections::HashMap<(TypeId, SymbolId), Vec<SymbolId>>>,
     std::cell::RefCell<std::collections::HashMap<TypeId, bool>>,
+    std::cell::RefCell<std::collections::HashMap<TypeId, i32>>,
 ) {
     (
         std::cell::RefCell::new(std::collections::HashMap::new()),
         std::cell::RefCell::new(std::collections::HashMap::new()),
         std::cell::RefCell::new(std::collections::HashMap::new()),
         std::cell::RefCell::new(std::collections::HashSet::new()),
+        std::cell::RefCell::new(std::collections::HashMap::new()),
         std::cell::RefCell::new(std::collections::HashMap::new()),
         std::cell::RefCell::new(std::collections::HashMap::new()),
     )
@@ -471,6 +477,7 @@ impl Types {
             members_closure_seen,
             candidates_cache,
             is_derived_raw_cache,
+            rank_cache,
         ) = init_new_types_fields();
         Types {
             names: DEFAULT_NAMES.with(std::rc::Rc::clone),
@@ -481,6 +488,7 @@ impl Types {
             members_closure_seen,
             candidates_cache,
             is_derived_raw_cache,
+            rank_cache,
             merge_cache: std::cell::RefCell::new(Vec::new()),
         }
     }
@@ -495,6 +503,7 @@ impl Types {
             members_closure_seen,
             candidates_cache,
             is_derived_raw_cache,
+            rank_cache,
         ) = init_new_types_fields();
         Types {
             names,
@@ -505,6 +514,7 @@ impl Types {
             members_closure_seen,
             candidates_cache,
             is_derived_raw_cache,
+            rank_cache,
             merge_cache: std::cell::RefCell::new(Vec::new()),
         }
     }
@@ -523,6 +533,7 @@ impl Types {
             members_closure_seen,
             candidates_cache,
             is_derived_raw_cache,
+            rank_cache,
         ) = init_new_types_fields();
         Types {
             names,
@@ -534,6 +545,7 @@ impl Types {
             members_closure_seen,
             candidates_cache,
             is_derived_raw_cache,
+            rank_cache,
             merge_cache: std::cell::RefCell::new(Vec::new()),
         }
     }
@@ -2628,6 +2640,12 @@ impl Types {
         syms: &Symtab,
         types: List<TypeId>,
     ) -> List<TypeId> {
+        // Fast path: without wildcards there is nothing to capture. The loop
+        // below would still rebuild the whole list through append(), which
+        // allocates a fresh node per element on every capture() call.
+        if !types.iter().any(|t| ctx.typ(t).has_tag(TypeTag::WILDCARD)) {
+            return types;
+        }
         let captured_name = self.captured_name();
         let mut result: List<TypeId> = List::nil();
         let current = types;
@@ -3228,12 +3246,31 @@ impl Types {
     /// the upstream rank_field caches (Type, not ported)
     /// are not used; the rank is recomputed each time (same result).
     pub fn rank(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> i32 {
+        if let Some(rank) = self.rank_cache.borrow().get(&t) {
+            return *rank;
+        }
+        let rank = self.rank_uncached(ctx, syms, t);
+        // Cache only once the supertype graph is final: completion can still
+        // add interfaces to an incomplete class.
+        let stable = match ctx.typ(t).tsym {
+            Some(tsym) => {
+                ctx.typ(t).has_tag(TypeTag::TYPEVAR) || ctx.is_symbol_completed(tsym)
+            }
+            None => true,
+        };
+        if stable {
+            self.rank_cache.borrow_mut().insert(t, rank);
+        }
+        rank
+    }
+
+    /// The uncached rank computation (Java: Types.rank body).
+    fn rank_uncached(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> i32 {
         let tag = ctx.typ(t).get_tag();
         if tag == TypeTag::CLASS {
             let tsym = ctx.typ(t).tsym.expect("class type symbol");
-            let names = syms.names();
-            let name = flat_name_of(ctx, tsym);
-            if name.to_java_string() == names.std.java_lang_Object.to_java_string() {
+            let object_tsym = ctx.typ(syms.object_type).tsym.expect("object type symbol");
+            if tsym == object_tsym {
                 return 0;
             }
             let sup = self.supertype(ctx, syms, t, None);
