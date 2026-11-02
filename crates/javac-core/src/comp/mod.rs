@@ -37,6 +37,7 @@ pub mod modules;
 pub mod member_enter;
 pub mod operators;
 pub mod resolve;
+pub mod result_info;
 pub mod todo;
 pub mod trans_patterns;
 pub mod lambda_to_method;
