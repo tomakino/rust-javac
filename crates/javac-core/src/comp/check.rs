@@ -1510,7 +1510,7 @@ impl Check {
         }
         let warn_shared =
             check_context.check_warner_shared(ctx, syms, &self.types, pos, found, req);
-        let mut warn = warn_shared.borrow_mut();
+        let warn = Rc::clone(&warn_shared);
         if check_context.compatible(ctx, syms, &self.types, found, req, &warn) {
             if warn.has_non_silent_lint(LintCategory::UNCHECKED) {
                 let warning = crate::resources::compiler_properties::warnings::prob_found_req(
@@ -1648,10 +1648,10 @@ pub trait CheckContext {
         pos: i32,
         found: TypeId,
         req: TypeId,
-    ) -> Rc<std::cell::RefCell<Warner>> {
-        Rc::new(std::cell::RefCell::new(self.check_warner(
+    ) -> Rc<Warner> {
+        Rc::new(self.check_warner(
             ctx, syms, types, pos, found, req,
-        )))
+        ))
     }
 
     /// Java: public InferenceContext inferenceContext()

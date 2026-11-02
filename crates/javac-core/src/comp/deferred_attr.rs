@@ -399,7 +399,7 @@ pub struct DeferredAttrContext {
     /// Java: final Warner warn (shared mutable object upstream; RefCell keeps
     /// the mutable warning state — registered: warning flags are not
     /// propagated back to the caller, Lint)
-    pub warn: Option<RefCell<Warner>>,
+    pub warn: Option<Warner>,
     /// Java: ArrayList<DeferredAttrNode> deferredAttrNodes
     pub deferred_attr_nodes: RefCell<Vec<Rc<DeferredAttrNode>>>,
     /// True for the emptyDeferredAttrContext (upstream anonymous subclass
@@ -426,7 +426,7 @@ impl DeferredAttrContext {
             phase,
             inference_context,
             parent,
-            warn: warn.map(RefCell::new),
+            warn: warn,
             deferred_attr_nodes: RefCell::new(Vec::new()),
             empty: false,
         }
@@ -515,11 +515,10 @@ impl DeferredAttrContext {
                 };
                 let stuck_vars = to_unstuck.deferred_stuck_policy.stuck_vars();
                 let context = Rc::clone(&self.inference_context);
-                let mut default_warn = Warner::new(None);
-                let mut warn_guard = self.warn.as_ref().map(|warn| warn.borrow_mut());
-                let warn_ref: &Warner = match warn_guard.as_mut() {
+                let default_warn = Warner::new(None);
+                let warn_ref: &Warner = match self.warn.as_ref() {
                     Some(warn) => warn,
-                    None => &mut default_warn,
+                    None => &default_warn,
                 };
                 context.solve_any(
                     ctx,
@@ -568,11 +567,10 @@ impl DeferredAttrContext {
         types: &Types,
         infer: &crate::comp::infer::Infer,
     ) -> Result<Vec<StuckNode>, DeferredAttrFailure> {
-        let mut default_warn = Warner::new(None);
-        let mut warn_guard = self.warn.as_ref().map(|warn| warn.borrow_mut());
-        let warn_ref: &Warner = match warn_guard.as_mut() {
+        let default_warn = Warner::new(None);
+        let warn_ref: &Warner = match self.warn.as_ref() {
             Some(warn) => warn,
-            None => &mut default_warn,
+            None => &default_warn,
         };
         infer.do_incorporation(ctx, syms, types, &self.inference_context, warn_ref)?;
         let graph =

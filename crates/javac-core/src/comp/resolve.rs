@@ -4687,7 +4687,7 @@ pub struct MethodCheckContext {
     /// Java: DeferredAttrContext deferredAttrContext
     pub deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
     /// Java: Warner rsWarner
-    pub rs_warner: Rc<std::cell::RefCell<crate::util::warner::Warner>>,
+    pub rs_warner: Rc<crate::util::warner::Warner>,
     /// Java: MethodReferenceCheck's anonymous MethodCheckContext override keeps
     /// the pending inference context (Porting rules: the override is a field + branch in
     /// compatible below).
@@ -4815,7 +4815,7 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
     ) -> crate::util::warner::Warner {
         // Kept for the trait's value-returning API; the shared view is
         // check_warner_shared below (upstream returns rsWarner directly).
-        self.rs_warner.borrow().clone()
+        (*self.rs_warner).clone()
     }
 
     fn check_warner_shared(
@@ -4826,7 +4826,7 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         _pos: i32,
         _found: TypeId,
         _req: TypeId,
-    ) -> Rc<RefCell<crate::util::warner::Warner>> {
+    ) -> Rc<crate::util::warner::Warner> {
         // Java: return rsWarner; (Resolve.java:1044-1046).
         Rc::clone(&self.rs_warner)
     }
@@ -6110,7 +6110,7 @@ fn method_check_context(
     MethodCheckContext {
         strict,
         deferred_attr_context,
-        rs_warner: Rc::new(RefCell::new(rs_warner)),
+        rs_warner: Rc::new(rs_warner),
         pending_inference: None,
         most_specific: false,
     }
@@ -6407,7 +6407,7 @@ impl MethodCheck for MostSpecificCheck {
             let check_context = Rc::new(MethodCheckContext {
                 strict: true,
                 deferred_attr_context: Rc::clone(&deferred_attr_context),
-                rs_warner: Rc::new(RefCell::new(crate::util::warner::Warner::new(warn.pos()))),
+                rs_warner: Rc::new(crate::util::warner::Warner::new(warn.pos())),
                         pending_inference: None,
                         most_specific: true,
         });

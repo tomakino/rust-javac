@@ -805,7 +805,7 @@ pub enum TypeKindData {
         /// Java: Env<AttrContext> env
         env: std::rc::Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         /// Java: final Warner warn (shared mutable state, registered)
-        warn: std::rc::Rc<std::cell::RefCell<crate::util::warner::Warner>>,
+        warn: std::rc::Rc<crate::util::warner::Warner>,
     },
     /// Java: Type.UnknownType
     UnknownType,

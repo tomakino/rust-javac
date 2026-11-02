@@ -2,7 +2,7 @@
 //!
 //! The lint sets and the `warned` flag are the only mutable state; they are
 //! held in `RefCell`/`Cell` so a `Warner` can be driven through `&self`.
-//! Callers still share it as `Rc<RefCell<Warner>>` until the warning-sink
+//! Callers still share it as `Rc<Warner>` until the warning-sink
 //! interface is migrated to `Rc<Warner>`.
 
 use std::cell::{Cell, RefCell};

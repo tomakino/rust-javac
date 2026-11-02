@@ -1398,7 +1398,7 @@ impl InferenceContext {
         types: &Types,
         roots: List<TypeId>,
         should_solve: bool,
-        warn: &Rc<RefCell<Warner>>,
+        warn: &Rc<Warner>,
     ) -> Result<Rc<InferenceContext>, InferenceException> {
         let inferencevars = self.inner.borrow().inferencevars.clone();
         if roots.length() == inferencevars.length() {
@@ -2762,7 +2762,7 @@ struct PropagateListener {
     /// Upstream captures the caller's Warner reference (InferenceContext.java:
     /// 380-387); the Rc keeps the shared lint state alive across the deferred
     /// notification.
-    warn: Rc<RefCell<Warner>>,
+    warn: Rc<Warner>,
 }
 
 impl FreeTypeListener for PropagateListener {
@@ -2784,7 +2784,7 @@ impl FreeTypeListener for PropagateListener {
             }
         }
         let infer = original.infer.clone().expect("InferenceContext.infer");
-        let mut warn = self.warn.borrow_mut();
+        let warn = Rc::clone(&self.warn);
         infer.do_incorporation(ctx, syms, types, &original, &warn)?;
         drop(warn);
         original.notify_change(ctx, syms, types)
@@ -2799,7 +2799,7 @@ struct UnreachableVarsListener {
     /// Upstream captures the caller's Warner reference (InferenceContext.java:
     /// 392-395); the Rc keeps the shared lint state alive across the deferred
     /// notification.
-    warn: Rc<RefCell<Warner>>,
+    warn: Rc<Warner>,
 }
 
 impl FreeTypeListener for UnreachableVarsListener {
@@ -2813,7 +2813,7 @@ impl FreeTypeListener for UnreachableVarsListener {
         let Some(original) = self.original.upgrade() else {
             return Ok(());
         };
-        let mut warn = self.warn.borrow_mut();
+        let warn = Rc::clone(&self.warn);
         let _ = inference_context;
         original.solve_list(
             ctx,
@@ -3257,7 +3257,7 @@ impl Infer {
         // return path (including the ?-early-returns).
         struct WarnSync<'a> {
             target: &'a Warner,
-            shared: Rc<RefCell<Warner>>,
+            shared: Rc<Warner>,
         }
         impl Drop for WarnSync<'_> {
             fn drop(&mut self) {
@@ -3269,10 +3269,10 @@ impl Infer {
                 // leave the shared Warner empty for every later
                 // PartiallyInferredMethodType.check (which is what decides
                 // between the unchecked-erasure path and shouldPropagate).
-                self.target.copy_from(&self.shared.borrow());
+                self.target.copy_from(&self.shared);
             }
         }
-        let warn_shared = Rc::new(RefCell::new((*warn).clone()));
+        let warn_shared = Rc::new((*warn).clone());
         let _warn_sync = WarnSync {
             target: warn,
             shared: Rc::clone(&warn_shared),
@@ -3308,7 +3308,7 @@ impl Infer {
                     Rc::clone(&deferred_context),
                     argtypes,
                     types.get_parameter_types_public(ctx, mt),
-                    &warn_shared.borrow_mut(),
+                    &warn_shared,
                 )
                 .map_err(|failure| match failure {
                     crate::comp::resolve::MethodCheckFailure::Inference(ex) => ex,
@@ -3341,7 +3341,7 @@ impl Infer {
                 syms,
                 types,
                 &inference_context,
-                &warn_shared.borrow_mut(),
+                &warn_shared,
             )?;
             // Java: instantiateMethod finally (Infer.java:241-246).
             inference_context.notify_change(ctx, syms, types)?;
@@ -3359,11 +3359,10 @@ impl Infer {
                 syms,
                 types,
                 &inference_context,
-                &warn_shared.borrow_mut(),
+                &warn_shared,
             )?;
             let result_info = result_info.expect("result info");
             if !warn_shared
-                .borrow()
                 .has_non_silent_lint(crate::code::lint::LintCategory::UNCHECKED)
             {
                 let should = self.should_propagate(
@@ -3462,7 +3461,7 @@ impl Infer {
         // minimize as yet undetermined type variables
         if self.allow_graph_inference {
             let context = Rc::clone(&inference_context);
-            context.solve(ctx, syms, types, &warn_shared.borrow_mut())?;
+            context.solve(ctx, syms, types, &warn_shared)?;
         } else {
             inference_context.solve_legacy(
                 ctx,
@@ -3470,7 +3469,7 @@ impl Infer {
                 types,
                 true,
                 &crate::comp::infer::legacy_inference_steps_eq_lower(),
-                &warn_shared.borrow_mut(),
+                &warn_shared,
             )?;
         }
         let inst_mt = inference_context.as_inst_type(ctx, syms, types, mt);
@@ -3518,7 +3517,6 @@ impl Infer {
             && !inference_context.restvars(ctx, syms, types).is_empty()
             && let Some(result_info) = result_info
             && !warn_shared
-                .borrow()
                 .has_non_silent_lint(crate::code::lint::LintCategory::UNCHECKED)
         {
             let new_restype = self.generate_return_constraints(
@@ -3537,7 +3535,7 @@ impl Infer {
                 types,
                 false,
                 &crate::comp::infer::legacy_inference_steps_eq_upper(),
-                &warn_shared.borrow_mut(),
+                &warn_shared,
             )?;
             // Java: instantiateMethod finally { if (resultInfo != null ||
             // !allowGraphInference) inferenceContext.notifyChange(); }
@@ -3943,7 +3941,7 @@ pub fn partially_inferred_method_type(
     mt: TypeId,
     inference_context: Rc<InferenceContext>,
     env: Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
-    warn: Rc<RefCell<Warner>>,
+    warn: Rc<Warner>,
 ) -> TypeId {
     match &ctx.typ(mt).kind {
         TypeKindData::MethodType {
@@ -4013,7 +4011,6 @@ impl Infer {
         let mut no_warnings = Warner::new(None);
         let saved_undet = inference_context.save(ctx, syms, types);
         let unchecked = warn
-            .borrow()
             .has_non_silent_lint(crate::code::lint::LintCategory::UNCHECKED);
         let result: Result<TypeId, InferenceException> = (|| {
             if !unchecked {

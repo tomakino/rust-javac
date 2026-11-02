@@ -11337,7 +11337,7 @@ impl Attr {
                 res_type,
                 return_type,
             );
-            let mut warn = warn_shared.borrow_mut();
+            let warn = Rc::clone(&warn_shared);
             if ctx.typ(res_type).has_tag(TypeTag::ERROR)
                 || crate::comp::check::CheckContext::compatible(
                     &func_context,
