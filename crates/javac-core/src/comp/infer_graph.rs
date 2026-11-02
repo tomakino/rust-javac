@@ -482,7 +482,7 @@ impl<'a> GraphSolver<'a> {
                 match strategy.pick_node(ctx, syms, types, &graph, self.inference_context) {
                     Ok(node) => node,
                     Err(e) => {
-                        if std::env::var_os("DSH_DEBUG_GS").is_some() {
+                        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_GS") {
                             eprintln!("[GS] pick_node failed: {e:?}");
                         }
                         return Err(infer.error(None));

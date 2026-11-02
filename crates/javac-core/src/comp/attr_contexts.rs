@@ -104,7 +104,7 @@ impl crate::comp::check::CheckContext for DiamondCheckContext {
         _pos: i32,
         details: &crate::util::jc_diagnostic::JCDiagnostic,
     ) {
-        if std::env::var_os("DSH_DEBUG_DIAMOND").is_some() {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_DIAMOND") {
             eprintln!(
                 "[DIAMOND] pos={} speculative={} detail={}",
                 ctx.tree(self.clazz).pos,

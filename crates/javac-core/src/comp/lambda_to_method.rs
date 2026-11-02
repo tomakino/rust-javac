@@ -480,7 +480,7 @@ impl LambdaToMethod {
         }
     }
     fn visit_lambda_l2m(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        if self.context.is_none() && std::env::var_os("DSH_DEBUG_L2M").is_some() {
+        if self.context.is_none() && crate::util::debug_flags::debug_enabled("DSH_DEBUG_L2M") {
             let pos = ctx.tree(tree).pos;
             let keys: Vec<(i32, u32)> = self
                 .context_map
@@ -1296,7 +1296,7 @@ impl LambdaAnalyzerPreprocessor {
             _ => None,
         };
         if let Some(sym) = sym {
-            if std::env::var_os("DSH_DEBUG_L2M").is_some()
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_L2M")
                 && ctx.sym(sym).name.to_java_string().to_string_lossy() == "gson"
             {
                 eprintln!(
@@ -1427,7 +1427,7 @@ impl LambdaAnalyzerPreprocessor {
         let def = ctx.typ(class_ty).tsym.expect("new class symbol");
         let in_referenced_class = self.currently_in_class(ctx, def);
         let is_local = Symbol::is_directly_or_indirectly_local(ctx, def);
-        if std::env::var_os("DSH_DEBUG_ANON").is_some() {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
             eprintln!(
                 "[ANON] new_pos={} ty_sym={} def={} def_kind={:?} is_local={} in_ref={} has_def={}",
                 ctx.tree(tree).pos,
@@ -1672,7 +1672,7 @@ impl LambdaAnalyzerPreprocessor {
         }
         if let Some(sym) = sym {
             if ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::MTH) {
-                if std::env::var_os("DSH_DEBUG_L2M").is_some()
+                if crate::util::debug_flags::debug_enabled("DSH_DEBUG_L2M")
                     && ctx.sym(sym).name.to_java_string().to_string_lossy() == "gson"
                 {
                     eprintln!(
@@ -2108,7 +2108,7 @@ impl LambdaAnalyzerPreprocessor {
                     captured_symbols(lambda, LambdaSymbolKind::CAPTURED_THIS),
                 )
             };
-            if std::env::var_os("DSH_DEBUG_L2M").is_some() {
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_L2M") {
                 eprintln!(
                     "[COMPLETE] tree={tree:?} params={} captured={} outer_this={} this={}",
                     param_orig.len(),
@@ -2759,7 +2759,7 @@ impl LambdaAnalyzerPreprocessor {
                     .get(&context_tree)
                     .map(|context| context.depth)
                     .expect("context depth");
-                if std::env::var_os("DSH_DEBUG_L2M").is_some() {
+                if crate::util::debug_flags::debug_enabled("DSH_DEBUG_L2M") {
                     eprintln!(
                         "[CAPSYM] tree={} depth={} decl={:?} frames={:?}",
                         ctx.sym(sym).name.to_java_string().to_string_lossy(),
@@ -9527,7 +9527,7 @@ impl MemberReferenceToLambda {
             let sym_ty = ctx.sym(sym).ty.expect("reference symbol type");
             ctx.typ(sym_ty).get_parameter_types(ctx)
         };
-        if std::env::var_os("DSH_DEBUG_SAM").is_some() {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_SAM") {
             eprintln!(
                 "[MREF-PARAMS] kind={:?} target={} desc={} impl={} sam={} params={:?} args={:?}",
                 kind,

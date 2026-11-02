@@ -1360,7 +1360,7 @@ impl Gen {
         let prev_pt = self.pt;
         let tree_ty = ctx.tree(tree).ty.expect("expression type");
         let const_value = ctx.typ(tree_ty).const_value().cloned();
-        if std::env::var_os("DSH_DEBUG_COND").is_some()
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_COND")
             && const_value.is_some()
             && (ctx.tree(tree).tag == Tag::EQ
                 || ctx.tree(tree).tag == Tag::NE)
@@ -3408,7 +3408,7 @@ impl Gen {
         let items = self.get_items();
         let else_chain = items.jump_false(ctx, &c);
         let cond_is_false = items.cond_is_false(&c);
-        if std::env::var_os("DSH_DEBUG_COND").is_some() {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_COND") {
             let ct = items.cond_is_true(&c);
             if ct {
                 eprintln!(

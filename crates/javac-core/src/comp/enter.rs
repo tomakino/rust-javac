@@ -763,7 +763,7 @@ impl Enter {
         set_class_tree_symbol(ctx, tree, class);
         // Enter class into 'compiled' table and enclosing scope.
         let already_compiled = self.chk.get_compiled(ctx, class);
-        if std::env::var_os("DSH_DEBUG_LOCALREC").is_some()
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_LOCALREC")
             && tree_name
                 .to_java_string()
                 .to_string_lossy()
@@ -788,7 +788,7 @@ impl Enter {
         }
         self.chk.put_compiled(ctx, class);
         ctx.scope_enter(scope, class);
-        if std::env::var_os("DSH_DEBUG_LOCALREC").is_some()
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_LOCALREC")
             && tree_name
                 .to_java_string()
                 .to_string_lossy()

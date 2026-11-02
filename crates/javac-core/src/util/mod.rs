@@ -13,6 +13,7 @@ pub mod client_code_exception;
 pub mod constants;
 pub mod context;
 pub mod convert;
+pub mod debug_flags;
 pub mod diagnostic_source;
 pub mod fatal_error;
 pub mod forwarding_diagnostic_formatter;

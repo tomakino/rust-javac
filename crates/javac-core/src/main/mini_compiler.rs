@@ -1215,7 +1215,7 @@ impl MiniCompiler {
             }
         }
         for env in &envs {
-            if std::env::var_os("DSH_DEBUG_ENV").is_some() {
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ENV") {
                 let sf = env
                     .toplevel
                     .and_then(|top| match &self.ctx.tree(top).kind {
@@ -1250,7 +1250,7 @@ impl MiniCompiler {
         let t_flow = std::time::Instant::now();
         // JavaCompiler.flow(envs)
         for env in &envs {
-            if std::env::var_os("DSH_DEBUG_ENV").is_some() {
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ENV") {
                 let sf = env
                     .toplevel
                     .and_then(|top| match &self.ctx.tree(top).kind {
@@ -1304,7 +1304,7 @@ impl MiniCompiler {
         let _t_gen_total = std::time::Duration::ZERO;
         for env in envs {
             let _t_one = std::time::Instant::now();
-            if std::env::var_os("DSH_DEBUG_ENV").is_some() {
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ENV") {
                 let sf = env
                     .toplevel
                     .and_then(|top| match &self.ctx.tree(top).kind {

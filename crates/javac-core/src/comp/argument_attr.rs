@@ -1500,7 +1500,7 @@ impl ArgumentAttr {
                         ),
                     ));
                 }
-                if std::env::var_os("DSH_DEBUG_OVERLOAD").is_some()
+                if crate::util::debug_flags::debug_enabled("DSH_DEBUG_OVERLOAD")
                     && kind == ArgumentKind::ResolvedConstructor
                 {
                     let mtype_tag = mtype.map(|m| ctx.typ(m).get_tag());

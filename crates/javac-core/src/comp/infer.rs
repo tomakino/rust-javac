@@ -1602,7 +1602,7 @@ impl InferenceContext {
         steps: &[InferenceStep],
     ) -> Result<List<TypeId>, InferenceException> {
         let restvars = self.restvars(ctx, syms, types);
-        if std::env::var_os("DSH_DEBUG_SB").is_some() {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_SB") {
             eprintln!(
                 "[SB] ctxvars={} tosolve={}",
                 self.inner.borrow().inferencevars.length(),
@@ -1861,7 +1861,7 @@ impl Infer {
             && result_info.is_some()
             && result_info.and_then(|ri| ri.pt) == Some(self.any_poly)
         {
-            if std::env::var_os("DSH_DEBUG_DIAMOND_PT").is_some() {
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_DIAMOND_PT") {
                 eprintln!(
                     "[PARTIAL] m={} pt={:?}",
                     ctx.sym(msym).name.to_java_string().to_string_lossy(),
@@ -1893,7 +1893,7 @@ impl Infer {
                     result_info,
                     &inference_context,
                 );
-                if std::env::var_os("DSH_DEBUG_INFER").is_some()
+                if crate::util::debug_flags::debug_enabled("DSH_DEBUG_INFER")
                     && ctx.sym(msym).name.to_java_string().to_string_lossy() == "newMap"
                 {
                     eprintln!(
@@ -2077,7 +2077,7 @@ impl Infer {
             let context = Rc::clone(&inference_context);
             context.notify_change(ctx, syms, types)?;
         }
-        if std::env::var_os("DSH_DEBUG_INFER").is_some()
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_INFER")
             && ctx.sym(msym).name.to_java_string().to_string_lossy() == "newMap"
         {
             eprintln!(
@@ -2268,7 +2268,7 @@ impl Infer {
             || (!self.allow_graph_inference
                 && ret_warn.has_lint(crate::code::lint::LintCategory::UNCHECKED))
         {
-            if std::env::var_os("DSH_DEBUG_INFER").is_some() {
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_INFER") {
                 eprintln!(
                     "[INFER] qtype={} target={} from={} pt={} target_tag={:?} to_tag={:?} empty={} mode={:?} overload={}",
                     crate::comp::attr::type_display_of(ctx, qtype),

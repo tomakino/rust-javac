@@ -4798,7 +4798,7 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
             // has no pendingInference branch; that belongs to MethodReferenceCheck.
             let req = inference_context.as_undet_var(ctx, syms, types, req);
             let r = types.is_subtype_no_capture(ctx, syms, found, req);
-            if std::env::var_os("DSH_DEBUG_ALL").is_some() {
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
                 eprintln!(
                     "[CMP-MS] found={} req={} result={}",
                     crate::comp::attr::type_display_of(ctx, found),
@@ -4827,7 +4827,7 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         } else {
             types.is_convertible_with_warn(ctx, syms, found, req, warn)
         };
-        if std::env::var_os("DSH_DEBUG_ALL").is_some() {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
             eprintln!(
                 "[CMP] found={} req={} strict={} result={}",
                 crate::comp::attr::type_display_of(ctx, found),
@@ -4958,7 +4958,7 @@ impl MethodResultInfo {
                 .inference_context()
                 .cached_capture(ctx, syms, types, tree, u_result, true),
         };
-        if std::env::var_os("DSH_DEBUG_ALL").is_some() {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
             eprintln!(
                 "[MRC] captured={} pt={} ctx={:p}",
                 crate::comp::attr::type_display_of(ctx, captured_type),
@@ -6254,7 +6254,7 @@ impl MethodCheck for ResolveMethodCheck {
             warn,
         )?;
         // should we check varargs element type accessibility?
-        if std::env::var_os("DSH_DEBUG_VARARGS").is_some() {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_VARARGS") {
             eprintln!(
                 "[VARARGS] phase={:?} mode={:?} skip_after={} formals={:?}",
                 deferred_attr_context.phase,

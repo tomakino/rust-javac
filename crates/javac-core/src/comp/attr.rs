@@ -5270,7 +5270,7 @@ impl Attr {
             let (kind, attributed) =
                 self.attrib_args(ctx, syms, KindSelector::VAL, args.clone(), &local_env);
             argtypes = attributed;
-            if std::env::var_os("DSH_DEBUG_OVERLOAD").is_some()
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_OVERLOAD")
                 && meth_name.to_java_string().to_string_lossy() == "assertEquals"
             {
                 eprintln!(
@@ -6281,7 +6281,7 @@ impl Attr {
         let cond_const = ctx.typ(cond_tree_type).const_value().cloned();
         let true_const = ctx.typ(truetype).const_value().cloned();
         let false_const = ctx.typ(falsetype).const_value().cloned();
-        if std::env::var_os("DSH_DEBUG_COND").is_some() && cond_const.is_some() {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_COND") && cond_const.is_some() {
             let file = env
                 .toplevel
                 .and_then(|unit| match &ctx.tree(unit).kind {
@@ -10153,7 +10153,7 @@ impl Attr {
         // attribute the member reference qualifier - if this is a constructor
         // reference, the expected kind must be a type
         let qualifier_info = self.member_reference_qualifier_result(ctx, &env, that);
-        if std::env::var_os("DSH_DEBUG_FI").is_some() {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_FI") {
             let info = env.info.borrow();
             let call_syms: Vec<(String, Kind, i64)> = info
                 .scope
@@ -13247,7 +13247,7 @@ impl Attr {
                 // argtypes, typeargtypes). The target type is passed through
                 // even when it is an enclosing inference variable; the
                 // constructor check then constrains it.
-                if std::env::var_os("DSH_DEBUG_DIAMOND_PT").is_some() {
+                if crate::util::debug_flags::debug_enabled("DSH_DEBUG_DIAMOND_PT") {
                     eprintln!(
                         "[DPT] pt={} tag={:?}",
                         type_display_of(ctx, pt),
@@ -13298,7 +13298,7 @@ impl Attr {
                     &diamond_env,
                     &diamond_result,
                 );
-                if std::env::var_os("DSH_DEBUG_DIAMOND_PT").is_some() {
+                if crate::util::debug_flags::debug_enabled("DSH_DEBUG_DIAMOND_PT") {
                     eprintln!(
                         "[DCTOR] pos={} ctor={} tag={:?} partial={} clazztype={} args={:?}",
                         ctx.tree(tree).pos,
@@ -13454,7 +13454,7 @@ impl Attr {
                 owntype = clazztype;
             }
         }
-        if std::env::var_os("DSH_DEBUG_DIAMOND_PT").is_some() {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_DIAMOND_PT") {
             let name = ctx
                 .typ(owntype)
                 .tsym
@@ -14259,7 +14259,7 @@ impl Attr {
         let matches_val_mth = scope_owner_kind
             .map(|kind| kind.matches(KindSelector::VAL_MTH))
             .unwrap_or(false);
-        if std::env::var_os("DSH_DEBUG_LOCALREC").is_some() {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_LOCALREC") {
             let nm = match &ctx.tree(tree).kind {
                 TreeKind::ClassDecl { name, .. } => {
                     name.to_java_string().to_string_lossy().to_string()

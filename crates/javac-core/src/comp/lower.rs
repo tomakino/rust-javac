@@ -4793,7 +4793,7 @@ impl Lower {
         }
         let cond_true = self.is_true(ctx, cond);
         let cond_false = self.is_false(ctx, cond);
-        if std::env::var_os("DSH_DEBUG_COND").is_some() {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_COND") {
             let file = self
                 .attr_env
                 .as_ref()
