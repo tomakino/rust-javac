@@ -36,6 +36,7 @@ pub mod match_bindings;
 pub mod modules;
 pub mod member_enter;
 pub mod operators;
+pub mod post_attr_analyzer;
 pub mod resolve;
 pub mod result_info;
 pub mod todo;
