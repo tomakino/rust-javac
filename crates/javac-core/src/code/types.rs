@@ -1547,6 +1547,19 @@ impl Types {
     }
 
     pub fn interfaces(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> List<TypeId> {
+        self.interfaces_with_attr(ctx, syms, t, None)
+    }
+
+    /// Types.interfaces with the enclosing Attr of an Attr-inside caller. The
+    /// declared-interface read completes a source class first; that completion
+    /// must run on the caller's Attr, not on the shared service cell.
+    pub fn interfaces_with_attr(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
+    ) -> List<TypeId> {
         let is_class_family = matches!(
             &ctx.typ(t).kind,
             TypeKindData::ClassType { .. }
@@ -1575,7 +1588,11 @@ impl Types {
             // list, otherwise an incomplete classfile stub caches an empty
             // list in the ClassType of an already-completed symbol.
             if !ctx.is_symbol_completed(tsym) {
-                if let Err(failure) = ctx.complete_class_symbol(syms, tsym) {
+                let completed = match attr.as_deref_mut() {
+                    Some(attr) => ctx.complete_class_symbol_with_attr(syms, tsym, attr),
+                    None => ctx.complete_class_symbol(syms, tsym),
+                };
+                if let Err(failure) = completed {
                     crate::code::symbol::throw_completion_failure(failure);
                 }
             }
@@ -1620,7 +1637,7 @@ impl Types {
             let upper_is_compound = self.is_compound(ctx, upper);
             let upper_is_interface = type_is_interface(ctx, upper);
             if upper_is_compound {
-                return self.interfaces(ctx, syms, upper);
+                return self.interfaces_with_attr(ctx, syms, upper, attr.as_deref_mut());
             }
             if upper_is_interface {
                 return List::of(upper);

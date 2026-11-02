@@ -2882,6 +2882,7 @@ impl Attr {
                         site,
                         &name,
                         crate::code::kinds::KindSelector::TYP_PCK,
+                        Some(self),
                     );
                 }
                 // Java: env.enclClass.sym = (ClassSymbol)site;
@@ -5850,6 +5851,7 @@ impl Attr {
                     site_tsym,
                     &name,
                     result_info.pkind,
+                    Some(self),
                 );
                 rs.access_base(ctx, syms, found, pos, location, Some(site), &name, true)
             }
@@ -5920,6 +5922,7 @@ impl Attr {
                             site,
                             &name,
                             result_info.pkind,
+                            Some(self),
                         )
                     };
                     let rs_rc = self
@@ -11558,7 +11561,13 @@ impl Attr {
                 {
                     let chk_rc = Rc::clone(&self.attr.chk);
                     let chk = Rc::clone(&chk_rc);
-                    chk.validate_type_annotations(ctx, self.syms, &annotations, true);
+                    chk.validate_type_annotations(
+                        ctx,
+                        self.syms,
+                        &annotations,
+                        true,
+                        Some(&mut *self.attr),
+                    );
                 }
                 self.scan_list(ctx, &bounds);
             }
@@ -11568,7 +11577,13 @@ impl Attr {
                 {
                     let chk_rc = Rc::clone(&self.attr.chk);
                     let chk = Rc::clone(&chk_rc);
-                    chk.validate_type_annotation(ctx, self.syms, tree, false);
+                    chk.validate_type_annotation(
+                        ctx,
+                        self.syms,
+                        tree,
+                        false,
+                        Some(&mut *self.attr),
+                    );
                 }
                 // Java: super.visitAnnotation(tree);
                 let (annotation_type, args) = match &ctx.tree(tree).kind {
@@ -12068,7 +12083,7 @@ impl Attr {
         {
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
-            chk.check_non_cyclic(ctx, syms, None, c_ty);
+            chk.check_non_cyclic(ctx, syms, None, c_ty, Some(self));
         }
         let st = {
             let types_rc = Rc::clone(&self.types);
@@ -15568,7 +15583,7 @@ impl Attr {
         {
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
-            chk.check_non_cyclic(ctx, syms, Some(pos), t);
+            chk.check_non_cyclic(ctx, syms, Some(pos), t, Some(self));
         }
         t
     }
@@ -16863,6 +16878,7 @@ mod tests {
             class_type,
             &inner_name,
             KindSelector::TYP,
+            None,
         );
         assert_eq!(harness.ctx.sym(inner).name, inner_name);
         assert_eq!(harness.ctx.sym(inner).kind, crate::code::kinds::Kind::TYP);
@@ -16876,6 +16892,7 @@ mod tests {
             class_type,
             &missing,
             KindSelector::VAL,
+            None,
         );
         assert!(crate::code::symbol::symbol_resolve_error_data(&harness.ctx, not_found).is_some());
     }

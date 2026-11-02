@@ -4016,6 +4016,7 @@ impl Lower {
                         boxed_ty,
                         &self.names.TYPE,
                         crate::code::kinds::KindSelector::VAR,
+                        None,
                     )
                 };
                 let type_sym = {

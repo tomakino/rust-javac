@@ -5389,8 +5389,9 @@ impl Check {
         syms: &crate::code::symtab::Symtab,
         pos: Option<i32>,
         t: TypeId,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> bool {
-        self.check_non_cyclic_internal(ctx, syms, pos, t)
+        self.check_non_cyclic_internal(ctx, syms, pos, t, attr)
     }
 }impl Check {
     /// Java: void checkNonCyclic(DiagnosticPosition pos, TypeVar t) (Check.java:2393-2395).
@@ -5480,6 +5481,7 @@ impl Check {
         syms: &crate::code::symtab::Symtab,
         pos: Option<i32>,
         t: TypeId,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> bool {
         let mut complete = true;
         let c = match ctx.typ(t).tsym {
@@ -5495,10 +5497,17 @@ impl Check {
             ctx.sym_mut(c).flags_field |= crate::code::flags::LOCKED as i64;
             if let Some(c_ty) = ctx.sym(c).ty {
                 if ctx.typ(c_ty).has_tag(crate::code::type_tag::TypeTag::CLASS) {
-                    let interfaces = self.types.interfaces(ctx, syms, c_ty);
+                    let interfaces =
+                        self.types.interfaces_with_attr(ctx, syms, c_ty, attr.as_deref_mut());
                     let mut current = interfaces;
                     while current.non_empty() {
-                        complete &= self.check_non_cyclic_internal(ctx, syms, pos, *current.head());
+                        complete &= self.check_non_cyclic_internal(
+                            ctx,
+                            syms,
+                            pos,
+                            *current.head(),
+                            attr.as_deref_mut(),
+                        );
                         current = current.tail();
                     }
                     let (supertype_field, owner) = {
@@ -5510,13 +5519,25 @@ impl Check {
                     };
                     if let Some(st) = supertype_field {
                         if ctx.typ(st).has_tag(crate::code::type_tag::TypeTag::CLASS) {
-                            complete &= self.check_non_cyclic_internal(ctx, syms, pos, st);
+                            complete &= self.check_non_cyclic_internal(
+                                ctx,
+                                syms,
+                                pos,
+                                st,
+                                attr.as_deref_mut(),
+                            );
                         }
                     }
                     if let Some(owner) = owner {
                         if ctx.sym(owner).kind == crate::code::kinds::Kind::TYP {
                             if let Some(owner_ty) = ctx.sym(owner).ty {
-                                complete &= self.check_non_cyclic_internal(ctx, syms, pos, owner_ty);
+                                complete &= self.check_non_cyclic_internal(
+                                    ctx,
+                                    syms,
+                                    pos,
+                                    owner_ty,
+                                    attr.as_deref_mut(),
+                                );
                             }
                         }
                     }
@@ -7702,9 +7723,16 @@ impl Check {
         syms: &crate::code::symtab::Symtab,
         annotations: &List<TreeId>,
         is_type_parameter: bool,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) {
         for annotation in annotations.iter() {
-            self.validate_type_annotation(ctx, syms, annotation, is_type_parameter);
+            self.validate_type_annotation(
+                ctx,
+                syms,
+                annotation,
+                is_type_parameter,
+                attr.as_deref_mut(),
+            );
         }
     }
 
@@ -7729,9 +7757,10 @@ impl Check {
         syms: &crate::code::symtab::Symtab,
         a: TreeId,
         is_type_parameter: bool,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) {
         assert!(ctx.tree(a).ty.is_some(), "AssertionError: annotation type");
-        self.validate_annotation_tree(ctx, syms, a, None);
+        self.validate_annotation_tree(ctx, syms, a, attr.as_deref_mut());
         let is_type_annotation_tag = ctx.tree(a).tag == crate::tree::jc_tree::Tag::TYPE_ANNOTATION;
         let annotation_type_erroneous = match &ctx.tree(a).kind {
             crate::tree::jc_tree::TreeKind::Annotation { annotation_type, .. } => {
@@ -7744,7 +7773,7 @@ impl Check {
         };
         if is_type_annotation_tag
             && !annotation_type_erroneous
-            && !self.is_type_annotation_tree(ctx, syms, a, is_type_parameter)
+            && !self.is_type_annotation_tree(ctx, syms, a, is_type_parameter, attr.as_deref_mut())
         {
             let annotation_ty = ctx.tree(a).ty.expect("annotation type");
             let info = crate::resources::compiler_properties::errors::annotation_type_not_applicable_to_type(
@@ -7768,6 +7797,7 @@ impl Check {
         syms: &crate::code::symtab::Symtab,
         a: TreeId,
         is_type_parameter: bool,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> bool {
         let annotation_type_ty = match &ctx.tree(a).kind {
             crate::tree::jc_tree::TreeKind::Annotation { annotation_type, .. } => *annotation_type,
@@ -7785,7 +7815,7 @@ impl Check {
             Some(ta) => ta,
             None => return false,
         };
-        let targets = ta_rc.annotation_targets(ctx, syms, tsym, None);
+        let targets = ta_rc.annotation_targets(ctx, syms, tsym, attr);
         let targets = match targets {
             Some(targets) => targets,
             None => return false,

@@ -400,19 +400,12 @@ impl TypeEnter {
                     .borrow()
                     .clone()
                     .expect("TypeEnter.attr must be injected");
-                // Java: TypeEnter.attr is a plain field, so the import check
-                // can re-enter Attr while an enclosing Attr call is running.
-                // Rust's RefCell would reject that; reuse the active mutable
-                // Attr the same way TypeEnter.complete does above.
-                let attr_ptr = attr_rc.as_ptr();
-                let mut borrowed = attr_rc.try_borrow_mut();
-                let attr: &mut crate::comp::attr::Attr = match borrowed {
-                    Ok(ref mut guard) => &mut **guard,
-                    // SAFETY: see the re-entrancy note above; the enclosing
-                    // Attr call suspends no iterator/borrow state here.
-                    Err(_) => unsafe { &mut *attr_ptr },
-                };
-                self.finish_imports(ctx, syms, tree, Some(&top_env), attr);
+                // This entry point is the Enter.complete path (Enter.java:627),
+                // which runs outside any Attr call: no enclosing &mut Attr can
+                // be live, so the local RefMut is the only borrow of the
+                // shared Attr. Attr-inside callers use the explicit-attr paths.
+                let mut attr = attr_rc.borrow_mut();
+                self.finish_imports(ctx, syms, tree, Some(&top_env), &mut attr);
             }
         }
         }
@@ -531,18 +524,15 @@ impl TypeEnter {
             .borrow()
             .clone()
             .expect("TypeEnter.attr must be injected");
-        if let Ok(mut attr) = attr_rc.try_borrow_mut() {
-            return self.complete_with_attr(ctx, syms, sym, &mut attr);
-        }
         // Java: TypeEnter.attr is a plain field, so completion can re-enter
-        // Attr while an enclosing Attr method is running. Rust's RefCell would
-        // reject that; recover the active mutable Attr the same way upstream
-        // reuses its single instance. The active borrow is suspended for the
-        // duration of this nested completion and no iterator/borrow state is
-        // held across it.
-        let attr_ptr = attr_rc.as_ptr();
-        // SAFETY: see the re-entrancy note above.
-        self.complete_with_attr(ctx, syms, sym, unsafe { &mut *attr_ptr })
+        // while an Attr call is running. The Rust port makes that Attr
+        // explicit instead: every Attr-inside caller completes through
+        // CompilerContext::complete_symbol_with_attr and reaches
+        // complete_with_attr directly, so this Attr-less entry point is only
+        // invoked when no enclosing &mut Attr exists. The local RefMut is then
+        // the sole borrow of the shared Attr.
+        let mut attr = attr_rc.borrow_mut();
+        self.complete_with_attr(ctx, syms, sym, &mut attr)
     }
 
     /// Java: public void complete(Symbol sym) with the enclosing &mut Attr
@@ -727,12 +717,11 @@ impl TypeEnter {
             .borrow()
             .clone()
             .expect("TypeEnter.attr must be injected");
-        if let Ok(mut attr) = attr_rc.try_borrow_mut() {
-            return self.hierarchy_complete_with_attr(ctx, syms, sym, phase, &mut attr);
-        }
-        let attr_ptr = attr_rc.as_ptr();
-        // SAFETY: the same re-entrancy adapter used by TypeEnter.complete.
-        self.hierarchy_complete_with_attr(ctx, syms, sym, phase, unsafe { &mut *attr_ptr })
+        // Same contract as TypeEnter.complete: an Attr-inside completion is
+        // routed through complete_symbol_with_attr and HierarchyCompleter's
+        // complete_with_attr override, so no enclosing &mut Attr exists here.
+        let mut attr = attr_rc.borrow_mut();
+        self.hierarchy_complete_with_attr(ctx, syms, sym, phase, &mut attr)
     }
 
     // ------------------------------------------------------------------
@@ -1255,7 +1244,7 @@ impl TypeEnter {
         tsym: SymbolId,
         env: &Rc<Env<AttrContext>>,
         tree: TreeId,
-        _attr: &mut crate::comp::attr::Attr,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         if ctx.sym(tsym).kind == Kind::TYP {
             let named_scope =
@@ -1267,8 +1256,10 @@ impl TypeEnter {
             let owner = ctx.sym(tsym).owner.expect("imported type owner");
             // Java: tsym.owner.members() completes packages and enclosing
             // classes lazily; Symbol.members() is a raw accessor in the port.
+            // The imports phase already holds the enclosing Attr, so pass it to
+            // a re-entrant source-class completion instead of dropping it.
             if ctx.sym(owner).kind == Kind::TYP || ctx.sym(owner).kind == Kind::PCK {
-                let _ = ctx.complete_symbol(syms, owner);
+                let _ = ctx.complete_symbol_with_attr(syms, owner, Some(attr));
             }
             let owner_members = ctx.sym(owner).members().expect("owner members");
             let new_scope = ctx.scope_import_type(named_scope, owner_members, owner_members, tsym);
@@ -1669,7 +1660,13 @@ impl TypeEnter {
                 if let Some(supertype_field) = supertype_field {
                     let chk_rc = Rc::clone(&self.chk);
                     let chk = Rc::clone(&chk_rc);
-                    chk.check_non_cyclic(ctx, syms, Some(ctx.tree(extending).pos), supertype_field);
+                    chk.check_non_cyclic(
+                        ctx,
+                        syms,
+                        Some(ctx.tree(extending).pos),
+                        supertype_field,
+                        Some(attr),
+                    );
                     if let crate::code::type_::TypeKindData::ClassType {
                         supertype_field, ..
                     } = &mut ctx.typ_mut(sym_ty).kind
@@ -1690,7 +1687,13 @@ impl TypeEnter {
                 {
                     let chk_rc = Rc::clone(&self.chk);
                     let chk = Rc::clone(&chk_rc);
-                    chk.check_non_cyclic(ctx, syms, Some(ctx.tree(first).pos), *interfaces.head());
+                    chk.check_non_cyclic(
+                        ctx,
+                        syms,
+                        Some(ctx.tree(first).pos),
+                        *interfaces.head(),
+                        Some(attr),
+                    );
                 }
                 if let crate::code::type_::TypeKindData::ClassType {
                     interfaces_field, ..
@@ -2357,7 +2360,7 @@ impl TypeEnter {
         if let Some(tvar_ty) = ctx.tree(param).ty {
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
-            chk.check_non_cyclic(ctx, syms, Some(ctx.tree(param).pos), tvar_ty);
+            chk.check_non_cyclic(ctx, syms, Some(ctx.tree(param).pos), tvar_ty, Some(attr));
         }
         }
         self.finish_class(ctx, syms, tree, default_constructor, env, attr);

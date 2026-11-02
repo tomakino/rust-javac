@@ -361,7 +361,32 @@ impl Resolve {
         c: SymbolId,
         check_inner: bool,
     ) -> bool {
-        is_accessible_class_free(&self.types, self.allow_modules, ctx, syms, env, c, check_inner)
+        self.is_accessible_class_with_attr(ctx, syms, env, c, check_inner, None)
+    }
+
+    /// isAccessible(Env, TypeSymbol, boolean) with the enclosing Attr of an
+    /// Attr-inside caller. Completing an access-checked source class runs
+    /// TypeEnter, which must reuse that Attr instead of looking it up through
+    /// the shared service cell.
+    fn is_accessible_class_with_attr(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &Symtab,
+        env: &Rc<Env<AttrContext>>,
+        c: SymbolId,
+        check_inner: bool,
+        attr: Option<&mut crate::comp::attr::Attr>,
+    ) -> bool {
+        is_accessible_class_free(
+            &self.types,
+            self.allow_modules,
+            ctx,
+            syms,
+            env,
+            c,
+            check_inner,
+            attr,
+        )
     }
 
     /// Java: private boolean isInnerSubClass(ClassSymbol c, Symbol base)
@@ -2040,8 +2065,9 @@ impl Resolve {
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         c: SymbolId,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> bool {
-        self.is_accessible_class(ctx, syms, env, c, false)
+        self.is_accessible_class_with_attr(ctx, syms, env, c, false, attr)
     }
 
     /// Java: Symbol findField(Env, Type site, Name name, TypeSymbol c)
@@ -2054,6 +2080,7 @@ impl Resolve {
         site: TypeId,
         name: &crate::util::name::Name,
         mut c: SymbolId,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         // while (c.type.hasTag(TYPEVAR)) c = c.type.getUpperBound().tsym;
         loop {
@@ -2070,7 +2097,7 @@ impl Resolve {
         }
         let mut best_so_far = self.var_not_found;
         let c_type = ctx.sym(c).ty.expect("type symbol type");
-        let members = self.member_scope(ctx, syms, c);
+        let members = self.member_scope(ctx, syms, c, attr.as_deref_mut());
         if let Some(members) = members {
             let candidates = ctx.scope_get_symbols_by_name_full(
                 members,
@@ -2094,18 +2121,34 @@ impl Resolve {
                 }
             }
         }
-        let st = self.types.supertype(ctx, syms, c_type, None);
+        let st = self.types.supertype(ctx, syms, c_type, attr.as_deref_mut());
         if ctx.typ(st).has_tag(TypeTag::CLASS) || ctx.typ(st).has_tag(TypeTag::TYPEVAR) {
             let st_tsym = ctx.typ(st).tsym.expect("supertype symbol");
-            let sym = self.find_field(ctx, syms, env, site, name, st_tsym);
+            let sym = self.find_field(
+                ctx,
+                syms,
+                env,
+                site,
+                name,
+                st_tsym,
+                attr.as_deref_mut(),
+            );
             best_so_far = best_of(ctx, best_so_far, sym);
         }
-        let interfaces = self.types.interfaces(ctx, syms, c_type);
+        let interfaces = self.types.interfaces_with_attr(ctx, syms, c_type, attr.as_deref_mut());
         let mut current = interfaces;
         while ctx.sym(best_so_far).kind != Kind::AMBIGUOUS && current.non_empty() {
             let interface = *current.head();
             let interface_tsym = ctx.typ(interface).tsym.expect("interface symbol");
-            let sym = self.find_field(ctx, syms, env, site, name, interface_tsym);
+            let sym = self.find_field(
+                ctx,
+                syms,
+                env,
+                site,
+                name,
+                interface_tsym,
+                attr.as_deref_mut(),
+            );
             if crate::code::symbol::symbol_exists(ctx, best_so_far)
                 && crate::code::symbol::symbol_exists(ctx, sym)
                 && ctx.sym(sym).owner != ctx.sym(best_so_far).owner
@@ -2126,6 +2169,7 @@ impl Resolve {
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         let mut best_so_far = self.var_not_found;
         let mut env1 = Rc::clone(env);
@@ -2167,7 +2211,15 @@ impl Resolve {
             let encl_type = ctx.sym(encl_sym).ty.expect("enclClass type");
             let sym = match sym {
                 Some(sym) => sym,
-                None => self.find_field(ctx, syms, &env1, encl_type, name, encl_sym),
+                None => self.find_field(
+                    ctx,
+                    syms,
+                    &env1,
+                    encl_type,
+                    name,
+                    encl_sym,
+                    attr.as_deref_mut(),
+                ),
             };
             if crate::code::symbol::symbol_exists(ctx, sym) {
                 if static_only
@@ -2189,7 +2241,15 @@ impl Resolve {
 
         let predef_class = syms.predef_class;
         let predef_type = ctx.sym(predef_class).ty.expect("predefClass type");
-        let sym = self.find_field(ctx, syms, env, predef_type, name, predef_class);
+        let sym = self.find_field(
+            ctx,
+            syms,
+            env,
+            predef_type,
+            name,
+            predef_class,
+            attr.as_deref_mut(),
+        );
         if crate::code::symbol::symbol_exists(ctx, sym) {
             return sym;
         }
@@ -2279,8 +2339,9 @@ impl Resolve {
         site: TypeId,
         name: &crate::util::name::Name,
         c: SymbolId,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
-        let members = self.member_scope(ctx, syms, c);
+        let members = self.member_scope(ctx, syms, c, attr.as_deref_mut());
         if let Some(members) = members {
             let candidates = ctx.scope_get_symbols_by_name_full(
                 members,
@@ -2323,7 +2384,7 @@ impl Resolve {
             let sym = self.find_member_type(ctx, syms, env, site, name, st_tsym, attr.as_deref_mut());
             best_so_far = best_of(ctx, best_so_far, sym);
         }
-        let interfaces = self.types.interfaces(ctx, syms, c_type);
+        let interfaces = self.types.interfaces_with_attr(ctx, syms, c_type, attr.as_deref_mut());
         let mut current = interfaces;
         while ctx.sym(best_so_far).kind != Kind::AMBIGUOUS && current.non_empty() {
             let interface = *current.head();
@@ -2351,9 +2412,10 @@ impl Resolve {
         site: TypeId,
         name: &crate::util::name::Name,
         c: SymbolId,
-        attr: Option<&mut crate::comp::attr::Attr>,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
-        let sym = self.find_immediate_member_type(ctx, syms, env, site, name, c);
+        let sym =
+            self.find_immediate_member_type(ctx, syms, env, site, name, c, attr.as_deref_mut());
         if sym != self.type_not_found {
             return sym;
         }
@@ -2370,6 +2432,7 @@ impl Resolve {
         scope: Option<crate::ids::ScopeId>,
         name: &crate::util::name::Name,
         recovery: RecoveryLoadClass,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         let mut best_so_far = self.type_not_found;
         let Some(scope) = scope else {
@@ -2386,7 +2449,7 @@ impl Resolve {
         );
         for candidate in candidates {
             let flat_name = symbol_flat_name(ctx, candidate);
-            let sym = self.load_class(ctx, syms, env, &flat_name, recovery);
+            let sym = self.load_class(ctx, syms, env, &flat_name, recovery, attr.as_deref_mut());
             if ctx.sym(best_so_far).kind == Kind::TYP
                 && ctx.sym(sym).kind == Kind::TYP
                 && best_so_far != sym
@@ -2460,8 +2523,15 @@ impl Resolve {
             let encl_class = env1.encl_class.expect("enclClass");
             let encl_sym = class_decl_symbol(ctx, encl_class).expect("enclClass symbol");
             let encl_type = ctx.sym(encl_sym).ty.expect("enclClass type");
-            let mut sym =
-                self.find_immediate_member_type(ctx, syms, &env1, encl_type, name, encl_sym);
+            let mut sym = self.find_immediate_member_type(
+                ctx,
+                syms,
+                &env1,
+                encl_type,
+                name,
+                encl_sym,
+                attr.as_deref_mut(),
+            );
             if tyvar != self.type_not_found {
                 let tyvar_kind = ctx.sym(tyvar).kind;
                 let tyvar_owner = ctx.sym(tyvar).owner.expect("tyvar owner");
@@ -2537,6 +2607,7 @@ impl Resolve {
                 named_scope,
                 name,
                 RecoveryLoadClass::NamedImportScopeRecovery,
+                attr.as_deref_mut(),
             );
             if crate::code::symbol::symbol_exists(ctx, sym) {
                 return sym;
@@ -2549,6 +2620,7 @@ impl Resolve {
                 toplevel_scope,
                 name,
                 RecoveryLoadClass::NoRecovery,
+                attr.as_deref_mut(),
             );
             if crate::code::symbol::symbol_exists(ctx, sym) {
                 return sym;
@@ -2561,6 +2633,7 @@ impl Resolve {
                 package_members,
                 name,
                 RecoveryLoadClass::NoRecovery,
+                attr.as_deref_mut(),
             );
             if crate::code::symbol::symbol_exists(ctx, sym) {
                 return sym;
@@ -2573,6 +2646,7 @@ impl Resolve {
                 star_scope,
                 name,
                 RecoveryLoadClass::StarImportScopeRecovery,
+                attr.as_deref_mut(),
             );
             if crate::code::symbol::symbol_exists(ctx, sym) {
                 return sym;
@@ -2778,6 +2852,7 @@ impl Resolve {
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
         recovery: RecoveryLoadClass,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         // Java: Resolve.loadClass uses the Context ClassFinder service
         // (Resolve.java:2049-2064); the ported wiring installs it for every
@@ -2790,7 +2865,7 @@ impl Resolve {
         let module = env_toplevel_module(ctx, env).expect("toplevel module");
         match finder.load_class(ctx, syms, module, name.clone()) {
             Ok(c) => {
-                if self.class_accessible(ctx, syms, env, c) {
+                if self.class_accessible(ctx, syms, env, c, attr.as_deref_mut()) {
                     c
                 } else {
                     self.new_access_error(ctx, syms, env, None, c)
@@ -3247,12 +3322,12 @@ impl Resolve {
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
         kind: crate::code::kinds::KindSelector,
-        attr: Option<&mut crate::comp::attr::Attr>,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         use crate::code::kinds::KindSelector;
         let mut best_so_far = self.type_not_found;
         if kind.contains(KindSelector::VAL) {
-            let sym = self.find_var(ctx, syms, env, name);
+            let sym = self.find_var(ctx, syms, env, name, attr.as_deref_mut());
             if crate::code::symbol::symbol_exists(ctx, sym) {
                 return sym;
             }
@@ -3284,8 +3359,10 @@ impl Resolve {
         pck: SymbolId,
         name: &crate::util::name::Name,
         kind: crate::code::kinds::KindSelector,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
-        let found = self.find_ident_in_package_internal(ctx, syms, env, pck, name, kind);
+        let found =
+            self.find_ident_in_package_internal(ctx, syms, env, pck, name, kind, attr);
         self.check_restricted_type(ctx, pos, found, name)
     }
 
@@ -3300,6 +3377,7 @@ impl Resolve {
         pck: SymbolId,
         name: &crate::util::name::Name,
         kind: crate::code::kinds::KindSelector,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         use crate::code::kinds::KindSelector;
         // Java: pck.members() completes the package lazily. Symbol.members()
@@ -3318,7 +3396,8 @@ impl Resolve {
             } else {
                 RecoveryLoadClass::NoRecovery
             };
-            let sym = self.load_class(ctx, syms, env, &fullname, recovery);
+            let sym =
+                self.load_class(ctx, syms, env, &fullname, recovery, attr.as_deref_mut());
             if crate::code::symbol::symbol_exists(ctx, sym) {
                 // don't allow programs to use flatnames
                 if ctx.sym(sym).name == *name {
@@ -3346,8 +3425,9 @@ impl Resolve {
         site: TypeId,
         name: &crate::util::name::Name,
         kind: crate::code::kinds::KindSelector,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
-        let found = self.find_ident_in_type_internal(ctx, syms, env, site, name, kind);
+        let found = self.find_ident_in_type_internal(ctx, syms, env, site, name, kind, attr);
         self.check_restricted_type(ctx, pos, found, name)
     }
 
@@ -3362,12 +3442,21 @@ impl Resolve {
         site: TypeId,
         name: &crate::util::name::Name,
         kind: crate::code::kinds::KindSelector,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         use crate::code::kinds::KindSelector;
         let mut best_so_far = self.type_not_found;
         if kind.contains(KindSelector::VAL) {
             let site_tsym = ctx.typ(site).tsym.expect("site symbol");
-            let sym = self.find_field(ctx, syms, env, site, name, site_tsym);
+            let sym = self.find_field(
+                ctx,
+                syms,
+                env,
+                site,
+                name,
+                site_tsym,
+                attr.as_deref_mut(),
+            );
             if crate::code::symbol::symbol_exists(ctx, sym) {
                 return sym;
             }
@@ -3375,7 +3464,15 @@ impl Resolve {
         }
         if kind.contains(KindSelector::TYP) {
             let site_tsym = ctx.typ(site).tsym.expect("site symbol");
-            let sym = self.find_member_type(ctx, syms, env, site, name, site_tsym, None);
+            let sym = self.find_member_type(
+                ctx,
+                syms,
+                env,
+                site,
+                name,
+                site_tsym,
+                attr.as_deref_mut(),
+            );
             if crate::code::symbol::symbol_exists(ctx, sym) {
                 return sym;
             }
@@ -7252,7 +7349,7 @@ impl Resolve {
         } else {
             site_tsym
         };
-        let Some(members) = self.member_scope(ctx, syms, tsym) else {
+        let Some(members) = self.member_scope(ctx, syms, tsym, Some(attr)) else {
             return self.method_not_found;
         };
         let symbols = {
@@ -7438,7 +7535,7 @@ impl Resolve {
         name: crate::util::name::Name,
     ) -> SymbolId {
         let c = ctx.typ(site).tsym.expect("internal field site symbol");
-        let sym = self.find_field(ctx, syms, env, site, &name, c);
+        let sym = self.find_field(ctx, syms, env, site, &name, c, None);
         if ctx.sym(sym).kind == crate::code::kinds::Kind::VAR {
             sym
         } else {
@@ -8092,6 +8189,7 @@ impl Resolve {
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         sym: SymbolId,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Option<crate::ids::ScopeId> {
         // Java: Symbol.members() (Symbol.java:1100-1110): when a completer is
         // still installed the symbol is completed first; this covers classes as
@@ -8099,10 +8197,14 @@ impl Resolve {
         // returning members_field, Symbol.java:1175-1178) and must not be
         // skipped just because an (uncompleted) member scope is already
         // installed by Enter.
-        if ctx.sym(sym).completer.is_some()
-            && let Err(failure) = ctx.complete_symbol(syms, sym)
-        {
-            crate::code::symbol::throw_completion_failure(failure);
+        if ctx.sym(sym).completer.is_some() {
+            let completed = match attr.as_deref_mut() {
+                Some(attr) => ctx.complete_symbol_with_attr(syms, sym, Some(attr)),
+                None => ctx.complete_symbol(syms, sym),
+            };
+            if let Err(failure) = completed {
+                crate::code::symbol::throw_completion_failure(failure);
+            }
         }
         ctx.sym(sym).members()
     }
@@ -8183,7 +8285,7 @@ impl Resolve {
         let mut best_so_far = best_so_far;
         let mut current = symbol_for(ctx, syms, &mut seen, intype);
         while let Some(s) = current {
-            if let Some(members) = self.member_scope(ctx, syms, s) {
+            if let Some(members) = self.member_scope(ctx, syms, s, Some(&mut *attr)) {
                 best_so_far = self.find_method_in_scope(
                     ctx,
                     syms,
@@ -8246,7 +8348,7 @@ impl Resolve {
                 let has_default =
                     (ctx.sym(tsym).flags_field & crate::code::flags::DEFAULT) != 0;
                 if !(default_ok && !has_default) {
-                    if let Some(members) = self.member_scope(ctx, syms, tsym) {
+                    if let Some(members) = self.member_scope(ctx, syms, tsym, Some(&mut *attr)) {
                         best_so_far = self.find_method_in_scope(
                             ctx,
                             syms,
@@ -10878,6 +10980,7 @@ mod check_channel_tests {
         env: &Rc<Env<AttrContext>>,
         c: SymbolId,
         check_inner: bool,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> bool {
         // 15.9.5.1: the signature of the anonymous constructor can refer to an
         // inaccessible type.
@@ -10903,8 +11006,14 @@ mod check_channel_tests {
         if c == syms.array_class {
             return true;
         }
-        // Java: ClassSymbol.flags() completes the class first.
-        if let Err(failure) = ctx.complete_symbol(syms, c) {
+        // Java: ClassSymbol.flags() completes the class first. Keep the
+        // caller's Attr on the completion path: a source class completed here
+        // runs TypeEnter while that Attr is already mutably borrowed.
+        let completed = match attr.as_deref_mut() {
+            Some(attr) => ctx.complete_symbol_with_attr(syms, c, Some(attr)),
+            None => ctx.complete_symbol(syms, c),
+        };
+        if let Err(failure) = completed {
             crate::code::symbol::throw_completion_failure(failure);
         }
         let access = ctx.sym(c).flags_field & flags::AccessFlags as i64;
@@ -11050,6 +11159,7 @@ mod check_channel_tests {
                 env,
                 tsym,
                 check_inner,
+                None,
             ) {
                 return false;
             }
@@ -11062,7 +11172,7 @@ mod check_channel_tests {
             Some(tsym) => tsym,
             None => return true,
         };
-        is_accessible_class_free(types, allow_modules, ctx, syms, env, tsym, check_inner)
+        is_accessible_class_free(types, allow_modules, ctx, syms, env, tsym, check_inner, None)
     }
 
 /// Convert a contract diagnostic argument to the formatter's Rc<dyn Any>

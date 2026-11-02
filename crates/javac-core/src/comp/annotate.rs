@@ -148,13 +148,21 @@ impl AnnotationTypeMetadata {
         metadata: &Rc<AnnotationTypeMetadata>,
         ctx: &mut CompilerContext,
         syms: &Symtab,
-        attr: Option<&mut crate::comp::attr::Attr>,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<(), CompletionFailure> {
         let Some(meta_data_for) = metadata.meta_data_for else {
             return Ok(());
         };
         while ctx.sym(meta_data_for).completer.is_some() {
-            ctx.complete_symbol(syms, meta_data_for)?;
+            // Java: metaDataFor.complete() runs while the caller's Attr is on
+            // the stack; keep passing that Attr so a source annotation type
+            // completed here does not look the service up re-entrantly.
+            match attr.as_deref_mut() {
+                Some(attr) => {
+                    ctx.complete_symbol_with_attr(syms, meta_data_for, Some(attr))?
+                }
+                None => ctx.complete_symbol(syms, meta_data_for)?,
+            }
         }
         let completer = {
             let mut completer = metadata.annotation_type_completer.borrow_mut();
@@ -1822,7 +1830,13 @@ impl AnnotateServices {
             // } (Annotate.java:832-835).
             if !self
                 .chk
-                .is_type_annotation_tree(ctx, syms, anno_tree, is_type_param)
+                .is_type_annotation_tree(
+                    ctx,
+                    syms,
+                    anno_tree,
+                    is_type_param,
+                    Some(&mut *attr),
+                )
             {
                 let container_name = crate::comp::resolve::symbol_display_name(
                     ctx,
@@ -2467,19 +2481,14 @@ impl TreeScannerVisitor for AnnotationTypeVisitor<'_> {
                 None => {
                     let attr_rc = Rc::clone(&services.attr);
                     // Java: Annotate reuses the single Attr instance while an
-                    // enclosing Attr call is running; RefCell would reject the
-                    // re-entrant borrow, so reuse the active Attr (see
-                    // TypeEnter.complete for the same adapter).
-                    let attr_ptr = attr_rc.as_ptr();
-                    let mut borrowed = attr_rc.try_borrow_mut();
-                    let attr: &mut crate::comp::attr::Attr = match borrowed {
-                        Ok(ref mut guard) => &mut **guard,
-                        // SAFETY: the active mutable Attr is the single
-                        // upstream instance; no aliasing guard is held here.
-                        Err(_) => unsafe { &mut *attr_ptr },
-                    };
+                    // enclosing Attr call is running. The Rust port makes that
+                    // Attr explicit: every Attr-inside metadata caller passes
+                    // it through SourceCompleter::complete, so self.attr is
+                    // None only for an Attr-free completion. The local RefMut
+                    // is then the sole borrow of the shared Attr.
+                    let mut attr = attr_rc.borrow_mut();
                     services
-                        .attribute_annotation(ctx, syms, tree, annotation_target_type, &env, attr)
+                        .attribute_annotation(ctx, syms, tree, annotation_target_type, &env, &mut attr)
                         .ok()
                 }
             };
@@ -2492,15 +2501,12 @@ impl TreeScannerVisitor for AnnotationTypeVisitor<'_> {
                     .ok(),
                 None => {
                     let attr_rc = Rc::clone(&services.attr);
-                    let attr_ptr = attr_rc.as_ptr();
-                    let mut borrowed = attr_rc.try_borrow_mut();
-                    let attr: &mut crate::comp::attr::Attr = match borrowed {
-                        Ok(ref mut guard) => &mut **guard,
-                        // SAFETY: see the annotation_target_type branch above.
-                        Err(_) => unsafe { &mut *attr_ptr },
-                    };
+                    // Same contract as the annotation_target_type branch:
+                    // self.attr is None only outside an Attr call, so this
+                    // local RefMut is the sole borrow.
+                    let mut attr = attr_rc.borrow_mut();
                     services
-                        .attribute_annotation(ctx, syms, tree, repeatable_type, &env, attr)
+                        .attribute_annotation(ctx, syms, tree, repeatable_type, &env, &mut attr)
                         .ok()
                 }
             };
