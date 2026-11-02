@@ -1,6 +1,7 @@
 //! Shared constant-pool state: the writeable pool helper and the signature
 //! generator used by the pool writer.
 
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
@@ -11,7 +12,21 @@ use crate::ids::{SymbolId, TypeId};
 use crate::jvm::pool_constant::PoolKey;
 use crate::jvm::pool_writer::{PoolConstantRef, PoolWriter};
 use crate::util::byte_buffer::ByteBuffer;
+use crate::util::fx_hasher::FxBuildHasher;
 use crate::util::name::Name;
+
+/// Constant-pool keys whose equality is plain field equality rather than
+/// the is_same_type rules: they can be indexed directly instead of
+/// scanning the pool. Name equality is identity (table + index), which is
+/// exactly what pool_keys_equal falls back to for these variants.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) enum FastPoolKey {
+    Utf8(Name),
+    Integer(i32),
+    Float(u32),
+    Long(i64),
+    Double(u64),
+}
 
 /// Java: PoolWriter.enterInner (PoolWriter.java:223-231): enter the class and
 /// its enclosing classes only when the class is nested (its owner has an
@@ -41,6 +56,9 @@ pub(crate) fn enter_inner_symbol(
 pub struct WriteablePoolHelper {
     /// Pool entry keys with their positions.
     pub keys_to_pos: Vec<(PoolKey, i32)>,
+    /// Plain-equality keys (Utf8 names, numeric constants) with their
+    /// positions, so the common constants do not scan keys_to_pos.
+    pub fast_index: HashMap<FastPoolKey, i32, FxBuildHasher>,
     /// The constant pool byte buffer.
     pub poolbuf: ByteBuffer,
     /// The next free pool index.
@@ -56,6 +74,7 @@ impl WriteablePoolHelper {
     pub(crate) fn new() -> WriteablePoolHelper {
         WriteablePoolHelper {
             keys_to_pos: Vec::new(),
+            fast_index: HashMap::default(),
             poolbuf: ByteBuffer::with_initial_size(PoolWriter::POOL_BUF_SIZE),
             current_index: 1,
             todo: VecDeque::new(),
@@ -66,6 +85,7 @@ impl WriteablePoolHelper {
     /// Reset the helper state.
     pub(crate) fn reset(&mut self) {
         self.keys_to_pos.clear();
+        self.fast_index.clear();
         self.current_index = 1;
         self.todo.clear();
         self.overflow_string = None;

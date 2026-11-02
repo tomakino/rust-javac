@@ -13,6 +13,7 @@ use crate::jvm::class_file;
 use crate::jvm::pool_constant::{
     BasicConstant, BsmKey, LoadableConstantRef, NameAndType, PoolConstant, PoolKey,
 };
+use crate::jvm::pool_state::FastPoolKey;
 use crate::util::name::Name;
 use crate::util::names::Names;
 
@@ -348,6 +349,17 @@ impl PoolWriter {
         }
     }
 
+/// Keys whose pool equality is plain field equality (see FastPoolKey).
+fn fast_pool_key(key: &PoolKey) -> Option<FastPoolKey> {
+    match key {
+        PoolKey::Utf8(name) => Some(FastPoolKey::Utf8(name.clone())),
+        PoolKey::Integer(value) => Some(FastPoolKey::Integer(*value)),
+        PoolKey::Float(value) => Some(FastPoolKey::Float(*value)),
+        PoolKey::Long(value) => Some(FastPoolKey::Long(*value)),
+        PoolKey::Double(value) => Some(FastPoolKey::Double(*value)),
+        _ => None,
+    }
+}
     /// Write a constant when it is new and return its pool index.
     fn write_if_needed(
         &mut self,
@@ -356,13 +368,23 @@ impl PoolWriter {
         constant: PoolConstantRef,
     ) -> i32 {
         let key = self.key_of(ctx, &constant);
-        for (existing, index) in &self.pool.keys_to_pos {
-            if pool_keys_equal(ctx, syms, &self.types, existing, &key) {
+        let fast = Self::fast_pool_key(&key);
+        if let Some(fast) = &fast {
+            if let Some(index) = self.pool.fast_index.get(fast) {
                 return *index;
+            }
+        } else {
+            for (existing, index) in &self.pool.keys_to_pos {
+                if pool_keys_equal(ctx, syms, &self.types, existing, &key) {
+                    return *index;
+                }
             }
         }
         let index = self.pool.current_index;
         self.pool.current_index += 1;
+        if let Some(fast) = fast {
+            self.pool.fast_index.insert(fast, index);
+        }
         self.pool.keys_to_pos.push((key, index));
         let first = self.pool.todo.is_empty();
         self.pool.todo.push_back(constant);
@@ -382,13 +404,13 @@ impl PoolWriter {
             PoolConstantRef::Utf8(name) => PoolKey::Utf8(name.clone()),
             _ => panic!("AssertionError: plain constant expected"),
         };
-        for (existing, index) in &self.pool.keys_to_pos {
-            if existing == &key {
-                return *index;
-            }
+        let fast = Self::fast_pool_key(&key).expect("plain constant key");
+        if let Some(index) = self.pool.fast_index.get(&fast) {
+            return *index;
         }
         let index = self.pool.current_index;
         self.pool.current_index += 1;
+        self.pool.fast_index.insert(fast, index);
         self.pool.keys_to_pos.push((key, index));
         self.write_constant_utf8(constant);
         index
