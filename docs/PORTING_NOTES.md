@@ -103,15 +103,21 @@ Source comments reference the id; the full record stays here.
 
 ### P2 progress
 
-- `MemberEnter` has no `&mut` methods, so its `Rc<RefCell<MemberEnter>>`
-  wrapper was removed (commit `c6119ca`); the type is now shared as
-  `Rc<MemberEnter>`.
-- `Warner` cannot be internalized before its callers change: `Infer.
-  instantiateMethod` clones the warning sink into a shared `Rc` and copies the
-  final lint state back through `WarnSync`; a `&Warner` parameter loses the
-  identity that copy-back needs. Change the interface to pass `Rc<Warner>`
-  (or return an updated sink) first, then move the storage into
-  `Cell`/`RefCell`.
+- P2 has converged twelve types so far: MemberEnter, Warner, TypeEnvs, Enter,
+  FileQueue, Todo, ModuleFinder, DeferredLintHandler, SpeculativeCache,
+  AnnotationTypeMetadata, Items, and ArgumentTypeData. `Rc<RefCell<` dropped
+  from 530 to 425 occurrences (about -20%); library tests stay at 746 and the
+  L2 gate (Gson/Guava/OkHttp byte parity) passed after the Items change.
+- Two integration shapes need interface-first work rather than bulk
+  replacement:
+  - `Warner` is now interiorly mutable and shared as `Rc<Warner>`; callers
+    that need the copy-back semantics use `Warner::copy_from`.
+  - `TypeEnter` is nested (`Enter.type_enter:
+    Rc<RefCell<Option<Rc<RefCell<TypeEnter>>>>>`, `self_ref:
+    RefCell<Weak<RefCell<TypeEnter>>>`) and its helper trait uses `&mut self`;
+    migrate the three storage sites and the trait before changing the type.
+- `PoolWriter` keeps `pool: WriteablePoolHelper` as a mutable field and mutates
+  several counters; internalize the helper first.
 
 ## PN-007 Panic-based exception channel
 
