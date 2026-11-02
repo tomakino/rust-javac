@@ -10,6 +10,5 @@ path = "src/main.rs"
 
 [dependencies]
 javac-core.workspace = true
-javac-tools.workspace = true
 javac-fs.workspace = true
 javac-strings.workspace = true

@@ -21,7 +21,6 @@ version = "0.1.0"
 dependencies = [
  "javac-jimage",
  "javac-jmod",
- "javac-zip",
 ]
 
 [[package]]
@@ -126,7 +125,6 @@ dependencies = [
  "javac-core",
  "javac-fs",
  "javac-strings",
- "javac-tools",
 ]
 
 [[package]]

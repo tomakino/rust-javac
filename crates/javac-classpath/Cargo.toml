@@ -7,4 +7,3 @@ license.workspace = true
 [dependencies]
 javac-jimage.workspace = true
 javac-jmod.workspace = true
-javac-zip.workspace = true
