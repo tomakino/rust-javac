@@ -1,37 +1,28 @@
-//! Generic linked lists.
+//! Immutable singly linked lists.
 //!
-//! A List<A> is an immutable singly linked list trailed by a sentinel;
-//! ListBuffer is the mutable builder. Java's null list reference maps to
-//! List::nil(), reference identity (==) maps to List::ptr_eq, and
-//! PartialEq implements content equality.
-//!
-//! Nodes are shared through Rc. The tail cell exists only to splice nodes
-//! while a list is being built (prependList, ListBuffer::append); the
-//! mutation is never observed by another list.
+//! [`List`] is a shared chain of nodes and [`ListBuffer`] builds one
+//! incrementally. Equality compares contents, while [`List::ptr_eq`] compares
+//! node identity. Tails are spliced only while a list is under construction.
 
 use std::cell::Cell;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 use super::assert;
 use super::list_buffer::ListBuffer;
 
-/// A node of a javac List.
+/// A node of a singly linked list.
 struct ListNode<A> {
-    /// The first element of the list, supposed to be immutable.
-    ///
-    /// Java: public A head;
+    /// The first element.
     head: A,
 
-    /// The remainder of the list except for its first element, supposed
-    /// to be immutable.
+    /// The rest of the list; `None` is the sentinel that ends every list.
     ///
-    /// Java: public List<A> tail;
-    ///
-    /// None is Java's null tail (the sentinel); the Cell models the mutability of
-    /// the Java field for setTail.
+    /// The cell lets a freshly built node be spliced before another list can
+    /// observe it.
     tail: Cell<Option<Rc<ListNode<A>>>>,
 }
 
@@ -51,55 +42,39 @@ impl<A> Drop for ListNode<A> {
 }
 
 impl<A> ListNode<A> {
-    /// Java: read of the tail field.
+    /// Returns a shared handle to the tail, or `None` at the sentinel.
+    ///
+    /// A splice replaces the cell contents, so reading the tail safely takes it
+    /// out, clones the handle, and restores it: two cell writes and one
+    /// refcount bump per step. Walkers therefore own the cursor rather than
+    /// borrowing through the cell.
     #[inline]
     fn tail(&self) -> Option<Rc<ListNode<A>>> {
-        // Read the shared tail without the take/clone/set round trip: the Cell
-        // is only mutated through set_tail on freshly built nodes, so reading
-        // it by pointer and cloning the Rc is observationally identical while
-        // avoiding two writes on every node visit in hot list walks.
-        // SAFETY: the Cell always holds a valid Option<Rc<ListNode<A>>>, and
-        // List is single-threaded (not Sync), so no concurrent mutation occurs.
-        unsafe { (*self.tail.as_ptr()).clone() }
+        let tail = self.tail.replace(None);
+        self.tail.set(tail.clone());
+        tail
     }
 
-    /// Borrow the tail chain for read-only walks, so a walk does not bump a
-    /// refcount per node.
-    ///
-    /// SAFETY (caller contract): the Cell always holds a valid
-    /// Option<Rc<ListNode<A>>>; List is single-threaded and set_tail only runs
-    /// on freshly built nodes, so the returned borrow stays valid as long as
-    /// the list owning this node is alive.
-    #[inline]
-    fn tail_ref(&self) -> Option<&ListNode<A>> {
-        unsafe { (*self.tail.as_ptr()).as_deref() }
-    }
-
-    /// Java: this.tail = tail.
+    /// Replaces this node's tail, splicing a chain while a list is built.
     #[inline]
     fn set_tail(&self, tail: Option<Rc<ListNode<A>>>) {
         self.tail.set(tail);
     }
 }
 
-/// A class for generic linked lists.
+/// A singly linked list.
 pub struct List<A> {
-    /// the Java List reference. None is the Java null reference, i.e. the
-    /// sentinel that terminates every list (an empty list is represented by that null).
+    /// `None` is the shared sentinel that ends every list.
     node: Option<Rc<ListNode<A>>>,
 }
 
 impl<A> List<A> {
-    /// Construct an empty list.
-    ///
-    /// Java: public static <A> List<A> nil() { return (List<A>)EMPTY_LIST; }
+    /// Returns the empty list.
     pub fn nil() -> List<A> {
         List { node: None }
     }
 
-    /// Construct a list given its head and tail.
-    ///
-    /// Java: List(A head, List<A> tail) { this.tail = tail; this.head = head; }
+    /// Returns a list whose head is `head` and whose tail is `tail`.
     fn cons(head: A, tail: &List<A>) -> List<A> {
         List {
             node: Some(Rc::new(ListNode {
@@ -109,7 +84,7 @@ impl<A> List<A> {
         }
     }
 
-    /// Java: reference comparison between two List values, i.e. the Java == operator.
+    /// Returns whether both lists refer to the same node.
     #[inline]
     pub fn ptr_eq(&self, other: &List<A>) -> bool {
         match (&self.node, &other.node) {
@@ -119,19 +94,15 @@ impl<A> List<A> {
         }
     }
 
-    /// Returns the list obtained from 'l' after removing all elements 'elem'
-    ///
-    /// Java: public static <A> List<A> filter(List<A> l, A elem)
+    /// Returns a copy of `l` without the elements equal to `elem`.
     pub fn filter(l: &List<A>, elem: &A) -> List<A>
     where
         A: Clone + PartialEq,
     {
-        // Java: Assert.checkNonNull(elem); — a Rust reference cannot be null. Java's element
-        // null check (a != null) is provided by the element type: null elements are represented
-        // as Option values, whose PartialEq compares them correctly.
-        // Java builds this by prepending then reversing; ListBuffer already
-        // appends in O(1) with a single chained construction, so skip the
-        // double allocation.
+        // Comparisons use `PartialEq`; a null element is represented by
+        // `Option` and compares structurally.
+        // Appending builds the result in one pass instead of prepending and
+        // reversing.
         let mut buf: ListBuffer<A> = ListBuffer::new();
         for a in l.iter() {
             if &a != elem {
@@ -141,7 +112,7 @@ impl<A> List<A> {
         buf.to_list()
     }
 
-    /// Java: public List<A> intersect(List<A> that)
+    /// Returns the elements of this list that also occur in `that`.
     pub fn intersect(&self, that: &List<A>) -> List<A>
     where
         A: Clone + PartialEq,
@@ -155,7 +126,7 @@ impl<A> List<A> {
         buf.to_list()
     }
 
-    /// Java: public List<A> diff(List<A> that)
+    /// Returns the elements of this list that do not occur in `that`.
     pub fn diff(&self, that: &List<A>) -> List<A>
     where
         A: Clone + PartialEq,
@@ -169,16 +140,13 @@ impl<A> List<A> {
         buf.to_list()
     }
 
-    /// Create a new list from the first n elements of this list
-    ///
-    /// Java: public List<A> take(int n)
+    /// Returns at most the first `n` elements.
     pub fn take(&self, n: i32) -> List<A>
     where
         A: Clone,
     {
         let mut buf: ListBuffer<A> = ListBuffer::new();
-        // Java: if (count++ == n) break;
-        // (a negative n never matches, so every element is appended, as in Java)
+        // A negative `n` matches no count, so every element is copied.
         for (count, el) in self.iter().enumerate() {
             if count == n as usize {
                 break;
@@ -188,30 +156,22 @@ impl<A> List<A> {
         buf.to_list()
     }
 
-    /// Construct a list consisting of given element.
-    ///
-    /// Java: public static <A> List<A> of(A x1)
+    /// Returns a one-element list.
     pub fn of(x1: A) -> List<A> {
         List::cons(x1, &List::nil())
     }
 
-    /// Construct a list consisting of given elements.
-    ///
-    /// Java: public static <A> List<A> of(A x1, A x2)
+    /// Returns a two-element list.
     pub fn of2(x1: A, x2: A) -> List<A> {
         List::of(x2).prepend(x1)
     }
 
-    /// Construct a list consisting of given elements.
-    ///
-    /// Java: public static <A> List<A> of(A x1, A x2, A x3)
+    /// Returns a three-element list.
     pub fn of3(x1: A, x2: A, x3: A) -> List<A> {
         List::of2(x2, x3).prepend(x1)
     }
 
-    /// Construct a list consisting of given elements.
-    ///
-    /// Java: public static <A> List<A> of(A x1, A x2, A x3, A... rest)
+    /// Returns a four-element list followed by `rest`.
     pub fn of4(x1: A, x2: A, x3: A, rest: Vec<A>) -> List<A> {
         List::from_array(Some(rest))
             .prepend(x3)
@@ -219,22 +179,18 @@ impl<A> List<A> {
             .prepend(x1)
     }
 
-    /// Construct a list consisting all elements of given array.
-    /// @param array an array; if null return an empty list
-    ///
-    /// Java: public static <A> List<A> from(A[] array)
+    /// Builds a list from an optional array; `None` means the empty list.
     pub fn from_array(array: Option<Vec<A>>) -> List<A> {
         let mut xs = List::nil();
         if let Some(array) = array {
             for a in array.into_iter().rev() {
-                // Java: xs = new List<>(array[i], xs);
                 xs = List::cons(a, &xs);
             }
         }
         xs
     }
 
-    /// Java: public static <A> List<A> from(Iterable<? extends A> coll)
+    /// Builds a list by appending every item of `coll` in order.
     pub fn from_iterable(coll: impl IntoIterator<Item = A>) -> List<A>
     where
         A: Clone,
@@ -246,11 +202,7 @@ impl<A> List<A> {
         xs.to_list()
     }
 
-    /// Construct a list consisting of a given number of identical elements.
-    /// @param len    The number of elements in the list.
-    /// @param init   The value of each element.
-    ///
-    /// Java: @Deprecated public static <A> List<A> fill(int len, A init)
+    /// Returns a list of `len` copies of `init`.
     pub fn fill(len: i32, init: A) -> List<A>
     where
         A: Clone,
@@ -258,62 +210,59 @@ impl<A> List<A> {
         let mut l = List::nil();
         let mut i = 0;
         while i < len {
-            // Java: l = new List<>(init, l);
             l = List::cons(init.clone(), &l);
             i += 1;
         }
         l
     }
 
-    /// Does list have no elements?
-    ///
-    /// Java: public boolean isEmpty() { return tail == null; }
+    /// Returns whether the list has no elements.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.node.is_none()
     }
 
-    /// Does list have elements?
-    ///
-    /// Java: public boolean nonEmpty() { return tail != null; }
+    /// Returns whether the list has at least one element.
     #[inline]
     pub fn non_empty(&self) -> bool {
         self.node.is_some()
     }
 
-    /// Return the number of elements in this list.
-    ///
-    /// Java: public int length()
+    /// Returns the number of elements.
     pub fn length(&self) -> i32 {
         let mut len = 0;
-        let mut cur = self.node.as_deref();
+        let mut cur = self.node.clone();
         while let Some(node) = cur {
             len += 1;
-            cur = node.tail_ref();
+            cur = node.tail();
         }
         len
     }
 
-    /// Java: public int size() { return length(); }
+    /// Returns the number of elements; an alias for [`length`](Self::length).
     pub fn size(&self) -> i32 {
         self.length()
     }
 
-    /// Java: public List<A> setTail(List<A> tail) { this.tail = tail; return tail; }
+    /// Replaces the tail of this list with `tail` and returns `tail`.
+    ///
+    /// # Panics
+    ///
+    /// Panics when this list is the empty sentinel, which has no node to splice.
     pub fn set_tail(&mut self, tail: List<A>) -> List<A> {
         match &self.node {
             Some(node) => node.set_tail(tail.node.clone()),
-            // Java: the EMPTY_LIST singleton overrides setTail to throw
-            // UnsupportedOperationException; a Rust None is that null reference.
+            // The sentinel has no node whose tail can be replaced.
             None => panic!("java.util.UnsupportedOperationException"),
         }
         tail
     }
 
-    /// Returns the first element of the list.
+    /// Returns the first element.
     ///
-    /// Java: public A head; — reading the field on the null sentinel is a
-    /// NullPointerException, which is what the empty-list panic models.
+    /// # Panics
+    ///
+    /// Panics on the empty list.
     #[inline]
     pub fn head(&self) -> &A {
         match &self.node {
@@ -322,9 +271,7 @@ impl<A> List<A> {
         }
     }
 
-    /// Returns the remainder of the list except for its first element.
-    ///
-    /// Java: public List<A> tail; — null on the sentinel.
+    /// Returns the list after its first element.
     #[inline]
     pub fn tail(&self) -> List<A> {
         match &self.node {
@@ -333,19 +280,13 @@ impl<A> List<A> {
         }
     }
 
-    /// Prepend given element to front of list, forming and returning
-    /// a new list.
-    ///
-    /// Java: public List<A> prepend(A x) { return new List<>(x, this); }
+    /// Returns a new list with `x` in front.
     #[inline]
     pub fn prepend(&self, x: A) -> List<A> {
         List::cons(x, self)
     }
 
-    /// Prepend given list of elements to front of list, forming and returning
-    /// a new list.
-    ///
-    /// Java: public List<A> prependList(List<A> xs)
+    /// Returns this list preceded by the elements of `xs`.
     pub fn prepend_list(&self, xs: &List<A>) -> List<A>
     where
         A: Clone,
@@ -362,10 +303,11 @@ impl<A> List<A> {
         // return this.prependList(xs.tail).prepend(xs.head);
         let mut result = self.clone();
         let mut rev = xs.reverse();
-        // Java: Assert.check(rev != xs); — reference comparison, hence ptr_eq.
+        // `reverse` always allocates fresh nodes, so the identity check holds;
+        // the loop below reuses those nodes for the splice.
         assert::check(!rev.ptr_eq(xs));
-        // since xs.reverse() returned a new list, we can reuse the
-        // individual List objects, instead of allocating new ones.
+        // `reverse` allocated fresh nodes, so they can be reused instead of
+        // allocated again.
         while rev.non_empty() {
             let mut h = rev;
             rev = h.tail();
@@ -375,11 +317,9 @@ impl<A> List<A> {
         result
     }
 
-    /// Reverse list.
-    /// If the list is empty or a singleton, then the same list is returned.
-    /// Otherwise a new list is formed.
+    /// Returns a new list with the elements in reverse order.
     ///
-    /// Java: public List<A> reverse()
+    /// An empty or singleton list is returned unchanged.
     pub fn reverse(&self) -> List<A>
     where
         A: Clone,
@@ -389,24 +329,18 @@ impl<A> List<A> {
             return self.clone();
         }
 
-        // Walk the shared nodes by reference: only the element is cloned, so a
-        // reversal no longer bumps the refcount of every node on the way.
+        // Each step owns the next node, so the source chain stays alive while
+        // the reversed chain is built.
         let mut rev = List::nil();
-        let mut cur = self.node.as_deref();
+        let mut cur = self.node.clone();
         while let Some(node) = cur {
-            // Java: rev = new List<>(l.head, rev);
             rev = List::cons(node.head.clone(), &rev);
-            // SAFETY: same invariant as ListNode::tail; the Cell is only mutated
-            // on freshly built nodes and `self` keeps the chain alive here.
-            cur = node.tail_ref();
+            cur = node.tail();
         }
         rev
     }
 
-    /// Append given element at length, forming and returning
-    /// a new list.
-    ///
-    /// Java: public List<A> append(A x) { return of(x).prependList(this); }
+    /// Returns a new list with `x` at the end.
     pub fn append(&self, x: A) -> List<A>
     where
         A: Clone,
@@ -414,10 +348,7 @@ impl<A> List<A> {
         List::of(x).prepend_list(self)
     }
 
-    /// Append given list at length, forming and returning
-    /// a new list.
-    ///
-    /// Java: public List<A> appendList(List<A> x) { return x.prependList(this); }
+    /// Returns a new list with the elements of `x` at the end.
     pub fn append_list(&self, x: &List<A>) -> List<A>
     where
         A: Clone,
@@ -425,9 +356,7 @@ impl<A> List<A> {
         x.prepend_list(self)
     }
 
-    /// Append given list buffer at length, forming and returning a new list.
-    ///
-    /// Java: public List<A> appendList(ListBuffer<A> x) { return appendList(x.toList()); }
+    /// Returns a new list with the elements of the buffer at the end.
     pub fn append_list_buffer(&self, x: &ListBuffer<A>) -> List<A>
     where
         A: Clone,
@@ -435,120 +364,101 @@ impl<A> List<A> {
         self.append_list(&x.to_list())
     }
 
-    /// Copy successive elements of this list into a new vector.
-    ///
-    /// Java: public <T> T[] toArray(T[] vec) — a Java reference array is a Vec in Rust.
+    /// Copies the elements into a new vector.
     pub fn to_vec(&self) -> Vec<A>
     where
         A: Clone,
     {
         let mut result = Vec::new();
-        let mut cur = self.node.as_deref();
+        let mut cur = self.node.clone();
         while let Some(node) = cur {
             result.push(node.head.clone());
-            cur = node.tail_ref();
+            cur = node.tail();
         }
         result
     }
 
-    /// Form a string listing all elements with given separator character.
-    ///
-    /// Java: public String toString(String sep)
+    /// Formats the elements separated by `sep`.
     pub fn to_string_sep(&self, sep: &str) -> String
     where
         A: fmt::Display,
     {
-        let Some(first) = self.node.as_ref() else {
+        let Some(first) = self.node.clone() else {
             return String::new();
         };
         use std::fmt::Write;
         let mut buf = String::new();
         let _ = write!(buf, "{}", first.head);
-        let mut cur = first.tail_ref();
+        let mut cur = first.tail();
         while let Some(node) = cur {
             buf.push_str(sep);
             let _ = write!(buf, "{}", node.head);
-            cur = node.tail_ref();
+            cur = node.tail();
         }
         buf
     }
 
-    /// Are the two lists the same?
-    ///
-    /// Java: public static boolean equals(List<?> xs, List<?> ys)
+    /// Returns whether two lists have equal elements.
     pub fn equals(xs: &List<A>, ys: &List<A>) -> bool
     where
         A: PartialEq,
     {
-        let mut x = xs.node.as_deref();
-        let mut y = ys.node.as_deref();
+        let mut x = xs.node.clone();
+        let mut y = ys.node.clone();
         loop {
-            match (x, y) {
+            match (x.take(), y.take()) {
                 (None, None) => return true,
                 (Some(xn), Some(yn)) => {
-                    // Java: xs.head == null ? ys.head == null : xs.head.equals(ys.head) — the
-                    // Option element type handles the null case through PartialEq.
                     if xn.head != yn.head {
                         return false;
                     }
-                    x = xn.tail_ref();
-                    y = yn.tail_ref();
+                    x = xn.tail();
+                    y = yn.tail();
                 }
                 _ => return false,
             }
         }
     }
 
-    /// Does the list contain the specified element?
-    ///
-    /// Java: public boolean contains(Object x)
+    /// Returns whether the list contains `x`.
     pub fn contains(&self, x: &A) -> bool
     where
         A: PartialEq,
     {
-        let mut cur = self.node.as_deref();
+        let mut cur = self.node.clone();
         while let Some(node) = cur {
             if &node.head == x {
                 return true;
             }
-            cur = node.tail_ref();
+            cur = node.tail();
         }
         false
     }
 
-    /// The last element in the list, if any, or null.
-    ///
-    /// Java: public A last() {
-    ///     A last = null;
-    ///     List<A> t = this;
-    ///     while (t.tail != null) { last = t.head; t = t.tail; }
-    ///     return last;
-    /// }
+    /// Returns the last element, or `None` when the list is empty.
     pub fn last(&self) -> Option<A>
     where
         A: Clone,
     {
         let mut last = None;
-        let mut cur = self.node.as_deref();
+        let mut cur = self.node.clone();
         while let Some(node) = cur {
             last = Some(node.head.clone());
-            cur = node.tail_ref();
+            cur = node.tail();
         }
         last
     }
 
-    /// Java: public <Z> List<Z> map(Function<A, Z> mapper)
+    /// Returns a list with `mapper` applied to every element.
     pub fn map<Z, F>(&self, mut mapper: F) -> List<Z>
     where
         A: Clone,
         Z: Clone,
         F: FnMut(&A) -> Z,
     {
-        // Java: boolean changed = false;... changed |= (z != a);
-        // Rust: Java compares the mapped value with the input reference and returns
-        // this when the mapper is the identity; Rust cannot compare values of unrelated types
-        // and the list is immutable, so a fresh list with the same elements is returned instead.
-        // The only observable difference would be List reference identity, not contents.
+        // A fresh list is always built. When the mapper is the identity the
+        // contents are unchanged, but comparing the input and output types is
+        // not possible in Rust; only list reference identity could differ.
         let mut buf: ListBuffer<Z> = ListBuffer::new();
         for a in self.iter() {
             let z = mapper(&a);
@@ -557,30 +467,28 @@ impl<A> List<A> {
         buf.to_list()
     }
 
-    // REGISTERED(P3): public static <T> List<T> convert(Class<T> klass, List<?> list)
-    //
-    // Rust: convert runs a reflective element-type check (klass.cast) before the
-    // unchecked cast; Rust's type system performs that check statically at the ported call site
-    // (Type.getTypeArguments returns List<Type> whose elements are TypeVar), so no 1:1 runtime
-    // equivalent exists. Registered in docs/STATUS.md.
+    // Reflective element-type conversion has no Rust counterpart: the element
+    // type is checked statically, so no runtime cast is needed.
 
-    /// Java: public A get(int index)
+    /// Returns the element at `index`.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `index` is negative or beyond the end of the list.
     pub fn get(&self, index: i32) -> A
     where
         A: Clone,
     {
         if index < 0 {
-            // Java: throw new IndexOutOfBoundsException(String.valueOf(index));
             panic!("java.lang.IndexOutOfBoundsException: {}", index);
         }
 
-        // Java: for (int i = index; i-- > 0 && !l.isEmpty(); l = l.tail);
-        let mut cur = self.node.as_deref();
+        let mut cur = self.node.clone();
         let mut i = index;
         while i > 0 {
-            match cur {
+            match cur.take() {
                 Some(node) => {
-                    cur = node.tail_ref();
+                    cur = node.tail();
                     i -= 1;
                 }
                 None => break,
@@ -588,7 +496,6 @@ impl<A> List<A> {
         }
 
         if cur.is_none() {
-            // Java: throw new IndexOutOfBoundsException("Index: " + index + ", Size: " + size());
             panic!(
                 "java.lang.IndexOutOfBoundsException: Index: {}, Size: {}",
                 index,
@@ -598,47 +505,46 @@ impl<A> List<A> {
         cur.expect("get checked non-empty").head.clone()
     }
 
-    /// Java: public int indexOf(Object o)
+    /// Returns the index of the first occurrence of `o`, or `-1`.
     pub fn index_of(&self, o: &A) -> i32
     where
         A: PartialEq,
     {
         let mut i = 0;
-        let mut cur = self.node.as_deref();
+        let mut cur = self.node.clone();
         while let Some(node) = cur {
             if &node.head == o {
                 return i;
             }
-            cur = node.tail_ref();
+            cur = node.tail();
             i += 1;
         }
         -1
     }
 
-    /// Java: public int lastIndexOf(Object o)
+    /// Returns the index of the last occurrence of `o`, or `-1`.
     pub fn last_index_of(&self, o: &A) -> i32
     where
         A: PartialEq,
     {
         let mut last = -1;
         let mut i = 0;
-        let mut cur = self.node.as_deref();
+        let mut cur = self.node.clone();
         while let Some(node) = cur {
             if &node.head == o {
                 last = i;
             }
-            cur = node.tail_ref();
+            cur = node.tail();
             i += 1;
         }
         last
     }
 
-    /// An enumeration of all elements in this list.
-    ///
-    /// Java: public Iterator<A> iterator()
+    /// Returns an iterator over the elements.
     pub fn iter(&self) -> ListIter<'_, A> {
         ListIter {
-            cur: self.node.as_deref(),
+            cur: self.node.clone(),
+            _borrow: PhantomData,
         }
     }
 }
@@ -657,16 +563,19 @@ impl<A> Default for List<A> {
     }
 }
 
-/// Java: the Iterator<A> returned by List.iterator().
-/// The iterator borrows the shared nodes instead of owning a `List` copy, so
-/// walking a list no longer bumps a refcount per element.
+/// An iterator over a shared list.
+///
+/// The cursor owns a handle to the current node, so it never borrows through
+/// the mutable tail cell; the lifetime keeps the list immutably borrowed for
+/// the iterator's duration.
 pub struct ListIter<'a, A> {
-    /// Java: List<A> elems = List.this;
-    cur: Option<&'a ListNode<A>>,
+    cur: Option<Rc<ListNode<A>>>,
+    /// Ties the iterator to the source list borrow even though the cursor is owned.
+    _borrow: PhantomData<&'a A>,
 }
 
 impl<A> ListIter<'_, A> {
-    /// Java: public boolean hasNext() { return elems.tail != null; }
+    /// Returns whether more elements remain.
     #[inline]
     pub fn has_next(&self) -> bool {
         self.cur.is_some()
@@ -678,15 +587,14 @@ impl<A: Clone> Iterator for ListIter<'_, A> {
 
     #[inline]
     fn next(&mut self) -> Option<A> {
-        // Java: throw new NoSuchElementException(); the None result models it.
         let node = self.cur.take()?;
         let result = node.head.clone();
-        self.cur = node.tail_ref();
+        self.cur = node.tail();
         Some(result)
     }
 }
 
-/// Java: public boolean equals(Object other) and public static boolean equals(List, List)
+/// Content equality over the element chains.
 impl<A: PartialEq> PartialEq for List<A> {
     fn eq(&self, other: &Self) -> bool {
         List::equals(self, other)
@@ -695,7 +603,7 @@ impl<A: PartialEq> PartialEq for List<A> {
 
 impl<A: Eq> Eq for List<A> {}
 
-/// Java: public int hashCode() — h = h * 31 + (head == null ? 0 : head.hashCode())
+/// Hashes the elements with the list polynomial.
 impl<A: Hash> Hash for List<A> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let mut h: i32 = 1;
@@ -703,8 +611,8 @@ impl<A: Hash> Hash for List<A> {
         while let Some(node) = cur {
             let mut elem_hasher = std::collections::hash_map::DefaultHasher::new();
             node.head.hash(&mut elem_hasher);
-            // Rust: elements hash through Rust's Hasher; the exact int is not the Java
-            // Object.hashCode value, but the formula and its wrapping follow List.hashCode.
+            // Elements hash through the caller's hasher; the polynomial matches
+            // the list contract, but the integer is not a cross-language value.
             h = h.wrapping_mul(31).wrapping_add(elem_hasher.finish() as i32);
             cur = node.tail();
         }
@@ -712,7 +620,7 @@ impl<A: Hash> Hash for List<A> {
     }
 }
 
-/// Java: public String toString()
+/// Formats the elements separated by commas.
 impl<A: fmt::Display> fmt::Display for List<A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_string_sep(","))
@@ -736,7 +644,7 @@ impl<A: fmt::Debug> fmt::Debug for List<A> {
     }
 }
 
-/// Java: public static <Z> Collector<Z, ListBuffer<Z>, List<Z>> collector()
+/// Collects items by appending them in order.
 impl<A: Clone> FromIterator<A> for List<A> {
     fn from_iter<T: IntoIterator<Item = A>>(iter: T) -> List<A> {
         List::from_iterable(iter)
@@ -845,7 +753,7 @@ mod tests {
         let nil = list(&[]);
         assert!(nil.reverse().is_empty());
         let single = list(&[1]);
-        // Java: reverse() returns this for an empty or singleton list.
+        // An empty or singleton list is returned unchanged.
         assert!(single.reverse().ptr_eq(&single));
         let many = list(&[1, 2, 3]);
         let rev = many.reverse();
@@ -886,7 +794,7 @@ mod tests {
         let ret = l.set_tail(tail.clone());
         assert_eq!(l.to_vec(), vec![1, 2, 3]);
         assert!(ret.ptr_eq(&tail));
-        // Java: the EMPTY_LIST singleton throws UnsupportedOperationException
+        // Splicing the empty sentinel panics.
         let mut empty = List::<i32>::nil();
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -940,7 +848,7 @@ mod tests {
         assert_ne!(list(&[1, 2]), list(&[2, 1]));
         assert_eq!(List::<i32>::nil(), List::<i32>::nil());
         assert_ne!(list(&[1]), List::<i32>::nil());
-        // Java: List.of(null) is legal; Option models the null element.
+        // `Option` models a null element.
         let with_null: List<Option<i32>> = List::of(None);
         assert_eq!(with_null.to_vec(), vec![None]);
     }
@@ -991,7 +899,7 @@ mod tests {
         let a = list(&[1, 2]);
         let b = list(&[1, 2]);
         assert_eq!(a, b); // equals
-        assert!(!a.ptr_eq(&b)); // Java ==
+        assert!(!a.ptr_eq(&b)); // reference identity
         assert!(a.ptr_eq(&a.clone()));
         assert!(List::<i32>::nil().ptr_eq(&List::<i32>::nil()));
     }

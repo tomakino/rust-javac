@@ -1,26 +1,25 @@
-//! Generic arena container: the ADR 0001 ID/arena infrastructure.
+//! Grow-only arena storage addressed by compact indices.
 //!
-//! Arena<T> owns the elements, which are only reachable through arena indices; arenas only grow (ADR 0001 rule 8),
-//! and are released with CompilerContext when compilation ends. This module only provides the container, not compiler entities;
-//! CompilerContext (later task) holds the Symbol/Type/Tree/Scope arenas per ADR 0001.
-//!
-//! non-1:1 adapter file (Java mutable object graph -> arena + ID), see ADR 0001.
+//! `Arena<T>` owns its values and returns a `u32` index from [`push`](Arena::push);
+//! callers wrap that index in a domain ID. Elements are never removed, so an
+//! index remains valid for the arena's lifetime.
 
-/// A grow-only arena: push returns the new element index; callers build the matching ID from it.
+/// A grow-only arena whose elements are reached through indices.
 ///
-/// No Rc/RefCell: ownership belongs to the arena and access goes through IDs (ADR 0001 rule 4).
+/// The arena owns every value; callers never hold references into it across
+/// mutations, and indices are the only stable handles.
 #[derive(Debug, Clone)]
 pub struct Arena<T> {
     values: Vec<T>,
 }
 
 impl<T> Arena<T> {
-    /// Create an empty arena.
+    /// Creates an empty arena.
     pub const fn new() -> Arena<T> {
         Arena { values: Vec::new() }
     }
 
-    /// Append an element and return its arena index (the caller wraps it with the matching ID type new(index)).
+    /// Appends `value` and returns the index that identifies it.
     pub fn push(&mut self, value: T) -> u32 {
         let index = self.values.len();
         assert!(
@@ -31,56 +30,40 @@ impl<T> Arena<T> {
         index as u32
     }
 
-    /// Read an element by index; out-of-bounds is an internal error, asserted in debug builds (ADR 0001 rule 8).
+    /// Returns the element at `index`.
     ///
-    /// The debug path indexes the slice directly: a debug_assert followed by
-    /// get_unchecked would perform two bounds checks, because debug-assertions
-    /// also enables the ub_checks that get_unchecked carries. One check is
-    /// enough and produces the same panic message.
+    /// # Panics
+    ///
+    /// Panics when `index` is outside the arena. An out-of-range index means
+    /// the caller broke the arena/ID contract; it is an internal error, so the
+    /// bounds check is kept in every profile.
     #[inline]
-    #[cfg(debug_assertions)]
     pub fn get(&self, index: u32) -> &T {
         &self.values[index as usize]
     }
 
-    /// Read an element by index (release: no bounds check).
+    /// Returns the element at `index` mutably.
     ///
-    /// SAFETY: the ID/arena contract (ADR 0001 rule 8) guarantees the index
-    /// came from this arena, and an out-of-range index is an internal error,
-    /// not user input.
+    /// # Panics
+    ///
+    /// Panics when `index` is outside the arena, for the same reason as
+    /// [`get`](Arena::get).
     #[inline]
-    #[cfg(not(debug_assertions))]
-    pub fn get(&self, index: u32) -> &T {
-        unsafe { self.values.get_unchecked(index as usize) }
-    }
-
-    /// Read an element mutably by index; out-of-bounds is an internal error, asserted in debug builds (ADR 0001 rule 8).
-    #[inline]
-    #[cfg(debug_assertions)]
     pub fn get_mut(&mut self, index: u32) -> &mut T {
         &mut self.values[index as usize]
     }
 
-    /// Read an element mutably by index (release: no bounds check).
-    ///
-    /// SAFETY: see Arena::get.
-    #[inline]
-    #[cfg(not(debug_assertions))]
-    pub fn get_mut(&mut self, index: u32) -> &mut T {
-        unsafe { self.values.get_unchecked_mut(index as usize) }
-    }
-
-    /// Number of elements.
+    /// Returns the number of elements.
     pub fn len(&self) -> usize {
         self.values.len()
     }
 
-    /// Whether the arena is empty.
+    /// Returns whether the arena is empty.
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
     }
 
-    /// Iterate over all elements in index order.
+    /// Iterates over the elements in index order.
     pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
         self.values.iter()
     }
