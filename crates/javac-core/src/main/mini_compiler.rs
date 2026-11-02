@@ -1289,8 +1289,10 @@ impl MiniCompiler {
             let prev_source = self.log.use_source(sourcefile);
             let make = Rc::clone(&self.make);
             let syms_guard = &*self.syms;
+            let attr_rc = Rc::clone(&self.attr);
+            let mut attr = attr_rc.borrow_mut();
             self.flow
-                .analyze_tree(&mut self.ctx, &syms_guard, env, &make);
+                .analyze_tree(&mut self.ctx, &syms_guard, env, &make, Some(&mut attr));
             self.log.use_source(prev_source);
             // JavaCompiler.flow: compileStates.put(env, CompileState.FLOW)
             // (JavaCompiler.java:1380-1381).

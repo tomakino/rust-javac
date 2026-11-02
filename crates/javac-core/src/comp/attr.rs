@@ -9789,7 +9789,7 @@ impl Attr {
                         .clone()
                         .expect("AssertionError: flow service must be installed");
                     let make = Rc::clone(&self.make);
-                    flow_rc.analyze_lambda_thrown_types(ctx, syms, &env, that, &make)
+                    flow_rc.analyze_lambda_thrown_types(ctx, syms, &env, that, &make, Some(self))
                 };
                 if !self.check_ex_constraints(
                     ctx,
@@ -10863,7 +10863,6 @@ pub fn wire_attr_services(
         Rc::clone(&diags),
         lint.clone(),
         source,
-        Some(Rc::clone(&attr)),
     ));
     // 5. Analyzer (Analyzer.java:120-140) — the Attr self-cell mirrors
     // Context.get(Attr.class).

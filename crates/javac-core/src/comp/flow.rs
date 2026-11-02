@@ -508,10 +508,6 @@ pub struct Flow {
     pub attr_env: Rc<RefCell<Option<Rc<Env<AttrContext>>>>>,
     pub make: Rc<RefCell<Option<Rc<TreeMaker>>>>,
     pub allow_effectively_final_in_inner_classes: bool,
-    /// Java: the Attr service (Flow.java's outer Attr) used by the resource
-    /// close() lookup in FlowAnalyzer (registered adapter: the Rust Flow keeps
-    /// the Attr cell instead of the Java inner-class outer pointer).
-    pub attr: Option<Rc<RefCell<crate::comp::attr::Attr>>>,
 }
 
 impl Flow {
@@ -527,7 +523,6 @@ impl Flow {
         diags: Rc<Factory>,
         lint: Rc<Lint>,
         source: crate::code::source::Source,
-        attr: Option<Rc<RefCell<crate::comp::attr::Attr>>>, 
     ) -> Flow {
         Flow {
             names,
@@ -542,7 +537,6 @@ impl Flow {
             make: Rc::new(RefCell::new(None)),
             allow_effectively_final_in_inner_classes:
                 Feature::EFFECTIVELY_FINAL_IN_INNER_CLASSES.allowed_in_source(source),
-            attr,
         }
     }
 
@@ -2553,6 +2547,8 @@ pub struct FlowAnalyzer<'a> {
     inferred_thrown_types: List<TypeId>,
     lambda_mode: bool,
     in_lambda: bool,
+    /// The caller's Attr, used only by the resource close() lookup.
+    attr: Option<&'a mut crate::comp::attr::Attr>,
 }
 
 impl<'a> FlowAnalyzer<'a> {
@@ -2560,6 +2556,7 @@ impl<'a> FlowAnalyzer<'a> {
     pub fn new(
         flow: &'a Flow,
         syms: &'a crate::code::symtab::Symtab,
+        attr: Option<&'a mut crate::comp::attr::Attr>,
     ) -> FlowAnalyzer<'a> {
         FlowAnalyzer {
             flow,
@@ -2574,6 +2571,7 @@ impl<'a> FlowAnalyzer<'a> {
             inferred_thrown_types: List::nil(),
             lambda_mode: false,
             in_lambda: false,
+            attr,
         }
     }
 
@@ -2581,8 +2579,9 @@ impl<'a> FlowAnalyzer<'a> {
     pub fn new_lambda(
         flow: &'a Flow,
         syms: &'a crate::code::symtab::Symtab,
+        attr: Option<&'a mut crate::comp::attr::Attr>,
     ) -> FlowAnalyzer<'a> {
-        let mut analyzer = FlowAnalyzer::new(flow, syms);
+        let mut analyzer = FlowAnalyzer::new(flow, syms, attr);
         analyzer.lambda_mode = true;
         analyzer
     }
@@ -3368,12 +3367,10 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                 }
                 let site = self.flow.types.skip_type_vars_public(ctx, sup);
                 let close_method = {
-                    let attr_rc = self
-                        .flow
+                    let attr = self
                         .attr
-                        .as_ref()
+                        .as_deref_mut()
                         .expect("AssertionError: the Attr service is not installed on Flow");
-                    let mut attr = attr_rc.borrow_mut();
                     let chk_rc = Rc::clone(&self.flow.chk);
                     let chk = Rc::clone(&chk_rc);
                     let infer = Rc::clone(&attr.infer);
@@ -3388,7 +3385,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                         ctx,
                         &syms,
                         &self.flow.types,
-                        &mut attr,
+                        attr,
                         &chk,
                         &infer,
                         Some(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(resource).pos))),
@@ -5456,18 +5453,19 @@ fn capture_default_visit_lambda(v: &mut CaptureAnalyzer, ctx: &mut CompilerConte
 impl Flow {
     /// Java: public void analyzeTree(Env<AttrContext> env, TreeMaker make)
     /// (Flow.java:219-224)
-    pub fn analyze_tree(
-        &self,
+    pub fn analyze_tree<'a>(
+        &'a self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         env: &Rc<Env<AttrContext>>,
         make: &Rc<TreeMaker>,
+        attr: Option<&'a mut crate::comp::attr::Attr>,
     ) {
         *self.make.borrow_mut() = Some(Rc::clone(make));
         let tree = env.tree.expect("analyzeTree env.tree");
         AliveAnalyzer::new(self, syms).analyze_tree(ctx, env, tree);
         AssignAnalyzer::new(self, syms).analyze_tree(ctx, env, tree);
-        FlowAnalyzer::new(self, syms).analyze_tree(ctx, env, tree);
+        FlowAnalyzer::new(self, syms, attr).analyze_tree(ctx, env, tree);
         CaptureAnalyzer::new(self).analyze_tree(ctx, env, tree);
         *self.make.borrow_mut() = None;
     }
@@ -5497,13 +5495,14 @@ impl Flow {
 
     /// Java: public List<Type> analyzeLambdaThrownTypes(Env, JCLambda,
     /// TreeMaker) (Flow.java:245-261)
-    pub fn analyze_lambda_thrown_types(
-        &self,
+    pub fn analyze_lambda_thrown_types<'a>(
+        &'a self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         env: &Rc<Env<AttrContext>>,
         that: TreeId,
         make: &Rc<TreeMaker>,
+        attr: Option<&'a mut crate::comp::attr::Attr>,
     ) -> List<TypeId> {
         self.log
             .install_diagnostic_handler(DiagnosticHandler::Discard { prev: None });
@@ -5513,7 +5512,7 @@ impl Flow {
             .and_then(|encl_class| class_symbol(ctx, encl_class));
         let scope = ctx.scope_create(enclosed_class);
         AssignAnalyzer::new_lambda(self, syms, scope).analyze_tree(ctx, env, that);
-        let mut flow_analyzer = FlowAnalyzer::new_lambda(self, syms);
+        let mut flow_analyzer = FlowAnalyzer::new_lambda(self, syms, attr);
         flow_analyzer.analyze_tree(ctx, env, that);
         self.log.pop_diagnostic_handler();
         *self.make.borrow_mut() = None;
@@ -5742,7 +5741,6 @@ mod tests {
             Rc::clone(&diags),
             Rc::clone(&lint),
             source,
-            None,
         );
         let make = Rc::new(TreeMaker::new(Some(Rc::clone(&names))));
         // An empty ClassDecl with a class symbol exercises every analyzer's
@@ -5785,7 +5783,7 @@ mod tests {
             base_clause: false,
         });
         let syms_guard = &*syms;
-        flow.analyze_tree(&mut ctx, syms_guard, &env, &make);
+        flow.analyze_tree(&mut ctx, syms_guard, &env, &make, None);
         assert_eq!(log.nerrors.get(), 0);
     }
 
@@ -5859,7 +5857,6 @@ mod tests {
             Rc::clone(&diags),
             Rc::clone(&lint),
             source,
-            None,
         );
         let syms_guard = &*syms;
         let mut analyzer = AliveAnalyzer::new(&flow, syms_guard);
