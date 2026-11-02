@@ -33,13 +33,11 @@ use crate::util::unshared_name_table::UnsharedNameTable;
 pub struct NameTableHandle {
     inner: RefCell<NameTableInner>,
     names: RefCell<Option<Weak<NamesStd>>>,
-    /// Decoded UTF-16 views, keyed by the name's table index. Names are
-    /// interned, so the same bytes are decoded repeatedly by symbol and
-    /// diagnostic code; this cache removes that repeated work.
     /// Decoded UTF-16 views, indexed by the name's table index. Names are
-    /// interned and indices are dense from zero, so a vector lookup replaces
-    /// the former hash map (the table-index lookup is on the hot path).
-    java_strings: RefCell<Vec<Option<Rc<JavaString>>>>,
+    /// interned, so the same bytes are decoded repeatedly by symbol and
+    /// diagnostic code; this cache removes that repeated work. Indices are
+    /// dense from zero, so a vector lookup replaces the former hash map.
+    java_strings: RefCell<Vec<Option<JavaString>>>,
 }
 
 enum NameTableInner {
@@ -264,20 +262,21 @@ impl Name {
     /// Java: public String toString() { return Convert.utf2string(getByteArray(), getByteOffset(), getByteLength()); }
     pub fn to_java_string(&self) -> JavaString {
         let index = self.index as usize;
-        if let Some(Some(cached)) = self.table.java_strings.borrow().get(index) {
-            return (**cached).clone();
+        {
+            let cache = self.table.java_strings.borrow();
+            if let Some(Some(cached)) = cache.get(index) {
+                return cached.clone();
+            }
         }
-        let decoded = Rc::new(
-            self.with_bytes(|bytes| convert::utf2string_range(bytes, 0, self.length)),
-        );
+        let decoded = self.with_bytes(|bytes| convert::utf2string_range(bytes, 0, self.length));
         {
             let mut cache = self.table.java_strings.borrow_mut();
             if cache.len() <= index {
                 cache.resize(index + 1, None);
             }
-            cache[index] = Some(Rc::clone(&decoded));
+            cache[index] = Some(decoded.clone());
         }
-        (*decoded).clone()
+        decoded
     }
 
     /// Java: public byte[] toUtf()
