@@ -40,6 +40,7 @@ pub mod operators;
 pub mod post_attr_analyzer;
 pub mod resolve;
 pub mod result_info;
+pub mod type_display;
 pub mod todo;
 pub mod trans_patterns;
 pub mod lambda_to_method;
