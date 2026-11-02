@@ -19,5 +19,6 @@ pub mod parser;
 pub mod platform;
 pub mod processing;
 pub mod resources;
+pub mod session;
 pub mod tree;
 pub mod util;
