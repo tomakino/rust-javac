@@ -444,7 +444,7 @@ pub(crate) fn new_captured_type_ctx(
 /// InferenceBound ib_t, Warner warn) (Infer.java:780-790)
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn check_bound(
-    infer: &Infer,
+    _infer: &Infer,
     ctx: &mut CompilerContext,
     syms: &Symtab,
     types: &Types,

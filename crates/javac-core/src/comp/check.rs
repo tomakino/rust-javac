@@ -10265,7 +10265,7 @@ impl Check {
                     }
                 }
             }
-            sup = { self.types.supertype(ctx, syms, sup, None) };
+            sup = self.types.supertype(ctx, syms, sup, None);
         }
     }
 }

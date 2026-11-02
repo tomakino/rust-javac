@@ -1825,7 +1825,7 @@ impl Infer {
         let deferred_context = Rc::new(defer_context);
         // resolveContext.methodCheck.argumentsAcceptable(env, deferredAttrContext,
         // argtypes, mt.getParameterTypes(), warn);
-        let argtypes_for_final_check = argtypes.clone();
+        let _argtypes_for_final_check = argtypes.clone();
         let method_check = resolve_context
             .method_check
             .clone()

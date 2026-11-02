@@ -139,7 +139,7 @@ impl crate::comp::check::CheckContext for DiamondCheckContext {
                 ));
             fragment.get_message(None).to_string()
         };
-        let message = details.get_message(None);
+        let _message = details.get_message(None);
         let key = self
             .diags
             .fragment(crate::util::jc_diagnostic::Fragment::from(

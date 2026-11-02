@@ -920,7 +920,7 @@ impl Pretty {
         let name = name.clone();
         let vartype = *vartype;
         let init = *init;
-        let (mod_flags, annotations) = match mods {
+        let (mod_flags, _annotations) = match mods {
             Some(mods) => match &ctx.tree(mods).kind {
                 TreeKind::Modifiers { flags, annotations } => (*flags, annotations.clone()),
                 _ => (0, List::nil()),

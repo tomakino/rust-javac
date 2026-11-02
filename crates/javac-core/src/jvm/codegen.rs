@@ -3813,7 +3813,7 @@ impl Gen {
                     items.incr(ctx, &od, delta);
                     self.result = Some(od.clone());
                 } else {
-                    let loaded = self.item_load(ctx, &od);
+                    let _loaded = self.item_load(ctx, &od);
                     let one = Gen::one(od.typecode);
                     self.get_code().borrow_mut().emitop0(ctx, one);
                     self.get_code().borrow_mut().emitop0(ctx, opcode);

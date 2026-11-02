@@ -887,7 +887,7 @@ impl DocCommentParser {
                 value = Some(v.to_list());
             }
             let attr = {
-                let mut m = &*self.m;
+                let m = &*self.m;
                 let value_slice = value.as_ref().map(|list| list.to_vec());
                 m.at(name_pos)
                     .new_attribute_tree(name, vkind, value_slice.as_deref())

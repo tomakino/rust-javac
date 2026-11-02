@@ -1188,12 +1188,12 @@ impl TypeEnter {
     fn import_named_static(
         &self,
         ctx: &mut CompilerContext,
-        syms: &Symtab,
+        _syms: &Symtab,
         tree: TreeId,
         tsym: SymbolId,
         name: crate::util::name::Name,
         env: &Rc<Env<AttrContext>>,
-        attr: &mut crate::comp::attr::Attr,
+        _attr: &mut crate::comp::attr::Attr,
     ) {
         if ctx.sym(tsym).kind != Kind::TYP {
             // Java: log.error(DiagnosticFlag.RECOVERABLE, imp.pos(),
@@ -3715,7 +3715,7 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
         let mut params: List<SymbolId> = List::nil();
         let current = self.record_field_decls.clone();
         for field in &current {
-            let is_last = current.is_empty();
+            let _is_last = current.is_empty();
             if let TreeKind::VariableDecl {
                 sym: Some(field_sym),
                 ..
@@ -4213,7 +4213,7 @@ fn synthesize_typarams(
     }
     let mut typarams = List::nil();
     for index in (1..=n).rev() {
-        let name = synthesized_typaram_name(syms.names(), index, n);
+        let _name = synthesized_typaram_name(syms.names(), index, n);
         let var = ctx.alloc_type(crate::code::type_::Type::new(
             TypeTag::TYPEVAR,
             Some(tsym),

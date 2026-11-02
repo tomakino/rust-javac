@@ -1298,12 +1298,12 @@ impl MiniCompiler {
             return Err(self.error_message());
         }
         report_timing("flow", t_flow);
-        let t_desugar = std::time::Instant::now();
+        let _t_desugar = std::time::Instant::now();
         // JavaCompiler.desugar(envs): TransTypes then Lower.
         let mut classes: Vec<CompiledClass> = Vec::new();
-        let t_gen_total = std::time::Duration::ZERO;
+        let _t_gen_total = std::time::Duration::ZERO;
         for env in envs {
-            let t_one = std::time::Instant::now();
+            let _t_one = std::time::Instant::now();
             if std::env::var_os("DSH_DEBUG_ENV").is_some() {
                 let sf = env
                     .toplevel

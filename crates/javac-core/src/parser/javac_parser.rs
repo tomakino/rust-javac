@@ -437,7 +437,7 @@ impl JavacParser {
         parse_module_info: bool,
     ) -> JavacParser {
         #[allow(non_snake_case)]
-        let mut F = TreeMaker::new(Some(fac.names.clone()));
+        let F = TreeMaker::new(Some(fac.names.clone()));
         let error_tree = F.erroneous_empty(ctx);
         let end_pos_table: Box<dyn AbstractEndPosTable> = if keep_end_positions {
             Box::new(SimpleEndPosTable::new())
@@ -6294,7 +6294,7 @@ impl JavacParser {
                 seen_import = true;
                 defs.push(self.import_declaration(ctx));
             } else {
-                let first = first_token.clone();
+                let _first = first_token.clone();
                 let mut doc_comment = self.token.comment(CommentStyle::JAVADOC);
                 if first_type_decl && !seen_import && !seen_package {
                     // Java: docComment = firstToken.comment(JAVADOC);

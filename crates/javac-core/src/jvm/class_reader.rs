@@ -1352,7 +1352,7 @@ impl ClassReader {
         self.minor_version = self.next_char() as i32;
         self.major_version = self.next_char() as i32;
         let max_major = Version::max().major();
-        let max_minor = Version::max().minor();
+        let _max_minor = Version::max().minor();
         let preview_class_file = self.minor_version == PREVIEW_MINOR_VERSION;
         if self.major_version > max_major
             || self.major_version * 1000 + self.minor_version
