@@ -33,6 +33,7 @@ pub mod enter;
 pub mod flow;
 pub mod infer;
 pub mod infer_graph;
+pub mod infer_support;
 pub mod env;
 pub mod lower;
 pub mod match_bindings;
