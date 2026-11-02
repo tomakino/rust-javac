@@ -1,47 +1,13 @@
-// Origin: com/sun/tools/javac/util/List.java @ 982d53c (jdk-17.0.19-ga)
-
-//! A class for generic linked lists. Links are supposed to be
-//! immutable, the only exception being the incremental construction of
-//! lists via ListBuffers.  List is the main container class in
-//! GJC. Most data structures and algorithms in GJC use lists rather
-//! than arrays.
+//! Generic linked lists.
 //!
-//! <p>Lists are always trailed by a sentinel element, whose head and tail
-//! are both null.
+//! A List<A> is an immutable singly linked list trailed by a sentinel;
+//! ListBuffer is the mutable builder. Java's null list reference maps to
+//! List::nil(), reference identity (==) maps to List::ptr_eq, and
+//! PartialEq implements content equality.
 //!
-//! <p><b>This is NOT part of any supported API.
-//! If you write code that depends on this, you do so at your own risk.
-//! This code and its internal interfaces are subject to change or
-//! deletion without notice.</b>
-//!
-//! PORTING_RULES: a Java List<A> value is an object reference. The Rust List<A> is a handle
-//! around Option<Rc<ListNode<A>>>, where None is the Java null reference and the empty list is
-//! the sentinel (whose tail is null).
-//! PORTING_RULES: because Java list nodes are shared references, == and != between two Java List
-//! values must be translated with List::ptr_eq (reference identity). PartialEq is the
-//! translation of equals (content equality) only; never use it for Java ==.
-//! PORTING_RULES: Java's mutable "public List<A> tail" field is modelled with
-//! Cell<Option<Rc<ListNode<A>>>> so that setTail splices a node exactly as Java does. javac only
-//! splices nodes it has just built (List.prependList; ListBuffer.append/copy; ClassReader's
-//! local list construction), so the mutation is never observed by another list. Reads take the
-//! cell value and put an Rc clone back, which is observationally identical to reading the Java
-//! field.
-//! PORTING_RULES: overloads:
-//! - of(A x1) / of(A x1, A x2) / of(A x1, A x2, A x3) / of(A x1, A x2, A x3, A... rest)
-//!   -> of / of2 / of3 / of4
-//! - from(A[] array) / from(Iterable<? extends A> coll) -> from_array / from_iterable
-//! - appendList(List<A>) / appendList(ListBuffer<A>) -> append_list / append_list_buffer
-//! - toString() / toString(String sep) -> Display / to_string_sep
-//! - iterator() -> iter(); toArray(T[]) -> to_vec()
-//!
-//! PORTING_RULES: the java.util.List interface obligations add/set/remove/addAll/removeAll/
-//! retainAll/subList are not ported: every one of them throws UnsupportedOperationException in
-//! javac and none of them is called (verified by grep over the upstream tree); they are
-//! registered in docs/STATUS.md. listIterator() has a single P1 user (DocTreeMaker) and is
-//! ported together with it.
-//! PORTING_RULES: since a Rust reference cannot outlive the Rc it borrows, methods whose Java
-//! signature returns a list element after walking the list (get, last) return an owned clone;
-//! A is a handle or an id in javac, so the clone is cheap.
+//! Nodes are shared through Rc. The tail cell exists only to splice nodes
+//! while a list is being built (prependList, ListBuffer::append); the
+//! mutation is never observed by another list.
 
 use std::cell::Cell;
 use std::fmt;
@@ -777,6 +743,43 @@ impl<A: Clone> FromIterator<A> for List<A> {
     }
 }
 
+/// Consuming iterator over a [`List`], yielding owned copies of the elements.
+///
+/// Lists are immutable and nodes are shared, so iteration walks the shared
+/// chain; elements are cloned like every other accessor (`head`, `get`).
+pub struct ListIntoIter<A> {
+    cur: Option<Rc<ListNode<A>>>,
+}
+
+impl<A: Clone> Iterator for ListIntoIter<A> {
+    type Item = A;
+
+    fn next(&mut self) -> Option<A> {
+        let node = self.cur.take()?;
+        let result = node.head.clone();
+        self.cur = node.tail();
+        Some(result)
+    }
+}
+
+impl<A: Clone> IntoIterator for List<A> {
+    type Item = A;
+    type IntoIter = ListIntoIter<A>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ListIntoIter { cur: self.node }
+    }
+}
+
+impl<'a, A: Clone> IntoIterator for &'a List<A> {
+    type Item = A;
+    type IntoIter = ListIter<'a, A>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -797,6 +800,35 @@ mod tests {
         assert_eq!(List::fill(3, 7).to_vec(), vec![7, 7, 7]);
     }
 
+    #[test]
+    fn into_iter_yields_elements_in_order() {
+        let l = list(&[1, 2, 3]);
+        let collected: Vec<i32> = (&l).into_iter().collect();
+        assert_eq!(collected, vec![1, 2, 3]);
+
+        let owned: Vec<i32> = list(&[4, 5]).into_iter().collect();
+        assert_eq!(owned, vec![4, 5]);
+
+        assert!(List::<i32>::nil().into_iter().next().is_none());
+        let empty: Vec<i32> = (&List::<i32>::nil()).into_iter().collect();
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn for_loops_use_into_iterator() {
+        let l = list(&[10, 20]);
+        let mut sum = 0;
+        for x in &l {
+            sum += x;
+        }
+        assert_eq!(sum, 30);
+
+        let mut owned = Vec::new();
+        for x in list(&[30, 40]) {
+            owned.push(x);
+        }
+        assert_eq!(owned, vec![30, 40]);
+    }
     #[test]
     fn length_and_tail() {
         let l = list(&[1, 2, 3]);
