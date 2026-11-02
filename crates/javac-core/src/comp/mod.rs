@@ -32,6 +32,7 @@ pub mod deferred_attr;
 pub mod enter;
 pub mod flow;
 pub mod infer;
+pub mod infer_graph;
 pub mod env;
 pub mod lower;
 pub mod match_bindings;
