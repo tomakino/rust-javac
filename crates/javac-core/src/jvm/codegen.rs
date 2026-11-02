@@ -2737,23 +2737,23 @@ impl Gen {
             }
         };
         if startpc != endpc {
-            let mut l = catchers;
-            for catcher in &l {
-            let param_ty = catch_param_type(ctx, catcher);
-            let state = {
-                let code = self.get_code();
-                let mut code = code.borrow_mut();
-                code.entry_point_state_pushed(ctx, &state_try, param_ty)
-            };
-            let _ = state;
-            self.gen_catch(ctx, catcher, env, startpc, endpc, &gaps);
-            self.gen_finalizer(ctx, env);
-            if has_finalizer || l.non_empty() {
-                self.get_code().borrow_mut().stat_begin(env_tree_end);
-                let branch = self.get_code().borrow_mut().branch(ctx, GOTO);
-                exit_chain = Code::merge_chains(exit_chain, branch);
-            }
-            self.end_finalizer_gap(ctx, env);
+            let catcher_count = catchers.length() as usize;
+            for (index, catcher) in catchers.into_iter().enumerate() {
+                let param_ty = catch_param_type(ctx, catcher);
+                let state = {
+                    let code = self.get_code();
+                    let mut code = code.borrow_mut();
+                    code.entry_point_state_pushed(ctx, &state_try, param_ty)
+                };
+                let _ = state;
+                self.gen_catch(ctx, catcher, env, startpc, endpc, &gaps);
+                self.gen_finalizer(ctx, env);
+                if has_finalizer || index + 1 < catcher_count {
+                    self.get_code().borrow_mut().stat_begin(env_tree_end);
+                    let branch = self.get_code().borrow_mut().branch(ctx, GOTO);
+                    exit_chain = Code::merge_chains(exit_chain, branch);
+                }
+                self.end_finalizer_gap(ctx, env);
             }
         }
         if has_finalizer && (startpc != endpc || !actual_try) {
