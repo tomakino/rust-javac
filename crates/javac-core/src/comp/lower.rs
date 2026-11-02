@@ -3197,7 +3197,11 @@ impl Lower {
 
     /// Box a primitive expression into the given wrapper class valueOf method.
     fn box_primitive(&mut self, ctx: &mut CompilerContext, tree: TreeId, wrapper: TypeId) -> TreeId {
-        let pos = ctx.tree(tree).pos;
+        // Java: boxPrimitive uses tree.pos(), and for a binary expression that
+        // is TreeInfo.getStartPos (the start of the left operand), not the
+        // operator position. Using the raw pos put the boxing call on the
+        // operator's line.
+        let pos = crate::tree::tree_info::get_start_pos(ctx, tree);
         let tree_ty = ctx.tree(tree).ty.expect("tree type");
         let diagnostic_pos: Rc<dyn DiagnosticPosition> = Rc::new(
             crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
@@ -3213,6 +3217,11 @@ impl Lower {
         let qual = {
             self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), value_of_sym)
         };
+        // Java: boxPrimitive calls make_at(tree.pos()) before building the
+        // valueOf application (Lower.java:3113-3120). Translating the
+        // operands moved the tree maker, so re-anchor at the boxed
+        // expression's position.
+        self.make.borrow_mut().at(pos);
         self.make.borrow_mut().app_with_args(ctx, qual, List::of(tree))
     }
 
