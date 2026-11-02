@@ -10214,15 +10214,15 @@ impl Attr {
         let inference_context = Rc::clone(result_info.check_context.inference_context());
         let rs_rc = self.rs.get().cloned()
             .expect("AssertionError: rs service must be installed");
-        let method_check: Rc<RefCell<dyn crate::comp::resolve::MethodCheck>> = {
+        let method_check: Rc<dyn crate::comp::resolve::MethodCheck> = {
             let rs = &*rs_rc;
             if inference_context.free_list(ctx, syms, &self.types, argtypes.clone()) {
-                Rc::new(RefCell::new(crate::comp::resolve::MethodReferenceCheck {
+                Rc::new(crate::comp::resolve::MethodReferenceCheck {
                     pending_inference_context: Rc::clone(
                         result_info.check_context.inference_context(),
                     ),
                     diags: Rc::clone(&self.diags),
-                }))
+                })
             } else {
                 Rc::clone(&rs.default_method_check)
             }

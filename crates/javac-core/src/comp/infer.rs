@@ -1846,12 +1846,10 @@ impl Infer {
         let method_check = resolve_context
             .method_check
             .clone()
-            .unwrap_or_else(|| Rc::new(RefCell::new(crate::comp::resolve::NilMethodCheck)));
+            .unwrap_or_else(|| Rc::new(crate::comp::resolve::NilMethodCheck));
         {
             // MethodCheck methods take &self; see Resolve::raw_instantiate.
-            let check = method_check.borrow();
-            check
-                .arguments_acceptable(
+            method_check.arguments_acceptable(
                     ctx,
                     syms,
                     types,

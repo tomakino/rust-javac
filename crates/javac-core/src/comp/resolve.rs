@@ -192,7 +192,7 @@ pub struct Resolve {
     /// flags (not ported yet).
     pub options: Rc<Options>,
     /// Java: private MethodCheck resolveMethodCheck (default method check)
-    pub default_method_check: Rc<RefCell<dyn MethodCheck>>,
+    pub default_method_check: Rc<dyn MethodCheck>,
     /// Java: WriteableScope polymorphicSignatureScope (Resolve.java:118; lazily
     /// created on first use because the port Resolve has no Symtab field, Porting rules).
     pub polymorphic_signature_scope: std::cell::Cell<Option<ScopeId>>,
@@ -213,7 +213,7 @@ pub struct Resolve {
     /// Java: MethodResolutionContext currentResolutionContext.methodCheck (the
     /// applicability check of the active lookup; the port stores it next to
     /// current_resolution_step for signatureMoreSpecific; registered adapter).
-    pub current_method_check: RefCell<Option<Rc<RefCell<dyn MethodCheck>>>>,
+    pub current_method_check: RefCell<Option<Rc<dyn MethodCheck>>>,
     pub verbose_resolution_mode: Vec<VerboseResolutionMode>,
     pub dump_method_reference_search_results: bool,
     pub compact_method_diags: bool,
@@ -265,13 +265,13 @@ impl Resolve {
             "symbol not found error",
             crate::code::symbol::ResolveErrorData::SymbolNotFound,
         );
-        let default_method_check: Rc<RefCell<dyn MethodCheck>> =
-            Rc::new(RefCell::new(ResolveMethodCheck {
+        let default_method_check: Rc<dyn MethodCheck> =
+            Rc::new(ResolveMethodCheck {
                 diags: Rc::clone(&diags),
                 check_varargs_access_after_resolution:
                     Feature::POST_APPLICABILITY_VARARGS_ACCESS_CHECK.allowed_in_source(source),
                 allow_modules,
-            }));
+            });
         Resolve {
             var_not_found,
             method_not_found,
@@ -4041,7 +4041,7 @@ pub struct MethodResolutionContext {
     pub(crate) attr_mode: crate::comp::deferred_attr::AttrMode,
     /// Java: MethodCheck methodCheck (resolveMethodCheck by default; the
     /// explicit-context adapter sets it from Resolve.defaultMethodCheck)
-    pub(crate) method_check: Option<Rc<RefCell<dyn MethodCheck>>>,
+    pub(crate) method_check: Option<Rc<dyn MethodCheck>>,
 }
 
 impl Default for MethodResolutionContext {
@@ -4357,7 +4357,7 @@ pub trait MethodCheck {
 
 /// Adapter: an owned most-specific method check (Java: the MethodCheck returned by
 /// mostSpecificCheck is a fresh object; the port stores it behind the shared
-/// Rc<RefCell<dyn MethodCheck>> context slot).
+/// Rc<dyn MethodCheck> context slot).
 pub struct OwnedMethodCheck(pub Box<dyn MethodCheck>);
 
 impl MethodCheck for OwnedMethodCheck {
@@ -5194,14 +5194,13 @@ impl Resolve {
         let method_check = resolve_context
             .method_check
             .clone()
-            .unwrap_or_else(|| Rc::new(RefCell::new(NilMethodCheck)));
+            .unwrap_or_else(|| Rc::new(NilMethodCheck));
         {
             // MethodCheck methods take &self (the upstream Java methods are
             // non-mutating here); a shared borrow keeps nested re-entrant
             // resolution (e.g. an argument expression that resolves its own
             // call) from re-borrowing the shared defaultMethodCheck cell.
-            let check = method_check.borrow();
-            check.arguments_acceptable(
+            method_check.arguments_acceptable(
                 ctx,
                 syms,
                 types,
@@ -5260,14 +5259,14 @@ impl Resolve {
         };
         if let Some(tree) = env.tree {
             if ctx.tree(tree).has_tag(crate::tree::jc_tree::Tag::REFERENCE) {
-                resolution_context.method_check = Some(Rc::new(RefCell::new(
+                resolution_context.method_check = Some(Rc::new(
                     MethodReferenceCheck {
                         pending_inference_context: Rc::clone(
                             result_info.check_context.inference_context(),
                         ),
                         diags: Rc::clone(&self.diags),
                     },
-                )));
+                ));
             }
         }
         let step = env
@@ -5832,9 +5831,9 @@ impl Resolve {
         //     prevResolutionContext.methodCheck.mostSpecificCheck(actuals);
         resolution_context.step = self.current_resolution_step.get();
         resolution_context.method_check = self.current_method_check.borrow().clone().as_ref().map(|check| {
-            let boxed = check.borrow().most_specific_check(actuals.clone());
-            let owned: Rc<RefCell<dyn MethodCheck>> =
-                Rc::new(RefCell::new(OwnedMethodCheck(boxed)));
+            let boxed = check.most_specific_check(actuals.clone());
+            let owned: Rc<dyn MethodCheck> =
+                Rc::new(OwnedMethodCheck(boxed));
             owned
         });
         let m1_type = types.member_type(ctx, syms, site, m1);
@@ -7763,7 +7762,7 @@ impl Resolve {
         env: &Rc<Env<AttrContext>>,
         pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
         location: SymbolId,
-        method_check: Rc<RefCell<dyn MethodCheck>>,
+        method_check: Rc<dyn MethodCheck>,
         helper: &mut dyn LookupHelper,
     ) -> SymbolId {
         let mut resolve_context = MethodResolutionContext::new();
@@ -8099,7 +8098,7 @@ impl Resolve {
         // prevResolutionContext; } (Resolve.java:3696-3714).
         let previous_step = self.current_resolution_step.get();
         self.current_resolution_step.set(resolve_context.step);
-        let previous_method_check = self.current_method_check.borrow().clone().clone();
+        let previous_method_check = self.current_method_check.borrow().clone();
         *self.current_method_check.borrow_mut() = resolve_context.method_check.clone();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut best_so_far = self.method_not_found;
@@ -9799,7 +9798,7 @@ impl Resolve {
             MethodResolutionPhase::VARARITY,
         );
         let new_env = env.dup(env.tree, env.info.borrow().dup(None));
-        let nil_check: Rc<RefCell<dyn MethodCheck>> = Rc::new(RefCell::new(NilMethodCheck));
+        let nil_check: Rc<dyn MethodCheck> = Rc::new(NilMethodCheck);
         let sym = self.lookup_method_with_check(
             ctx,
             syms,
@@ -9853,7 +9852,7 @@ impl Resolve {
         argtypes: crate::util::list::List<TypeId>,
         typeargtypes: Option<crate::util::list::List<TypeId>>,
         descriptor: TypeId,
-        method_check: Rc<RefCell<dyn MethodCheck>>,
+        method_check: Rc<dyn MethodCheck>,
         inference_context: &Rc<crate::comp::infer::InferenceContext>,
         reference_chooser: ReferenceChooserKind,
     ) -> (SymbolId, Option<ReferenceLookupHelper>) {

@@ -2969,8 +2969,8 @@ impl DeferredAttrService {
         let chk = Rc::clone(&chk_rc);
         let types_rc = Rc::clone(&attr.types);
         let infer_rc = Rc::clone(&attr.infer);
-        let arity_check: Rc<RefCell<dyn crate::comp::resolve::MethodCheck>> =
-            Rc::new(RefCell::new(crate::comp::resolve::ArityMethodCheck));
+        let arity_check: Rc<dyn crate::comp::resolve::MethodCheck> =
+            Rc::new(crate::comp::resolve::ArityMethodCheck);
         let (lookup_sym, _) = rs.resolve_member_reference(
             ctx,
             syms,
