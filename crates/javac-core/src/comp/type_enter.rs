@@ -115,7 +115,7 @@ pub struct TypeEnter {
     /// MemberEnter.annotate).
     pub annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
     /// Java: private final Todo todo = Todo.instance(context)
-    pub todo: Rc<RefCell<crate::comp::todo::Todo>>,
+    pub todo: Rc<crate::comp::todo::Todo>,
     /// Java: private final Attr attr = Attr.instance(context) — injected at
     /// wiring time to avoid the Attr/TypeEnter construction cycle.
     pub attr: RefCell<Option<Rc<RefCell<crate::comp::attr::Attr>>>>,
@@ -307,7 +307,7 @@ impl TypeEnter {
         type_envs: Rc<TypeEnvs>,
         dependencies: Rc<RefCell<dyn Dependencies>>,
         annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
-        todo: Rc<RefCell<crate::comp::todo::Todo>>,
+        todo: Rc<crate::comp::todo::Todo>,
     ) -> TypeEnter {
         // Java: the phase chain completeClass -> HierarchyPhase ->
         // PermitsPhase -> HeaderPhase -> RecordPhase -> MembersPhase
@@ -793,7 +793,7 @@ impl TypeEnter {
         if ctx.sym(owner).kind == Kind::PCK {
             let top = self.enter.get_top_level_env(ctx, toplevel(env));
             self.resolve_imports(ctx, syms, toplevel(env), &top, attr);
-            self.todo.borrow_mut().append(ctx, Rc::clone(env));
+            self.todo.append(ctx, Rc::clone(env));
         }
         if ctx.sym(owner).kind == Kind::TYP {
             // Java: sym.owner.complete();

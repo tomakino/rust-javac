@@ -165,7 +165,7 @@ pub struct MiniCompiler {
     /// The constant pool writer.
     pub pool_writer: Rc<RefCell<PoolWriter>>,
     /// The todo list.
-    pub todo: Rc<RefCell<Todo>>,
+    pub todo: Rc<Todo>,
     /// The output directory of the class files.
     pub out_dir: PathBuf,
     /// The JDK home directory.
@@ -1225,7 +1225,7 @@ impl MiniCompiler {
         let t_attr = std::time::Instant::now();
         let mut envs: Vec<Rc<Env<AttrContext>>> = Vec::new();
         loop {
-            let env = self.todo.borrow_mut().poll(&self.ctx);
+            let env = self.todo.poll(&self.ctx);
             match env {
                 Some(env) => envs.push(env),
                 None => break,

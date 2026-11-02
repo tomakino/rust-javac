@@ -75,7 +75,7 @@ pub struct Enter {
     /// Java: TypeEnter typeEnter (installed after construction, adapter cell).
     pub type_enter: Rc<RefCell<Option<Rc<RefCell<crate::comp::type_enter::TypeEnter>>>>>,
     /// Java: Todo todo
-    pub todo: Rc<RefCell<crate::comp::todo::Todo>>,
+    pub todo: Rc<crate::comp::todo::Todo>,
     /// Java: private final Modules modules = Modules.instance(context)
     /// (Enter.java:129) — installed by the bootstrap after construction to
     /// break the Enter/Modules/Attr initialization cycle (registered adapter).
@@ -96,7 +96,7 @@ impl Enter {
         lint: Option<Rc<crate::code::lint::Lint>>,
         file_manager: Rc<dyn JavaFileManager>,
         options: &crate::util::options::Options,
-        todo: Rc<RefCell<crate::comp::todo::Todo>>,
+        todo: Rc<crate::comp::todo::Todo>,
         type_envs: Rc<TypeEnvs>,
     ) -> Enter {
         Enter {
@@ -582,7 +582,7 @@ impl Enter {
             self.class_enter_list(ctx, syms, compilation_unit_defs(ctx, tree), Some(top_env.clone()));
             if add_env {
                 let package_env = package_env.clone().expect("package env");
-                self.todo.borrow_mut().append(ctx, package_env);
+                self.todo.append(ctx, package_env);
             }
         }
         self.log.borrow_mut().use_source(prev_source);
@@ -912,7 +912,7 @@ impl Enter {
         if let Some(modules) = self.modules.borrow().clone()
             && modules.is_in_module_graph(module)
         {
-            self.todo.borrow_mut().append(ctx, module_env);
+            self.todo.append(ctx, module_env);
         }
         Ok(())
     }

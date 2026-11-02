@@ -1,5 +1,3 @@
-// Source: com/sun/tools/javac/comp/Todo.java
-
 //! A queue of all as yet unattributed classes.
 
 use std::cell::RefCell;
@@ -21,7 +19,6 @@ pub struct FileQueue {
 }
 
 impl FileQueue {
-    /// Create an empty file queue for the given file.
     pub fn new(file: Option<Rc<dyn JavaFileObject>>) -> FileQueue {
         FileQueue {
             file_contents: RefCell::new(Vec::new()),
@@ -29,12 +26,10 @@ impl FileQueue {
         }
     }
 
-    /// Return whether the queue is empty.
     pub fn is_empty(&self) -> bool {
         self.file_contents.borrow().is_empty()
     }
 
-    /// Return the number of environments in the queue.
     pub fn size(&self) -> i32 {
         self.file_contents.borrow().len() as i32
     }
@@ -43,75 +38,58 @@ impl FileQueue {
 /// A queue of all as yet unattributed classes.
 pub struct Todo {
     /// The environments, in insertion order.
-    pub contents: Vec<Rc<Env<AttrContext>>>,
+    contents: RefCell<Vec<Rc<Env<AttrContext>>>>,
     /// The per-file queues, when grouping has been requested.
-    pub contents_by_file: Option<Vec<FileQueueRef>>,
+    contents_by_file: RefCell<Option<Vec<FileQueueRef>>>,
     /// The per-file lookup table.
-    pub file_map: Vec<(Rc<dyn JavaFileObject>, FileQueueRef)>,
+    file_map: RefCell<Vec<(Rc<dyn JavaFileObject>, FileQueueRef)>>,
 }
 
 /// One shared per-file queue.
 pub type FileQueueRef = Rc<FileQueue>;
 
 /// The shared todo list (Java: the Todo singleton).
-pub type TodoRef = Rc<RefCell<Todo>>;
+pub type TodoRef = Rc<Todo>;
 
 impl Todo {
-    /// Create an empty todo list.
-    ///
-    /// # Arguments
-    ///   - context: the compiler context service table.
-    ///
-    /// # Returns
-    ///   - the todo list registered in the context.
-    ///
-    /// # Panics
-    ///   - none.
+    /// Create or fetch the todo list registered in the context.
     pub fn instance(context: &mut Context) -> TodoRef {
-        if let Some(instance) = context.get::<RefCell<Todo>>() {
+        if let Some(instance) = context.get::<Todo>() {
             return instance;
         }
-        let todo = Rc::new(RefCell::new(Todo::new_empty()));
+        let todo = Rc::new(Todo::new_empty());
         context.put(Rc::clone(&todo));
         todo
     }
 
-    /// Create an empty todo list.
     fn new_empty() -> Todo {
         Todo {
-            contents: Vec::new(),
-            contents_by_file: None,
-            file_map: Vec::new(),
+            contents: RefCell::new(Vec::new()),
+            contents_by_file: RefCell::new(None),
+            file_map: RefCell::new(Vec::new()),
         }
     }
 
     /// Append an environment to the end of the todo list.
-    pub fn append(&mut self, ctx: &CompilerContext, env: Rc<Env<AttrContext>>) {
+    pub fn append(&self, ctx: &CompilerContext, env: Rc<Env<AttrContext>>) {
         self.offer(ctx, env);
     }
 
     /// Return the number of environments in the todo list.
     pub fn size(&self) -> i32 {
-        self.contents.len() as i32
+        self.contents.borrow().len() as i32
     }
 
     /// Add an environment to the end of the todo list.
-    ///
-    /// # Arguments
-    ///   - ctx: the compiler context;
-    ///   - e: the environment to add.
-    ///
-    /// # Returns
-    ///   - true when the environment was not already present.
-    ///
-    /// # Panics
-    ///   - none.
-    pub fn offer(&mut self, ctx: &CompilerContext, e: Rc<Env<AttrContext>>) -> bool {
-        if self.contents.iter().any(|env| Rc::ptr_eq(env, &e)) {
-            return false;
+    pub fn offer(&self, ctx: &CompilerContext, e: Rc<Env<AttrContext>>) -> bool {
+        {
+            let mut contents = self.contents.borrow_mut();
+            if contents.iter().any(|env| Rc::ptr_eq(env, &e)) {
+                return false;
+            }
+            contents.push(Rc::clone(&e));
         }
-        self.contents.push(Rc::clone(&e));
-        if self.contents_by_file.is_some() {
+        if self.contents_by_file.borrow().is_some() {
             self.add_by_file(ctx, &e);
         }
         true
@@ -119,12 +97,13 @@ impl Todo {
 
     /// Remove all environments except those belonging to the given files.
     pub fn retain_files(
-        &mut self,
+        &self,
         ctx: &CompilerContext,
         source_files: &[Option<Rc<dyn JavaFileObject>>],
     ) {
         let mut kept: Vec<Rc<Env<AttrContext>>> = Vec::new();
-        for env in std::mem::take(&mut self.contents) {
+        let mut contents = self.contents.borrow_mut();
+        for env in std::mem::take(&mut *contents) {
             let source = env_source_file(ctx, &env);
             let keep = match &source {
                 Some(source) => source_files
@@ -135,20 +114,20 @@ impl Todo {
             };
             if keep {
                 kept.push(env);
-            } else if self.contents_by_file.is_some() {
+            } else if self.contents_by_file.borrow().is_some() {
                 self.remove_by_file(ctx, &env);
             }
         }
-        self.contents = kept;
+        *contents = kept;
     }
 
     /// Remove and return the first environment of the todo list.
-    pub fn poll(&mut self, ctx: &CompilerContext) -> Option<Rc<Env<AttrContext>>> {
-        if self.contents.is_empty() {
+    pub fn poll(&self, ctx: &CompilerContext) -> Option<Rc<Env<AttrContext>>> {
+        if self.contents.borrow().is_empty() {
             return None;
         }
-        let env = self.contents.remove(0);
-        if self.contents_by_file.is_some() {
+        let env = self.contents.borrow_mut().remove(0);
+        if self.contents_by_file.borrow().is_some() {
             self.remove_by_file(ctx, &env);
         }
         Some(env)
@@ -156,27 +135,31 @@ impl Todo {
 
     /// Return the first environment of the todo list without removing it.
     pub fn peek(&self) -> Option<Rc<Env<AttrContext>>> {
-        self.contents.first().cloned()
+        self.contents.borrow().first().cloned()
     }
 
     /// Return the per-file queues, building them when needed.
-    pub fn group_by_file(&mut self, ctx: &CompilerContext) -> Vec<FileQueueRef> {
-        if self.contents_by_file.is_none() {
-            self.contents_by_file = Some(Vec::new());
-            let contents = self.contents.clone();
+    pub fn group_by_file(&self, ctx: &CompilerContext) -> Vec<FileQueueRef> {
+        if self.contents_by_file.borrow().is_none() {
+            *self.contents_by_file.borrow_mut() = Some(Vec::new());
+            let contents = self.contents.borrow().clone();
             for env in contents {
                 self.add_by_file(ctx, &env);
             }
         }
-        self.contents_by_file.clone().expect("per-file queues")
+        self.contents_by_file
+            .borrow()
+            .clone()
+            .expect("per-file queues")
     }
 
     /// Add an environment to the per-file queue of its source file.
-    fn add_by_file(&mut self, ctx: &CompilerContext, env: &Rc<Env<AttrContext>>) {
+    fn add_by_file(&self, ctx: &CompilerContext, env: &Rc<Env<AttrContext>>) {
         let file = env_source_file(ctx, env);
         let existing = match &file {
             Some(file) => self
                 .file_map
+                .borrow()
                 .iter()
                 .find(|(candidate, _)| Rc::ptr_eq(candidate, file))
                 .map(|(_, queue)| Rc::clone(queue)),
@@ -187,9 +170,12 @@ impl Todo {
             None => {
                 let queue = Rc::new(FileQueue::new(file.clone()));
                 if let Some(file) = file {
-                    self.file_map.push((file, Rc::clone(&queue)));
+                    self.file_map
+                        .borrow_mut()
+                        .push((file, Rc::clone(&queue)));
                 }
                 self.contents_by_file
+                    .borrow_mut()
                     .as_mut()
                     .expect("per-file queues")
                     .push(Rc::clone(&queue));
@@ -200,13 +186,14 @@ impl Todo {
     }
 
     /// Remove an environment from the per-file queue of its source file.
-    fn remove_by_file(&mut self, ctx: &CompilerContext, env: &Rc<Env<AttrContext>>) {
+    fn remove_by_file(&self, ctx: &CompilerContext, env: &Rc<Env<AttrContext>>) {
         let file = env_source_file(ctx, env);
         let Some(file) = file else {
             return;
         };
         let found = self
             .file_map
+            .borrow()
             .iter()
             .find(|(candidate, _)| Rc::ptr_eq(candidate, &file))
             .map(|(_, queue)| Rc::clone(queue));
@@ -220,8 +207,9 @@ impl Todo {
         drop(contents);
         if removed && queue.is_empty() {
             self.file_map
+                .borrow_mut()
                 .retain(|(candidate, _)| !Rc::ptr_eq(candidate, &file));
-            if let Some(queues) = &mut self.contents_by_file {
+            if let Some(queues) = self.contents_by_file.borrow_mut().as_mut() {
                 queues.retain(|candidate| !Rc::ptr_eq(candidate, &queue));
             }
         }
