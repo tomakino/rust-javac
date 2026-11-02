@@ -162,35 +162,77 @@ fn digit(c: u16, radix: i32) -> i32 {
 /// Parameters are as in System.arraycopy. Return first index in dst past the
 /// last copied char.
 pub fn utf2chars_into(src: &[u8], sindex: i32, dst: &mut [u16], dindex: i32, len: i32) -> i32 {
-    let mut i = sindex;
-    let mut j = dindex;
-    let limit = sindex + len;
+    let mut i = sindex as usize;
+    let limit = (sindex + len) as usize;
+    let mut j = dindex as usize;
     while i < limit {
-        let mut b = src[i as usize] as i32 & 0xFF;
+        // ASCII runs are copied in one tight loop; the branchy decoder below
+        // only runs for the (rare) non-ASCII characters.
+        let run_start = i;
+        while i < limit && src[i] < 0x80 {
+            i += 1;
+        }
+        if i > run_start {
+            let slots = &mut dst[j..j + (i - run_start)];
+            for (slot, &byte) in slots.iter_mut().zip(&src[run_start..i]) {
+                *slot = byte as u16;
+            }
+            j += i - run_start;
+        }
+        if i >= limit {
+            break;
+        }
+        let mut b = src[i] as i32 & 0xFF;
         i += 1;
         if b >= 0xE0 {
             b = (b & 0x0F) << 12;
-            b |= (src[i as usize] as i32 & 0x3F) << 6;
+            b |= (src[i] as i32 & 0x3F) << 6;
             i += 1;
-            b |= src[i as usize] as i32 & 0x3F;
+            b |= src[i] as i32 & 0x3F;
             i += 1;
         } else if b >= 0xC0 {
             b = (b & 0x1F) << 6;
-            b |= src[i as usize] as i32 & 0x3F;
+            b |= src[i] as i32 & 0x3F;
             i += 1;
         }
-        dst[j as usize] = b as u16;
+        dst[j] = b as u16;
         j += 1;
     }
-    j
+    j as i32
 }
 
 /// Return bytes in Utf8 representation as an array of characters.
 pub fn utf2chars_range(src: &[u8], sindex: i32, len: i32) -> Vec<u16> {
-    let mut dst = vec![0u16; len as usize];
-    let len1 = utf2chars_into(src, sindex, &mut dst, 0, len);
-    dst.truncate(len1 as usize);
-    dst
+    let mut i = sindex as usize;
+    let limit = (sindex + len) as usize;
+    let mut out: Vec<u16> = Vec::with_capacity(len as usize);
+    while i < limit {
+        let run_start = i;
+        while i < limit && src[i] < 0x80 {
+            i += 1;
+        }
+        if i > run_start {
+            out.extend(src[run_start..i].iter().map(|&byte| byte as u16));
+        }
+        if i >= limit {
+            break;
+        }
+        let mut b = src[i] as i32 & 0xFF;
+        i += 1;
+        if b >= 0xE0 {
+            b = (b & 0x0F) << 12;
+            b |= (src[i] as i32 & 0x3F) << 6;
+            i += 1;
+            b |= src[i] as i32 & 0x3F;
+            i += 1;
+        } else if b >= 0xC0 {
+            b = (b & 0x1F) << 6;
+            b |= src[i] as i32 & 0x3F;
+            i += 1;
+        }
+        out.push(b as u16);
+    }
+    out
 }
 
 /// Return all bytes of a given array in Utf8 representation as an array of characters.
