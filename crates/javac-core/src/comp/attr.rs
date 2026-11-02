@@ -10922,7 +10922,6 @@ pub fn wire_attr_services(
         Rc::clone(&names),
         Rc::clone(&log),
         Rc::clone(&chk),
-        Rc::clone(&attr),
         Rc::clone(&annotate),
         Rc::clone(&types),
         Rc::clone(&syms),
@@ -10943,7 +10942,6 @@ pub fn wire_attr_services(
         *annotate_cell.borrow_mut() = Some(Rc::clone(&annotate));
         *attr.borrow().type_annotations.borrow_mut() = Some(Rc::clone(&type_annotations));
         *chk.type_annotations.borrow_mut() = Some(type_annotations);
-        *a.member_enter.attr.borrow_mut() = Some(Rc::clone(&attr));
         *a.member_enter.annotate.borrow_mut() = Some(Rc::clone(&annotate));
         *a.type_enter.borrow().annotate.borrow_mut() = Some(Rc::clone(&annotate));
         let deferred = match Rc::try_unwrap(deferred) {

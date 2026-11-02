@@ -41,8 +41,6 @@ pub struct TypeAnnotations {
     pub log: Rc<Log>,
     /// Java: final Check chk
     pub chk: Rc<crate::comp::check::Check>,
-    /// Java: final Attr attr (used by validateTypeAnnotationsSignatures).
-    pub attr: Rc<std::cell::RefCell<crate::comp::attr::Attr>>,
     /// Java: final Annotate annotate (afterTypes/validate hooks).
     pub annotate: Rc<crate::comp::annotate::Annotate>,
     /// Java: final Types types
@@ -71,7 +69,6 @@ impl TypeAnnotations {
         names: Rc<Names>,
         log: Rc<Log>,
         chk: Rc<crate::comp::check::Check>,
-        attr: Rc<std::cell::RefCell<crate::comp::attr::Attr>>,
         annotate: Rc<crate::comp::annotate::Annotate>,
         types: Rc<crate::code::types::Types>,
         syms: Rc<Symtab>,
@@ -81,7 +78,6 @@ impl TypeAnnotations {
             names,
             log,
             chk,
-            attr,
             annotate,
             types,
             syms,

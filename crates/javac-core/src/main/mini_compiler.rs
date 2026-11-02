@@ -681,7 +681,6 @@ impl MiniCompiler {
             Rc::clone(&names),
             Rc::clone(&log),
             Rc::clone(&chk),
-            Rc::clone(&attr),
             Rc::clone(&annotate),
             Rc::clone(&types),
             Rc::clone(&syms),

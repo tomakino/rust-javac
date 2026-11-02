@@ -61,9 +61,6 @@ pub struct MemberEnter {
     /// constructed (Rc cycle MemberEnter/TypeEnter -> Annotate -> Attr ->
     /// MemberEnter/TypeEnter; registered in the report).
     pub annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
-    /// Java: Attr attr = Attr.instance(context) — explicit injection adapter
-    /// (ADR 0001): the cell is filled by the wiring after the Attr exists.
-    pub attr: Rc<RefCell<Option<Rc<RefCell<crate::comp::attr::Attr>>>>>,
 }
 
 impl MemberEnter {
@@ -84,7 +81,6 @@ impl MemberEnter {
             deferred_lint_handler,
             env: std::cell::RefCell::new(None),
             annotate,
-            attr: Rc::new(RefCell::new(None)),
         }
     }
 
