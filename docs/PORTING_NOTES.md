@@ -101,6 +101,18 @@ Source comments reference the id; the full record stays here.
   `argument_attr` -> `check` -> `attr`).
 - Verification: each batch runs L1/L2; `BorrowMutError` is a hard failure.
 
+### P2 progress
+
+- `MemberEnter` has no `&mut` methods, so its `Rc<RefCell<MemberEnter>>`
+  wrapper was removed (commit `c6119ca`); the type is now shared as
+  `Rc<MemberEnter>`.
+- `Warner` cannot be internalized before its callers change: `Infer.
+  instantiateMethod` clones the warning sink into a shared `Rc` and copies the
+  final lint state back through `WarnSync`; a `&Warner` parameter loses the
+  identity that copy-back needs. Change the interface to pass `Rc<Warner>`
+  (or return an updated sink) first, then move the storage into
+  `Cell`/`RefCell`.
+
 ## PN-007 Panic-based exception channel
 
 - Observed: `InapplicableMethodException` and `InferenceException` are
