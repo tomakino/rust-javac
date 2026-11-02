@@ -105,7 +105,7 @@ pub struct ClassFinder {
     /// Java: private final JavaFileManager fileManager;
     pub file_manager: Rc<dyn JavaFileManager>,
     /// Java: private final Dependencies dependencies;
-    pub dependencies: Rc<RefCell<dyn Dependencies>>,
+    pub dependencies: Rc<dyn Dependencies>,
     /// Java: JCDiagnostic.Factory diagFactory;
     pub diag_factory: Rc<Factory>,
     /// Java: final DeferredCompletionFailureHandler dcfh;
@@ -189,7 +189,7 @@ impl ClassFinder {
             names,
             completion_failure_name,
             file_manager,
-            dependencies: Rc::new(RefCell::new(crate::code::dependencies::DummyDependencies)),
+            dependencies: Rc::new(crate::code::dependencies::DummyDependencies),
             diag_factory,
             dcfh,
             source_completer: RefCell::new(None),
@@ -285,9 +285,7 @@ impl ClassFinder {
     ) -> Result<(), CompletionFailure> {
         if ctx.sym(sym).kind == SymKind::TYP {
             let c = sym;
-            self.dependencies
-                .borrow_mut()
-                .push(ctx, c, CompletionCause::CLASS_READER);
+            self.dependencies.push(ctx, c, CompletionCause::CLASS_READER);
             if let Some(annotate) = self.annotate.borrow().clone() {
                 annotate.block_annotations();
             }
@@ -299,7 +297,7 @@ impl ClassFinder {
             if let Some(annotate) = self.annotate.borrow().clone() {
                 annotate.unblock_annotations_no_flush();
             }
-            self.dependencies.borrow_mut().pop();
+            self.dependencies.pop();
             result?;
         } else if ctx.sym(sym).kind == SymKind::PCK {
             let p = sym;

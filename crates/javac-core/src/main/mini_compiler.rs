@@ -569,8 +569,8 @@ impl MiniCompiler {
             Rc::clone(&deferred_lint_handler),
             Rc::clone(&annotate_cell),
         ));
-        let dependencies: Rc<RefCell<dyn crate::code::dependencies::Dependencies>> =
-            Rc::new(RefCell::new(DummyDependencies));
+        let dependencies: Rc<dyn crate::code::dependencies::Dependencies> =
+            Rc::new(DummyDependencies);
         let type_enter = Rc::new(RefCell::new(TypeEnter::new(
             Rc::clone(&names),
             Rc::clone(&enter),

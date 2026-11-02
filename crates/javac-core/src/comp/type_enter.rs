@@ -74,7 +74,7 @@ pub struct TypeEnter {
     pub deferred_lint_handler: Rc<DeferredLintHandler>,
     pub lint: Option<Rc<crate::code::lint::Lint>>,
     pub type_envs: Rc<TypeEnvs>,
-    pub dependencies: Rc<RefCell<dyn Dependencies>>,
+    pub dependencies: Rc<dyn Dependencies>,
     /// Java: boolean allowTypeAnnos
     pub allow_type_annos: bool,
     /// Java: boolean allowDeprecationOnImport
@@ -276,14 +276,12 @@ impl Phase {
         // the deferred queue must be keyed by the tree, not by a bare numeric
         // position (numeric keys collide across files).
         let prev_lint = ty.deferred_lint_handler.set_pos_tree(tree);
-        ty.dependencies
-            .borrow_mut()
-            .push(ctx, sym, self.phase_name);
+        ty.dependencies.push(ctx, sym, self.phase_name);
         if let Err(failure) = ty.run_phase(self.kind, ctx, syms, &env, attr) {
             ty.chk
                 .completion_error(ctx, ctx.tree(tree).pos, &failure, syms);
         }
-        ty.dependencies.borrow_mut().pop();
+        ty.dependencies.pop();
         ty.deferred_lint_handler.set_pos_state(prev_lint);
         ty.log.use_source(prev_source);
     }
@@ -305,7 +303,7 @@ impl TypeEnter {
         deferred_lint_handler: Rc<DeferredLintHandler>,
         lint: Option<Rc<crate::code::lint::Lint>>,
         type_envs: Rc<TypeEnvs>,
-        dependencies: Rc<RefCell<dyn Dependencies>>,
+        dependencies: Rc<dyn Dependencies>,
         annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
         todo: Rc<crate::comp::todo::Todo>,
     ) -> TypeEnter {
@@ -564,9 +562,7 @@ impl TypeEnter {
             .expect("TypeEnter.annotate must be injected");
         annotate.block_annotations();
         ctx.sym_mut(sym).flags_field |= flags::UNATTRIBUTED as i64;
-        self.dependencies
-            .borrow_mut()
-            .push(ctx, sym, CompletionCause::MEMBER_ENTER);
+        self.dependencies.push(ctx, sym, CompletionCause::MEMBER_ENTER);
         let env = {
             let type_envs = Rc::clone(&self.type_envs);
             type_envs.get(sym)
@@ -595,7 +591,7 @@ impl TypeEnter {
         };
         self.completion_stack.borrow_mut().pop();
         self.completion_depth.set(depth - 1);
-        self.dependencies.borrow_mut().pop();
+        self.dependencies.pop();
         if !queue.is_empty() {
             let mut seen: HashSet<TreeId> = HashSet::new();
             for env in queue {
@@ -747,9 +743,7 @@ impl TypeEnter {
             let prev_lint = self
                 .deferred_lint_handler.set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(tree).pos)));
             let sym = class_tree_symbol(ctx, tree).expect("class symbol");
-            self.dependencies
-                .borrow_mut()
-                .push(ctx, sym, CompletionCause::IMPORTS_PHASE);
+            self.dependencies.push(ctx, sym, CompletionCause::IMPORTS_PHASE);
             match self.run_imports_phase(ctx, syms, &env, attr) {
                 Ok(()) => {}
                 Err(failure) => {
@@ -757,7 +751,7 @@ impl TypeEnter {
                         .completion_error(ctx, ctx.tree(tree).pos, &failure, syms);
                 }
             }
-            self.dependencies.borrow_mut().pop();
+            self.dependencies.pop();
             self.deferred_lint_handler.set_pos_state(prev_lint);
             self.log.use_source(prev_source);
         }
@@ -4605,8 +4599,8 @@ mod tests {
             Rc::clone(&deferred),
             Rc::clone(&annotate_cell)
         ));
-        let dependencies: Rc<RefCell<dyn Dependencies>> =
-            Rc::new(RefCell::new(crate::code::dependencies::DummyDependencies));
+        let dependencies: Rc<dyn Dependencies> =
+            Rc::new(crate::code::dependencies::DummyDependencies);
         let make = Rc::new(crate::tree::tree_maker::TreeMaker::new(Some(
             Rc::clone(&names),
         )));

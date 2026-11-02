@@ -2764,7 +2764,7 @@ struct UnusedFileManager;
         crate::comp::check::attach_self(&check);
         let make = Rc::new(TreeMaker::new(Some(Rc::clone(&names))));
         let type_envs = Rc::new(TypeEnvs::new());
-        let dependencies: Rc<RefCell<dyn Dependencies>> = Rc::new(RefCell::new(DummyDependencies));
+        let dependencies: Rc<dyn Dependencies> = Rc::new(DummyDependencies);
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         let todo = crate::comp::todo::Todo::instance(&mut context);
         let enter = Rc::new(Enter::new(

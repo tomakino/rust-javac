@@ -32,19 +32,19 @@ pub enum CompletionCause {
 /// Java: public abstract class Dependencies
 pub trait Dependencies {
     /// Java: public abstract void push(ClassSymbol s, CompletionCause phase)
-    fn push(&mut self, ctx: &mut CompilerContext, sym: SymbolId, phase: CompletionCause);
+    fn push(&self, ctx: &mut CompilerContext, sym: SymbolId, phase: CompletionCause);
 
     /// Java: public abstract void pop()
-    fn pop(&mut self);
+    fn pop(&self);
 }
 
 /// Java: public static class DummyDependencies extends Dependencies
 pub struct DummyDependencies;
 
 impl Dependencies for DummyDependencies {
-    fn push(&mut self, _ctx: &mut CompilerContext, _sym: SymbolId, _phase: CompletionCause) {}
+    fn push(&self, _ctx: &mut CompilerContext, _sym: SymbolId, _phase: CompletionCause) {}
 
-    fn pop(&mut self) {}
+    fn pop(&self) {}
 }
 
 // NOT PORTED: GraphDependencies (Dependencies.java:100-430) — needs GraphUtils,
@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn dummy_dependencies_are_no_ops() {
         let mut ctx = CompilerContext::new();
-        let mut deps = DummyDependencies;
+        let deps = DummyDependencies;
         deps.push(&mut ctx, SymbolId::new(0), CompletionCause::CLASS_READER);
         deps.pop();
     }

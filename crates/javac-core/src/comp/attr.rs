@@ -99,7 +99,7 @@ pub struct Attr {
     pub diags: Rc<Factory>,
     pub deferred_lint_handler: Rc<DeferredLintHandler>,
     pub type_envs: Rc<TypeEnvs>,
-    pub dependencies: Rc<RefCell<dyn Dependencies>>,
+    pub dependencies: Rc<dyn Dependencies>,
     /// Java: final Preview preview (Attr.java:113).
     pub preview: Rc<crate::code::preview::Preview>,
     /// Java: boolean allowPoly
@@ -235,7 +235,7 @@ impl Attr {
         diags: Rc<Factory>,
         deferred_lint_handler: Rc<DeferredLintHandler>,
         type_envs: Rc<TypeEnvs>,
-        dependencies: Rc<RefCell<dyn Dependencies>>,
+        dependencies: Rc<dyn Dependencies>,
         basic_handler: Rc<dyn crate::comp::check::CheckContext>,
         syms: Rc<Symtab>,
         infer: Rc<crate::comp::infer::Infer>,
@@ -16380,8 +16380,8 @@ mod tests {
         ));
         crate::comp::check::attach_self(&chk);
         let type_envs = Rc::new(TypeEnvs::new());
-        let dependencies: Rc<RefCell<dyn crate::code::dependencies::Dependencies>> =
-            Rc::new(RefCell::new(DummyDependencies));
+        let dependencies: Rc<dyn crate::code::dependencies::Dependencies> =
+            Rc::new(DummyDependencies);
         let mut make = TreeMaker::new(Some(Rc::clone(&names)));
         make.types = Some(Rc::clone(&types));
         make.syms = Some(Rc::clone(&syms));
