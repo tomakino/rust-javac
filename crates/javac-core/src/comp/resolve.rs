@@ -9583,7 +9583,14 @@ impl Resolve {
         let tsym = ctx.typ(site).tsym.expect("class type symbol");
         let encl = self.resolve_self_containing_internal(ctx, syms, types, env, tsym, false);
         match encl {
-            None => true,
+            None => {
+                // Java: resolveSelfContainingInternal looks the synthetic `this`
+                // up in the environment scope, which in javac still sees the
+                // enclosing class scope. The ported environments push a fresh
+                // method scope, so that lookup misses even though an instance
+                // method always supplies `this`. Fall back to the static check.
+                self.is_static(env)
+            }
             Some(encl) => ctx.sym(encl).kind.is_resolution_error(),
         }
     }

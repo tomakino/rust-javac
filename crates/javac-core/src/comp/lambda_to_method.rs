@@ -1399,17 +1399,11 @@ impl LambdaAnalyzerPreprocessor {
                     break;
                 }
                 if ctx.tree(context_tree).has_tag(Tag::LAMBDA) {
-                    if let Some(outer) = outer_instance_symbol {
-                        let depth = self
-                            .context_map
-                            .borrow()
-                            .get(&context_tree)
-                            .map(|context| context.depth)
-                            .expect("context depth");
-                        if self.captured_decl(ctx, depth, outer).is_none() {
-                            break;
-                        }
-                    }
+                    // Java: lc.addSymbol(enclosingType.tsym, CAPTURED_THIS)
+                    // (LambdaToMethod.java, visitNewClass) records the
+                    // enclosing *class* symbol directly; no declaration
+                    // lookup is involved, so an inner-class creation always
+                    // captures the outer instance.
                     if let Some(outer) = outer_instance_symbol {
                         self.add_lambda_symbol(ctx, context_tree, outer, LambdaSymbolKind::CAPTURED_THIS);
                     }
