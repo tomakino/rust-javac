@@ -841,9 +841,7 @@ pub enum TypeKindData {
         /// Java: Set<Symbol> notPertinentToApplicability
         not_pertinent: Vec<SymbolId>,
         /// Java: SpeculativeCache speculativeCache
-        speculative_cache: std::rc::Rc<
-            std::cell::RefCell<crate::comp::deferred_attr::SpeculativeCache>,
-        >,
+        speculative_cache: std::rc::Rc<crate::comp::deferred_attr::SpeculativeCache>,
         /// Java: the ArgumentType state when this deferred type is an
         /// ArgumentAttr.ArgumentType (a Java subclass of DeferredType): the
         /// kind, the speculative tree and the ResultInfo-keyed speculative

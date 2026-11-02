@@ -1083,7 +1083,7 @@ impl ArgumentAttr {
                 } => Rc::clone(speculative_cache),
                 _ => return None,
             };
-            let entry = cache.borrow().get(msym, phase)?;
+            let entry = cache.get(msym, phase)?;
             return ctx.tree(entry.speculative_tree).ty;
         }
         let speculative_types = data.speculative_types.borrow();
@@ -1140,7 +1140,6 @@ impl ArgumentAttr {
                 _ => return None,
             };
             return cache
-                .borrow()
                 .get(deferred_attr_context.msym, deferred_attr_context.phase)
                 .map(|entry| entry.speculative_tree);
         }

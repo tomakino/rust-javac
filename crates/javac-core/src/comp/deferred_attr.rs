@@ -109,7 +109,7 @@ impl SpeculativeEntry {
 /// upstream, the port keeps a Vec of pairs — registered adapter)
 #[derive(Clone, Default)]
 pub struct SpeculativeCache {
-    pub cache: Vec<(Option<SymbolId>, Vec<SpeculativeEntry>)>,
+    pub cache: RefCell<Vec<(Option<SymbolId>, Vec<SpeculativeEntry>)>>,
 }
 
 impl SpeculativeCache {
@@ -119,8 +119,8 @@ impl SpeculativeCache {
         msym: Option<SymbolId>,
         phase: MethodResolutionPhase,
     ) -> Option<SpeculativeEntry> {
-        let entries = self
-            .cache
+        let cache = self.cache.borrow();
+        let entries = cache
             .iter()
             .find(|(key, _)| *key == msym)
             .map(|(_, entries)| entries)?;
@@ -128,16 +128,17 @@ impl SpeculativeCache {
     }
 
     /// Java: void put(JCTree speculativeTree, ResultInfo resultInfo)
-    pub fn put(&mut self, speculative_tree: TreeId, result_info: Rc<ResultInfo>) {
+    pub fn put(&self, speculative_tree: TreeId, result_info: Rc<ResultInfo>) {
         let msym = result_info.check_context.deferred_attr_context().msym;
         let entry = SpeculativeEntry {
             speculative_tree,
             result_info,
         };
-        if let Some((_, entries)) = self.cache.iter_mut().find(|(key, _)| *key == msym) {
+        let mut cache = self.cache.borrow_mut();
+        if let Some((_, entries)) = cache.iter_mut().find(|(key, _)| *key == msym) {
             entries.insert(0, entry);
         } else {
-            self.cache.push((msym, vec![entry]));
+            cache.push((msym, vec![entry]));
         }
     }
 }
@@ -164,7 +165,7 @@ pub fn deferred_type_new(
             env: copied_env,
             mode: None,
             not_pertinent: Vec::new(),
-            speculative_cache: Rc::new(RefCell::new(SpeculativeCache::default())),
+            speculative_cache: Rc::new(SpeculativeCache::default()),
             argument: None,
         },
     ))
@@ -175,7 +176,7 @@ type DeferredFields = (
     Rc<Env<crate::comp::attr_context::AttrContext>>,
     Option<AttrMode>,
     Vec<SymbolId>,
-    Rc<RefCell<SpeculativeCache>>,
+    Rc<SpeculativeCache>,
     Option<Rc<RefCell<crate::comp::argument_attr::ArgumentTypeData>>>,
 );
 
@@ -225,7 +226,7 @@ pub fn deferred_type_speculative_type(
         let selected = argument_attr.argument_type_speculative_type(ctx, &data, t, msym, phase);
         return selected;
     }
-    let entry = cache.borrow().get(msym, phase)?;
+    let entry = cache.get(msym, phase)?;
     ctx.tree(entry.speculative_tree).ty
 }
 
@@ -248,7 +249,6 @@ pub fn deferred_type_speculative_tree(
         return argument_attr.argument_type_speculative_tree(ctx, &data, t, deferred_attr_context);
     }
     cache
-        .borrow()
         .get(deferred_attr_context.msym, deferred_attr_context.phase)
         .map(|entry| entry.speculative_tree)
 }
@@ -286,7 +286,7 @@ pub fn deferred_type_complete_base(
                         other => panic!("unexpected speculative attribution failure: {:?}", other),
                     })?
             };
-            cache.borrow_mut().put(speculative_tree, result_info_rc);
+            cache.put(speculative_tree, result_info_rc);
             Ok(ctx
                 .tree(speculative_tree)
                 .ty
@@ -2721,7 +2721,6 @@ impl DeferredAttrService {
         };
         self.structural_check_tree(ctx, syms, attr, &state, tree)?;
         cache
-            .borrow_mut()
             .put(self.stuck_tree, Rc::clone(result_info));
         Ok(())
     }

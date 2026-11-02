@@ -15228,9 +15228,9 @@ impl Attr {
                     env,
                     mode: None,
                     not_pertinent: Vec::new(),
-                    speculative_cache: Rc::new(std::cell::RefCell::new(
-                        crate::comp::deferred_attr::SpeculativeCache { cache: Vec::new() },
-                    )),
+                    speculative_cache: Rc::new(crate::comp::deferred_attr::SpeculativeCache {
+                        cache: std::cell::RefCell::new(Vec::new()),
+                    }),
                     argument: None,
                 },
             );
