@@ -2262,7 +2262,7 @@ impl Check {
                 {
                     let fragment =
                         fragments::varargs_trustme_on_non_varargs_accessor(SymbolArg::placeholder(
-                            crate::code::printer::visit_symbol(ctx, &self.names, s),
+                            crate::code::printer::visit_symbol(ctx, s),
                         ));
                     let detail = self
                         .diags
@@ -2577,7 +2577,7 @@ impl Check {
 
     /// Java: private boolean symbol_is_constructor helper (MethodSymbol.isConstructor)
     fn symbol_is_constructor(&self, ctx: &CompilerContext, s: SymbolId) -> bool {
-        ctx.sym(s).name.to_java_string() == ctx.sym(s).name.table.names().init.to_java_string()
+        ctx.sym(s).is_constructor()
     }
 
     /// Java: public boolean validateAnnotationDeferErrors(JCAnnotation a)
@@ -5395,11 +5395,7 @@ fn collect_where_vars(
                         if ctx.sym(owner).kind == Kind::MTH {
                             format!(
                                 "method {}",
-                                crate::code::printer::visit_symbol(
-                                    ctx,
-                                    &Names::new(false),
-                                    owner,
-                                )
+                                crate::code::printer::visit_symbol(ctx, owner)
                             )
                         } else {
                             format!(
@@ -7493,7 +7489,7 @@ impl Check {
             && (flags_value & crate::code::flags::SYNTHETIC as i64) == 0
             && !should_skip
             && crate::code::symbol::is_inherited_in(ctx, syms, &self.types, s, site_tsym)
-            && !ctx.sym(s).is_constructor(&self.names)
+            && !ctx.sym(s).is_constructor()
     }
 }
 /// Adapter: List<T> length (the cons list has no len).
@@ -7542,7 +7538,7 @@ impl Check {
             let is_default = ctx.sym(m).kind == Kind::MTH
                 && (flags_value & crate::code::flags::DEFAULT) != 0
                 && crate::code::symbol::is_inherited_in(ctx, syms, &self.types, m, site_tsym)
-                && !ctx.sym(m).is_constructor(&self.names);
+                && !ctx.sym(m).is_constructor();
             if !is_default {
                 continue;
             }
@@ -9256,7 +9252,7 @@ impl Check {
         let anonymous_diamond = env.info.borrow().is_anonymous_diamond;
         let must_override = explicit_override
             || (anonymous_diamond
-                && !ctx.sym(m).is_constructor(&self.names)
+                && !ctx.sym(m).is_constructor()
                 && !ctx.sym(m).is_private());
         if must_override && !self.is_overrider(ctx, syms, m) {
             let pos = self.override_error_position(ctx, tree, override_tsym, explicit_override);
@@ -9343,7 +9339,7 @@ impl Check {
         let trust_me_tsym = syms.trust_me_type;
         let trust_me_tsym = ctx.typ(trust_me_tsym).tsym.expect("SafeVarargs type");
         let has_trust_me = ctx.sym(m).attribute(ctx, trust_me_tsym).is_some();
-        let method_display = crate::code::printer::visit_symbol(ctx, &self.names, m);
+        let method_display = crate::code::printer::visit_symbol(ctx, m);
         let is_var_args = (ctx.sym(m).flags_field & flags::VARARGS) != 0;
         let mut vararg_elem_type: Option<TypeId> = None;
         if is_var_args
@@ -9588,7 +9584,7 @@ impl Check {
                 }
                 let should_skip = (flags_value & flags::CLASH) != 0
                     && ctx.sym(*candidate).owner == Some(site_tsym);
-                if should_skip || ctx.sym(*candidate).is_constructor(&self.names) {
+                if should_skip || ctx.sym(*candidate).is_constructor() {
                     return false;
                 }
                 let syms_ref: &Symtab = &*syms;
@@ -9810,7 +9806,7 @@ impl Check {
             let flags_value = ctx.sym(candidate).flags_field;
             if ctx.sym(candidate).kind != Kind::MTH
                 || (flags_value & flags::SYNTHETIC as i64) != 0
-                || ctx.sym(candidate).is_constructor(&self.names)
+                || ctx.sym(candidate).is_constructor()
             {
                 continue;
             }
@@ -10103,11 +10099,7 @@ fn symbol_display_name(ctx: &mut CompilerContext, sym: SymbolId) -> String {
         ctx.sym(sym).kind_data,
         SymbolKind::MethodSymbol { .. }
     ) {
-        return crate::code::printer::visit_symbol(
-            ctx,
-            &Names::new(false),
-            sym,
-        );
+        return crate::code::printer::visit_symbol(ctx, sym);
     }
     ctx.sym(sym)
         .name

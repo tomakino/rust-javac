@@ -4633,7 +4633,7 @@ impl Attr {
             .owner
             .map(|owner| ctx.sym(owner).kind)
             .expect("symbol owner");
-        ctx.sym(owner).is_constructor(&self.names)
+        ctx.sym(owner).is_constructor()
             || (owner_owner_kind == Kind::TYP
                 && (owner_kind == Kind::VAR
                     || (owner_kind == Kind::MTH
@@ -10392,7 +10392,7 @@ impl Attr {
             self.result = Some(error);
             return Ok(error);
         }
-        let is_constructor = ctx.sym(ref_sym).is_constructor(&self.names);
+        let is_constructor = ctx.sym(ref_sym).is_constructor();
         let that_sym = if is_constructor {
             crate::code::symbol::base_symbol(ctx, ref_sym)
         } else {

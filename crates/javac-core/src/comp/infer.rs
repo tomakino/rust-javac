@@ -2027,7 +2027,7 @@ impl Infer {
                 .unwrap_or_else(|| {
                     crate::resources::diagnostic_contract::TypeArg::placeholder("none")
                 });
-            let method_name = crate::code::printer::visit_symbol(ctx, &self.names, msym);
+            let method_name = crate::code::printer::visit_symbol(ctx, msym);
             let note = crate::util::jc_diagnostic::Note::from(
                 crate::resources::compiler_properties::notes::deferred_method_inst(
                     SymbolArg::placeholder(method_name),

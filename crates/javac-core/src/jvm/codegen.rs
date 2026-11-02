@@ -1602,7 +1602,7 @@ impl Gen {
             _ => panic!("AssertionError: method declaration expected"),
         };
         let mut extras = 0;
-        let is_constructor = ctx.sym(meth).is_constructor(&self.names);
+        let is_constructor = ctx.sym(meth).is_constructor();
         if is_constructor {
             extras += 1;
             let owner = ctx.sym(meth).owner.expect("method owner");
@@ -1806,7 +1806,7 @@ impl Gen {
             let owner = ctx.sym(meth).owner.expect("method owner");
             let mut self_type = ctx.sym(owner).ty.expect("owner type");
             let object_type = self.syms.object_type;
-            if ctx.sym(meth).is_constructor(&self.names) && self_type != object_type {
+            if ctx.sym(meth).is_constructor() && self_type != object_type {
                 self_type = crate::jvm::uninitialized_type::uninitialized_this(ctx, self_type);
             }
             let names = Rc::clone(&self.names);

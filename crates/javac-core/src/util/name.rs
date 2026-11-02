@@ -36,7 +36,10 @@ pub struct NameTableHandle {
     /// Decoded UTF-16 views, keyed by the name's table index. Names are
     /// interned, so the same bytes are decoded repeatedly by symbol and
     /// diagnostic code; this cache removes that repeated work.
-    java_strings: RefCell<std::collections::HashMap<i32, Rc<JavaString>>>,
+    /// Decoded UTF-16 views, indexed by the name's table index. Names are
+    /// interned and indices are dense from zero, so a vector lookup replaces
+    /// the former hash map (the table-index lookup is on the hot path).
+    java_strings: RefCell<Vec<Option<Rc<JavaString>>>>,
 }
 
 enum NameTableInner {
@@ -52,7 +55,7 @@ impl NameTableHandle {
                 0x8000, 0x20000,
             ))),
             names: RefCell::new(None),
-            java_strings: RefCell::new(std::collections::HashMap::new()),
+            java_strings: RefCell::new(Vec::new()),
         })
     }
 
@@ -61,7 +64,7 @@ impl NameTableHandle {
         Rc::new(NameTableHandle {
             inner: RefCell::new(NameTableInner::Unshared(UnsharedNameTable::new(0x8000))),
             names: RefCell::new(None),
-            java_strings: RefCell::new(std::collections::HashMap::new()),
+            java_strings: RefCell::new(Vec::new()),
         })
     }
 
@@ -260,16 +263,20 @@ impl Name {
 
     /// Java: public String toString() { return Convert.utf2string(getByteArray(), getByteOffset(), getByteLength()); }
     pub fn to_java_string(&self) -> JavaString {
-        if let Some(cached) = self.table.java_strings.borrow().get(&self.index) {
+        let index = self.index as usize;
+        if let Some(Some(cached)) = self.table.java_strings.borrow().get(index) {
             return (**cached).clone();
         }
         let decoded = Rc::new(
             self.with_bytes(|bytes| convert::utf2string_range(bytes, 0, self.length)),
         );
-        self.table
-            .java_strings
-            .borrow_mut()
-            .insert(self.index, Rc::clone(&decoded));
+        {
+            let mut cache = self.table.java_strings.borrow_mut();
+            if cache.len() <= index {
+                cache.resize(index + 1, None);
+            }
+            cache[index] = Some(Rc::clone(&decoded));
+        }
         (*decoded).clone()
     }
 

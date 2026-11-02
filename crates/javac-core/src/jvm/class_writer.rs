@@ -1455,7 +1455,7 @@ impl ClassWriter {
             self.end_attr(alen_idx);
             acount += 1;
         }
-        let is_ctor = ctx.sym(m).is_constructor(&self.names);
+        let is_ctor = ctx.sym(m).is_constructor();
         let record_flag = (ctx.sym(m).flags_field & flags::RECORD) != 0;
         let is_lambda = is_lambda_method(ctx, m);
         if self.target.has_method_parameters()

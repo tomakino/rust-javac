@@ -609,7 +609,7 @@ impl Code {
 
     /// Return whether a symbol is a constructor.
     fn symbol_is_constructor(ctx: &CompilerContext, sym: SymbolId) -> bool {
-        ctx.sym(sym).name.to_java_string().to_string_lossy() == "<init>"
+        ctx.sym(sym).is_constructor()
     }
 
     /// Emit an invokestatic instruction.

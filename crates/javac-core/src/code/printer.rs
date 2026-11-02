@@ -20,7 +20,6 @@ use crate::ids::SymbolId;
 use crate::ids::TypeId;
 use crate::util::javac_messages::JavacMessages;
 use crate::util::list::List;
-use crate::util::names::Names;
 
 const PRINTER_PRIME: u64 = 997;
 
@@ -543,7 +542,6 @@ fn print_method_args(
 ///
 /// # Arguments
 ///   - ctx: the compiler context;
-///   - names: the name table (constructor detection);
 ///   - sym: the symbol to render.
 ///
 /// # Returns
@@ -551,7 +549,11 @@ fn print_method_args(
 ///
 /// # Panics
 ///   - none beyond the upstream invariants.
-pub fn visit_symbol(ctx: &CompilerContext, names: &Names, sym: SymbolId) -> String {
+///
+/// The constructor test mirrors Java's `Symbol.isConstructor()`
+/// (`name == name.table.names.init`); the name table is reached through the
+/// name itself, so no table service is passed in.
+pub fn visit_symbol(ctx: &CompilerContext, sym: SymbolId) -> String {
     if crate::code::symbol::symbol_is_static_or_instance_init(ctx, sym) {
         return ctx
             .sym(sym)
@@ -563,7 +565,7 @@ pub fn visit_symbol(ctx: &CompilerContext, names: &Names, sym: SymbolId) -> Stri
     if !matches!(symbol.kind_data, SymbolKind::MethodSymbol { .. }) {
         return symbol.name.to_java_string().to_string_lossy();
     }
-    let mut text = if symbol.is_constructor(names) {
+    let mut text = if symbol.is_constructor() {
         ctx.sym(symbol.owner.expect("constructor owner"))
             .name
             .to_java_string()

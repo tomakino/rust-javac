@@ -240,7 +240,7 @@ impl TypeAnnotations {
                 return AnnotationType::DECLARATION;
             }
         } else if target == self.names.METHOD {
-            if sym_kind == Kind::MTH && !ctx.sym(s).is_constructor(&self.names) {
+            if sym_kind == Kind::MTH && !ctx.sym(s).is_constructor() {
                 return AnnotationType::DECLARATION;
             }
         } else if target == self.names.PARAMETER {
@@ -256,7 +256,7 @@ impl TypeAnnotations {
                 return AnnotationType::DECLARATION;
             }
         } else if target == self.names.CONSTRUCTOR {
-            if sym_kind == Kind::MTH && ctx.sym(s).is_constructor(&self.names) {
+            if sym_kind == Kind::MTH && ctx.sym(s).is_constructor() {
                 return AnnotationType::DECLARATION;
             }
         } else if target == self.names.LOCAL_VARIABLE {
@@ -280,7 +280,7 @@ impl TypeAnnotations {
                 return AnnotationType::DECLARATION;
             }
         } else if target == self.names.TYPE_USE {
-            let is_constructor = sym_kind == Kind::MTH && ctx.sym(s).is_constructor(&self.names);
+            let is_constructor = sym_kind == Kind::MTH && ctx.sym(s).is_constructor();
             let returns_non_void = sym_kind == Kind::MTH
                 && !is_constructor
                 && ctx
@@ -622,7 +622,7 @@ impl<'a, 'b> TreeScannerVisitor for TypeAnnotationPositions<'a, 'b> {
                 _ => List::nil(),
             };
             if !mods_annotations.is_empty() {
-                let is_constructor = ctx.sym(sym).is_constructor(&self.type_annotations.names);
+                let is_constructor = ctx.sym(sym).is_constructor();
                 if is_constructor {
                     let pos = crate::code::type_annotation_position::TypeAnnotationPosition::method_return(
                         List::nil(),
@@ -2336,7 +2336,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                         panic!("AssertionError: could not determine symbol for method invocation")
                     }
                 };
-                if ctx.sym(exsym).is_constructor(&self.type_annotations.names) {
+                if ctx.sym(exsym).is_constructor() {
                     TypeAnnotationPosition::constructor_invocation_type_arg(
                         location,
                         type_index,

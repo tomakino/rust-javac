@@ -1431,8 +1431,12 @@ impl Symbol {
     }
 
     /// Java: public boolean isConstructor() { return name == name.table.names.init; }
-    pub fn is_constructor(&self, names: &crate::util::names::Names) -> bool {
-        self.name.to_java_string() == names.init.to_java_string()
+    ///
+    /// The comparison is the port's `Name` identity (table pointer + index),
+    /// mirroring the upstream reference comparison; the name table is reached
+    /// through the name itself (Java: name.table.names).
+    pub fn is_constructor(&self) -> bool {
+        self.name == self.name.names().init
     }
 
     /// Java: public boolean isRecord() { return (flags_field & RECORD) != 0; }
@@ -3453,14 +3457,13 @@ pub fn method_handle_reference_kind(
 
 /// Return whether a symbol is a constructor.
 ///
-/// The check needs the name table; it is kept local to the helper because the
-/// method-handle reference kind needs it for the invoked-special case.
+/// Java: the method-handle reference kind delegates to
+/// `Symbol.isConstructor()`; the name table travels with the name.
 fn referenced_is_constructor(
     ctx: &CompilerContext,
     sym: SymbolId,
 ) -> bool {
-    let name = &ctx.sym(sym).name;
-    name.to_java_string().to_string_lossy() == "<init>"
+    ctx.sym(sym).is_constructor()
 }
 
 /// Return the constant-pool tag of a symbol.

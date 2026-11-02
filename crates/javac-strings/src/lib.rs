@@ -10,20 +10,25 @@
 //! See docs/porting adapter.md ("String semantics").
 
 use std::fmt;
+use std::sync::Arc;
 
 /// A Java String: a sequence of UTF-16 code units.
 #[derive(Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct JavaString {
-    units: Vec<u16>,
+    units: Arc<Vec<u16>>,
 }
 
 impl JavaString {
     pub fn new() -> Self {
-        JavaString { units: Vec::new() }
+        JavaString {
+            units: Arc::new(Vec::new()),
+        }
     }
 
     pub fn from_units(units: Vec<u16>) -> Self {
-        JavaString { units }
+        JavaString {
+            units: Arc::new(units),
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -35,15 +40,15 @@ impl JavaString {
     }
 
     pub fn as_units(&self) -> &[u16] {
-        &self.units
+        self.units.as_slice()
     }
 
     pub fn as_units_mut(&mut self) -> &mut Vec<u16> {
-        &mut self.units
+        Arc::make_mut(&mut self.units)
     }
 
     pub fn push(&mut self, unit: u16) {
-        self.units.push(unit);
+        Arc::make_mut(&mut self.units).push(unit);
     }
 
     /// Java: charAt(index) — panics outside 0..len like Java throws.
@@ -54,14 +59,14 @@ impl JavaString {
     /// Lossy UTF-8 view, for Rust-side logging/tests only.
     /// Unpaired surrogates are replaced with U+FFFD.
     pub fn to_string_lossy(&self) -> String {
-        String::from_utf16_lossy(&self.units)
+        String::from_utf16_lossy(self.units.as_slice())
     }
 }
 
 impl From<&str> for JavaString {
     fn from(s: &str) -> Self {
         JavaString {
-            units: s.encode_utf16().collect(),
+            units: Arc::new(s.encode_utf16().collect()),
         }
     }
 }
@@ -69,7 +74,7 @@ impl From<&str> for JavaString {
 impl From<&[u16]> for JavaString {
     fn from(units: &[u16]) -> Self {
         JavaString {
-            units: units.to_vec(),
+            units: Arc::new(units.to_vec()),
         }
     }
 }
@@ -100,7 +105,7 @@ impl JavaString {
         let mut units = Vec::with_capacity(self.units.len() + other.units.len());
         units.extend_from_slice(&self.units);
         units.extend_from_slice(&other.units);
-        JavaString { units }
+        JavaString::from_units(units)
     }
 
     /// Java: public boolean startsWith(String prefix)
@@ -186,13 +191,12 @@ impl JavaString {
 
     /// Java: public String replace(char oldChar, char newChar)
     pub fn replace_char(&self, old: u16, new: u16) -> JavaString {
-        JavaString {
-            units: self
-                .units
+        JavaString::from_units(
+            self.units
                 .iter()
                 .map(|&u| if u == old { new } else { u })
                 .collect(),
-        }
+        )
     }
 
     /// Decode UTF-8 bytes to a JavaString with replacement of malformed input.
@@ -202,9 +206,7 @@ impl JavaString {
     /// sequence boundaries); Rust from_utf8_lossy is used until the file layer
     /// differential tests can compare against javac.
     pub fn from_utf8_lossy(bytes: &[u8]) -> JavaString {
-        JavaString {
-            units: String::from_utf8_lossy(bytes).encode_utf16().collect(),
-        }
+        JavaString::from_units(String::from_utf8_lossy(bytes).encode_utf16().collect())
     }
 }
 

@@ -678,9 +678,7 @@ impl MemberEnter {
         }
         let encl_method = local_env.encl_method.expect("enclosing method");
         let m = method_decl_symbol(ctx, encl_method).expect("method symbol");
-        let is_constructor = ctx
-            .sym(m)
-            .is_constructor(&crate::util::names::Names::new(false));
+        let is_constructor = ctx.sym(m).is_constructor();
         if is_constructor {
             let owner = ctx.sym(m).owner.expect("method owner");
             let owner_owner = ctx.sym(owner).owner.expect("owner owner");

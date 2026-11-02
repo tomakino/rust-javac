@@ -114,30 +114,9 @@ impl Locale {
         if let Some(locale) = override_locale {
             return locale;
         }
-        for variable in ["LC_ALL", "LC_MESSAGES", "LANG"] {
-            if let Ok(value) = std::env::var(variable) {
-                if value.is_empty() {
-                    continue;
-                }
-                let tag = value
-                    .split('.')
-                    .next()
-                    .unwrap_or("")
-                    .split('@')
-                    .next()
-                    .unwrap_or("");
-                if tag.is_empty() || tag == "C" || tag == "POSIX" {
-                    return Locale::new("en");
-                }
-                let tag = tag.replace('-', "_");
-                return Locale::new(normalize_locale_tag(&tag));
-            }
-        }
-        #[cfg(windows)]
-        if let Some(tag) = windows_ui_language_tag() {
-            return Locale::new(normalize_locale_tag(&tag));
-        }
-        Locale::new("en")
+        ENVIRONMENT_DEFAULT_LOCALE
+            .get_or_init(detect_environment_locale)
+            .clone()
     }
 
     /// The locale tag (adapter representation).
@@ -161,6 +140,40 @@ impl Locale {
 /// Process-wide default locale override installed by the CLI after parsing
 /// `-J-Duser.language`/`-J-Duser.country` (Java: the JVM properties).
 static DEFAULT_LOCALE_OVERRIDE: Mutex<Option<Locale>> = Mutex::new(None);
+
+/// Locale detected from the environment (`LC_ALL`/`LC_MESSAGES`/`LANG`, or
+/// the Windows UI language), cached for the process. Detection is stable for a
+/// compiler run, but it used to run on every `JavacMessages` construction.
+static ENVIRONMENT_DEFAULT_LOCALE: std::sync::OnceLock<Locale> = std::sync::OnceLock::new();
+
+/// Java: Locale.getDefault() environment detection, cached by
+/// `ENVIRONMENT_DEFAULT_LOCALE`.
+fn detect_environment_locale() -> Locale {
+    for variable in ["LC_ALL", "LC_MESSAGES", "LANG"] {
+        if let Ok(value) = std::env::var(variable) {
+            if value.is_empty() {
+                continue;
+            }
+            let tag = value
+                .split('.')
+                .next()
+                .unwrap_or("")
+                .split('@')
+                .next()
+                .unwrap_or("");
+            if tag.is_empty() || tag == "C" || tag == "POSIX" {
+                return Locale::new("en");
+            }
+            let tag = tag.replace('-', "_");
+            return Locale::new(normalize_locale_tag(&tag));
+        }
+    }
+    #[cfg(windows)]
+    if let Some(tag) = windows_ui_language_tag() {
+        return Locale::new(normalize_locale_tag(&tag));
+    }
+    Locale::new("en")
+}
 
 /// Sets the process default locale (used by the CLI launcher).
 pub fn set_default_locale(locale: Locale) {

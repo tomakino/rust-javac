@@ -334,7 +334,7 @@ impl Resolve {
             .owner
             .map(|owner| ctx.sym(owner).kind)
             .expect("symbol owner");
-        ctx.sym(owner).is_constructor(&self.names)
+        ctx.sym(owner).is_constructor()
             || (owner_owner_kind == Kind::TYP
                 && (owner_kind == Kind::VAR
                     || (owner_kind == Kind::MTH && (owner_flags & flags::BLOCK as i64) != 0))
@@ -520,7 +520,7 @@ impl Resolve {
         sym: SymbolId,
     ) -> bool {
         let is_method = ctx.sym(sym).kind == Kind::MTH;
-        let is_constructor = ctx.sym(sym).is_constructor(&self.names);
+        let is_constructor = ctx.sym(sym).is_constructor();
         let is_static = ctx.sym(sym).is_static(ctx);
         if !is_method || is_constructor || is_static {
             return true;
@@ -1242,7 +1242,7 @@ impl Resolve {
                     let mut details: Vec<crate::util::jc_diagnostic::JCDiagnostic> = Vec::new();
                     let mut seen_candidates = std::collections::HashSet::new();
                     for (sym, detail) in &filtered {
-                        let candidate_key = method_symbol_display(ctx, self.names.as_ref(), *sym);
+                        let candidate_key = method_symbol_display(ctx, *sym);
                         if !seen_candidates.insert(candidate_key) {
                             continue;
                         }
@@ -1358,7 +1358,7 @@ impl Resolve {
         // Types.memberType panics on ERROR-typed members while this diagnostic
         // is built inside attribution.
         let _ = (syms, types, site);
-        let member = method_symbol_display(ctx, self.names.as_ref(), sym);
+        let member = method_symbol_display(ctx, sym);
         let detail_arg = match detail {
             Some(diag) => DiagnosticArg::JCDiagnostic(Rc::new(diag)),
             None => DiagnosticArg::from_display("null"),
@@ -2027,7 +2027,7 @@ pub(crate) fn symbol_display_name(
             }
         }
         crate::code::symbol::SymbolKind::MethodSymbol { .. } => {
-            crate::code::printer::visit_symbol(ctx, &Names::new(false), symbol)
+            crate::code::printer::visit_symbol(ctx, symbol)
         }
         _ => ctx.sym(symbol).name.to_java_string().to_string_lossy(),
     }
@@ -6580,25 +6580,23 @@ fn type_display_str(ctx: &crate::compiler_context::CompilerContext, ty: TypeId) 
 /// Symbol rendering; the ported formatter only receives pre-rendered text.
 fn method_symbol_display(
     ctx: &crate::compiler_context::CompilerContext,
-    names: &Names,
     sym: SymbolId,
 ) -> String {
     // The upstream diagnostic printer renders method symbols through
     // Printer.visitMethodSymbol (constructors and initializers use the owner
     // name; generic methods carry their type variables; varargs use "...").
-    crate::code::printer::visit_symbol(ctx, names, sym)
+    crate::code::printer::visit_symbol(ctx, sym)
 }
 
 /// Java verbose resolution notes use Type.toString (fully qualified names) for
 /// the candidate parameter types.
 fn method_symbol_display_verbose(
     ctx: &crate::compiler_context::CompilerContext,
-    names: &Names,
     sym: SymbolId,
 ) -> String {
     let symbol = ctx.sym(sym);
     let owner = symbol.owner;
-    let name = if symbol.is_constructor(names) {
+    let name = if symbol.is_constructor() {
         owner
             .map(|owner| ctx.sym(owner).name.to_java_string().to_string_lossy())
             .unwrap_or_default()
@@ -6624,7 +6622,7 @@ fn method_symbol_display_verbose(
     }
     // Keep the printer's owner/type-variable prefix (e.g. T<G>.Ctor) and only
     // replace the parameter types with their qualified rendering.
-    let base = crate::code::printer::visit_symbol(ctx, names, sym);
+    let base = crate::code::printer::visit_symbol(ctx, sym);
     let prefix = base
         .find('(')
         .map(|open| &base[..open])
@@ -8040,7 +8038,7 @@ impl Resolve {
                 );
             }
         }
-        let sym_display = method_symbol_display_verbose(ctx, self.names.as_ref(), sym);
+        let sym_display = method_symbol_display_verbose(ctx, sym);
         let info = match &sub_diag {
             None => {
                 fragments::applicable_method_found(pos, SymbolArg::placeholder(sym_display), ())
@@ -8067,7 +8065,7 @@ impl Resolve {
         use crate::resources::compiler_properties::fragments;
         use crate::resources::diagnostic_contract::{DiagnosticArg, SymbolArg};
         use crate::util::jc_diagnostic::Fragment;
-        let sym_display = method_symbol_display_verbose(ctx, self.names.as_ref(), sym);
+        let sym_display = method_symbol_display_verbose(ctx, sym);
         let details = match sub_diag {
             Some(diag) => DiagnosticArg::JCDiagnostic(Rc::new(diag)),
             None => DiagnosticArg::from_display("null"),

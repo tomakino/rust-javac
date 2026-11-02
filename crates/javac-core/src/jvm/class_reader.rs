@@ -2744,11 +2744,7 @@ impl ClassReader {
                                         .sym(sym)
                                         .owner
                                         .map(|owner| {
-                                            crate::code::printer::visit_symbol(
-                                                ctx,
-                                                &Names::new(false),
-                                                owner,
-                                            )
+                                            crate::code::printer::visit_symbol(ctx, owner)
                                         })
                                         .unwrap_or_default();
                                     let detail = match failure.get_detail_value() {
@@ -5423,11 +5419,7 @@ fn find_enum_constant(
             .unwrap_or_default();
         let file_arg = FileObjectArg::from(file_name.as_str());
         let enum_sym = crate::resources::diagnostic_contract::SymbolArg::placeholder(
-            crate::code::printer::visit_symbol(
-                ctx,
-                &Names::new(false),
-                enum_tsym,
-            ),
+            crate::code::printer::visit_symbol(ctx, enum_tsym),
         );
         let info = warnings::unknown_enum_constant(file_arg, enum_sym, enumerator.clone());
         deprox.log.warning(None, None, warning_from_info(info));
