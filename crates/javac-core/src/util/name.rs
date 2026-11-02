@@ -37,7 +37,7 @@ pub struct NameTableHandle {
     /// interned, so the same bytes are decoded repeatedly by symbol and
     /// diagnostic code; this cache removes that repeated work. Indices are
     /// dense from zero, so a vector lookup replaces the former hash map.
-    java_strings: RefCell<Vec<Option<JavaString>>>,
+    java_strings: RefCell<Vec<Option<Rc<JavaString>>>>,
 }
 
 enum NameTableInner {
@@ -178,7 +178,7 @@ impl Name {
 
     /// Java: public boolean contentEquals(CharSequence cs)
     pub fn content_equals(&self, cs: &JavaString) -> bool {
-        self.to_java_string() == *cs
+        self.to_java_string_shared().as_ref() == cs
     }
 
     /// Java: public int poolTag() { return ClassFile.CONSTANT_Utf8; }
@@ -188,17 +188,18 @@ impl Name {
 
     /// Java: public int length()
     pub fn length(&self) -> usize {
-        self.to_java_string().len()
+        self.to_java_string_shared().len()
     }
 
     /// Java: public char charAt(int index)
     pub fn char_at(&self, index: usize) -> u16 {
-        self.to_java_string().char_at(index)
+        self.to_java_string_shared().char_at(index)
     }
 
     /// Java: public CharSequence subSequence(int start, int end)
     pub fn sub_sequence(&self, start: usize, end: usize) -> JavaString {
-        let units = self.to_java_string().as_units()[start..end].to_vec();
+        let shared = self.to_java_string_shared();
+        let units = shared.as_units()[start..end].to_vec();
         JavaString::from_units(units)
     }
 
@@ -261,22 +262,29 @@ impl Name {
 
     /// Java: public String toString() { return Convert.utf2string(getByteArray(), getByteOffset(), getByteLength()); }
     pub fn to_java_string(&self) -> JavaString {
+        (*self.to_java_string_shared()).clone()
+    }
+
+    /// Shared handle to the cached UTF-16 view. The clone is a plain Rc count
+    /// bump (no atomic operation); callers that can use Rc should prefer this
+    /// over to_java_string.
+    pub fn to_java_string_shared(&self) -> Rc<JavaString> {
         let index = self.index as usize;
         {
             let cache = self.table.java_strings.borrow();
             if let Some(Some(cached)) = cache.get(index) {
-                return cached.clone();
+                return Rc::clone(cached);
             }
         }
-        let decoded = self.with_bytes(|bytes| convert::utf2string_range(bytes, 0, self.length));
+        let shared = Rc::new(self.with_bytes(|bytes| convert::utf2string_range(bytes, 0, self.length)));
         {
             let mut cache = self.table.java_strings.borrow_mut();
             if cache.len() <= index {
                 cache.resize(index + 1, None);
             }
-            cache[index] = Some(decoded.clone());
+            cache[index] = Some(Rc::clone(&shared));
         }
-        decoded
+        shared
     }
 
     /// Java: public byte[] toUtf()
@@ -358,7 +366,7 @@ impl Hash for Name {
 
 impl fmt::Display for Name {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.to_java_string().to_string_lossy())
+        f.write_str(&self.to_java_string_shared().to_string_lossy())
     }
 }
 
