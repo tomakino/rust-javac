@@ -532,7 +532,7 @@ impl Log {
     }
 
     /// Java: public void setEndPosTable(JavaFileObject name, EndPosTable t)
-    pub fn set_end_pos_table(&self, name: Rc<dyn JavaFileObject>, end_pos_table: Rc<RefCell<dyn EndPosTable>>) {
+    pub fn set_end_pos_table(&self, name: Rc<dyn JavaFileObject>, end_pos_table: Rc<dyn EndPosTable>) {
         let source = self.get_source(Some(name));
         source.set_end_pos_table(end_pos_table);
     }

@@ -304,14 +304,14 @@ pub(crate) struct SimpleEndPosTable {
     /// Java: public int errorEndPos
     error_end_pos: i32,
     /// Java: private IntHashTable<JCTree> endPosMap
-    end_pos_map: IntHashTable<TreeId>,
+    end_pos_map: std::cell::RefCell<IntHashTable<TreeId>>,
 }
 
 impl SimpleEndPosTable {
     fn new() -> SimpleEndPosTable {
         SimpleEndPosTable {
             error_end_pos: NOPOS,
-            end_pos_map: IntHashTable::new(),
+            end_pos_map: std::cell::RefCell::new(IntHashTable::new()),
         }
     }
 }
@@ -319,7 +319,7 @@ impl SimpleEndPosTable {
 impl EndPosTable for SimpleEndPosTable {
     /// Java: public int getEndPos(JCTree tree)
     fn get_end_pos(&self, tree: TreeId) -> i32 {
-        let value = self.end_pos_map.get(&tree);
+        let value = self.end_pos_map.borrow().get(&tree);
         // As long as Position.NOPOS==-1, this just returns value.
         if value == -1 {
             NOPOS
@@ -329,18 +329,18 @@ impl EndPosTable for SimpleEndPosTable {
     }
 
     /// Java: public void storeEnd(JCTree tree, int endpos)
-    fn store_end(&mut self, tree: TreeId, endpos: i32) {
+    fn store_end(&self, tree: TreeId, endpos: i32) {
         let end = if self.error_end_pos > endpos {
             self.error_end_pos
         } else {
             endpos
         };
-        self.end_pos_map.put(tree, end);
+        self.end_pos_map.borrow_mut().put(tree, end);
     }
 
     /// Java: public int replaceTree(JCTree oldTree, JCTree newTree)
-    fn replace_tree(&mut self, old_tree: TreeId, new_tree: TreeId) -> i32 {
-        let pos = self.end_pos_map.remove(&old_tree);
+    fn replace_tree(&self, old_tree: TreeId, new_tree: TreeId) -> i32 {
+        let pos = self.end_pos_map.borrow_mut().remove(&old_tree);
         if pos != -1 {
             self.store_end(new_tree, pos);
             pos
@@ -393,9 +393,9 @@ impl EndPosTable for EmptyEndPosTable {
         NOPOS
     }
 
-    fn store_end(&mut self, _tree: TreeId, _endpos: i32) {}
+    fn store_end(&self, _tree: TreeId, _endpos: i32) {}
 
-    fn replace_tree(&mut self, _old_tree: TreeId, _new_tree: TreeId) -> i32 {
+    fn replace_tree(&self, _old_tree: TreeId, _new_tree: TreeId) -> i32 {
         NOPOS
     }
 }

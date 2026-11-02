@@ -57,7 +57,7 @@ pub struct DiagnosticSource {
     /// null -> None).
     file_object: Option<Rc<dyn JavaFileObject>>,
     /// The end position table (Java: protected EndPosTable endPosTable).
-    end_pos_table: RefCell<Option<Rc<RefCell<dyn EndPosTable>>>>,
+    end_pos_table: RefCell<Option<Rc<dyn EndPosTable>>>,
     /// A reference to the content of the file object (Java: protected
     /// SoftReference<char[]> refBuf).
     ref_buf: RefCell<Option<Rc<Vec<u16>>>>,
@@ -182,12 +182,12 @@ impl DiagnosticSource {
     }
 
     /// Java: public EndPosTable getEndPosTable()
-    pub fn get_end_pos_table(&self) -> Option<Rc<RefCell<dyn EndPosTable>>> {
+    pub fn get_end_pos_table(&self) -> Option<Rc<dyn EndPosTable>> {
         self.end_pos_table.borrow().clone()
     }
 
     /// Java: public void setEndPosTable(EndPosTable t)
-    pub fn set_end_pos_table(&self, t: Rc<RefCell<dyn EndPosTable>>) {
+    pub fn set_end_pos_table(&self, t: Rc<dyn EndPosTable>) {
         let mut slot = self.end_pos_table.borrow_mut();
         if let Some(existing) = slot.as_ref()
             && !Rc::ptr_eq(existing, &t)
@@ -428,12 +428,12 @@ mod tests {
     #[test]
     fn end_pos_table_can_be_set_once() {
         let source = DiagnosticSource::new(file_object("x"), None);
-        let table: Rc<RefCell<dyn EndPosTable>> = Rc::new(RefCell::new(MapEndPosTable));
+        let table: Rc<dyn EndPosTable> = Rc::new(MapEndPosTable);
         source.set_end_pos_table(Rc::clone(&table));
         assert!(source.get_end_pos_table().is_some());
         // Setting the same table again is allowed (Java: endPosTable == t).
         source.set_end_pos_table(Rc::clone(&table));
-        let other: Rc<RefCell<dyn EndPosTable>> = Rc::new(RefCell::new(MapEndPosTable));
+        let other: Rc<dyn EndPosTable> = Rc::new(MapEndPosTable);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             source.set_end_pos_table(other);
         }));
@@ -447,9 +447,9 @@ mod tests {
             NOPOS
         }
 
-        fn store_end(&mut self, _tree: crate::ids::TreeId, _end_pos: i32) {}
+        fn store_end(&self, _tree: crate::ids::TreeId, _end_pos: i32) {}
 
-        fn replace_tree(&mut self, _old_tree: crate::ids::TreeId, _new_tree: crate::ids::TreeId) -> i32 {
+        fn replace_tree(&self, _old_tree: crate::ids::TreeId, _new_tree: crate::ids::TreeId) -> i32 {
             NOPOS
         }
     }

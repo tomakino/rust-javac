@@ -22,7 +22,7 @@ pub trait EndPosTable {
     /// last error position and the given ending position.
     /// @param tree The tree.
     /// @param end_pos The ending position to associate with the tree.
-    fn store_end(&mut self, tree: TreeId, end_pos: i32);
+    fn store_end(&self, tree: TreeId, end_pos: i32);
 
     /// Give an old tree and a new tree, the old tree will be replaced with
     /// the new tree, the position of the new tree will be that of the old
@@ -30,7 +30,7 @@ pub trait EndPosTable {
     /// @param old_tree a JCTree to be replaced
     /// @param new_tree a JCTree to be replaced with
     /// @return position of the old tree or Positions.NOPOS for non-existent mapping
-    fn replace_tree(&mut self, old_tree: TreeId, new_tree: TreeId) -> i32;
+    fn replace_tree(&self, old_tree: TreeId, new_tree: TreeId) -> i32;
 }
 
 #[cfg(test)]
@@ -40,32 +40,32 @@ mod tests {
 
     /// Reference end-position table used to exercise the interface contract.
     struct MapEndPosTable {
-        positions: HashMap<TreeId, i32>,
+        positions: std::cell::RefCell<HashMap<TreeId, i32>>,
     }
 
     impl EndPosTable for MapEndPosTable {
         fn get_end_pos(&self, tree: TreeId) -> i32 {
-            self.positions.get(&tree).copied().unwrap_or(-1)
+            self.positions.borrow().get(&tree).copied().unwrap_or(-1)
         }
 
-        fn store_end(&mut self, tree: TreeId, end_pos: i32) {
-            self.positions.insert(tree, end_pos);
+        fn store_end(&self, tree: TreeId, end_pos: i32) {
+            self.positions.borrow_mut().insert(tree, end_pos);
         }
 
-        fn replace_tree(&mut self, old_tree: TreeId, new_tree: TreeId) -> i32 {
-            match self.positions.remove(&old_tree) {
+        fn replace_tree(&self, old_tree: TreeId, new_tree: TreeId) -> i32 {
+            let removed = self.positions.borrow_mut().remove(&old_tree);
+            match removed {
                 Some(position) => {
-                    self.positions.insert(new_tree, position);
+                    self.positions.borrow_mut().insert(new_tree, position);
                     position
                 }
                 None => -1,
             }
         }
     }
-
     fn table() -> MapEndPosTable {
         MapEndPosTable {
-            positions: HashMap::new(),
+            positions: std::cell::RefCell::new(HashMap::new()),
         }
     }
 

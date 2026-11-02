@@ -542,7 +542,7 @@ impl JCDiagnostic {
             .as_ref()
             .and_then(|source| source.get_end_pos_table());
         match end_pos_table {
-            Some(table) => position.get_end_position(Some(&*table.borrow())),
+            Some(table) => position.get_end_position(Some(&*table)),
             None => position.get_end_position(None),
         }
     }
@@ -1199,9 +1199,9 @@ mod tests {
             NOPOS
         }
 
-        fn store_end(&mut self, _tree: TreeId, _end_pos: i32) {}
+        fn store_end(&self, _tree: TreeId, _end_pos: i32) {}
 
-        fn replace_tree(&mut self, _old_tree: TreeId, _new_tree: TreeId) -> i32 {
+        fn replace_tree(&self, _old_tree: TreeId, _new_tree: TreeId) -> i32 {
             NOPOS
         }
     }
