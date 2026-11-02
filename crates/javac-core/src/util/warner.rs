@@ -1,20 +1,11 @@
-//! An interface to support optional warnings, needed for support of unchecked
-//! conversions and unchecked casts.
+//! Optional-warning state for unchecked conversions and unchecked casts.
 //!
-//! <p><b>This is NOT part of any supported API.
-//! If you write code that depends on this, you do so at your own risk.
-//! This code and its internal interfaces are subject to change or
-//! deletion without notice.</b>
-//!
-//!
-//! - the Java DiagnosticPosition object reference (nullable) maps to
-//!   Option<Rc<dyn DiagnosticPosition>>;
-//! - the Java EnumSet<LintCategory> fields map to Vec<LintCategory>: the only
-//!   operations in the class are add / clear / contains, and LintCategory is
-//!   Copy + Eq (registered in );
-//! - the protected warned field is a public Rust field (the Java subclasses -
-//!   e.g. Warner's users in Attr/Check - read it; Rust has no protected).
+//! The lint sets and the `warned` flag are the only mutable state; they are
+//! held in `RefCell`/`Cell` so a `Warner` can be driven through `&self`.
+//! Callers still share it as `Rc<RefCell<Warner>>` until the warning-sink
+//! interface is migrated to `Rc<Warner>`.
 
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::code::lint::LintCategory;
@@ -28,11 +19,11 @@ pub struct Warner {
     /// Java: private DiagnosticPosition pos (null -> None)
     pos: Option<Rc<dyn DiagnosticPosition>>,
     /// Java: protected boolean warned
-    pub warned: bool,
+    pub warned: Cell<bool>,
     /// Java: private EnumSet<LintCategory> nonSilentLintSet
-    non_silent_lint_set: Vec<LintCategory>,
+    non_silent_lint_set: RefCell<Vec<LintCategory>>,
     /// Java: private EnumSet<LintCategory> silentLintSet
-    silent_lint_set: Vec<LintCategory>,
+    silent_lint_set: RefCell<Vec<LintCategory>>,
 }
 
 impl Warner {
@@ -40,9 +31,9 @@ impl Warner {
     pub fn new(pos: Option<Rc<dyn DiagnosticPosition>>) -> Warner {
         Warner {
             pos,
-            warned: false,
-            non_silent_lint_set: Vec::new(),
-            silent_lint_set: Vec::new(),
+            warned: Cell::new(false),
+            non_silent_lint_set: RefCell::new(Vec::new()),
+            silent_lint_set: RefCell::new(Vec::new()),
         }
     }
 
@@ -52,27 +43,29 @@ impl Warner {
     }
 
     /// Java: public void warn(LintCategory lint)
-    pub fn warn(&mut self, lint: LintCategory) {
-        if !self.non_silent_lint_set.contains(&lint) {
-            self.non_silent_lint_set.push(lint);
+    pub fn warn(&self, lint: LintCategory) {
+        let mut set = self.non_silent_lint_set.borrow_mut();
+        if !set.contains(&lint) {
+            set.push(lint);
         }
     }
 
     /// Java: public void silentWarn(LintCategory lint)
-    pub fn silent_warn(&mut self, lint: LintCategory) {
-        if !self.silent_lint_set.contains(&lint) {
-            self.silent_lint_set.push(lint);
+    pub fn silent_warn(&self, lint: LintCategory) {
+        let mut set = self.silent_lint_set.borrow_mut();
+        if !set.contains(&lint) {
+            set.push(lint);
         }
     }
 
     /// Java: public boolean hasSilentLint(LintCategory lint)
     pub fn has_silent_lint(&self, lint: LintCategory) -> bool {
-        self.silent_lint_set.contains(&lint)
+        self.silent_lint_set.borrow().contains(&lint)
     }
 
     /// Java: public boolean hasNonSilentLint(LintCategory lint)
     pub fn has_non_silent_lint(&self, lint: LintCategory) -> bool {
-        self.non_silent_lint_set.contains(&lint)
+        self.non_silent_lint_set.borrow().contains(&lint)
     }
 
     /// Java: public boolean hasLint(LintCategory lint)
@@ -81,10 +74,10 @@ impl Warner {
     }
 
     /// Java: public void clear()
-    pub fn clear(&mut self) {
-        self.non_silent_lint_set.clear();
-        self.silent_lint_set.clear();
-        self.warned = false;
+    pub fn clear(&self) {
+        self.non_silent_lint_set.borrow_mut().clear();
+        self.silent_lint_set.borrow_mut().clear();
+        self.warned.set(false);
     }
 }
 
@@ -97,7 +90,7 @@ mod tests {
     fn lint_sets_and_clear() {
         let pos: Option<Rc<dyn DiagnosticPosition>> =
             Some(Rc::new(SimpleDiagnosticPosition::new(3)));
-        let mut warner = Warner::new(pos.clone());
+        let warner = Warner::new(pos.clone());
         assert!(warner.pos().is_some());
         assert!(!warner.has_lint(LintCategory::CAST));
         warner.warn(LintCategory::CAST);
@@ -107,18 +100,18 @@ mod tests {
         assert!(warner.has_silent_lint(LintCategory::RAW));
         assert!(warner.has_lint(LintCategory::RAW));
         assert!(!warner.has_lint(LintCategory::DEPRECATION));
-        warner.warned = true;
+        warner.warned.set(true);
         warner.clear();
         assert!(!warner.has_lint(LintCategory::CAST));
         assert!(!warner.has_lint(LintCategory::RAW));
-        assert!(!warner.warned);
+        assert!(!warner.warned.get());
     }
 
     #[test]
     fn default_warner_has_no_position() {
         let warner = Warner::default();
         assert!(warner.pos().is_none());
-        assert!(!warner.warned);
+        assert!(!warner.warned.get());
         assert!(!warner.has_lint(LintCategory::CAST));
     }
 }
