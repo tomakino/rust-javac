@@ -160,6 +160,26 @@ impl CharsetDecoder {
                 self.started = true;
                 continue;
             }
+            // ASCII fast path: source files are overwhelmingly ASCII, and the
+            // general path allocates a Vec<u16> for every decoded sequence.
+            // Copy the run of ASCII bytes in one step instead.
+            if matches!(
+                self.charset,
+                Charset::Utf8 | Charset::UsAscii | Charset::Iso8859_1
+            ) {
+                let ascii = remaining.iter().take_while(|byte| byte.is_ascii()).count();
+                if ascii > 0 {
+                    let take = ascii.min(output.remaining());
+                    for byte in &remaining[..take] {
+                        output.put(*byte as u16);
+                    }
+                    input.advance(take);
+                    if take < ascii {
+                        return CoderResult::Overflow;
+                    }
+                    continue;
+                }
+            }
             let step = if self.charset == Charset::Utf16 {
                 decode_utf16_step(remaining, self.endian_big, end_of_input)
             } else {
