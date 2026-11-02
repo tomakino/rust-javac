@@ -3156,8 +3156,8 @@ fn class_tree_symbol(ctx: &CompilerContext, tree: TreeId) -> Option<SymbolId> {
 // ---------------------------------------------------------------------------
 
 pub use crate::comp::attr_contexts::{
-    ConditionalCheckContext, DiamondCheckContext, ExpressionLambdaReturnContext,
-    FunctionalReturnContext,
+    CastCheckContext, ConditionalCheckContext, DiamondCheckContext,
+    ExpressionLambdaReturnContext, FunctionalReturnContext, RecoveryCheckContext,
 };
 
 impl Attr {
@@ -3700,59 +3700,6 @@ pub(crate) fn annotation_type_display(ctx: &CompilerContext, t: TypeId) -> Strin
         owner = ctx.sym(owner_sym).owner;
     }
     format!("@{name}")
-}
-
-/// Java: Attr.RecoveryInfo's anonymous CheckContext (Attr.java:598-620): a
-/// NestedCheckContext whose deferredAttrContext is the empty deferred context.
-/// Registered adapter: the anonymous subclass is a named struct.
-pub struct RecoveryCheckContext {
-    pub enclosing: Rc<dyn crate::comp::check::CheckContext>,
-    pub deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
-}
-
-impl crate::comp::check::CheckContext for RecoveryCheckContext {
-    fn compatible(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        types: &Types,
-        found: TypeId,
-        req: TypeId,
-        warn: &crate::util::warner::Warner,
-    ) -> bool {
-        self.enclosing
-            .compatible(ctx, syms, types, found, req, warn)
-    }
-
-    fn report(
-        &self,
-        ctx: &mut CompilerContext,
-        pos: i32,
-        details: &crate::util::jc_diagnostic::JCDiagnostic,
-    ) {
-        self.enclosing.report(ctx, pos, details);
-    }
-
-    fn check_warner(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        types: &Types,
-        pos: i32,
-        found: TypeId,
-        req: TypeId,
-    ) -> crate::util::warner::Warner {
-        self.enclosing
-            .check_warner(ctx, syms, types, pos, found, req)
-    }
-
-    fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
-        self.enclosing.inference_context()
-    }
-
-    fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
-        &self.deferred_attr_context
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -6986,62 +6933,6 @@ impl Attr {
         let result = self.check(ctx, syms, tree, owntype, KindSelector::VAL, &result_info);
         self.result = Some(result);
         Ok(result)
-    }
-}
-
-/// Java: the anonymous Check.NestedCheckContext in visitTypeCast
-/// (Attr.java:4044-4065) overriding compatible with isCastable (adapter: the
-/// anonymous subclass is a named struct; Types.isCastable is the read-only
-/// castability path so the CheckContext `&Symtab` contract is preserved).
-pub struct CastCheckContext {
-    pub enclosing: Rc<dyn crate::comp::check::CheckContext>,
-    pub types: Rc<Types>,
-}
-
-impl crate::comp::check::CheckContext for CastCheckContext {
-    fn compatible(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        types: &Types,
-        found: TypeId,
-        req: TypeId,
-        warn: &crate::util::warner::Warner,
-    ) -> bool {
-        let _ = types;
-        // Java: return types.isCastable(found, req, warn);
-        self.types
-            .is_castable_with_warn(ctx, syms, found, req, warn)
-    }
-
-    fn report(
-        &self,
-        ctx: &mut CompilerContext,
-        pos: i32,
-        details: &crate::util::jc_diagnostic::JCDiagnostic,
-    ) {
-        self.enclosing.report(ctx, pos, details);
-    }
-
-    fn check_warner(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        types: &Types,
-        pos: i32,
-        found: TypeId,
-        req: TypeId,
-    ) -> crate::util::warner::Warner {
-        self.enclosing
-            .check_warner(ctx, syms, types, pos, found, req)
-    }
-
-    fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
-        self.enclosing.inference_context()
-    }
-
-    fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
-        self.enclosing.deferred_attr_context()
     }
 }
 
