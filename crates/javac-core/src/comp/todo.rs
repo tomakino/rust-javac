@@ -15,7 +15,7 @@ use crate::util::context::Context;
 /// One queue of the environments belonging to the same source file.
 pub struct FileQueue {
     /// The environments of this file.
-    pub file_contents: Vec<Rc<Env<AttrContext>>>,
+    pub file_contents: RefCell<Vec<Rc<Env<AttrContext>>>>,
     /// The source file of the queue.
     pub file: Option<Rc<dyn JavaFileObject>>,
 }
@@ -24,19 +24,19 @@ impl FileQueue {
     /// Create an empty file queue for the given file.
     pub fn new(file: Option<Rc<dyn JavaFileObject>>) -> FileQueue {
         FileQueue {
-            file_contents: Vec::new(),
+            file_contents: RefCell::new(Vec::new()),
             file,
         }
     }
 
     /// Return whether the queue is empty.
     pub fn is_empty(&self) -> bool {
-        self.file_contents.is_empty()
+        self.file_contents.borrow().is_empty()
     }
 
     /// Return the number of environments in the queue.
     pub fn size(&self) -> i32 {
-        self.file_contents.len() as i32
+        self.file_contents.borrow().len() as i32
     }
 }
 
@@ -51,7 +51,7 @@ pub struct Todo {
 }
 
 /// One shared per-file queue.
-pub type FileQueueRef = Rc<RefCell<FileQueue>>;
+pub type FileQueueRef = Rc<FileQueue>;
 
 /// The shared todo list (Java: the Todo singleton).
 pub type TodoRef = Rc<RefCell<Todo>>;
@@ -185,7 +185,7 @@ impl Todo {
         let queue = match existing {
             Some(queue) => queue,
             None => {
-                let queue = Rc::new(RefCell::new(FileQueue::new(file.clone())));
+                let queue = Rc::new(FileQueue::new(file.clone()));
                 if let Some(file) = file {
                     self.file_map.push((file, Rc::clone(&queue)));
                 }
@@ -196,7 +196,7 @@ impl Todo {
                 queue
             }
         };
-        queue.borrow_mut().file_contents.push(Rc::clone(env));
+        queue.file_contents.borrow_mut().push(Rc::clone(env));
     }
 
     /// Remove an environment from the per-file queue of its source file.
@@ -213,14 +213,12 @@ impl Todo {
         let Some(queue) = found else {
             return;
         };
-        let mut queue_ref = queue.borrow_mut();
-        let before = queue_ref.file_contents.len();
-        queue_ref
-            .file_contents
-            .retain(|candidate| !Rc::ptr_eq(candidate, env));
-        let removed = queue_ref.file_contents.len() != before;
-        drop(queue_ref);
-        if removed && queue.borrow().is_empty() {
+        let mut contents = queue.file_contents.borrow_mut();
+        let before = contents.len();
+        contents.retain(|candidate| !Rc::ptr_eq(candidate, env));
+        let removed = contents.len() != before;
+        drop(contents);
+        if removed && queue.is_empty() {
             self.file_map
                 .retain(|(candidate, _)| !Rc::ptr_eq(candidate, &file));
             if let Some(queues) = &mut self.contents_by_file {
