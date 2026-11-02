@@ -48,7 +48,7 @@ pub struct TypeAnnotations {
     /// Java: final Types types
     pub types: Rc<crate::code::types::Types>,
     /// Adapter: the shared symbol table cell (the signatures hook runs later).
-    pub syms: Rc<std::cell::RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     /// Java: final Factory diags
     pub diags: Rc<Factory>,
 }
@@ -74,7 +74,7 @@ impl TypeAnnotations {
         attr: Rc<std::cell::RefCell<crate::comp::attr::Attr>>,
         annotate: Rc<crate::comp::annotate::Annotate>,
         types: Rc<crate::code::types::Types>,
-        syms: Rc<std::cell::RefCell<Symtab>>,
+        syms: Rc<Symtab>,
         diags: Rc<Factory>,
     ) -> TypeAnnotations {
         TypeAnnotations {

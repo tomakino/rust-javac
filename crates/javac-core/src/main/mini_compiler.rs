@@ -95,7 +95,7 @@ pub struct MiniCompiler {
     /// The diagnostic factory.
     pub diags: Rc<Factory>,
     /// The symbol table.
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     /// The type relations.
     pub types: Rc<Types>,
     /// The lint settings.
@@ -406,8 +406,7 @@ impl MiniCompiler {
             .unwrap_or_else(|| source.required_target());
         let profile = Profile::instance(&mut util_context);
         let mut ctx = CompilerContext::new();
-        let syms_value = Symtab::new(&mut ctx, Rc::clone(&names), target, source);
-        let syms = Rc::new(RefCell::new(syms_value));
+        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), target, source);
         let types = Rc::new(Types::with_names(Rc::clone(&names)));
         let make = TreeMaker::instance(&mut util_context);
         let deferred_lint_handler = Rc::new(DeferredLintHandler::new());
@@ -527,7 +526,8 @@ impl MiniCompiler {
         );
         let java_home_path = java_home().as_path().to_path_buf();
         let todo = Todo::instance(&mut util_context);
-        self_set_initial_completer(&mut ctx, &syms, &finder);
+        self_set_initial_completer(&mut ctx, &mut syms, &finder);
+        let syms = syms.freeze();
         let chk = Rc::new(Check::new(
             Rc::clone(&names),
             Rc::clone(&log),
@@ -589,7 +589,7 @@ impl MiniCompiler {
         // Java: Enter constructor builds predefClassDef from
         // Symtab.predefClass (Enter.java:130-134).
         {
-            let predef = syms.borrow().predef_class;
+            let predef = syms.predef_class;
             let (def, predef_ty) = {
                 let mut maker = make.borrow_mut();
                 let mods = maker.modifiers(&mut ctx, crate::code::flags::PUBLIC as i64);
@@ -848,8 +848,7 @@ impl MiniCompiler {
         let module_completer = modules.get_completer();
         let module_completer_factory: CompleterFactory =
             Rc::new(move || Rc::clone(&module_completer));
-        syms.borrow_mut()
-            .set_module_completer(&mut ctx, module_completer_factory);
+        syms.set_module_completer(&mut ctx, module_completer_factory);
         // Port adapter: ParserFactory obtains Log/Options from its Context, so the
         // parser must share the compiler context; otherwise parse-time
         // log.useSource would not reach the parser log and syntax errors would
@@ -955,8 +954,8 @@ impl MiniCompiler {
     /// compile_files calls Modules.initModules (JavaCompiler.initModules
     /// equivalent), so this constructor bootstrap remains the initial adapter).
     fn bootstrap_modules(&mut self) {
-        let java_base = self.syms.borrow().java_base;
-        let unnamed = self.syms.borrow().unnamed_module;
+        let java_base = self.syms.java_base;
+        let unnamed = self.syms.unnamed_module;
         let system_modules = StandardLocation::location_for(&js("SYSTEM_MODULES"));
         let module_location_result = self
             .file_manager
@@ -993,16 +992,15 @@ impl MiniCompiler {
                         .from_string(&javac_strings::JavaString::from(package.as_str()));
                     let package_symbol = self
                         .syms
-                        .borrow_mut()
                         .enter_package(&mut self.ctx, java_base, name);
                     // Java: Modules bootstrap records every module package in the
                     // module's visiblePackages (the module reads its own packages).
-                    self.syms.borrow_mut().add_visible_package(
+                    self.syms.add_visible_package(
                         &mut self.ctx,
                         java_base,
                         package_symbol,
                     );
-                    self.syms.borrow_mut().add_visible_package(
+                    self.syms.add_visible_package(
                         &mut self.ctx,
                         unnamed,
                         package_symbol,
@@ -1166,7 +1164,7 @@ impl MiniCompiler {
         // JavaCompiler.initModules (JavaCompiler.java:1020-1026).
         {
             let syms_rc = Rc::clone(&self.syms);
-            let mut syms = syms_rc.borrow_mut();
+            let mut syms = &*syms_rc;
             self.modules
                 .init_modules(&mut self.ctx, &mut syms, &roots);
         }
@@ -1180,7 +1178,7 @@ impl MiniCompiler {
         let root_list = List::from_iterable(roots.iter().copied());
         {
             let syms_rc = Rc::clone(&self.syms);
-            let mut syms = syms_rc.borrow_mut();
+            let mut syms = &*syms_rc;
             if let Err(failure) = self
                 .enter
                 .main(&mut self.ctx, &mut syms, root_list.clone())
@@ -1197,7 +1195,7 @@ impl MiniCompiler {
         // initial annotation-processing block and flush the queued annotations.
         {
             let syms_rc = Rc::clone(&self.syms);
-            let mut syms = syms_rc.borrow_mut();
+            let mut syms = &*syms_rc;
             self.annotate
                 .enter_done(&mut self.ctx, &mut syms)
                 .expect("enterDone annotation flush");
@@ -1250,7 +1248,7 @@ impl MiniCompiler {
             // class (JavaCompiler.java:1342-1347).
             let analyzer_service = self.attr.borrow().analyzer.borrow().clone();
             if let Some(analyzer) = analyzer_service {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 analyzer.borrow_mut().flush(&mut self.ctx, &syms, env);
             }
         }
@@ -1286,7 +1284,7 @@ impl MiniCompiler {
                 });
             let prev_source = self.log.borrow_mut().use_source(sourcefile);
             let make = Rc::clone(&self.make);
-            let syms_guard = self.syms.borrow();
+            let syms_guard = &*self.syms;
             self.flow
                 .analyze_tree(&mut self.ctx, &syms_guard, env, &make);
             self.log.borrow_mut().use_source(prev_source);
@@ -1517,7 +1515,7 @@ impl MiniCompiler {
             && let Some(super_ty) = self.ctx.tree(extending).ty
             && let Some(super_tsym) = self.ctx.typ(super_ty).tsym
         {
-            let enum_sym = self.syms.borrow().enum_sym;
+            let enum_sym = self.syms.enum_sym;
             if super_tsym != enum_sym
                 && (self.ctx.sym(super_tsym).flags_field & crate::code::flags::ENUM as i64) != 0
                 && (self.ctx.sym(class_sym).flags_field
@@ -1582,7 +1580,7 @@ impl MiniCompiler {
         let _ = local_make;
         {
             let syms = Rc::clone(&self.syms);
-            let mut syms = syms.borrow_mut();
+            let mut syms = &*syms;
             self.attr
                 .borrow_mut()
                 .attrib(&mut self.ctx, &mut syms, env);
@@ -1609,12 +1607,12 @@ impl MiniCompiler {
         if self.file_manager.has_location(&*native_header_output) {
             let needs_header = {
                 let syms_rc = Rc::clone(&self.syms);
-                let syms = syms_rc.borrow();
+                let syms = &*syms_rc;
                 self.jni_writer.needs_header(&mut self.ctx, &syms, c)
             };
             if needs_header {
                 let syms_rc = Rc::clone(&self.syms);
-                let syms = syms_rc.borrow();
+                let syms = &*syms_rc;
                 self.jni_writer
                     .write(&mut self.ctx, &syms, c)
                     .map_err(|error| format!("native header writer error: {error}"))?;
@@ -1823,11 +1821,10 @@ impl MiniCompiler {
 /// the Rust bootstrap creates the ClassFinder after Symtab, registered adapter).
 fn self_set_initial_completer(
     ctx: &mut CompilerContext,
-    syms: &Rc<RefCell<Symtab>>,
+    syms: &mut Symtab,
     finder: &Rc<crate::code::class_finder::ClassFinder>,
 ) {
-    syms.borrow_mut()
-        .set_initial_completer(ctx, finder.get_completer_factory());
+    Symtab::set_initial_completer(syms, ctx, finder.get_completer_factory());
 }
 
 /// Java: JavaCompiler.findPackageInFile (JavaCompiler.java:1741-1770), wired

@@ -499,7 +499,7 @@ pub trait BaseAnalyzer: FlowVisitor {
 pub struct Flow {
     pub names: Rc<Names>,
     pub log: Rc<RefCell<Log>>,
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     pub types: Rc<Types>,
     pub chk: Rc<Check>,
     pub rs: Rc<Resolve>,
@@ -520,7 +520,7 @@ impl Flow {
         _ctx: &mut CompilerContext,
         names: Rc<Names>,
         log: Rc<RefCell<Log>>,
-        syms: Rc<RefCell<Symtab>>,
+        syms: Rc<Symtab>,
         types: Rc<Types>,
         chk: Rc<Check>,
         rs: Rc<Resolve>,
@@ -5701,12 +5701,12 @@ mod tests {
         let names = Rc::new(Names::new(false));
         let log = Log::instance(&mut jcontext);
         let source = Source::JDK17;
-        let syms = Rc::new(RefCell::new(Symtab::new(
+        let syms = Rc::new(Symtab::new(
             &mut ctx,
             Rc::clone(&names),
             Target::DEFAULT,
             source,
-        )));
+        ));
         let types = Rc::new(Types::with_names(Rc::clone(&names)));
         let messages = JavacMessages::instance(&mut jcontext);
         let diags = Rc::new(Factory::new(messages, "compiler"));
@@ -5788,8 +5788,8 @@ mod tests {
             info: Rc::new(RefCell::new(AttrContext::new())),
             base_clause: false,
         });
-        let syms_guard = syms.borrow();
-        flow.analyze_tree(&mut ctx, &syms_guard, &env, &make);
+        let syms_guard = &*syms;
+        flow.analyze_tree(&mut ctx, syms_guard, &env, &make);
         assert_eq!(log.borrow().nerrors, 0);
     }
 
@@ -5818,12 +5818,12 @@ mod tests {
         let names = Rc::new(Names::new(false));
         let log = Log::instance(&mut jcontext);
         let source = Source::JDK17;
-        let syms = Rc::new(RefCell::new(Symtab::new(
+        let syms = Rc::new(Symtab::new(
             &mut ctx,
             Rc::clone(&names),
             Target::DEFAULT,
             source,
-        )));
+        ));
         let types = Rc::new(Types::with_names(Rc::clone(&names)));
         let messages = JavacMessages::instance(&mut jcontext);
         let diags = Rc::new(Factory::new(messages, "compiler"));
@@ -5865,8 +5865,8 @@ mod tests {
             source,
             None,
         );
-        let syms_guard = syms.borrow();
-        let mut analyzer = AliveAnalyzer::new(&flow, &syms_guard);
+        let syms_guard = &*syms;
+        let mut analyzer = AliveAnalyzer::new(&flow, syms_guard);
         let no_type = ctx.alloc_type(Type::new(
             TypeTag::NONE,
             None,

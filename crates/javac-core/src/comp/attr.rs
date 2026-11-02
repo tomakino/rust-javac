@@ -158,7 +158,7 @@ pub struct Attr {
     pub attr_recover: Rc<RefCell<Option<Rc<RefCell<crate::comp::attr_recover::AttrRecover>>>>>,
 
     /// Java: final Symtab syms (injected service, ADR 0001)
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     /// Java: final Infer infer (injected service, ADR 0001)
     pub infer: Rc<crate::comp::infer::Infer>,
     /// Java: final Resolve rs (cell: Resolve and Attr are mutually recursive
@@ -237,7 +237,7 @@ impl Attr {
         type_envs: Rc<TypeEnvs>,
         dependencies: Rc<RefCell<dyn Dependencies>>,
         basic_handler: Rc<dyn crate::comp::check::CheckContext>,
-        syms: Rc<RefCell<Symtab>>,
+        syms: Rc<Symtab>,
         infer: Rc<crate::comp::infer::Infer>,
         source: crate::code::source::Source,
         options: &crate::util::options::Options,
@@ -255,14 +255,14 @@ impl Attr {
         let allow_pattern_switch = (preview.is_enabled()
             || !preview.is_preview(Feature::PATTERN_SWITCH))
             && Feature::PATTERN_SWITCH.allowed_in_source(source);
-        let recovery_type = syms.borrow().recovery_type;
+        let recovery_type = syms.recovery_type;
         let symtab_facts = SymtabFacts {
-            recovery_type: syms.borrow().recovery_type,
-            unnamed_module: syms.borrow().unnamed_module,
-            no_module: syms.borrow().no_module,
-            enum_sym: enum_sym_value(&syms.borrow()),
-            throwable_type: syms.borrow().throwable_type,
-            void_type: syms.borrow().void_type,
+            recovery_type: syms.recovery_type,
+            unnamed_module: syms.unnamed_module,
+            no_module: syms.no_module,
+            enum_sym: enum_sym_value(&*syms),
+            throwable_type: syms.throwable_type,
+            void_type: syms.void_type,
         };
         let mb_log = Rc::clone(&log);
         let mb_diags = Rc::clone(&diags);
@@ -10819,7 +10819,7 @@ pub fn wire_attr_services(
         let mut maker = make.borrow_mut();
         maker.types = Some(Rc::clone(&types));
         maker.syms = Some(Rc::clone(&syms));
-        maker.root_package = Some(syms.borrow().root_package);
+        maker.root_package = Some(syms.root_package);
     }
     // 1. Resolve (Resolve.java:120-200)
     let rs = Rc::new(crate::comp::resolve::Resolve::new(
@@ -10848,7 +10848,7 @@ pub fn wire_attr_services(
     // 2. Operators (Operators.java:100-140)
     let operators = Rc::new(crate::comp::operators::Operators::new(
         ctx,
-        &syms.borrow(),
+        &*syms,
         Rc::clone(&names),
         Rc::clone(&log),
         Rc::clone(&diags),
@@ -16011,7 +16011,7 @@ mod tests {
 
     struct AttrHarness {
         ctx: CompilerContext,
-        syms: Rc<RefCell<Symtab>>,
+        syms: Rc<Symtab>,
         names: Rc<Names>,
         log: Rc<RefCell<Log>>,
         diags: Rc<Factory>,
@@ -16155,7 +16155,7 @@ mod tests {
         let make = Rc::clone(&attr.borrow().make);
         let types_rc = Rc::clone(&attr.borrow().types);
         let (object_type, owner_symbol) = {
-            let syms_ref = syms.borrow();
+            let syms_ref = &*syms;
             let owner_tree = env.encl_class.expect("enclosing class");
             let owner = match &ctx.tree(owner_tree).kind {
                 TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
@@ -16175,7 +16175,7 @@ mod tests {
             *bound = Some(object_type);
         }
         let (tree, clazz, cdef) = {
-            let syms_ref = syms.borrow();
+            let syms_ref = &*syms;
             build_anonymous_class_scenario(&mut ctx, &syms_ref, &names, &make, type_var)
         };
         let inference = crate::comp::infer::InferenceContext::with_undet_vars(
@@ -16195,7 +16195,7 @@ mod tests {
         }
         let result = {
             let mut a = attr.borrow_mut();
-            let syms_mut = syms.borrow_mut();
+            let syms_mut = &*syms;
             a.visit_anonymous_class_definition(
                 &mut ctx,
                 &syms_mut,
@@ -16218,7 +16218,7 @@ mod tests {
         assert_eq!(ctx.tree(tree).ty, Some(result));
         // Inference completes: the listener replays the body with the snapshot.
         inference
-            .notify_change(&mut ctx, &syms.borrow_mut(), &types_rc)
+            .notify_change(&mut ctx, &&*syms, &types_rc)
             .expect("notify_change");
         assert_eq!(
             ctx.tree(clazz).ty,
@@ -16251,7 +16251,7 @@ mod tests {
         wire_for_anonymous_class_test(&mut ctx, &attr, &options);
         let make = Rc::clone(&attr.borrow().make);
         let (tree, clazz, cdef, object_type) = {
-            let syms_ref = syms.borrow();
+            let syms_ref = &*syms;
             let object_type = syms_ref.object_type;
             let (tree, clazz, cdef) =
                 build_anonymous_class_scenario(&mut ctx, &syms_ref, &names, &make, object_type);
@@ -16271,7 +16271,7 @@ mod tests {
         }
         let result = {
             let mut a = attr.borrow_mut();
-            let syms_mut = syms.borrow_mut();
+            let syms_mut = &*syms;
             a.visit_anonymous_class_definition(
                 &mut ctx,
                 &syms_mut,
@@ -16363,13 +16363,13 @@ mod tests {
             false,
         );
         let unit = parser.parse_compilation_unit(&mut ctx);
-        let syms = Rc::new(RefCell::new(Symtab::new(
+        let syms = Rc::new(Symtab::new(
             &mut ctx,
             Rc::clone(&names),
             Target::JDK1_17,
             Source::JDK17,
-        )));
-        let java_base = syms.borrow().java_base;
+        ));
+        let java_base = syms.java_base;
         if let TreeKind::CompilationUnit {
             modle,
             sourcefile: slot,
@@ -16402,7 +16402,7 @@ mod tests {
             let mut maker = make.borrow_mut();
             maker.types = Some(Rc::clone(&types));
             maker.syms = Some(Rc::clone(&syms));
-            maker.root_package = Some(syms.borrow().root_package);
+            maker.root_package = Some(syms.root_package);
         }
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         // Java: the Check constructor obtains rs/fileManager/profile/preview
@@ -16478,7 +16478,7 @@ mod tests {
             &options,
             Rc::clone(&preview),
         );
-        enter.main(&mut ctx, &syms.borrow_mut(), List::of(unit));
+        enter.main(&mut ctx, &*syms, List::of(unit));
         let class_tree = class_tree_in(&ctx, unit);
         let class_sym = class_tree_symbol(&ctx, class_tree).expect("class symbol");
         let top = enter.get_top_level_env(&mut ctx, unit);
@@ -16793,7 +16793,7 @@ mod tests {
         let f1_name = harness.names.from_utf(b"f1");
         let f1 = resolve.find_ident(
             &mut harness.ctx,
-            &harness.syms.borrow_mut(),
+            &&*harness.syms,
             None,
             &method_env,
             &f1_name,
@@ -16808,7 +16808,7 @@ mod tests {
         let inner_name = harness.names.from_utf(b"Inner");
         let inner = resolve.find_ident_in_type(
             &mut harness.ctx,
-            &harness.syms.borrow_mut(),
+            &&*harness.syms,
             None,
             &method_env,
             class_type,
@@ -16822,7 +16822,7 @@ mod tests {
         let missing = harness.names.from_utf(b"missing");
         let not_found = resolve.find_ident_in_type(
             &mut harness.ctx,
-            &harness.syms.borrow_mut(),
+            &&*harness.syms,
             None,
             &method_env,
             class_type,
@@ -16920,7 +16920,7 @@ class Sample {
         });
         let (target, error) = harness.attr.find_jump_target_no_error(
             &harness.ctx,
-            &harness.syms.borrow_mut(),
+            &&*harness.syms,
             Tag::BREAK,
             &None,
             &env,
@@ -16960,7 +16960,7 @@ class Sample {
             .attr
             .attrib_tree(
                 &mut harness.ctx,
-                &harness.syms.borrow_mut(),
+                &&*harness.syms,
                 break_tree,
                 &env,
                 stat_info,
@@ -16994,7 +16994,7 @@ class Sample {
             None,
         );
         let ctx = &mut harness.ctx;
-        let object_type = harness.syms.borrow().object_type;
+        let object_type = harness.syms.object_type;
         let no_type = crate::code::symtab::no_type_id(ctx);
         let bound_sym = crate::code::symtab::new_class_symbol(
             ctx,
@@ -17035,7 +17035,7 @@ class Sample {
             let mut a = attr.borrow_mut();
             a.env = Some(Rc::clone(&harness.env));
         }
-        let syms = harness.syms.borrow_mut();
+        let syms = &*harness.syms;
         let result = attr
             .borrow_mut()
             .visit_type_parameter(ctx, &syms, type_param)
@@ -17063,7 +17063,7 @@ class Sample {
             None,
         );
         let ctx = &mut harness.ctx;
-        let object_type = harness.syms.borrow().object_type;
+        let object_type = harness.syms.object_type;
         let no_type = crate::code::symtab::no_type_id(ctx);
         let interface_flag = crate::code::flags::INTERFACE as i64;
         let first_sym = crate::code::symtab::new_class_symbol(
@@ -17152,7 +17152,7 @@ class Sample {
             let mut a = attr.borrow_mut();
             a.env = Some(Rc::clone(&env));
         }
-        let syms = harness.syms.borrow_mut();
+        let syms = &*harness.syms;
         attr.borrow_mut()
             .visit_type_parameter(ctx, &syms, type_param)
             .expect("visit_type_parameter");
@@ -17189,13 +17189,13 @@ class Sample {
             None,
         );
         let (int_type, string_type) = {
-            let syms = harness.syms.borrow();
+            let syms = &*harness.syms;
             (syms.int_type, syms.string_type)
         };
         let argtypes = List::of(int_type).append(string_type);
         let mapped = attr.borrow_mut().map_resolve_deferred_argtypes(
             &mut harness.ctx,
-            &harness.syms.borrow_mut(),
+            &&*harness.syms,
             argtypes.clone(),
             None,
             MethodResolutionPhase::BASIC,

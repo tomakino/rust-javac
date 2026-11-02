@@ -180,7 +180,7 @@ pub struct Check {
     pub deferred_lint_handler: Rc<DeferredLintHandler>,
     /// Java: the Symtab service (Symtab.instance(context)); explicit service
     /// per ADR 0001.
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     /// Java: final TypeAnnotations typeAnnotations (service cell, installed by
     /// the wiring; required by validateTypeAnnotation).
     pub type_annotations: Rc<RefCell<Option<Rc<crate::code::type_annotations::TypeAnnotations>>>>,
@@ -307,7 +307,7 @@ impl Check {
         types: Rc<Types>,
         lint: Rc<Lint>,
         deferred_lint_handler: Rc<DeferredLintHandler>,
-        syms: Rc<RefCell<Symtab>>,
+        syms: Rc<Symtab>,
     ) -> Check {
         let verbose_deprecated = lint.is_enabled(LintCategory::DEPRECATION);
         let verbose_removal = lint.is_enabled(LintCategory::REMOVAL);
@@ -10445,12 +10445,12 @@ mod tests {
         let names = Rc::new(crate::util::names::Names::new(false));
         let log = crate::util::log::Log::instance(&mut jcontext);
         let source = Source::JDK17;
-        let syms = Rc::new(RefCell::new(TestSymtab::new(
+        let syms = Rc::new(TestSymtab::new(
             &mut ctx,
             Rc::clone(&names),
             Target::DEFAULT,
             source,
-        )));
+        ));
         let types = Rc::new(Types::with_names(Rc::clone(&names)));
         let messages = JavacMessages::instance(&mut jcontext);
         let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(messages, "compiler"));
@@ -10470,7 +10470,7 @@ mod tests {
         crate::comp::check::attach_self(&check);
         attach_self(&check);
         let (object_type, string_type) = {
-            let syms = syms.borrow();
+            let syms = &*syms;
             (syms.object_type, syms.string_type)
         };
         let tvar = {
@@ -10480,7 +10480,7 @@ mod tests {
                 0,
                 name,
                 None,
-                Some(syms.borrow().no_symbol),
+                Some(syms.no_symbol),
                 crate::code::symbol::SymbolKind::TypeVariableSymbol,
             ));
             let ty = ctx.alloc_type(Type::new(
@@ -10488,7 +10488,7 @@ mod tests {
                 Some(symbol),
                 TypeKindData::TypeVar {
                     bound: Some(object_type),
-                    lower: Some(syms.borrow().bot_type),
+                    lower: Some(syms.bot_type),
                 },
             ));
             ctx.sym_mut(symbol).ty = Some(ty);
@@ -10500,17 +10500,17 @@ mod tests {
             Rc::clone(&diags),
             Rc::clone(&names),
         );
-        let syms_guard = syms.borrow_mut();
+        let syms_guard = &*syms;
         let inference = InferenceContext::new(
             Rc::clone(&infer),
             &mut ctx,
-            &syms_guard,
+            syms_guard,
             &types,
             List::of(tvar),
         );
         drop(syms_guard);
         assert!(
-            inference.free(&mut ctx, &syms.borrow(), &types, tvar),
+            inference.free(&mut ctx, &*syms, &types, tvar),
             "the type variable is free in the context"
         );
         let calls = std::rc::Rc::new(std::cell::Cell::new(0usize));
@@ -10523,18 +10523,18 @@ mod tests {
         // context once.
         check.check_type(
             &mut ctx,
-            &syms.borrow(),
+            &*syms,
             0,
             tvar,
             tvar,
             Rc::clone(&check_context),
         );
         assert_eq!(calls.get(), 1, "the immediate check runs");
-        let uv = inference.as_undet_var(&mut ctx, &syms.borrow(), &types, tvar);
-        types.undet_var_set_inst(&mut ctx, &syms.borrow(), uv, string_type);
-        let syms_for_notify = syms.borrow_mut();
+        let uv = inference.as_undet_var(&mut ctx, &*syms, &types, tvar);
+        types.undet_var_set_inst(&mut ctx, &*syms, uv, string_type);
+        let syms_for_notify = &*syms;
         inference
-            .notify_change(&mut ctx, &syms_for_notify, &types)
+            .notify_change(&mut ctx, syms_for_notify, &types)
             .expect("notify_change");
         assert_eq!(
             calls.get(),
@@ -11420,12 +11420,12 @@ mod diagnostics_tests {
         let mut jcontext = Context::new();
         let names = Rc::new(crate::util::names::Names::new(false));
         let log = crate::util::log::Log::instance(&mut jcontext);
-        let syms = Rc::new(RefCell::new(crate::code::symtab::Symtab::new(
+        let syms = Rc::new(crate::code::symtab::Symtab::new(
             &mut ctx,
             Rc::clone(&names),
             Target::DEFAULT,
             Source::JDK17,
-        )));
+        ));
         let types = Rc::new(crate::code::types::Types::with_names(Rc::clone(&names)));
         let messages = JavacMessages::instance(&mut jcontext);
         let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(messages, "compiler"));
@@ -11444,7 +11444,7 @@ mod diagnostics_tests {
         ));
         attach_self(&check);
         check.set_profile(Rc::new(crate::jvm::profile::Profile::COMPACT1));
-        let object_type = syms.borrow().object_type;
+        let object_type = syms.object_type;
         let symbol = ctx.typ(object_type).tsym.expect("object symbol");
         ctx.sym_mut(symbol).flags_field |= crate::code::flags::PROPRIETARY
             | crate::code::flags::NOT_IN_PROFILE;

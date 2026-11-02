@@ -1685,13 +1685,13 @@ mod tests {
             content: sample_source(sample).to_string(),
         });
         let mut ctx = std::mem::take(&mut harness.ctx);
-        let syms = Rc::new(RefCell::new(Symtab::new(
+        let syms = Rc::new(Symtab::new(
             &mut ctx,
             Rc::clone(&harness.names),
             Target::JDK1_17,
             Source::JDK17,
-        )));
-        let java_base = syms.borrow().java_base;
+        ));
+        let java_base = syms.java_base;
         if let TreeKind::CompilationUnit { modle, sourcefile: slot, .. } =
             &mut ctx.tree_mut(harness.unit).kind
         {
@@ -1728,7 +1728,7 @@ mod tests {
             Rc::clone(&todo),
             Rc::clone(&type_envs)
         );
-        enter.main(&mut ctx, &syms.borrow_mut(), List::of(harness.unit));
+        enter.main(&mut ctx, &*syms, List::of(harness.unit));
         harness.ctx = ctx;
     }
 

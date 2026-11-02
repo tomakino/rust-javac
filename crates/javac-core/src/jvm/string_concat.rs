@@ -52,7 +52,7 @@ pub enum ConcatKind {
 #[derive(Clone)]
 pub struct StringConcat {
     /// The symbol table.
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     /// The name table.
     pub names: Rc<Names>,
     /// The tree factory.
@@ -82,7 +82,7 @@ pub struct StringConcat {
 /// # Panics
 ///   - the requested flavor is unknown or unsupported by the target.
 pub fn make_concat(
-    syms: Rc<RefCell<Symtab>>,
+    syms: Rc<Symtab>,
     names: Rc<Names>,
     make: Rc<RefCell<TreeMaker>>,
     types: Rc<Types>,
@@ -261,7 +261,7 @@ impl StringConcat {
         self.builder_to_string(ctx, generator, pos);
         let syms = Rc::clone(&self.syms);
         let items = generator.get_items();
-        items.make_stack_item(ctx, syms.borrow().string_type)
+        items.make_stack_item(ctx, syms.string_type)
     }
 
     /// Emit the creation of a new StringBuilder.
@@ -269,7 +269,7 @@ impl StringConcat {
         ctx: &mut CompilerContext,
         generator: &mut crate::jvm::codegen::Gen, tree: TreeId) -> i32 {
         let pos = ctx.tree(tree).pos;
-        let sb_type = self.syms.borrow().string_builder_type;
+        let sb_type = self.syms.string_builder_type;
         let od = generator.make_ref(ctx, pos, sb_type);
         {
             let code = generator.get_code();
@@ -294,12 +294,12 @@ impl StringConcat {
         generator: &mut crate::jvm::codegen::Gen, tree: TreeId) {
         let tree_ty = ctx.tree(tree).ty.expect("tree type");
         let t = self.types.base_type(ctx, tree_ty);
-        let string_tsym = ctx.typ(self.syms.borrow().string_type).tsym.expect("string type symbol");
+        let string_tsym = ctx.typ(self.syms.string_type).tsym.expect("string type symbol");
         let is_primitive = ctx.typ(t).get_tag().is_primitive();
         let t_tsym = ctx.typ(t).tsym;
         let mut t = t;
         if !is_primitive && t_tsym != Some(string_tsym) {
-            t = self.syms.borrow().object_type;
+            t = self.syms.object_type;
         }
         assert!(
             ctx.typ(t).const_value().is_none(),
@@ -310,7 +310,7 @@ impl StringConcat {
             None => {
                 let env = generator.get_attr_env();
                 let pos = ctx.tree(tree).pos;
-                let sb_type = self.syms.borrow().string_builder_type;
+                let sb_type = self.syms.string_builder_type;
                 let append_name = self.names.append.clone();
                 let method = generator.resolve_internal_method(
                     ctx,
@@ -333,7 +333,7 @@ impl StringConcat {
     fn builder_to_string(&mut self,
         ctx: &mut CompilerContext,
         generator: &mut crate::jvm::codegen::Gen, pos: i32) {
-        let sb_type = self.syms.borrow().string_builder_type;
+        let sb_type = self.syms.string_builder_type;
         let name = self.names.toString.clone();
         generator.call_method(ctx, pos, sb_type, name, List::nil(), false);
     }
@@ -375,7 +375,7 @@ impl StringConcat {
         self.emit_indy(ctx, generator, pos, args, true, tree_ty);
         let syms = Rc::clone(&self.syms);
         let items = generator.get_items();
-        items.make_stack_item(ctx, syms.borrow().string_type)
+        items.make_stack_item(ctx, syms.string_type)
     }
 
     /// Emit the invokedynamic call for the collected arguments.
@@ -441,11 +441,11 @@ impl StringConcat {
         //   !types.unboxedTypeOrType(argType).isPrimitive()
         //       && argType.tsym != syms.stringType.tsym
         let unboxed_or_type = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.unboxed_type_or_type(ctx, &syms, arg_type)
         };
         let string_tsym = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             ctx.typ(syms.string_type).tsym.expect("string type symbol")
         };
         !ctx.typ(unboxed_or_type).is_primitive()
@@ -477,8 +477,8 @@ impl StringConcat {
                 }
                 let arg_ty = ctx.tree(arg).ty.expect("argument type");
                 let mut arg_type = arg_ty;
-                if arg_type == self.syms.borrow().bot_type {
-                    let boxed = self.types.boxed_class_ro(ctx, &self.syms.borrow(), self.syms.borrow().void_type);
+                if arg_type == self.syms.bot_type {
+                    let boxed = self.types.boxed_class_ro(ctx, &*self.syms, self.syms.void_type);
                     arg_type = ctx.sym(boxed).ty.expect("boxed class type");
                 }
                 if !first || generate_first_arg {
@@ -487,13 +487,13 @@ impl StringConcat {
                 }
                 if self.should_convert_to_string_eagerly(ctx, generator, arg_type) {
                     let value_of = self.names.valueOf.clone();
-                    let object_type = self.syms.borrow().object_type;
-                    let string_type = self.syms.borrow().string_type;
+                    let object_type = self.syms.object_type;
+                    let string_type = self.syms.string_type;
                     let argtypes = List::of(object_type);
                     generator.call_method(
                         ctx, pos, string_type, value_of, argtypes, true,
                     );
-                    arg_type = self.syms.borrow().string_type;
+                    arg_type = self.syms.string_type;
                 }
                 dynamic_args.push(arg_type);
                 first = false;
@@ -503,7 +503,7 @@ impl StringConcat {
         if split.len() > 1 {
             let mut arg_types: Vec<TypeId> = Vec::new();
             for _ in 0..split.len() {
-                arg_types.push(self.syms.borrow().string_type);
+                arg_types.push(self.syms.string_type);
             }
             self.do_call_plain(ctx, generator, ty, pos, arg_types);
         }
@@ -518,15 +518,15 @@ impl StringConcat {
         pos: i32,
         dynamic_arg_types: Vec<TypeId>,
     ) {
-        let indy_type = make_method_type(ctx, &dynamic_arg_types, ty, self.syms.borrow().method_class);
+        let indy_type = make_method_type(ctx, &dynamic_arg_types, ty, self.syms.method_class);
         let prev_pos = self.make.borrow().pos;
         self.make.borrow_mut().at(pos);
-        let bsm_static_args = List::of(self.syms.borrow().method_handle_lookup_type)
-            .append(self.syms.borrow().string_type)
-            .append(self.syms.borrow().method_type_type);
+        let bsm_static_args = List::of(self.syms.method_handle_lookup_type)
+            .append(self.syms.string_type)
+            .append(self.syms.method_type_type);
         let env = generator.get_attr_env();
         let make_concat_name = self.names.makeConcat.clone();
-        let concat_factory = self.syms.borrow().string_concat_factory;
+        let concat_factory = self.syms.string_concat_factory;
         let bsm = generator.resolve_internal_method(
             ctx,
             pos,
@@ -536,7 +536,7 @@ impl StringConcat {
             bsm_static_args.clone(),
         );
         let handle = crate::code::symbol::as_method_handle(ctx, bsm, false);
-        let no_symbol = self.syms.borrow().no_symbol;
+        let no_symbol = self.syms.no_symbol;
         let dyn_sym = crate::code::symbol::new_dynamic_method_symbol(
             ctx,
             make_concat_name,
@@ -577,7 +577,7 @@ impl StringConcat {
                 if matches!(&const_val, Some(ConstantValue::String(s)) if s.is_empty()) {
                     continue;
                 }
-                if arg_ty == self.syms.borrow().bot_type {
+                if arg_ty == self.syms.bot_type {
                     // Concat the null into the recipe right away.
                     let null_units = JavaString::from("null");
                     recipe.extend_from_slice(null_units.as_units());
@@ -604,13 +604,13 @@ impl StringConcat {
                     }
                     if self.should_convert_to_string_eagerly(ctx, generator, arg_type) {
                         let value_of = self.names.valueOf.clone();
-                        let object_type = self.syms.borrow().object_type;
-                        let string_type = self.syms.borrow().string_type;
+                        let object_type = self.syms.object_type;
+                        let string_type = self.syms.string_type;
                         let argtypes = List::of(object_type);
                         generator.call_method(
                             ctx, pos, string_type, value_of, argtypes, true,
                         );
-                        arg_type = self.syms.borrow().string_type;
+                        arg_type = self.syms.string_type;
                     }
                     dynamic_args.push(arg_type);
                     first = false;
@@ -623,7 +623,7 @@ impl StringConcat {
             let mut arg_types: Vec<TypeId> = Vec::new();
             let mut recipe: Vec<u16> = Vec::new();
             for _ in 0..split.len() {
-                arg_types.push(self.syms.borrow().string_type);
+                arg_types.push(self.syms.string_type);
                 recipe.push(TAG_ARG);
             }
             let recipe = JavaString::from_units(recipe);
@@ -643,25 +643,25 @@ impl StringConcat {
         static_args: Vec<LoadableConstantRef>,
         dynamic_arg_types: Vec<TypeId>,
     ) {
-        let indy_type = make_method_type(ctx, &dynamic_arg_types, ty, self.syms.borrow().method_class);
+        let indy_type = make_method_type(ctx, &dynamic_arg_types, ty, self.syms.method_class);
         let prev_pos = self.make.borrow().pos;
         self.make.borrow_mut().at(pos);
         let mut const_types: Vec<TypeId> = Vec::new();
         let mut constants: Vec<LoadableConstantRef> = Vec::new();
         for t in &static_args {
             constants.push(t.clone());
-            const_types.push(self.syms.borrow().string_type);
+            const_types.push(self.syms.string_type);
         }
-        let mut bsm_static_args = List::of(self.syms.borrow().method_handle_lookup_type)
-            .append(self.syms.borrow().string_type)
-            .append(self.syms.borrow().method_type_type)
-            .append(self.syms.borrow().string_type);
+        let mut bsm_static_args = List::of(self.syms.method_handle_lookup_type)
+            .append(self.syms.string_type)
+            .append(self.syms.method_type_type)
+            .append(self.syms.string_type);
         for const_type in const_types {
             bsm_static_args = bsm_static_args.append(const_type);
         }
         let env = generator.get_attr_env();
         let name = self.names.makeConcatWithConstants.clone();
-        let concat_factory = self.syms.borrow().string_concat_factory;
+        let concat_factory = self.syms.string_concat_factory;
         let bsm = generator.resolve_internal_method(
             ctx,
             pos,
@@ -671,7 +671,7 @@ impl StringConcat {
             bsm_static_args.clone(),
         );
         let handle = crate::code::symbol::as_method_handle(ctx, bsm, false);
-        let no_symbol = self.syms.borrow().no_symbol;
+        let no_symbol = self.syms.no_symbol;
         let mut all_static_args: Vec<LoadableConstantRef> = Vec::new();
         all_static_args.push(LoadableConstantRef::Basic(
             crate::jvm::pool_constant::BasicConstant::string(recipe),

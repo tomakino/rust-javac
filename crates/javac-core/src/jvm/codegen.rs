@@ -105,7 +105,7 @@ pub struct Gen {
     /// The diagnostic log.
     pub log: Rc<RefCell<Log>>,
     /// The symbol table.
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     /// The check service.
     pub chk: Rc<Check>,
     /// The resolver.
@@ -209,7 +209,7 @@ impl Gen {
     pub fn new(
         ctx: &mut CompilerContext,
         log: Rc<RefCell<Log>>,
-        syms: Rc<RefCell<Symtab>>,
+        syms: Rc<Symtab>,
         chk: Rc<Check>,
         rs: Rc<crate::comp::resolve::Resolve>,
         make: Rc<RefCell<TreeMaker>>,
@@ -224,7 +224,7 @@ impl Gen {
         options: &Options,
     ) -> Gen {
         let method_type = {
-            let syms_b = syms.borrow();
+            let syms_b = &*syms;
             ctx.alloc_type(Type::new(
                 TypeTag::METHOD,
                 Some(syms_b.method_class),
@@ -331,7 +331,7 @@ impl Gen {
     /// Generate code to load an integer constant.
     fn load_int_const(&mut self, ctx: &mut CompilerContext, n: i32) {
         let items = self.get_items();
-        let item = items.make_immediate_item(ctx, self.syms.borrow().int_type, ImmediateValue::Int(n));
+        let item = items.make_immediate_item(ctx, self.syms.int_type, ImmediateValue::Int(n));
         items.load(ctx, &item);
     }
 
@@ -375,7 +375,7 @@ impl Gen {
             let items = self.get_items();
             let item = items.make_immediate_item(
                 ctx,
-                self.syms.borrow().long_type,
+                self.syms.long_type,
                 ImmediateValue::Long(-1),
             );
             items.load(ctx, &item);
@@ -393,7 +393,7 @@ impl Gen {
         site: TypeId,
     ) -> SymbolId {
         if ctx.typ(site).has_tag(TypeTag::ARRAY) {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let is_length_var = sym == syms.length_var;
             let owner = ctx.sym(sym).owner;
             let is_array_owner = owner == Some(syms.array_class);
@@ -410,7 +410,7 @@ impl Gen {
             } else {
                 let site_tsym = ctx.typ(site).tsym.expect("array type symbol");
                 let site_name = ctx.sym(site_tsym).name.clone();
-                let no_symbol = self.syms.borrow().no_symbol;
+                let no_symbol = self.syms.no_symbol;
                 let qualifier = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
                     crate::code::kinds::Kind::TYP,
                     crate::code::flags::PUBLIC as i64,
@@ -437,7 +437,7 @@ impl Gen {
         }
         let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
         let owner = ctx.sym(sym).owner;
-        let object_tsym = ctx.typ(self.syms.borrow().object_type).tsym.expect("object type symbol");
+        let object_tsym = ctx.typ(self.syms.object_type).tsym.expect("object type symbol");
         let flags = ctx.sym(sym).flags_field;
         let is_static_synthetic = (flags
             & (crate::code::flags::STATIC as i64 | crate::code::flags::SYNTHETIC as i64))
@@ -463,7 +463,7 @@ impl Gen {
         let checked = self.check_dimension(ctx, pos, ty);
         let syms = Rc::clone(&self.syms);
         let mut pool = self.pool_writer.borrow_mut();
-        pool.put_class(ctx, &syms.borrow(), checked)
+        pool.put_class(ctx, &*syms, checked)
     }
 
     /// Check whether the given type is an array with too many dimensions.
@@ -497,7 +497,7 @@ impl Gen {
                 }
             }
             TypeTag::ARRAY => {
-                let dims = self.types.dimensions(ctx, &self.syms.borrow(), t);
+                let dims = self.types.dimensions(ctx, &*self.syms, t);
                 if dims > class_file::MAX_DIMENSIONS {
                     crate::util::abstract_log::AbstractLog::error_at(
                         &mut *self.log.borrow_mut(),
@@ -573,7 +573,7 @@ impl Gen {
         let syms = Rc::clone(&self.syms);
         let mut attr = self.attr.borrow_mut();
         let chk = Rc::clone(&self.chk);
-        let syms_borrow = syms.borrow_mut();
+        let syms_borrow = &*syms;
         self.rs.resolve_internal_method(
             ctx,
             &syms_borrow,
@@ -901,7 +901,7 @@ impl Gen {
         // If there are class initializers, create a <clinit> method.
         if !clinit_code.is_empty() {
             let syms = Rc::clone(&self.syms);
-            let syms_b = syms.borrow();
+            let syms_b = &*syms;
             let clinit_ty = ctx.alloc_type(Type::new(
                 TypeTag::METHOD,
                 Some(syms_b.method_class),
@@ -1367,7 +1367,7 @@ impl Gen {
                 return result;
             }
         }
-        let boolean_type = self.syms.borrow().boolean_type;
+        let boolean_type = self.syms.boolean_type;
         let mut result = self.gen_expr(ctx, tree, boolean_type);
         result = self.get_items().mk_cond(ctx, &result);
         if mark_branches {
@@ -1458,12 +1458,12 @@ struct ClassReferenceVisitor {
     /// The constant pool writer.
     pub pool_writer: Rc<RefCell<PoolWriter>>,
     /// The symbol table.
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
 }
 
 impl ClassReferenceVisitor {
     /// Create the visitor.
-    fn new(pool_writer: Rc<RefCell<PoolWriter>>, syms: Rc<RefCell<Symtab>>) -> ClassReferenceVisitor {
+    fn new(pool_writer: Rc<RefCell<PoolWriter>>, syms: Rc<Symtab>) -> ClassReferenceVisitor {
         ClassReferenceVisitor { pool_writer, syms }
     }
 
@@ -1472,7 +1472,7 @@ impl ClassReferenceVisitor {
         let syms = Rc::clone(&self.syms);
         self.pool_writer
             .borrow_mut()
-            .put_class(ctx, &syms.borrow(), ty);
+            .put_class(ctx, &*syms, ty);
     }
 }
 
@@ -1606,7 +1606,7 @@ impl Gen {
                 let sym = *sym;
                 let ty = ctx.sym(sym).ty.expect("method type");
                 let syms = Rc::clone(&self.syms);
-                let erased = self.types.erasure(ctx, &syms.borrow(), ty);
+                let erased = self.types.erasure(ctx, &*syms, ty);
                 (sym, erased)
             }
             _ => panic!("AssertionError: method declaration expected"),
@@ -1650,9 +1650,9 @@ impl Gen {
         let method_ty = ctx.sym(meth).ty.expect("method type");
         let params_width = {
             let syms = Rc::clone(&self.syms);
-            let erased = self.types.erasure(ctx, &syms.borrow(), method_ty);
+            let erased = self.types.erasure(ctx, &*syms, method_ty);
             let params = ctx.typ(erased).get_parameter_types(ctx);
-            Code::width_list(ctx, &syms.borrow(), &params)
+            Code::width_list(ctx, &*syms, &params)
         };
         if params_width + extras > class_file::MAX_PARAMETERS {
             crate::util::abstract_log::AbstractLog::error_at(
@@ -1719,7 +1719,7 @@ impl Gen {
                         };
                         let ty = ctx.sym(md_sym).ty.expect("method type");
                         let syms = Rc::clone(&self.syms);
-                        let erased = self.types.erasure(ctx, &syms.borrow(), ty);
+                        let erased = self.types.erasure(ctx, &*syms, ty);
                         ctx.typ(erased)
                             .get_return_type(ctx)
                             .map(|ret| ctx.typ(ret).has_tag(TypeTag::VOID))
@@ -1832,7 +1832,7 @@ impl Gen {
         if (flags & crate::code::flags::STATIC as i64) == 0 {
             let owner = ctx.sym(meth).owner.expect("method owner");
             let mut self_type = ctx.sym(owner).ty.expect("owner type");
-            let object_type = self.syms.borrow().object_type;
+            let object_type = self.syms.object_type;
             if ctx.sym(meth).is_constructor(&self.names) && self_type != object_type {
                 self_type = crate::jvm::uninitialized_type::uninitialized_this(ctx, self_type);
             }
@@ -1926,7 +1926,7 @@ impl Gen {
                 self.get_code().borrow_mut().new_local_symbol(ctx, sym);
                 let sym_ty = ctx.sym(sym).ty.expect("variable type");
                 let syms = Rc::clone(&self.syms);
-                let erased = self.types.erasure(ctx, &syms.borrow(), sym_ty);
+                let erased = self.types.erasure(ctx, &*syms, sym_ty);
                 let item = self.gen_expr(ctx, init, erased);
                 self.item_load(ctx, &item);
                 let items = self.get_items();
@@ -2273,7 +2273,7 @@ impl Gen {
             self.get_code().borrow().is_statement_start(),
             "AssertionError: not at statement start"
         );
-        let int_type = self.syms.borrow().int_type;
+        let int_type = self.syms.int_type;
         let sel = self.gen_expr(ctx, selector, int_type);
         if cases.is_empty() {
             // switch <sel> {}
@@ -2618,7 +2618,7 @@ impl Gen {
             _ => panic!("AssertionError: synchronized statement expected"),
         };
         // Generate code to evaluate the lock and save it in a temp variable.
-        let object_type = self.syms.borrow().object_type;
+        let object_type = self.syms.object_type;
         let lock_var = self.make_temp(ctx, object_type);
         assert!(
             self.get_code().borrow().is_statement_start(),
@@ -2761,7 +2761,7 @@ impl Gen {
             // variables in finalizers and other statements.
             self.get_code().borrow_mut().new_reg_segment();
             // Add a catch-all clause.
-            let throwable_type = self.syms.borrow().throwable_type;
+            let throwable_type = self.syms.throwable_type;
             let catchall_pc = {
                 let code = self.get_code();
                 let mut code = code.borrow_mut();
@@ -2784,7 +2784,7 @@ impl Gen {
             let first_stat = tree_info::finalizer_pos(ctx, env_tree, PosKind::FIRST_STAT_POS);
             self.get_code().borrow_mut().stat_begin(first_stat);
             self.get_code().borrow_mut().mark_stat_begin(ctx);
-            let throwable_type = self.syms.borrow().throwable_type;
+            let throwable_type = self.syms.throwable_type;
             let exc_var = self.make_temp(ctx, throwable_type);
             self.item_store(ctx, &exc_var);
             self.gen_finalizer(ctx, env);
@@ -2811,7 +2811,7 @@ impl Gen {
                 let first_stat = tree_info::finalizer_pos(ctx, env_tree, PosKind::FIRST_STAT_POS);
                 self.get_code().borrow_mut().stat_begin(first_stat);
                 self.get_code().borrow_mut().mark_stat_begin(ctx);
-                let throwable_type = self.syms.borrow().throwable_type;
+                let throwable_type = self.syms.throwable_type;
                 let ret_var = self.make_temp(ctx, throwable_type);
                 self.item_store(ctx, &ret_var);
                 // Generate the finalizer code.
@@ -3193,7 +3193,7 @@ impl Gen {
                 self.get_code()
                     .borrow_mut()
                     .state
-                    .force_stack_top(ctx, &syms.borrow(), &types, target_ty);
+                    .force_stack_top(ctx, &*syms, &types, target_ty);
                 let branch = self.get_code().borrow_mut().branch(ctx, GOTO);
                 target_env.info.borrow_mut().add_exit(branch);
                 self.get_code().borrow_mut().mark_dead();
@@ -3318,7 +3318,7 @@ impl Gen {
         let external = {
             let syms = Rc::clone(&self.syms);
             let names = Rc::clone(&self.names);
-            crate::code::symbol::external_type(ctx, &self.types, &syms.borrow(), &names, msym)
+            crate::code::symbol::external_type(ctx, &self.types, &*syms, &names, msym)
         };
         let params = ctx.typ(external).get_parameter_types(ctx);
         self.gen_args(ctx, args, params);
@@ -3383,7 +3383,7 @@ impl Gen {
             self.get_code()
                 .borrow_mut()
                 .state
-                .force_stack_top(ctx, &syms.borrow(), &types, tree_ty);
+                .force_stack_top(ctx, &*syms, &types, tree_ty);
             if self.gen_crt {
                 let end_pc = self.get_code().borrow_mut().cur_cp(ctx);
                 if let Some(crt) = &mut self.get_code().borrow_mut().crt {
@@ -3409,7 +3409,7 @@ impl Gen {
             self.get_code()
                 .borrow_mut()
                 .state
-                .force_stack_top(ctx, &syms.borrow(), &types, tree_ty);
+                .force_stack_top(ctx, &*syms, &types, tree_ty);
             if self.gen_crt {
                 let end_pc = self.get_code().borrow_mut().cur_cp(ctx);
                 if let Some(crt) = &mut self.get_code().borrow_mut().crt {
@@ -3499,7 +3499,7 @@ impl Gen {
             crate::code::symbol::external_type(
                 ctx,
                 &self.types,
-                &syms.borrow(),
+                &*syms,
                 &names,
                 constructor,
             )
@@ -3523,7 +3523,7 @@ impl Gen {
         match elems {
             Some(elems) => {
                 let syms = Rc::clone(&self.syms);
-                let elemtype = self.types.elemtype(ctx, &syms.borrow(), tree_ty);
+                let elemtype = self.types.elemtype(ctx, &*syms, tree_ty);
                 let len = elems.length();
                 self.load_int_const(ctx, len);
                 let arr = self.make_new_array(ctx, ctx.tree(tree).pos, tree_ty, 1);
@@ -3546,7 +3546,7 @@ impl Gen {
                     TreeKind::NewArray { dims, .. } => dims.clone(),
                     _ => List::nil(),
                 };
-                let int_type = self.syms.borrow().int_type;
+                let int_type = self.syms.int_type;
                 let mut l = dims.clone();
                 for head in &l {
                 let item = self.gen_expr(ctx, head, int_type);
@@ -3568,8 +3568,8 @@ impl Gen {
         ndims: i32,
     ) -> Item {
         let syms = Rc::clone(&self.syms);
-        let elemtype = self.types.elemtype(ctx, &syms.borrow(), ty);
-        let dimensions = self.types.dimensions(ctx, &syms.borrow(), ty);
+        let elemtype = self.types.elemtype(ctx, &*syms, ty);
+        let dimensions = self.types.dimensions(ctx, &*syms, ty);
         if dimensions > class_file::MAX_DIMENSIONS {
             crate::util::abstract_log::AbstractLog::error_at(
                 &mut *self.log.borrow_mut(),
@@ -3621,7 +3621,7 @@ impl Gen {
             self.get_code()
                 .borrow_mut()
                 .state
-                .force_stack_top(ctx, &syms.borrow(), &types, lhs_ty);
+                .force_stack_top(ctx, &*syms, &types, lhs_ty);
         }
         let items = self.get_items();
         self.result = Some(items.make_assign_item(l));
@@ -3803,8 +3803,8 @@ impl Gen {
     /// Generate a null check from the object value at the stack top.
     fn gen_null_check(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.get_code().borrow_mut().stat_begin(ctx.tree(tree).pos);
-        let objects_type = self.syms.borrow().objects_type;
-        let object_type = self.syms.borrow().object_type;
+        let objects_type = self.syms.objects_type;
+        let object_type = self.syms.object_type;
         let require_non_null = self.names.requireNonNull.clone();
         self.call_method(
             ctx,
@@ -3900,7 +3900,7 @@ impl Gen {
         let _ = lhs;
         let op_ty = ctx.sym(operator).ty.expect("operator type");
         let syms = Rc::clone(&self.syms);
-        let op_erased = self.types.erasure(ctx, &syms.borrow(), op_ty);
+        let op_erased = self.types.erasure(ctx, &*syms, op_ty);
         let params = ctx.typ(op_erased).get_parameter_types(ctx);
         let mut opcode = operator_opcode(ctx, operator);
         let rhs_ty = ctx.tree(rhs).ty.expect("rhs type");
@@ -3922,7 +3922,7 @@ impl Gen {
                 .head();
             if (ISHLL..=LUSHRL).contains(&opcode) {
                 opcode += ISHL - ISHLL;
-                rtype = self.syms.borrow().int_type;
+                rtype = self.syms.int_type;
             }
             let item = self.gen_expr(ctx, rhs, rtype);
             self.item_load(ctx, &item);
@@ -3962,10 +3962,10 @@ impl Gen {
         let syms = Rc::clone(&self.syms);
         let same = self
             .types
-            .is_same_type(ctx, &syms.borrow(), expr_ty, clazz_ty);
+            .is_same_type(ctx, &*syms, expr_ty, clazz_ty);
         let super_ty = self
             .types
-            .as_super(ctx, &syms.borrow(), expr_ty, clazz_tsym);
+            .as_super(ctx, &*syms, expr_ty, clazz_tsym);
         if !ctx.typ(clazz_ty).is_primitive() && !same && super_ty.is_none() {
             let pos = ctx.tree(tree).pos;
             let od = self.make_ref(ctx, pos, clazz_ty);
@@ -3999,7 +3999,7 @@ impl Gen {
         self.get_code()
             .borrow_mut()
             .emitop2_type(ctx, INSTANCEOF, od, pattern_ty);
-        let boolean_type = self.syms.borrow().boolean_type;
+        let boolean_type = self.syms.boolean_type;
         let items = self.get_items();
         self.result = Some(items.make_stack_item(ctx, boolean_type));
     }
@@ -4016,7 +4016,7 @@ impl Gen {
         let indexed_ty = ctx.tree(indexed).ty.expect("array type");
         let item = self.gen_expr(ctx, indexed, indexed_ty);
         self.item_load(ctx, &item);
-        let int_type = self.syms.borrow().int_type;
+        let int_type = self.syms.int_type;
         let index_item = self.gen_expr(ctx, index, int_type);
         self.item_load(ctx, &index_item);
         let tree_ty = ctx.tree(tree).ty.expect("array element type");
@@ -4072,8 +4072,8 @@ impl Gen {
         let encl_class = env.encl_class.expect("enclosing class");
         let encl_class_ty = match &ctx.tree(encl_class).kind {
             TreeKind::ClassDecl { sym: Some(cs), .. } => ctx.sym(*cs).ty.expect("class type"),
-            _ => ctx.typ(self.syms.borrow().object_type).tsym
-                .map(|_| self.syms.borrow().object_type)
+            _ => ctx.typ(self.syms.object_type).tsym
+                .map(|_| self.syms.object_type)
                 .expect("class type"),
         };
         if (flags & crate::code::flags::STATIC as i64) != 0 {
@@ -4195,9 +4195,9 @@ impl Gen {
             self.result = Some(items.make_static_item(ctx, sym));
         } else {
             self.item_load(ctx, &base);
-            if sym == self.syms.borrow().length_var {
+            if sym == self.syms.length_var {
                 self.get_code().borrow_mut().emitop0(ctx, ARRAYLENGTH);
-                let int_type = self.syms.borrow().int_type;
+                let int_type = self.syms.int_type;
                 let items = self.get_items();
                 self.result = Some(items.make_stack_item(ctx, int_type));
             } else {

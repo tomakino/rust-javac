@@ -2260,7 +2260,7 @@ pub struct DeferredAttrService {
     /// Java: final Types types
     pub types: Rc<Types>,
     /// Java: final Symtab syms
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     /// Java: final Names names
     pub names: Rc<Names>,
     /// Java: final DeferredCompletionFailureHandler dcfh
@@ -2318,12 +2318,12 @@ impl DeferredAttrService {
         log: Rc<RefCell<crate::util::log::Log>>,
         make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
         types: Rc<Types>,
-        syms: Rc<RefCell<Symtab>>,
+        syms: Rc<Symtab>,
         names: Rc<Names>,
         dcfh: Rc<crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler>,
     ) -> Rc<DeferredAttrService> {
         // Java: stuckTree = make.Ident(names.empty).setType(Type.stuckType);
-        let stuck_type = syms.borrow().stuck_type;
+        let stuck_type = syms.stuck_type;
         let stuck_tree = ctx.alloc_tree(crate::tree::jc_tree::JCTree {
             pos: crate::util::position::NOPOS,
             ty: Some(stuck_type),

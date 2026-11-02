@@ -183,7 +183,7 @@ pub struct LambdaToMethod {
     pub log: Rc<RefCell<crate::util::log::Log>>,
     pub lower: Rc<RefCell<Lower>>,
     pub names: Rc<Names>,
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     pub rs: Rc<Resolve>,
     pub operators: Rc<Operators>,
     pub make: Rc<RefCell<TreeMaker>>,
@@ -239,7 +239,7 @@ impl LambdaToMethod {
         log: Rc<RefCell<crate::util::log::Log>>,
         lower: Rc<RefCell<Lower>>,
         names: Rc<Names>,
-        syms: Rc<RefCell<Symtab>>,
+        syms: Rc<Symtab>,
         rs: Rc<Resolve>,
         operators: Rc<Operators>,
         make: Rc<RefCell<TreeMaker>>,
@@ -435,9 +435,9 @@ impl LambdaToMethod {
         self.k_info = previous_klass_info;
     }
     fn new_klass_info(&mut self, ctx: &mut CompilerContext, clazz: TreeId, class_sym: SymbolId) -> KlassInfo {
-        let serialized_lambda_type = self.syms.borrow().serialized_lambda_type;
-        let object_type = self.syms.borrow().object_type;
-        let method_class = self.syms.borrow().method_class;
+        let serialized_lambda_type = self.syms.serialized_lambda_type;
+        let object_type = self.syms.object_type;
+        let method_class = self.syms.method_class;
         let method_type = ctx.alloc_type(Type::new_method_type(
             List::of(serialized_lambda_type),
             object_type,
@@ -628,7 +628,7 @@ impl LambdaToMethod {
                 let captured = {
                     let mut make = self.make.borrow_mut();
                     make.at(ctx.tree(tree).pos);
-                    make.qual_this(ctx, &mut self.syms.borrow_mut(), ctx.sym(fv).ty.expect("outer this type"))
+                    make.qual_this(ctx, &*self.syms, ctx.sym(fv).ty.expect("outer this type"))
                 };
                 synthetic_inits.push(captured);
             }
@@ -744,7 +744,7 @@ impl LambdaToMethod {
                 let sym_owner = ctx.sym(ref_sym).owner.expect("reference symbol owner");
                 let target = ctx.sym(sym_owner).ty.expect("reference owner type");
                 let target = {
-                    let syms = self.syms.borrow();
+                    let syms = &*self.syms;
                     self.types.erasure(ctx, &syms, target)
                 };
                 let coerced = {
@@ -755,7 +755,7 @@ impl LambdaToMethod {
                 let attr = Rc::clone(&self.attr);
                 let checked = {
                     let mut attr = attr.borrow_mut();
-                    let mut syms = self.syms.borrow_mut();
+                    let mut syms = &*self.syms;
                     attr.make_null_check(ctx, &mut syms, coerced)
                 };
                 Some(checked)
@@ -963,7 +963,7 @@ impl LambdaToMethod {
 pub struct LambdaAnalyzerPreprocessor {
     pub context_map: Rc<RefCell<HashMap<TreeId, TranslationContext>>>,
     pub names: Rc<Names>,
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     pub types: Rc<Types>,
     pub attr: Rc<RefCell<Attr>>,
     pub lower: Rc<RefCell<Lower>>,
@@ -1062,7 +1062,7 @@ impl LambdaAnalyzerPreprocessor {
     pub fn new(
         context_map: Rc<RefCell<HashMap<TreeId, TranslationContext>>>,
         names: Rc<Names>,
-        syms: Rc<RefCell<Symtab>>,
+        syms: Rc<Symtab>,
         types: Rc<Types>,
         attr: Rc<RefCell<Attr>>,
         lower: Rc<RefCell<Lower>>,
@@ -1673,8 +1673,8 @@ impl LambdaAnalyzerPreprocessor {
             if let Some(clinit) = self.clinits.get(&class_sym).copied() {
                 return clinit;
             }
-            let void_type = self.syms.borrow().void_type;
-            let method_class = self.syms.borrow().method_class;
+            let void_type = self.syms.void_type;
+            let method_class = self.syms.method_class;
             let method_type = ctx.alloc_type(Type::new_method_type(
                 List::nil(),
                 void_type,
@@ -1753,7 +1753,7 @@ impl LambdaAnalyzerPreprocessor {
                     // (Symbol.java:552), so a field inherited from a
                     // superclass still counts as a member of this class --
                     // an implicit `this.field` access must capture `this`.
-                    let syms = self.syms.borrow();
+                    let syms = &*self.syms;
                     let is_member = crate::code::symbol::symbol_is_member_of(
                         ctx,
                         &self.types,
@@ -1893,7 +1893,7 @@ impl LambdaAnalyzerPreprocessor {
             let enclosing_tsym = ctx.typ(enclosing).tsym;
             let current_tsym = ctx.typ(current).tsym;
             if let (Some(current_tsym), Some(enclosing_tsym)) = (current_tsym, enclosing_tsym) {
-                if crate::code::symbol::is_sub_class(ctx, &self.syms.borrow(), &self.types, current_tsym, enclosing_tsym) {
+                if crate::code::symbol::is_sub_class(ctx, &*self.syms, &self.types, current_tsym, enclosing_tsym) {
                     return true;
                 }
             }
@@ -1982,7 +1982,7 @@ impl LambdaAnalyzerPreprocessor {
             let mut param_types: List<TypeId> = List::nil();
             for (_, translated) in captured_orig.iter().chain(outer_this_orig.iter()) {
                 let var_def = {
-                    let mut syms = self.syms.borrow_mut();
+                    let mut syms = &*self.syms;
                     let mut make = self.make.borrow_mut();
                     make.var_def_symbol(ctx, &mut syms, *translated, None)
                 };
@@ -1999,7 +1999,7 @@ impl LambdaAnalyzerPreprocessor {
                     }
                 };
                 let var_def = {
-                    let mut syms = self.syms.borrow_mut();
+                    let mut syms = &*self.syms;
                     let mut make = self.make.borrow_mut();
                     make.var_def_symbol(ctx, &mut syms, translated, None)
                 };
@@ -2021,7 +2021,7 @@ impl LambdaAnalyzerPreprocessor {
                 .find_descriptor_type_checked(ctx, target)
                 .expect("descriptor type");
             let generated = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.erasure(ctx, &syms, descriptor)
             };
             let new_type = self
@@ -2048,9 +2048,9 @@ impl LambdaAnalyzerPreprocessor {
         if self.force_serializable {
             return true;
         }
-        let serializable_tsym = self.syms.borrow().serializable_type;
+        let serializable_tsym = self.syms.serializable_type;
         let serializable_tsym = ctx.typ(serializable_tsym).tsym.expect("serializable type symbol");
-        let syms = self.syms.borrow();
+        let syms = &*self.syms;
         self.types.as_super(ctx, &syms, target, serializable_tsym).is_some()
     }
 
@@ -2201,7 +2201,7 @@ impl LambdaAnalyzerPreprocessor {
                 for (original, _) in map.iter() {
                     let out_tsym = ctx.typ(ctx.sym(*original).ty.expect("outer this type")).tsym;
                     if let (Some(target_tsym), Some(out_tsym)) = (target_tsym, out_tsym) {
-                        if crate::code::symbol::is_member_of(ctx, &self.syms.borrow(), &self.types, sym, out_tsym) {
+                        if crate::code::symbol::is_member_of(ctx, &*self.syms, &self.types, sym, out_tsym) {
                             proxy = match proxy {
                                 None => Some(*original),
                                 Some(current) => {
@@ -2374,7 +2374,7 @@ impl LambdaAnalyzerPreprocessor {
         let result = match skind {
             LambdaSymbolKind::CAPTURED_THIS => sym,
             LambdaSymbolKind::CAPTURED_VAR => {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 let erased = self.types.erasure(ctx, &syms, ctx.sym(sym).ty.expect("captured var type"));
                 drop(syms);
                 self.new_var_symbol(
@@ -2390,7 +2390,7 @@ impl LambdaAnalyzerPreprocessor {
                 let name = self.names.from_string(&javac_strings::JavaString::from(
                     format!("{}{}", flat.to_java_string().to_string_lossy().replace('.', "$"), self.names.dollarThis.to_java_string().to_string_lossy()).as_str(),
                 ));
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 let erased = self.types.erasure(ctx, &syms, ctx.sym(sym).ty.expect("outer this type"));
                 drop(syms);
                 self.new_var_symbol(
@@ -2402,7 +2402,7 @@ impl LambdaAnalyzerPreprocessor {
                 )
             }
             LambdaSymbolKind::LOCAL_VAR => {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 let erased = self.types.erasure(ctx, &syms, ctx.sym(sym).ty.expect("local var type"));
                 drop(syms);
                 let var = self.new_var_symbol(
@@ -2418,7 +2418,7 @@ impl LambdaAnalyzerPreprocessor {
                 var
             }
             LambdaSymbolKind::PARAM => {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 let erased = self.types.erasure(ctx, &syms, ctx.sym(sym).ty.expect("param type"));
                 drop(syms);
                 let var = self.new_var_symbol(
@@ -2555,7 +2555,7 @@ impl LambdaAnalyzerPreprocessor {
             let attr = self.attr.borrow();
             let chk = Rc::clone(&attr.chk);
             let _ = &chk;
-            (self.syms.borrow_mut(), chk, Rc::clone(&self.diags))
+            (&*self.syms, chk, Rc::clone(&self.diags))
         };
         let empty = self.names.empty.clone();
         let csym = self
@@ -2677,7 +2677,7 @@ fn add_lambda_symbol_ro(
     ctx: &mut CompilerContext,
     context_map: &Rc<RefCell<HashMap<TreeId, TranslationContext>>>,
     names: &Rc<Names>,
-    syms: &Rc<RefCell<Symtab>>,
+    syms: &Rc<Symtab>,
     types: &Rc<Types>,
     context_tree: TreeId,
     sym: SymbolId,
@@ -2711,7 +2711,7 @@ fn add_lambda_symbol_ro(
         LambdaSymbolKind::CAPTURED_THIS => sym,
         LambdaSymbolKind::CAPTURED_VAR => {
             let erased = {
-                let syms_borrow = syms.borrow();
+                let syms_borrow = &*syms;
                 types.erasure(ctx, &syms_borrow, ctx.sym(sym).ty.expect("captured var type"))
             };
             new_var_symbol_static(
@@ -2729,7 +2729,7 @@ fn add_lambda_symbol_ro(
                 format!("{}{}", flat_name, names.dollarThis.to_java_string().to_string_lossy()).as_str(),
             ));
             let erased = {
-                let syms_borrow = syms.borrow();
+                let syms_borrow = &*syms;
                 types.erasure(ctx, &syms_borrow, ctx.sym(sym).ty.expect("outer this type"))
             };
             new_var_symbol_static(
@@ -2742,7 +2742,7 @@ fn add_lambda_symbol_ro(
         }
         LambdaSymbolKind::LOCAL_VAR => {
             let erased = {
-                let syms_borrow = syms.borrow();
+                let syms_borrow = &*syms;
                 types.erasure(ctx, &syms_borrow, ctx.sym(sym).ty.expect("local var type"))
             };
             let var = new_var_symbol_static(
@@ -2759,7 +2759,7 @@ fn add_lambda_symbol_ro(
         }
         LambdaSymbolKind::PARAM => {
             let erased = {
-                let syms_borrow = syms.borrow();
+                let syms_borrow = &*syms;
                 types.erasure(ctx, &syms_borrow, ctx.sym(sym).ty.expect("param type"))
             };
             let var = new_var_symbol_static(
@@ -2794,7 +2794,7 @@ fn capture_local_class_defs_static(
     local_class_defs: &HashMap<SymbolId, TreeId>,
     lower: &Rc<RefCell<Lower>>,
     names: &Rc<Names>,
-    syms: &Rc<RefCell<Symtab>>,
+    syms: &Rc<Symtab>,
     types: &Rc<Types>,
     frame_stack: &[Frame],
     class_sym: SymbolId,
@@ -2820,7 +2820,7 @@ fn capture_local_class_defs_static(
         local_class_defs: &'a HashMap<SymbolId, TreeId>,
         lower: &'a Rc<RefCell<Lower>>,
         names: &'a Rc<Names>,
-        syms: &'a Rc<RefCell<Symtab>>,
+        syms: &'a Rc<Symtab>,
         types: &'a Rc<Types>,
         frame_stack: &'a [Frame],
         lambda_context: TreeId,
@@ -3153,7 +3153,7 @@ impl LambdaToMethod {
                 indy_arg_types = indy_arg_types.append(ty);
             }
         }
-        let method_class = self.syms.borrow().method_class;
+        let method_class = self.syms.method_class;
         let indy_type = ctx.alloc_type(Type::new_method_type(indy_arg_types, target_type, List::nil(), method_class));
         let needs_alt = target_tsym_is_intersection(ctx, target)
             || is_serializable
@@ -3166,17 +3166,17 @@ impl LambdaToMethod {
         if needs_alt {
             let mut markers: Vec<TypeId> = Vec::new();
             let targets = if ctx.typ(target).is_intersection() {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.direct_supertypes(ctx, &syms, target)
             } else {
                 List::nil()
             };
-            let serializable_type = self.syms.borrow().serializable_type;
+            let serializable_type = self.syms.serializable_type;
             let serializable_tsym = ctx.typ(serializable_type).tsym;
             let target_tsym2 = ctx.typ(target).tsym;
-            let object_tsym = ctx.typ(self.syms.borrow().object_type).tsym;
+            let object_tsym = ctx.typ(self.syms.object_type).tsym;
             for marker in targets.iter() {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 let erased = self.types.erasure(ctx, &syms, marker);
                 drop(syms);
                 let marker_tsym = ctx.typ(erased).tsym;
@@ -3203,16 +3203,16 @@ impl LambdaToMethod {
             if has_bridges {
                 static_args.push(LoadableConstantRef::Basic(BasicConstant::int(bridges.len() as i32 - 1)));
                 let sam_erasure = {
-                    let syms = self.syms.borrow();
+                    let syms = &*self.syms;
                     self.types.erasure(ctx, &syms, sam_type)
                 };
                 for bridge in &bridges {
                     let bridge_ty = ctx.sym(*bridge).ty.expect("bridge type");
                     let bridge_erasure = {
-                        let syms = self.syms.borrow();
+                        let syms = &*self.syms;
                         self.types.erasure(ctx, &syms, bridge_ty)
                     };
-                    let syms = self.syms.borrow();
+                    let syms = &*self.syms;
                     let same = self.types.is_same_type(ctx, &syms, bridge_erasure, sam_erasure);
                     drop(syms);
                     if !same {
@@ -3238,7 +3238,7 @@ impl LambdaToMethod {
         }
         let _ = is_reference;
         let sam_name = ctx.sym(sam_sym).name.clone();
-        let lambda_metafactory = self.syms.borrow().lambda_metafactory;
+        let lambda_metafactory = self.syms.lambda_metafactory;
         self.make_indy_call(ctx, tree, lambda_metafactory, metafactory_name, static_args, indy_type, indy_args, sam_name)
     }
     /// Name bsmName, List<LoadableConstant> staticArgs, MethodType indyType,
@@ -3262,13 +3262,13 @@ impl LambdaToMethod {
             make.at(pos);
         }
         let bsm_static_args = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let mut args: List<TypeId> = List::of(syms.method_handle_lookup_type)
                 .append(syms.string_type)
                 .append(syms.method_type_type);
             drop(syms);
             for argument in &static_args {
-                let ty = self.types.constant_type(ctx, &self.syms.borrow(), argument);
+                let ty = self.types.constant_type(ctx, &*self.syms, argument);
                 args = args.append(ty);
             }
             args
@@ -3283,7 +3283,7 @@ impl LambdaToMethod {
         let chk_borrow = chk;
         let bsm = {
             let mut attr = attr_rc.borrow_mut();
-            let mut syms = self.syms.borrow_mut();
+            let mut syms = &*self.syms;
             self.rs.resolve_internal_method(
                 ctx,
                 &mut syms,
@@ -3304,7 +3304,7 @@ impl LambdaToMethod {
         let dyn_sym = symbol::new_dynamic_method_symbol(
             ctx,
             meth_name,
-            self.syms.borrow().no_symbol,
+            self.syms.no_symbol,
             bsm_handle,
             indy_type,
             static_args.clone(),
@@ -3326,7 +3326,7 @@ impl LambdaToMethod {
             let mut make = self.make.borrow_mut();
             make.at(pos);
             let site_tree = {
-                let mut syms = self.syms.borrow_mut();
+                let mut syms = &*self.syms;
                 let site_sym = ctx.typ(site).tsym.expect("site symbol");
                 make.qual_ident(ctx, &mut syms, site_sym)
             };
@@ -3390,7 +3390,7 @@ impl LambdaToMethod {
                     javac_strings::JavaString::from(key.as_str()),
                 );
                 let const_ty = {
-                    let string_type = self.syms.borrow().string_type;
+                    let string_type = self.syms.string_type;
                     ctx.typ(string_type).const_type(label_const)
                 };
                 ctx.tree_mut(label).ty = Some(ctx.alloc_type(const_ty));
@@ -3407,7 +3407,7 @@ impl LambdaToMethod {
             };
             case_trees.push(case);
         }
-        let string_type = self.syms.borrow().string_type;
+        let string_type = self.syms.string_type;
         let selector = self.deser_getter(ctx, "getImplMethodName", string_type);
         let switch = {
             let mut make = self.make.borrow_mut();
@@ -3418,12 +3418,12 @@ impl LambdaToMethod {
                 *slot = Some(switch);
             }
         }
-        let illegal_argument_exception_type = self.syms.borrow().illegal_argument_exception_type;
+        let illegal_argument_exception_type = self.syms.illegal_argument_exception_type;
         let invalid_message = {
             let mut make = self.make.borrow_mut();
             make.literal(ctx, TypeTag::CLASS, Some(LiteralValue::String(javac_strings::JavaString::from("Invalid lambda deserialization"))))
         };
-        ctx.tree_mut(invalid_message).ty = Some(self.syms.borrow().string_type);
+        ctx.tree_mut(invalid_message).ty = Some(self.syms.string_type);
         let throw = {
             let new_class = self.make_new_class(
                 ctx,
@@ -3450,11 +3450,11 @@ impl LambdaToMethod {
         let restype_tsym = ctx.typ(restype).tsym.expect("deserialize return type symbol");
         let qual_ident = {
             let mut make = self.make.borrow_mut();
-            make.qual_ident(ctx, &mut self.syms.borrow_mut(), restype_tsym)
+            make.qual_ident(ctx, &*self.syms, restype_tsym)
         };
         let param_def = {
             let mut make = self.make.borrow_mut();
-            make.var_def_symbol(ctx, &mut self.syms.borrow_mut(), deser_param_sym, None)
+            make.var_def_symbol(ctx, &*self.syms, deser_param_sym, None)
         };
         let deser = {
             let mut make = self.make.borrow_mut();
@@ -3492,7 +3492,7 @@ impl LambdaToMethod {
         let clazz = {
             let mut make = self.make.borrow_mut();
             let ctype_tsym = ctx.typ(ctype).tsym.expect("new class type symbol");
-            make.qual_ident(ctx, &mut self.syms.borrow_mut(), ctype_tsym)
+            make.qual_ident(ctx, &*self.syms, ctype_tsym)
         };
         let tree = {
             let mut make = self.make.borrow_mut();
@@ -3518,7 +3518,7 @@ impl LambdaToMethod {
                 let infer = Rc::clone(&attr.infer);
                 Some(self.rs.resolve_constructor(
                     ctx,
-                    &mut self.syms.borrow_mut(),
+                    &*self.syms,
                     &self.types,
                     &mut attr,
                     &chk,
@@ -3553,7 +3553,7 @@ impl LambdaToMethod {
         let functional_interface_method_name = ctx.sym(sam_sym).name.to_java_string().to_string_lossy().to_string();
         let sam_ty = ctx.sym(sam_sym).ty.expect("sam type");
         let sam_erasure = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.erasure(ctx, &syms, sam_ty)
         };
         let functional_interface_method_signature = self.type_sig(ctx, sam_erasure, false);
@@ -3563,7 +3563,7 @@ impl LambdaToMethod {
         let impl_method_name = ctx.sym(ref_sym).name.to_java_string().to_string_lossy().to_string();
         let ref_ty = ctx.sym(ref_sym).ty.expect("ref type");
         let impl_method_signature = self.type_sig(ctx, ref_ty, false);
-        let int_type = self.syms.borrow().int_type;
+        let int_type = self.syms.int_type;
         let method_kind_getter = self.deser_getter(ctx, "getImplMethodKind", int_type);
         let kind_literal = {
             let mut make = self.make.borrow_mut();
@@ -3579,9 +3579,9 @@ impl LambdaToMethod {
                 let mut make = self.make.borrow_mut();
                 make.literal(ctx, TypeTag::INT, Some(LiteralValue::Integer(index)))
             };
-            let int_type = self.syms.borrow().int_type;
+            let int_type = self.syms.int_type;
             ctx.tree_mut(index_arg).ty = Some(int_type);
-            let object_type = self.syms.borrow().object_type;
+            let object_type = self.syms.object_type;
             let arg_types = List::of(int_type);
             let getter = self.deser_getter_with_args(
                 ctx,
@@ -3591,12 +3591,12 @@ impl LambdaToMethod {
                 List::of(index_arg),
             );
             let erased_param = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.erasure(ctx, &syms, param)
             };
             let type_expr = {
                 let mut make = self.make.borrow_mut();
-                make.type_from_type(ctx, &mut self.syms.borrow_mut(), erased_param)
+                make.type_from_type(ctx, &*self.syms, erased_param)
             };
             let cast = {
                 let mut make = self.make.borrow_mut();
@@ -3605,7 +3605,7 @@ impl LambdaToMethod {
             ser_args.push(cast);
             index += 1;
         }
-        let lambda_metafactory = self.syms.borrow().lambda_metafactory;
+        let lambda_metafactory = self.syms.lambda_metafactory;
         let sam_name = ctx.sym(sam_sym).name.clone();
         let indy_call = self.make_indy_call(
             ctx,
@@ -3651,19 +3651,19 @@ impl LambdaToMethod {
             make.binary(ctx, Tag::EQ, arg1, arg2)
         };
         let operator = {
-            let mut syms = self.syms.borrow_mut();
+            let mut syms = &*self.syms;
             self.operators
                 .resolve_binary(ctx, &mut syms, &self.types, ctx.tree(test_expr).pos, Tag::EQ, arg_type, arg_type)
         };
         if let TreeKind::Binary { operator: slot, .. } = &mut ctx.tree_mut(test_expr).kind {
             *slot = Some(operator);
         }
-        ctx.tree_mut(test_expr).ty = Some(self.syms.borrow().boolean_type);
+        ctx.tree_mut(test_expr).ty = Some(self.syms.boolean_type);
         test_expr
     }
     fn deser_test(&mut self, ctx: &mut CompilerContext, prev: TreeId, func: &str, lit: &str) -> TreeId {
         let eqmt = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             ctx.alloc_type(Type::new_method_type(
                 List::of(syms.object_type),
                 syms.boolean_type,
@@ -3671,7 +3671,7 @@ impl LambdaToMethod {
                 syms.method_class,
             ))
         };
-        let object_type = self.syms.borrow().object_type;
+        let object_type = self.syms.object_type;
         let attr_env = self.attr_env.clone().expect("attrEnv");
         let location = ctx.typ(object_type).tsym.expect("equals site symbol");
         let attr_rc = Rc::clone(&self.attr);
@@ -3681,7 +3681,7 @@ impl LambdaToMethod {
         let infer = Rc::clone(&attr.infer);
         let equals_sym = self.rs.resolve_qualified_method(
             ctx,
-            &mut self.syms.borrow_mut(),
+            &*self.syms,
             &self.types,
             &mut attr,
             &chk,
@@ -3696,7 +3696,7 @@ impl LambdaToMethod {
         );
         // Release the Attr RefCell borrow before deser_getter borrows it again.
         drop(attr);
-        let string_type = self.syms.borrow().string_type;
+        let string_type = self.syms.string_type;
         let getter = self.deser_getter(ctx, func, string_type);
         let literal = {
             let mut make = self.make.borrow_mut();
@@ -3715,14 +3715,14 @@ impl LambdaToMethod {
             let mut make = self.make.borrow_mut();
             make.apply(ctx, List::nil(), select, List::of(literal))
         };
-        ctx.tree_mut(eqtest).ty = Some(self.syms.borrow().boolean_type);
+        ctx.tree_mut(eqtest).ty = Some(self.syms.boolean_type);
         let compound = {
             let mut make = self.make.borrow_mut();
             make.binary(ctx, Tag::AND, prev, eqtest)
         };
-        let boolean_type = self.syms.borrow().boolean_type;
+        let boolean_type = self.syms.boolean_type;
         let operator = {
-            let mut syms = self.syms.borrow_mut();
+            let mut syms = &*self.syms;
             self.operators
                 .resolve_binary(ctx, &mut syms, &self.types, ctx.tree(compound).pos, Tag::AND, boolean_type, boolean_type)
         };
@@ -3743,9 +3743,9 @@ impl LambdaToMethod {
         arg_types: List<TypeId>,
         args: List<TreeId>,
     ) -> TreeId {
-        let method_class = self.syms.borrow().method_class;
+        let method_class = self.syms.method_class;
         let getmt = ctx.alloc_type(Type::new_method_type(arg_types.clone(), ty, List::nil(), method_class));
-        let serialized_lambda_type = self.syms.borrow().serialized_lambda_type;
+        let serialized_lambda_type = self.syms.serialized_lambda_type;
         let name = self.names.from_string(&javac_strings::JavaString::from(func));
         let getsym = {
             let attr_env = self.attr_env.clone().expect("attrEnv");
@@ -3757,7 +3757,7 @@ impl LambdaToMethod {
             let infer = Rc::clone(&attr.infer);
             self.rs.resolve_qualified_method(
                 ctx,
-                &mut self.syms.borrow_mut(),
+                &*self.syms,
                 &self.types,
                 &mut attr,
                 &chk,
@@ -8403,7 +8403,7 @@ impl LambdaAnalyzerPreprocessor {
     }
     fn type_sig(&self, ctx: &mut CompilerContext, ty: TypeId, allow_illegal_signature: bool) -> String {
         let mut generator = L2MSignatureGenerator::new(Rc::clone(&self.types), allow_illegal_signature);
-        let syms = self.syms.borrow();
+        let syms = &*self.syms;
         let _ = generator.assemble_sig(ctx, &syms, ty);
         drop(syms);
         generator.finish()
@@ -8413,7 +8413,7 @@ impl LambdaAnalyzerPreprocessor {
         let attr = self.attr.borrow();
         let chk = Rc::clone(&attr.chk);
         let chk = chk;
-        let mut syms = self.syms.borrow_mut();
+        let mut syms = &*self.syms;
         self.types
             .find_descriptor_symbol(ctx, &mut syms, &self.diags, &chk, origin)
             .ok()
@@ -8424,7 +8424,7 @@ impl LambdaAnalyzerPreprocessor {
         let attr = self.attr.borrow();
         let chk = Rc::clone(&attr.chk);
         let chk = chk;
-        let mut syms = self.syms.borrow_mut();
+        let mut syms = &*self.syms;
         self.types
             .find_descriptor_type(ctx, &mut syms, &self.diags, &chk, origin)
             .ok()
@@ -8451,7 +8451,7 @@ impl LambdaAnalyzerPreprocessor {
         };
         let attr = Rc::clone(&self.attr);
         let mut attr = attr.borrow_mut();
-        let mut syms = self.syms.borrow_mut();
+        let mut syms = &*self.syms;
         Some(attr.make_null_check(ctx, &mut syms, qualifier))
     }
     fn member_reference_to_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
@@ -8519,7 +8519,7 @@ pub struct LambdaBodyTranslator {
     pub base: TreeTranslator,
     pub names: Rc<Names>,
     pub make: Rc<RefCell<TreeMaker>>,
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
 }
 
 impl LambdaBodyTranslator {
@@ -8602,7 +8602,7 @@ impl LambdaToMethod {
     /// The signature of a type (upstream typeSig).
     fn type_sig(&self, ctx: &mut CompilerContext, ty: TypeId, allow_illegal_signature: bool) -> String {
         let mut generator = L2MSignatureGenerator::new(Rc::clone(&self.types), allow_illegal_signature);
-        let syms = self.syms.borrow();
+        let syms = &*self.syms;
         let _ = generator.assemble_sig(ctx, &syms, ty);
         drop(syms);
         generator.finish()
@@ -8612,7 +8612,7 @@ impl LambdaToMethod {
     #[allow(dead_code)]
     fn class_sig(&self, ctx: &mut CompilerContext, ty: TypeId) -> String {
         let mut generator = L2MSignatureGenerator::new(Rc::clone(&self.types), false);
-        let syms = self.syms.borrow();
+        let syms = &*self.syms;
         let _ = generator.assemble_class_sig(ctx, &syms, ty);
         drop(syms);
         generator.finish()
@@ -8623,7 +8623,7 @@ impl LambdaToMethod {
         let attr = self.attr.borrow();
         let chk = Rc::clone(&attr.chk);
         let chk = chk;
-        let mut syms = self.syms.borrow_mut();
+        let mut syms = &*self.syms;
         self.types
             .find_descriptor_symbol(ctx, &mut syms, &self.diags, &chk, origin)
             .ok()
@@ -8634,7 +8634,7 @@ impl LambdaToMethod {
         let attr = self.attr.borrow();
         let chk = Rc::clone(&attr.chk);
         let chk = chk;
-        let mut syms = self.syms.borrow_mut();
+        let mut syms = &*self.syms;
         self.types
             .find_descriptor_type(ctx, &mut syms, &self.diags, &chk, origin)
             .ok()
@@ -8644,7 +8644,7 @@ impl LambdaToMethod {
     /// typeToMethodType).
     fn type_to_method_type(&mut self, ctx: &mut CompilerContext, mt: TypeId) -> TypeId {
         let erased = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.erasure(ctx, &syms, mt)
         };
         let (parameter_types, return_type, thrown_types) = {
@@ -8655,7 +8655,7 @@ impl LambdaToMethod {
                 type_.get_thrown_types(ctx),
             )
         };
-        let method_class = self.syms.borrow().method_class;
+        let method_class = self.syms.method_class;
         ctx.alloc_type(Type::new_method_type(
             parameter_types,
             return_type,
@@ -8678,7 +8678,7 @@ impl LambdaToMethod {
         let thrown_trees = {
             let mut out: List<TreeId> = List::nil();
             let mut make = self.make.borrow_mut();
-            let mut syms = self.syms.borrow_mut();
+            let mut syms = &*self.syms;
             for ty in thrown_types.iter() {
                 let tree_ty = make.type_from_type(ctx, &mut syms, ty);
                 out = out.append(tree_ty);
@@ -8692,7 +8692,7 @@ impl LambdaToMethod {
         let restype_tree = {
             let restype_tsym = ctx.typ(lambda_restype).tsym.expect("lambda return type symbol");
             let mut make = self.make.borrow_mut();
-            let mut syms = self.syms.borrow_mut();
+            let mut syms = &*self.syms;
             make.qual_ident(ctx, &mut syms, restype_tsym)
         };
         let name = ctx.sym(sym).name.clone();
@@ -8745,11 +8745,11 @@ impl LambdaToMethod {
         let restype = ctx.typ(decl_type).get_return_type(ctx).expect("lambda return type");
         let is_lambda_void = ctx.tree(expr).ty.map(|ty| ctx.typ(ty).has_tag(TypeTag::VOID)).unwrap_or(false);
         let is_target_void = ctx.typ(restype).has_tag(TypeTag::VOID);
-        let void_type = self.syms.borrow().void_type;
-        let boxed_void = self.types.boxed_class(ctx, &mut self.syms.borrow_mut(), void_type);
+        let void_type = self.syms.void_type;
+        let boxed_void = self.types.boxed_class(ctx, &*self.syms, void_type);
         let boxed_void_ty = ctx.sym(boxed_void).ty.expect("boxed void type");
         let is_target_void_type = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.is_same_type(ctx, &syms, restype, boxed_void_ty)
         };
         let previous_pos = self.make.borrow().pos;
@@ -8777,7 +8777,7 @@ impl LambdaToMethod {
                 let mut make = self.make.borrow_mut();
                 make.exec(ctx, expr)
             };
-            let bot_type = self.syms.borrow().bot_type;
+            let bot_type = self.syms.bot_type;
             let bot = {
                 let mut make = self.make.borrow_mut();
                 make.literal(ctx, TypeTag::BOT, None)
@@ -8816,11 +8816,11 @@ impl LambdaToMethod {
         let decl_type = ctx.tree(lambda_method_decl).ty.expect("lambda method type");
         let restype = ctx.typ(decl_type).get_return_type(ctx).expect("lambda return type");
         let is_target_void = ctx.typ(restype).has_tag(TypeTag::VOID);
-        let void_type = self.syms.borrow().void_type;
-        let boxed_void = self.types.boxed_class(ctx, &mut self.syms.borrow_mut(), void_type);
+        let void_type = self.syms.void_type;
+        let boxed_void = self.types.boxed_class(ctx, &*self.syms, void_type);
         let boxed_void_ty = ctx.sym(boxed_void).ty.expect("boxed void type");
         let is_target_void_type = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.is_same_type(ctx, &syms, restype, boxed_void_ty)
         };
         let mut translator = LambdaBodyTranslator {
@@ -8835,7 +8835,7 @@ impl LambdaToMethod {
         translator.translate(ctx, Some(block));
         let trans_block = translator.result.take().or(Some(block)).expect("translated block");
         if complete_normally && is_target_void_type {
-            let bot_type = self.syms.borrow().bot_type;
+            let bot_type = self.syms.bot_type;
             let bot = {
                 let mut make = self.make.borrow_mut();
                 make.literal(ctx, TypeTag::BOT, None)
@@ -8866,9 +8866,9 @@ impl LambdaToMethod {
                 TranslationContextKind::Reference(reference) => reference.target,
             })
             .expect("context target");
-        let serializable_tsym = self.syms.borrow().serializable_type;
+        let serializable_tsym = self.syms.serializable_type;
         let serializable_tsym = ctx.typ(serializable_tsym).tsym.expect("serializable type symbol");
-        let syms = self.syms.borrow();
+        let syms = &*self.syms;
         self.types.as_super(ctx, &syms, target, serializable_tsym).is_some()
     }
 
@@ -8897,7 +8897,7 @@ impl LambdaToMethod {
                     }
                     let sym_ty = sym_ty.expect("method type");
                     let other_ty = other_ty.expect("method type");
-                    let syms = self.syms.borrow();
+                    let syms = &*self.syms;
                     if !self.types.is_same_type(ctx, &syms, sym_ty, other_ty) {
                         return false;
                     }
@@ -8958,7 +8958,7 @@ impl LambdaAnalyzerPreprocessor {
         let interface_intersection = self.interface_parameter_is_intersection_or_union_type(ctx, tree);
         let needs_varargs = varargs.is_some();
         let is_array_op = sym
-            .map(|sym| ctx.sym(sym).owner == Some(self.syms.borrow().array_class))
+            .map(|sym| ctx.sym(sym).owner == Some(self.syms.array_class))
             .unwrap_or(false);
         let is_private_in_other_class = !self.nestmate_lambdas
             && sym
@@ -8970,7 +8970,7 @@ impl LambdaAnalyzerPreprocessor {
                                 let b = symbol::encl_class(ctx, context_owner)
                                     .and_then(|owner| ctx.sym(owner).ty)
                                     .expect("context class type");
-                                let syms = self.syms.borrow();
+                                let syms = &*self.syms;
                                 let ea = self.types.erasure(ctx, &syms, a);
                                 let eb = self.types.erasure(ctx, &syms, b);
                                 !self.types.is_same_type(ctx, &syms, ea, eb)
@@ -9009,7 +9009,7 @@ pub struct MemberReferenceToLambda {
     pub receiver_expression: Option<TreeId>,
     pub make: Rc<RefCell<TreeMaker>>,
     pub names: Rc<Names>,
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     pub types: Rc<Types>,
     pub attr: Option<Rc<RefCell<Attr>>>,
     pub diags: Rc<crate::util::jc_diagnostic::Factory>,
@@ -9024,7 +9024,7 @@ impl MemberReferenceToLambda {
         tree: TreeId,
         make: Rc<RefCell<TreeMaker>>,
         names: Rc<Names>,
-        syms: Rc<RefCell<Symtab>>,
+        syms: Rc<Symtab>,
         types: Rc<Types>,
         attr: Option<Rc<RefCell<Attr>>>,
         diags: Rc<crate::util::jc_diagnostic::Factory>,
@@ -9115,7 +9115,7 @@ impl MemberReferenceToLambda {
                 let attr = Rc::clone(self.attr.as_ref().expect("attr"));
                 let checked = {
                     let mut attr = attr.borrow_mut();
-                    let mut syms = self.syms.borrow_mut();
+                    let mut syms = &*self.syms;
                     attr.make_null_check(ctx, &mut syms, expr)
                 };
                 self.receiver_expression = Some(checked);
@@ -9189,7 +9189,7 @@ impl MemberReferenceToLambda {
         let attr = self.attr.as_ref().expect("attr").borrow();
         let chk = Rc::clone(&attr.chk);
         let chk = chk;
-        let mut syms = self.syms.borrow_mut();
+        let mut syms = &*self.syms;
         self.types.find_descriptor_type(ctx, &mut syms, &self.diags, &chk, target).ok()
     }
 
@@ -9219,7 +9219,7 @@ impl MemberReferenceToLambda {
         ));
         let var_def = {
             let mut make = self.make.borrow_mut();
-            let mut syms = self.syms.borrow_mut();
+            let mut syms = &*self.syms;
             make.var_def_symbol(ctx, &mut syms, vsym, None)
         };
         self.params.push(var_def);
@@ -9256,7 +9256,7 @@ impl MemberReferenceToLambda {
                 .expect("qualifier type")
         };
         let array_class_type = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             ctx.sym(syms.array_class).ty
         };
         if Some(rcvr_type) == array_class_type {
@@ -9267,7 +9267,7 @@ impl MemberReferenceToLambda {
         let target_tsym = ctx.typ(rcvr_type).tsym;
         let is_subclass = match (rcvr_tsym, target_tsym) {
             (Some(rcvr_tsym), Some(target_tsym)) => {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 crate::code::symbol::is_sub_class(ctx, &syms, &self.types, rcvr_tsym, target_tsym)
             }
             _ => false,
@@ -9275,7 +9275,7 @@ impl MemberReferenceToLambda {
         if !is_subclass {
             let type_tree = {
                 let mut make = self.make.borrow_mut();
-                let mut syms = self.syms.borrow_mut();
+                let mut syms = &*self.syms;
                 make.type_from_type(ctx, &mut syms, rcvr_type)
             };
             let cast = {
@@ -9295,7 +9295,7 @@ impl MemberReferenceToLambda {
         let formals = {
             let meth_type = ctx.sym(meth).ty.expect("method type");
             let erased = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.erasure(ctx, &syms, meth_type)
             };
             ctx.typ(erased).get_parameter_types(ctx)
@@ -9350,7 +9350,7 @@ impl MemberReferenceToLambda {
                         _ => panic!("expected reference symbol"),
                     };
                     let owner = ctx.sym(ref_sym).owner.expect("reference owner");
-                    let mut syms = self.syms.borrow_mut();
+                    let mut syms = &*self.syms;
                     self.make
                         .borrow_mut()
                         .qual_ident(ctx, &mut syms, owner)
@@ -9371,7 +9371,7 @@ impl MemberReferenceToLambda {
         }
         let sym_ty = ctx.sym(sym).ty.expect("reference symbol type");
         let erased = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.erasure(ctx, &syms, sym_ty)
         };
         ctx.tree_mut(select).ty = Some(erased);
@@ -9387,7 +9387,7 @@ impl MemberReferenceToLambda {
             _ => panic!("expected a member reference referent type"),
         };
         let target = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.erasure(ctx, &syms, referent_type)
         };
         let coerce_target = ctx.typ(target).get_return_type(ctx).expect("referent return type");
@@ -9424,12 +9424,12 @@ impl MemberReferenceToLambda {
                 None => panic!("array constructor without parameter"),
             };
             let elem_type = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.elemtype(ctx, &syms, qualifier_ty)
             };
             let array_type = {
                 let mut make = self.make.borrow_mut();
-                let mut syms = self.syms.borrow_mut();
+                let mut syms = &*self.syms;
                 make.type_from_type(ctx, &mut syms, elem_type)
             };
             let array = {
@@ -9451,7 +9451,7 @@ impl MemberReferenceToLambda {
             let converted_args = self.convert_args(ctx, sym, List::from_iterable(self.args.clone()), varargs);
             let clazz = {
                 let mut make = self.make.borrow_mut();
-                let mut syms = self.syms.borrow_mut();
+                let mut syms = &*self.syms;
                 make.type_from_type(ctx, &mut syms, qualifier_ty)
             };
             let new_class = {
@@ -9512,7 +9512,7 @@ impl LambdaBodyTranslator {
             );
             let var_def = {
                 let mut make = self.make.borrow_mut();
-                let mut syms = self.syms.borrow_mut();
+                let mut syms = &*self.syms;
                 make.var_def_symbol(ctx, &mut syms, loc, Some(expr))
             };
             let return_ = {

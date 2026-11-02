@@ -11676,7 +11676,7 @@ mod tests {
     #[allow(clippy::type_complexity, clippy::too_many_arguments)]
     fn build_services() -> (
         CompilerContext,
-        Rc<std::cell::RefCell<Symtab>>,
+        Rc<Symtab>,
         Types,
         Rc<std::cell::RefCell<crate::util::log::Log>>,
         Rc<crate::util::jc_diagnostic::Factory>,
@@ -11695,7 +11695,7 @@ mod tests {
         let lint = crate::code::lint::Lint::instance(&mut context);
         let deferred = Rc::new(DeferredLintHandler::new());
         let symtab = Symtab::new(&mut ctx, Rc::clone(&names), Target::DEFAULT, Source::JDK17);
-        let symtab = Rc::new(std::cell::RefCell::new(symtab));
+        let symtab = Rc::new(symtab);
         let types = Types::with_names(names);
         (ctx, symtab, types, log, diags, lint, deferred)
     }
@@ -11834,7 +11834,7 @@ mod tests {
         types: &Types,
         lint: &Rc<crate::code::lint::Lint>,
         deferred: &Rc<crate::code::deferred_lint_handler::DeferredLintHandler>,
-        syms: &Rc<std::cell::RefCell<Symtab>>,
+        syms: &Rc<Symtab>,
     ) -> crate::comp::check::Check {
         crate::comp::check::Check::new(
             Rc::clone(names),
@@ -11853,7 +11853,7 @@ mod tests {
     fn functional_interface_descriptor_identifies_the_sam() {
         let (mut ctx, syms_rc, types, log, diags, lint, deferred) = build_services();
         let names = Rc::new(Names::new(false));
-        let syms = syms_rc.borrow_mut();
+        let syms = &*syms_rc;
         let int_type = syms.int_type;
         let java_base = syms.java_base;
         let (_, _, method) = make_interface_with_method(
@@ -11894,7 +11894,7 @@ mod tests {
     fn functional_interface_rejects_two_abstract_methods() {
         let (mut ctx, syms_rc, types, log, diags, lint, deferred) = build_services();
         let names = Rc::new(Names::new(false));
-        let syms = syms_rc.borrow_mut();
+        let syms = &*syms_rc;
         let int_type = syms.int_type;
         let void_type = syms.void_type;
         let java_base = syms.java_base;
@@ -11920,7 +11920,7 @@ mod tests {
     fn descriptor_type_keeps_the_sam_thrown_clause() {
         let (mut ctx, syms_rc, types, log, diags, lint, deferred) = build_services();
         let names = Rc::new(Names::new(false));
-        let syms = syms_rc.borrow_mut();
+        let syms = &*syms_rc;
         let int_type = syms.int_type;
         let exception_type = syms.exception_type;
         let java_base = syms.java_base;
@@ -11983,7 +11983,7 @@ mod tests {
         let names = Rc::new(Names::new(false));
         let chk = check_for_tests(&names, &log, &diags, &types, &lint, &deferred, &syms_rc);
         let (class, int_type, java_base) = {
-            let syms = syms_rc.borrow_mut();
+            let syms = &*syms_rc;
             let int_type = syms.int_type;
             let java_base = syms.java_base;
             let (class, _, _) = make_interface_with_method(
@@ -12016,7 +12016,7 @@ mod tests {
         assert!(
             chk.check_unique(
                 &mut ctx,
-                &syms_rc.borrow(),
+                &*syms_rc,
                 crate::util::position::NOPOS,
                 symbols[0],
                 members,
@@ -12042,7 +12042,7 @@ mod tests {
         assert!(
             !chk.check_unique(
                 &mut ctx,
-                &syms_rc.borrow(),
+                &*syms_rc,
                 crate::util::position::NOPOS,
                 dup,
                 members,

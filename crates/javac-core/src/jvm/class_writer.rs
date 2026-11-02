@@ -77,7 +77,7 @@ pub struct ClassWriter {
     /// The name table.
     pub names: Rc<Names>,
     /// The symbol table.
-    pub syms: Rc<RefCell<crate::code::symtab::Symtab>>,
+    pub syms: Rc<crate::code::symtab::Symtab>,
     /// Type relations.
     pub types: Rc<Types>,
     /// The check service.
@@ -145,7 +145,7 @@ impl ClassWriter {
     pub fn new(
         log: Rc<RefCell<Log>>,
         names: Rc<Names>,
-        syms: Rc<RefCell<crate::code::symtab::Symtab>>,
+        syms: Rc<crate::code::symtab::Symtab>,
         types: Rc<Types>,
         check: Rc<Check>,
         options: Rc<Options>,
@@ -315,14 +315,14 @@ impl ClassWriter {
         let syms = Rc::clone(&self.syms);
         let encl_class_index = {
             let mut pool = self.pool_writer.borrow_mut();
-            pool.put_class(ctx, &syms.borrow(), ctx.sym(encl_class).ty.expect("class type"))
+            pool.put_class(ctx, &*syms, ctx.sym(encl_class).ty.expect("class type"))
         };
         self.databuf.borrow_mut().append_char(encl_class_index);
         let method_index = match encl_method {
             None => 0,
             Some(encl_method) => {
                 let mut pool = self.pool_writer.borrow_mut();
-                pool.put_name_and_type(ctx, &syms.borrow(), encl_method)
+                pool.put_name_and_type(ctx, &*syms, encl_method)
             }
         };
         self.databuf.borrow_mut().append_char(method_index);
@@ -359,10 +359,10 @@ impl ClassWriter {
         // Java: ClassWriter.java:363-370 compares sym.type with
         // sym.erasure(types) (the symbol's erasure_field) and checks the
         // thrown types of sym.type, not of the erasure.
-        let erased = self.types.symbol_erasure(ctx, &syms.borrow(), sym);
+        let erased = self.types.symbol_erasure(ctx, &*syms, sym);
         let same = self
             .types
-            .is_same_type(ctx, &syms.borrow(), sym_ty, erased);
+            .is_same_type(ctx, &*syms, sym_ty, erased);
         let thrown = ctx.typ(sym_ty).get_thrown_types(ctx);
         let has_type_var = {
             let pool = self.pool_writer.borrow();
@@ -380,7 +380,7 @@ impl ClassWriter {
             let index = self
                 .pool_writer
                 .borrow_mut()
-                .put_signature(ctx, &syms.borrow(), sym);
+                .put_signature(ctx, &*syms, sym);
             self.databuf.borrow_mut().append_char(index);
             self.end_attr(alen_idx);
             acount += 1;
@@ -419,7 +419,7 @@ impl ClassWriter {
         let ext = crate::code::symbol::external_type(
             ctx,
             &self.types,
-            &syms.borrow(),
+            &*syms,
             &self.names,
             m,
         );
@@ -542,7 +542,7 @@ impl ClassWriter {
             None => return RetentionPolicy::CLASS,
         };
         let syms = Rc::clone(&self.syms);
-        self.types.get_retention(ctx, &syms.borrow(), tsym)
+        self.types.get_retention(ctx, &*syms, tsym)
     }
 
     /// Write the Java annotation attributes and return the number written.
@@ -689,7 +689,7 @@ impl ClassWriter {
                     let index = self
                         .pool_writer
                         .borrow_mut()
-                        .put_constant_value(ctx, &syms.borrow(), &value);
+                        .put_constant_value(ctx, &*syms, &value);
                     self.databuf.borrow_mut().append_char(index);
                 }
             }
@@ -700,7 +700,7 @@ impl ClassWriter {
                 let ty = ctx.sym(value).ty.expect("enum symbol type");
                 let index = {
                     let mut pool = self.pool_writer.borrow_mut();
-                    pool.put_descriptor(ctx, &syms.borrow(), ty)
+                    pool.put_descriptor(ctx, &*syms, ty)
                 };
                 self.databuf.borrow_mut().append_char(index);
                 let name = ctx.sym(value).name.clone();
@@ -713,7 +713,7 @@ impl ClassWriter {
                 let syms = Rc::clone(&self.syms);
                 let index = {
                     let mut pool = self.pool_writer.borrow_mut();
-                    pool.put_descriptor(ctx, &syms.borrow(), class_type)
+                    pool.put_descriptor(ctx, &*syms, class_type)
                 };
                 self.databuf.borrow_mut().append_char(index);
             }
@@ -743,7 +743,7 @@ impl ClassWriter {
         let syms = Rc::clone(&self.syms);
         let index = {
             let mut pool = self.pool_writer.borrow_mut();
-            pool.put_descriptor(ctx, &syms.borrow(), ty)
+            pool.put_descriptor(ctx, &*syms, ty)
         };
         self.databuf.borrow_mut().append_char(index);
         let values = match &ctx.attr(c).kind {
@@ -879,7 +879,7 @@ impl ClassWriter {
         let module_index = self
             .pool_writer
             .borrow_mut()
-            .put_module(ctx, &Rc::clone(&self.syms).borrow(), m);
+            .put_module(ctx, &self.syms, m);
         self.databuf.borrow_mut().append_char(module_index);
         self.databuf.borrow_mut().append_char(crate::code::symbol::ModuleFlags::value_of(&module_flags));
         let version_index = match version {
@@ -902,7 +902,7 @@ impl ClassWriter {
             let index = self
                 .pool_writer
                 .borrow_mut()
-                .put_module(ctx, &Rc::clone(&self.syms).borrow(), r);
+                .put_module(ctx, &self.syms, r);
             self.databuf.borrow_mut().append_char(index);
             // The requires flags are read from the directive.
             let mut current = requires_all.clone();
@@ -940,7 +940,7 @@ impl ClassWriter {
             let index = self
                 .pool_writer
                 .borrow_mut()
-                .put_package(ctx, &Rc::clone(&self.syms).borrow(), packge);
+                .put_package(ctx, &self.syms, packge);
             self.databuf.borrow_mut().append_char(index);
             self.databuf.borrow_mut().append_char(ExportsFlag::value_of(&eflags));
             match modules {
@@ -954,7 +954,7 @@ impl ClassWriter {
                     let index = self
                         .pool_writer
                         .borrow_mut()
-                        .put_module(ctx, &Rc::clone(&self.syms).borrow(), msym);
+                        .put_module(ctx, &self.syms, msym);
                     self.databuf.borrow_mut().append_char(index);
                     }
                 }
@@ -977,7 +977,7 @@ impl ClassWriter {
             let index = self
                 .pool_writer
                 .borrow_mut()
-                .put_package(ctx, &Rc::clone(&self.syms).borrow(), packge);
+                .put_package(ctx, &self.syms, packge);
             self.databuf.borrow_mut().append_char(index);
             self.databuf.borrow_mut().append_char(OpensFlag::value_of(&oflags));
             match modules {
@@ -991,7 +991,7 @@ impl ClassWriter {
                     let index = self
                         .pool_writer
                         .borrow_mut()
-                        .put_module(ctx, &Rc::clone(&self.syms).borrow(), msym);
+                        .put_module(ctx, &self.syms, msym);
                     self.databuf.borrow_mut().append_char(index);
                     }
                 }
@@ -1010,7 +1010,7 @@ impl ClassWriter {
             let index = self
                 .pool_writer
                 .borrow_mut()
-                .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), service);
+                .put_class_symbol(ctx, &self.syms, service);
             self.databuf.borrow_mut().append_char(index);
         }
         // provides (merged by service)
@@ -1043,14 +1043,14 @@ impl ClassWriter {
             let index = self
                 .pool_writer
                 .borrow_mut()
-                .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), service);
+                .put_class_symbol(ctx, &self.syms, service);
             self.databuf.borrow_mut().append_char(index);
             self.databuf.borrow_mut().append_char(impls.len() as i32);
             for impl_ in impls {
                 let index = self
                     .pool_writer
                     .borrow_mut()
-                    .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), impl_);
+                    .put_class_symbol(ctx, &self.syms, impl_);
                 self.databuf.borrow_mut().append_char(index);
             }
         }
@@ -1078,7 +1078,7 @@ impl ClassWriter {
             let index = self
                 .pool_writer
                 .borrow_mut()
-                .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), inner);
+                .put_class_symbol(ctx, &self.syms, inner);
             self.databuf.borrow_mut().append_char(index);
             let (owner, name) = (ctx.sym(inner).owner, ctx.sym(inner).name.clone());
             let owner_index = match owner {
@@ -1088,7 +1088,7 @@ impl ClassWriter {
                 {
                     self.pool_writer
                         .borrow_mut()
-                        .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), owner)
+                        .put_class_symbol(ctx, &self.syms, owner)
                 }
                 _ => 0,
             };
@@ -1118,7 +1118,7 @@ impl ClassWriter {
         let descriptor = self
             .pool_writer
             .borrow_mut()
-            .put_descriptor_symbol(ctx, &Rc::clone(&self.syms).borrow(), v);
+            .put_descriptor_symbol(ctx, &self.syms, v);
         self.databuf.borrow_mut().append_char(descriptor);
         let acount_idx = self.begin_attrs();
         let mut acount = 0;
@@ -1154,7 +1154,7 @@ impl ClassWriter {
                 let index = self
                     .pool_writer
                     .borrow_mut()
-                    .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), s);
+                    .put_class_symbol(ctx, &self.syms, s);
                 self.databuf.borrow_mut().append_char(index);
             }
             self.end_attr(alen_idx);
@@ -1179,7 +1179,7 @@ impl ClassWriter {
             let index = self
                 .pool_writer
                 .borrow_mut()
-                .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), outermost);
+                .put_class_symbol(ctx, &self.syms, outermost);
             self.databuf.borrow_mut().append_char(index);
             self.end_attr(alen_idx);
             1
@@ -1208,7 +1208,7 @@ impl ClassWriter {
             let index = self
                 .pool_writer
                 .borrow_mut()
-                .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), c);
+                .put_class_symbol(ctx, &self.syms, c);
             self.databuf.borrow_mut().append_char(index);
             }
             self.end_attr(alen_idx);
@@ -1231,7 +1231,7 @@ impl ClassWriter {
                 let mut pool = self.pool_writer.borrow_mut();
                 pool.put_constant(
                     ctx,
-                    &syms.borrow(),
+                    &*syms,
                     crate::jvm::pool_writer::PoolConstantRef::MethodHandle(bsm),
                 )
             };
@@ -1243,7 +1243,7 @@ impl ClassWriter {
                     let mut pool = self.pool_writer.borrow_mut();
                     pool.put_constant(
                         ctx,
-                        &syms.borrow(),
+                        &*syms,
                         loadable_to_pool_constant(&arg),
                     )
                 };
@@ -1361,7 +1361,7 @@ impl ClassWriter {
         let descriptor = self
             .pool_writer
             .borrow_mut()
-            .put_descriptor_symbol(ctx, &Rc::clone(&self.syms).borrow(), v);
+            .put_descriptor_symbol(ctx, &self.syms, v);
         self.databuf.borrow_mut().append_char(descriptor);
         let acount_idx = self.begin_attrs();
         let mut acount = 0;
@@ -1371,7 +1371,7 @@ impl ClassWriter {
             let syms = Rc::clone(&self.syms);
             let index = {
                 let mut pool = self.pool_writer.borrow_mut();
-                pool.put_constant_value(ctx, &syms.borrow(), &const_value)
+                pool.put_constant_value(ctx, &*syms, &const_value)
             };
             self.databuf.borrow_mut().append_char(index);
             self.end_attr(alen_idx);
@@ -1396,7 +1396,7 @@ impl ClassWriter {
         let descriptor = self
             .pool_writer
             .borrow_mut()
-            .put_descriptor_symbol(ctx, &Rc::clone(&self.syms).borrow(), m);
+            .put_descriptor_symbol(ctx, &self.syms, m);
         self.databuf.borrow_mut().append_char(descriptor);
         let acount_idx = self.begin_attrs();
         let mut acount = 0;
@@ -1410,7 +1410,7 @@ impl ClassWriter {
         }
         let sym_ty = ctx.sym(m).ty.expect("method type");
         let syms = Rc::clone(&self.syms);
-        let erased = self.types.erasure(ctx, &syms.borrow(), sym_ty);
+        let erased = self.types.erasure(ctx, &*syms, sym_ty);
         let thrown = ctx.typ(erased).get_thrown_types(ctx);
         if thrown.non_empty() {
             let attr_name = self.names.Exceptions.clone();
@@ -1422,7 +1422,7 @@ impl ClassWriter {
             let index = self
                 .pool_writer
                 .borrow_mut()
-                .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), tsym);
+                .put_class_symbol(ctx, &self.syms, tsym);
             self.databuf.borrow_mut().append_char(index);
             }
             self.end_attr(alen_idx);
@@ -1552,7 +1552,7 @@ impl ClassWriter {
                     self.databuf.borrow_mut().append_char(name_index);
                     let descriptor = self.pool_writer.borrow_mut().put_descriptor_symbol(
                         ctx,
-                        &Rc::clone(&self.syms).borrow(),
+                        &self.syms,
                         var.sym,
                     );
                     self.databuf.borrow_mut().append_char(descriptor);
@@ -1587,7 +1587,7 @@ impl ClassWriter {
                         self.databuf.borrow_mut().append_char(name_index);
                         let sig = self.pool_writer.borrow_mut().put_signature(
                             ctx,
-                            &Rc::clone(&self.syms).borrow(),
+                            &self.syms,
                             var.sym,
                         );
                         self.databuf.borrow_mut().append_char(sig);
@@ -1624,11 +1624,11 @@ impl ClassWriter {
     /// Return whether a local variable needs a type table entry.
     fn needs_local_variable_type_entry(&self, ctx: &mut CompilerContext, t: TypeId) -> bool {
         let syms = Rc::clone(&self.syms);
-        let erased = self.types.erasure(ctx, &syms.borrow(), t);
+        let erased = self.types.erasure(ctx, &*syms, t);
         !self
             .types
-            .is_same_type(ctx, &syms.borrow(), t, erased)
-            && self.check.check_denotable(ctx, &syms.borrow(), t)
+            .is_same_type(ctx, &*syms, t, erased)
+            && self.check.check_denotable(ctx, &*syms, t)
     }
 
     /// Write the StackMap attribute of a method.
@@ -1762,8 +1762,8 @@ impl ClassWriter {
                 }
                 self.databuf.borrow_mut().append_byte(7);
                 let syms = Rc::clone(&self.syms);
-                let erased = self.types.erasure(ctx, &syms.borrow(), t);
-                let index = self.pool_writer.borrow_mut().put_class(ctx, &syms.borrow(), erased);
+                let erased = self.types.erasure(ctx, &*syms, t);
+                let index = self.pool_writer.borrow_mut().put_class(ctx, &*syms, erased);
                 self.databuf.borrow_mut().append_char(index);
             }
             crate::code::type_tag::TypeTag::UNINITIALIZED_THIS => {
@@ -1902,10 +1902,10 @@ impl ClassWriter {
     ) -> Result<(), ClassWriterError> {
         let c_ty = ctx.sym(c).ty.expect("class type");
         let syms = Rc::clone(&self.syms);
-        let supertype = self.types.supertype(ctx, &syms.borrow(), c_ty, None);
-        let interfaces = self.types.interfaces(ctx, &syms.borrow(), c_ty);
+        let supertype = self.types.supertype(ctx, &*syms, c_ty, None);
+        let interfaces = self.types.interfaces(ctx, &*syms, c_ty);
         let typarams =
-            crate::code::types::get_type_arguments_completed(ctx, &syms.borrow(), c_ty, None);
+            crate::code::types::get_type_arguments_completed(ctx, &*syms, c_ty, None);
         let owner = ctx.sym(c).owner.expect("class owner");
         let owner_kind = ctx.sym(owner).kind;
         let c_flags = ctx.sym(c).flags();
@@ -1944,19 +1944,19 @@ impl ClassWriter {
             };
             let index = self.pool_writer.borrow_mut().put_class_symbol(
                 ctx,
-                &syms.borrow(),
+                &*syms,
                 module_info,
             );
             self.databuf.borrow_mut().append_char(index);
         } else {
-            let index = self.pool_writer.borrow_mut().put_class_symbol(ctx, &syms.borrow(), c);
+            let index = self.pool_writer.borrow_mut().put_class_symbol(ctx, &*syms, c);
             self.databuf.borrow_mut().append_char(index);
         }
         let super_index = if ctx.typ(supertype).has_tag(crate::code::type_tag::TypeTag::CLASS) {
             let tsym = ctx.typ(supertype).tsym.expect("super type symbol");
             self.pool_writer
                 .borrow_mut()
-                .put_class_symbol(ctx, &syms.borrow(), tsym)
+                .put_class_symbol(ctx, &*syms, tsym)
         } else {
             0
         };
@@ -1970,7 +1970,7 @@ impl ClassWriter {
         let index = self
             .pool_writer
             .borrow_mut()
-            .put_class_symbol(ctx, &syms.borrow(), tsym);
+            .put_class_symbol(ctx, &*syms, tsym);
         self.databuf.borrow_mut().append_char(index);
         }
         let members = ctx.sym(c).members().expect("class members");
@@ -2029,7 +2029,7 @@ impl ClassWriter {
             let alen_idx = self.write_attr(ctx, attr_name);
             let index = self.pool_writer.borrow_mut().put_signature(
                 ctx,
-                &Rc::clone(&self.syms).borrow(),
+                &self.syms,
                 c,
             );
             self.databuf.borrow_mut().append_char(index);

@@ -1130,7 +1130,7 @@ mod tests {
             std::rc::Rc::new(std::cell::RefCell::new(None)),
         );
         let factory = finder.get_completer_factory();
-        syms.set_initial_completer(&mut ctx, factory);
+        Symtab::set_initial_completer(&mut syms, &mut ctx, factory);
         Fixture {
             ctx,
             syms,

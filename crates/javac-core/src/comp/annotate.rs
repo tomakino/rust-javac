@@ -460,7 +460,7 @@ impl CheckContext for AnnotationValueContext {
 pub struct AnnotateServices {
     pub names: Rc<Names>,
     pub log: Rc<std::cell::RefCell<Log>>,
-    pub syms: Rc<std::cell::RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     pub types: Rc<crate::code::types::Types>,
     pub chk: Rc<Check>,
     pub attr: Rc<std::cell::RefCell<Attr>>,
@@ -504,7 +504,7 @@ impl Annotate {
         ctx: &mut CompilerContext,
         names: Rc<Names>,
         log: Rc<std::cell::RefCell<Log>>,
-        syms: Rc<std::cell::RefCell<Symtab>>,
+        syms: Rc<Symtab>,
         types: Rc<crate::code::types::Types>,
         chk: Rc<Check>,
         attr: Rc<std::cell::RefCell<Attr>>,
@@ -518,9 +518,9 @@ impl Annotate {
         diags: Rc<crate::util::jc_diagnostic::Factory>,
         source: Source,
     ) -> Annotate {
-        let error_ty = ctx.typ(syms.borrow().err_type).clone();
+        let error_ty = ctx.typ(syms.err_type).clone();
         let unfinished = ctx.alloc_attribute(Attribute::new(
-            Some(syms.borrow().err_type),
+            Some(syms.err_type),
             AttributeKind::Error,
         ));
         let _ = error_ty;
@@ -2715,7 +2715,7 @@ struct UnusedFileManager;
         ctx: CompilerContext,
         annotate: Rc<Annotate>,
         make: Rc<RefCell<TreeMaker>>,
-        syms: Rc<RefCell<Symtab>>,
+        syms: Rc<Symtab>,
         types: Rc<Types>,
         log: Rc<RefCell<Log>>,
     }
@@ -2745,12 +2745,12 @@ struct UnusedFileManager;
         let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(messages, "compiler"));
         let options = Options::instance(&mut context);
         let lint = Lint::instance(&mut context);
-        let syms = Rc::new(RefCell::new(Symtab::new(
+        let syms = Rc::new(Symtab::new(
             &mut ctx,
             Rc::clone(&names),
             Target::DEFAULT,
             Source::JDK17,
-        )));
+        ));
         let types = Rc::new(Types::with_names(Rc::clone(&names)));
         let deferred = Rc::new(DeferredLintHandler::new());
         let check = Rc::new(Check::new(
@@ -2892,9 +2892,9 @@ struct UnusedFileManager;
         h.annotate.type_annotation(push("types"));
         h.annotate.after_types(push("afterTypes"));
         h.annotate.validate(push("validate"));
-        h.annotate.flush(&mut h.ctx, &h.syms.borrow_mut()).expect("flush while blocked");
+        h.annotate.flush(&mut h.ctx, &&*h.syms).expect("flush while blocked");
         assert!(order.borrow().is_empty(), "blocked annotations must not flush");
-        h.annotate.unblock_annotations(&mut h.ctx, &h.syms.borrow_mut()).expect("unblock");
+        h.annotate.unblock_annotations(&mut h.ctx, &&*h.syms).expect("unblock");
         assert_eq!(
             order.borrow().clone(),
             vec!["normal", "types", "afterTypes", "validate"]
@@ -2905,8 +2905,8 @@ struct UnusedFileManager;
     #[test]
     fn translate_attribute_builds_annotation_and_array_trees() {
         let mut h = harness();
-        let bool_type = h.syms.borrow().boolean_type;
-        let string_type = h.syms.borrow().string_type;
+        let bool_type = h.syms.boolean_type;
+        let string_type = h.syms.string_type;
         let constant = h.ctx.alloc_attribute(Attribute::new_constant(
             Some(string_type),
             crate::util::constants::ConstantValue::String(javac_strings::JavaString::from("value")),
@@ -2915,7 +2915,7 @@ struct UnusedFileManager;
         let compound_tree = {
             let mut make = h.make.borrow_mut();
             make.at(0);
-            make.translate_attribute(&mut h.ctx, &h.syms.borrow_mut(), compound)
+            make.translate_attribute(&mut h.ctx, &&*h.syms, compound)
         };
         assert!(h.ctx.tree(compound_tree).has_tag(Tag::ANNOTATION));
         let array = h
@@ -2924,7 +2924,7 @@ struct UnusedFileManager;
         let array_tree = {
             let mut make = h.make.borrow_mut();
             make.at(0);
-            make.translate_attribute(&mut h.ctx, &h.syms.borrow_mut(), array)
+            make.translate_attribute(&mut h.ctx, &&*h.syms, array)
         };
         assert!(h.ctx.tree(array_tree).has_tag(Tag::NEWARRAY));
         assert_eq!(h.log.borrow().nerrors, 0);

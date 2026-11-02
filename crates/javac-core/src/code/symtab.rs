@@ -58,6 +58,7 @@
 //! - the anonymous noSymbol.accept override (Symtab.java:445-450) remains not
 //!   ported (Symbol/Element visitor dispatch; see the gap registration).
 
+use std::cell::OnceCell;
 use std::collections::HashMap;
 use crate::code::symbol::CompleterFactory;
 use std::rc::Rc;
@@ -1125,9 +1126,9 @@ pub struct Symtab {
     pub proprietary_type: Option<TypeId>,
     /// Java: private final Completer initialCompleter (bound by the bootstrap)
     pub initial_completer: Option<CompleterFactory>,
-    /// Java: private final Completer moduleCompleter (bound by
-/// set_module_completer from Modules.getCompleter; bootstrap in batch 1b)
-    pub module_completer: Option<CompleterFactory>,
+    /// Java: private final Completer moduleCompleter, bound exactly once by
+    /// set_module_completer after Modules is constructed.
+    pub module_completer: OnceCell<CompleterFactory>,
     pub system_type: TypeId,
     pub auto_closeable_type: TypeId,
     pub trust_me_type: TypeId,
@@ -1161,8 +1162,12 @@ pub struct Symtab {
     /// (Rust: UniqueType equivalence is expressed by the Types.hashCode value
     /// plus Types.isSameType, so the map key is the hash and each bucket holds
     /// the (TypeId, VarSymbol) pairs; registered section 9).
+    /// Cache of per-type class fields; lazily filled after construction, so the
+    /// cell holds cache state rather than service state.
     class_fields: std::rc::Rc<std::cell::RefCell<HashMap<i32, Vec<(TypeId, SymbolId)>>>>,
     names: Rc<Names>,
+    /// Cache of the class/package/module tables; mutated by the &self enter/
+    /// lookup methods after freeze, so the cell is explicitly cache state.
     maps: std::rc::Rc<std::cell::RefCell<SymtabMaps>>,
 }
 
@@ -1738,7 +1743,7 @@ impl Symtab {
                 names: Rc::clone(&names),
                 maps: std::rc::Rc::new(std::cell::RefCell::new(maps)),
                 initial_completer: None,
-                module_completer: None,
+                module_completer: OnceCell::new(),
             }
         }
     }
@@ -1926,41 +1931,54 @@ impl Symtab {
         result
     }
 
-    /// Java: public void initType(Type type, ClassSymbol c)
-    pub fn init_type_class(&mut self, ctx: &mut CompilerContext, ty: TypeId, class: SymbolId) {
+    /// Java: public void initType(Type type, ClassSymbol c). Construction-only:
+    /// the receiver is explicit so a frozen Rc<Symtab> cannot call it.
+    pub fn init_type_class(
+        symtab: &mut Symtab,
+        ctx: &mut CompilerContext,
+        ty: TypeId,
+        class: SymbolId,
+    ) {
         ctx.typ_mut(ty).tsym = Some(class);
         let index = tag_index(ctx, ty);
-        if let Some(slot) = self.type_of_tag.get_mut(index) {
+        if let Some(slot) = symtab.type_of_tag.get_mut(index) {
             *slot = Some(ty);
         }
     }
 
-    /// Java: public void initType(Type type, String name)
+    /// Java: public void initType(Type type, String name). Construction-only.
     pub fn init_type_named(
-        &mut self,
+        symtab: &mut Symtab,
         ctx: &mut CompilerContext,
         ty: TypeId,
         name: Name,
         class_flags: i64,
     ) -> SymbolId {
-        let class = new_class_symbol_with_type(ctx, class_flags, name, Some(ty), Some(self.root_package));
-        self.init_type_class(ctx, ty, class);
+        let class = new_class_symbol_with_type(
+            ctx,
+            class_flags,
+            name,
+            Some(ty),
+            Some(symtab.root_package),
+        );
+        Symtab::init_type_class(symtab, ctx, ty, class);
         class
     }
 
-    /// Java: public void initType(Type type, String name, String bname)
+    /// Java: public void initType(Type type, String name, String bname).
+    /// Construction-only.
     pub fn init_type_boxed(
-        &mut self,
+        symtab: &mut Symtab,
         ctx: &mut CompilerContext,
         ty: TypeId,
         name: Name,
         bname: &str,
         class_flags: i64,
     ) -> SymbolId {
-        let class = self.init_type_named(ctx, ty, name, class_flags);
+        let class = Symtab::init_type_named(symtab, ctx, ty, name, class_flags);
         let index = tag_index(ctx, ty);
-        if let Some(slot) = self.boxed_name.get_mut(index) {
-            *slot = Some(name_of(&self.names, bname));
+        if let Some(slot) = symtab.boxed_name.get_mut(index) {
+            *slot = Some(name_of(&symtab.names, bname));
         }
         class
     }
@@ -2061,7 +2079,7 @@ impl Symtab {
         // completion merges the --add-reads directives into requires, which the
         // package lookup below relies on (unnamed-module packages).
         if ctx.sym(msym).completer.is_none()
-            && let Some(factory) = &self.module_completer
+            && let Some(factory) = self.module_completer.get()
         {
             ctx.sym_mut(msym).completer = Some(factory());
         }
@@ -2093,7 +2111,7 @@ impl Symtab {
     ) -> SymbolId {
         // Java: msym.complete() (Symtab.java lookupPackage): see lookup_package.
         if ctx.sym(msym).completer.is_none()
-            && let Some(factory) = &self.module_completer
+            && let Some(factory) = self.module_completer.get()
         {
             ctx.sym_mut(msym).completer = Some(factory());
         }
@@ -2146,7 +2164,7 @@ impl Symtab {
             let mut maps = self.maps.borrow_mut();
             enter_module(ctx, &self.names, &mut maps, name, self.root_package)
         };
-        if let Some(factory) = &self.module_completer
+        if let Some(factory) = self.module_completer.get()
             && ctx.sym(module).completer.is_none() {
                 ctx.sym_mut(module).completer = Some(factory());
             }
@@ -2168,11 +2186,15 @@ impl Symtab {
     /// ClassFinder.instance(context).getCompleter(); the port binds it after the
     /// bootstrap creates the ClassFinder (registered adapter) and applies it to
     /// the symbols created before that point.
-    pub fn set_initial_completer(&mut self, ctx: &mut CompilerContext, factory: CompleterFactory) {
-        self.initial_completer = Some(Rc::clone(&factory));
+    pub fn set_initial_completer(
+        symtab: &mut Symtab,
+        ctx: &mut CompilerContext,
+        factory: CompleterFactory,
+    ) {
+        symtab.initial_completer = Some(Rc::clone(&factory));
         let mut classes: Vec<SymbolId> = Vec::new();
         {
-            let maps = self.maps.borrow();
+            let maps = symtab.maps.borrow();
             for (_, per_module) in &maps.classes {
                 for (_, symbol) in per_module {
                     classes.push(*symbol);
@@ -2180,13 +2202,13 @@ impl Symtab {
             }
         }
         for symbol in classes {
-            if symbol != self.java_base {
+            if symbol != symtab.java_base {
                 ctx.sym_mut(symbol).completer = Some(factory());
             }
         }
         let mut packages: Vec<SymbolId> = Vec::new();
         {
-            let maps = self.maps.borrow();
+            let maps = symtab.maps.borrow();
             for (_, per_module) in &maps.packages {
                 for (_, symbol) in per_module {
                     packages.push(*symbol);
@@ -2197,14 +2219,14 @@ impl Symtab {
             // Java: only enterPackage-created packages get initialCompleter;
             // the root package stays without a completer (Symtab.java:788,
             // addRootPackageFor only binds the unnamed package).
-            if symbol != self.root_package && ctx.sym(symbol).completer.is_none() {
+            if symbol != symtab.root_package && ctx.sym(symbol).completer.is_none() {
                 ctx.sym_mut(symbol).completer = Some(factory());
             }
         }
         // Java: unnamedPackage.completer = s -> initialCompleter.complete(s)
         // (Symtab.java:810). The ported unnamed package is created before the
         // ClassFinder exists, so it is bound when the completer is installed.
-        let unnamed_package = match &ctx.sym(self.unnamed_module).kind_data {
+        let unnamed_package = match &ctx.sym(symtab.unnamed_module).kind_data {
             SymbolKind::ModuleSymbol {
                 unnamed_package, ..
             } => *unnamed_package,
@@ -2221,8 +2243,11 @@ impl Symtab {
     /// Modules.instance(context).getCompleter() (Modules port is pending,
     /// batch 1b: the bootstrap may pass the module completer explicitly;
     /// registered adapter).
-    pub fn set_module_completer(&mut self, ctx: &mut CompilerContext, factory: CompleterFactory) {
-        self.module_completer = Some(Rc::clone(&factory));
+    pub fn set_module_completer(&self, ctx: &mut CompilerContext, factory: CompleterFactory) {
+        self.module_completer
+            .set(Rc::clone(&factory))
+            .ok()
+            .expect("module completer must be set exactly once");
         // Java: java_base.completer = moduleCompleter::complete (bootstrap issues)
         ctx.sym_mut(self.java_base).completer = Some(factory());
         let modules: Vec<SymbolId> = {
@@ -2234,6 +2259,13 @@ impl Symtab {
                 ctx.sym_mut(module).completer = Some(factory());
             }
         }
+    }
+
+    /// Freeze the construction-phase table for shared read-only use. After
+    /// this call the table is only reachable through Rc<Symtab>, so the
+    /// construction-only associated functions can no longer be invoked.
+    pub fn freeze(self) -> Rc<Symtab> {
+        Rc::new(self)
     }
 
     /// The Names instance used by this symbol table (Symtab keeps its own
@@ -2326,7 +2358,7 @@ mod tests {
         let (mut ctx, mut symtab) = build();
         let factory: CompleterFactory =
             Rc::new(|| Rc::new(std::cell::RefCell::new(crate::code::symbol::NullCompleter)));
-        symtab.set_initial_completer(&mut ctx, factory);
+        Symtab::set_initial_completer(&mut symtab, &mut ctx, factory);
         let table: Rc<crate::util::name::NameTableHandle> =
             crate::util::name::NameTableHandle::unshared();
         let units: Vec<u16> = "C".encode_utf16().collect();
@@ -2446,7 +2478,8 @@ mod tests {
         assert_eq!(symtab.get_class(symtab.java_base, &flat), None);
         // initType with a new primitive-like class symbol keeps tag order.
         let new_type = ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base }));
-        let _class = symtab.init_type_named(&mut ctx, new_type, name_of(symtab.names(), "testtype"), 0);
+        let test_name = name_of(symtab.names(), "testtype");
+        let _class = Symtab::init_type_named(&mut symtab, &mut ctx, new_type, test_name, 0);
         assert_eq!(symtab.type_of_tag[tag_ordinal(TypeTag::NONE)], Some(new_type));
     }
 

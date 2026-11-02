@@ -83,7 +83,7 @@ pub struct TreeMaker {
     pub types: StdOption<Rc<Types>>,
     /// Java: Symtab syms (the shared symbol table; registered adapter: linked
     /// in at wiring time instead of read from Context).
-    pub syms: StdOption<Rc<RefCell<crate::code::symtab::Symtab>>>,
+    pub syms: StdOption<Rc<crate::code::symtab::Symtab>>,
     /// Java: Symtab.rootPackage (captured at wiring so qual_ident does not
     /// need to borrow the shared Symtab; registered adapter).
     pub root_package: StdOption<crate::ids::SymbolId>,
@@ -108,7 +108,7 @@ impl TreeMaker {
         toplevel: StdOption<TreeId>,
         names: StdOption<Rc<Names>>,
         types: StdOption<Rc<Types>>,
-        syms: StdOption<Rc<RefCell<crate::code::symtab::Symtab>>>, 
+        syms: StdOption<Rc<crate::code::symtab::Symtab>>,
     ) -> TreeMaker {
         TreeMaker {
             pos: position::FIRSTPOS,
@@ -2360,7 +2360,7 @@ impl TreeMaker {
         // booleanType.constType(0/1), each via constType(value).
         let (type_id, constant) = {
             let syms_rc = self.syms.as_ref().expect("TreeMaker.syms").clone();
-            let syms = syms_rc.borrow();
+            let syms = &*syms_rc;
             match &value {
                 LiteralValue::Integer(v) => {
                     (syms.int_type, crate::util::constants::ConstantValue::Integer(*v))
@@ -3165,22 +3165,22 @@ mod tests {
     }
     fn new_maker_with_syms() -> (
         CompilerContext,
-        Rc<std::cell::RefCell<crate::code::symtab::Symtab>>,
+        Rc<crate::code::symtab::Symtab>,
         Rc<crate::code::types::Types>,
         TreeMaker,
     ) {
         let names = Rc::new(Names::new(false));
         let mut ctx = CompilerContext::new();
-        let syms = Rc::new(std::cell::RefCell::new(crate::code::symtab::Symtab::new(
+        let syms = Rc::new(crate::code::symtab::Symtab::new(
             &mut ctx,
             Rc::clone(&names),
             crate::jvm::target::Target::JDK1_17,
             crate::code::source::Source::JDK17,
-        )));
+        ));
         let types = Rc::new(crate::code::types::Types::with_names(Rc::clone(&names)));
         let mut maker = TreeMaker::new(Some(names));
         maker.syms = Some(Rc::clone(&syms));
-        maker.root_package = Some(syms.borrow().root_package);
+        maker.root_package = Some(syms.root_package);
         maker.types = Some(Rc::clone(&types));
         (ctx, syms, types, maker)
     }
@@ -3192,8 +3192,8 @@ mod tests {
         let var = ctx.alloc_symbol(crate::code::symbol::Symbol::new_var_symbol(
             0,
             name(&maker, "v"),
-            syms_rc.borrow().int_type,
-            syms_rc.borrow().java_base,
+            syms_rc.int_type,
+            syms_rc.java_base,
         ));
         let ident = maker.ident_symbol(&mut ctx, var);
         let TreeKind::Ident { name: ident_name, sym } = &ctx.tree(ident).kind else {
@@ -3201,66 +3201,66 @@ mod tests {
         };
         assert_eq!(ident_name.to_java_string(), name(&maker, "v").to_java_string());
         assert_eq!(*sym, Some(var));
-        assert_eq!(ctx.tree(ident).ty, Some(syms_rc.borrow().int_type));
+        assert_eq!(ctx.tree(ident).ty, Some(syms_rc.int_type));
 
         // Java: Type(Type) — primitive, class and array types.
-        let borrowed_int_type = syms_rc.borrow().int_type;
-        let int_tree = maker.type_expr(&mut ctx, &syms_rc.borrow(), borrowed_int_type);
+        let borrowed_int_type = syms_rc.int_type;
+        let int_tree = maker.type_expr(&mut ctx, &*syms_rc, borrowed_int_type);
         assert_eq!(ctx.tree(int_tree).tag, Tag::TYPEIDENT);
         let TreeKind::PrimitiveTypeTree { typetag } = &ctx.tree(int_tree).kind else {
             panic!("primitive");
         };
         assert_eq!(*typetag, TypeTag::INT);
-        assert_eq!(ctx.tree(int_tree).ty, Some(syms_rc.borrow().int_type));
+        assert_eq!(ctx.tree(int_tree).ty, Some(syms_rc.int_type));
 
-        let array_class = syms_rc.borrow().array_class;
+        let array_class = syms_rc.array_class;
         let int_array = ctx.alloc_type(crate::code::type_::Type::new_array_type(
-            syms_rc.borrow().int_type,
+            syms_rc.int_type,
             array_class,
         ));
-        let array_tree = maker.type_expr(&mut ctx, &syms_rc.borrow(), int_array);
+        let array_tree = maker.type_expr(&mut ctx, &*syms_rc, int_array);
         assert_eq!(ctx.tree(array_tree).tag, Tag::TYPEARRAY);
         let _ = &types;
 
         // Java: This(Type)/ClassLiteral(Type) — the field selection keeps sym/type.
-        let borrowed_object_type = syms_rc.borrow().object_type;
+        let borrowed_object_type = syms_rc.object_type;
         let this_tree = maker.this_expr(&mut ctx, borrowed_object_type);
         assert_eq!(ctx.tree(this_tree).tag, Tag::IDENT);
-        let borrowed_object_type = syms_rc.borrow().object_type;
-        let class_lit = maker.class_literal(&mut ctx, &syms_rc.borrow(), borrowed_object_type);
+        let borrowed_object_type = syms_rc.object_type;
+        let class_lit = maker.class_literal(&mut ctx, &*syms_rc, borrowed_object_type);
         assert_eq!(ctx.tree(class_lit).tag, Tag::SELECT);
 
         // Java: App/Assignment/Indexed/TypeCast convenience helpers.
         let meth_sym = ctx.alloc_symbol(crate::code::symbol::Symbol::new_method_symbol(
             0,
             name(&maker, "m"),
-            syms_rc.borrow().int_type,
-            syms_rc.borrow().java_base,
+            syms_rc.int_type,
+            syms_rc.java_base,
         ));
         let meth = maker.ident_symbol(&mut ctx, meth_sym);
-        ctx.tree_mut(meth).ty = Some(syms_rc.borrow().class_type);
+        ctx.tree_mut(meth).ty = Some(syms_rc.class_type);
         let app = maker.app(&mut ctx, meth);
         assert_eq!(ctx.tree(app).tag, Tag::APPLY);
         let assignment = maker.assignment(&mut ctx, var, ident);
         assert_eq!(ctx.tree(assignment).tag, Tag::EXEC);
-        let borrowed_int_type = syms_rc.borrow().int_type;
-        let casted = maker.type_cast_typed(&mut ctx, &syms_rc.borrow(), borrowed_int_type, ident);
+        let borrowed_int_type = syms_rc.int_type;
+        let casted = maker.type_cast_typed(&mut ctx, &*syms_rc, borrowed_int_type, ident);
         assert_eq!(ctx.tree(casted).tag, Tag::TYPECAST);
-        let array_class = syms_rc.borrow().array_class;
+        let array_class = syms_rc.array_class;
         let array_type = ctx.alloc_type(crate::code::type_::Type::new_array_type(
-            syms_rc.borrow().int_type,
+            syms_rc.int_type,
             array_class,
         ));
         let array_var = ctx.alloc_symbol(crate::code::symbol::Symbol::new_var_symbol(
             0,
             name(&maker, "a"),
             array_type,
-            syms_rc.borrow().java_base,
+            syms_rc.java_base,
         ));
         let index = maker.literal_object(&mut ctx, LiteralValue::Integer(0));
-        let indexed = maker.indexed_symbol(&mut ctx, &syms_rc.borrow(), array_var, index);
+        let indexed = maker.indexed_symbol(&mut ctx, &*syms_rc, array_var, index);
         assert_eq!(ctx.tree(indexed).tag, Tag::INDEXED);
-        assert_eq!(ctx.tree(indexed).ty, Some(syms_rc.borrow().int_type));
+        assert_eq!(ctx.tree(indexed).ty, Some(syms_rc.int_type));
 
         // Java: paramName/typaramName.
         assert_eq!(maker.param_name(2).to_java_string(), name(&maker, "x2").to_java_string());
@@ -3273,19 +3273,19 @@ mod tests {
         use crate::util::constants::ConstantValue;
         let (mut ctx, syms_rc, _types, mut maker) = new_maker_with_syms();
         // Java: Literal(Object) — the constant type is attached to the tree.
-        let literal = maker.literal_constant(&mut ctx, &syms_rc.borrow(), ConstantValue::Integer(7));
+        let literal = maker.literal_constant(&mut ctx, &*syms_rc, ConstantValue::Integer(7));
         assert_eq!(ctx.tree(literal).tag, Tag::LITERAL);
         let constant_type = ctx.tree(literal).ty.expect("constant type");
         assert_eq!(ctx.type_const_value(constant_type), Some(&ConstantValue::Integer(7)));
-        assert_eq!(ctx.type_base_type(constant_type), syms_rc.borrow().int_type);
+        assert_eq!(ctx.type_base_type(constant_type), syms_rc.int_type);
         let string_literal = maker.literal_constant(
             &mut ctx,
-            &syms_rc.borrow(),
+            &*syms_rc,
             ConstantValue::String(javac_strings::JavaString::from("s")),
         );
         assert_eq!(
             ctx.type_base_type(ctx.tree(string_literal).ty.expect("string const type")),
-            syms_rc.borrow().string_type
+            syms_rc.string_type
         );
 
         // Java: Annotations(List<Attribute.Compound>) — a compound annotation
@@ -3293,24 +3293,24 @@ mod tests {
         let method = ctx.alloc_symbol(crate::code::symbol::Symbol::new_method_symbol(
             0,
             maker_at_name(&maker, "m"),
-            syms_rc.borrow().int_type,
-            syms_rc.borrow().java_base,
+            syms_rc.int_type,
+            syms_rc.java_base,
         ));
         let constant = ctx.alloc_attribute(Attribute::new(
-            Some(syms_rc.borrow().int_type),
+            Some(syms_rc.int_type),
             AttributeKind::Constant {
                 value: ConstantValue::Integer(7),
             },
         ));
         let compound = ctx.alloc_attribute(Attribute::new(
-            Some(syms_rc.borrow().int_type),
+            Some(syms_rc.int_type),
             AttributeKind::Compound {
                 values: List::of(crate::util::pair::Pair::of(method, constant)),
                 position: None,
                 synthesized: false,
             },
         ));
-        let annotations = maker.annotations_attributes(&mut ctx, &syms_rc.borrow(), List::of(compound));
+        let annotations = maker.annotations_attributes(&mut ctx, &*syms_rc, List::of(compound));
         assert_eq!(annotations.length(), 1);
         let annotation = *annotations.head();
         assert_eq!(ctx.tree(annotation).tag, Tag::ANNOTATION);
@@ -3331,12 +3331,12 @@ mod tests {
         let sym = ctx.alloc_symbol(crate::code::symbol::Symbol::new_var_symbol(
             0,
             maker_at_name(&maker, "v"),
-            syms_rc.borrow().int_type,
-            syms_rc.borrow().java_base,
+            syms_rc.int_type,
+            syms_rc.java_base,
         ));
         let metadata = ctx.symbol_inited_metadata(sym);
         metadata.set_declaration_attributes(List::of(compound));
-        let raw = maker.raw_annotations(&mut ctx, &syms_rc.borrow(), sym);
+        let raw = maker.raw_annotations(&mut ctx, &*syms_rc, sym);
         assert_eq!(raw.length(), 1);
         assert_eq!(ctx.tree(*raw.head()).tag, Tag::ANNOTATION);
     }

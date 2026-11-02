@@ -42,7 +42,7 @@ pub struct TransTypes {
     /// Java: private Log log
     pub log: Rc<RefCell<Log>>,
     /// Java: private Symtab syms
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     /// Java: private TreeMaker make
     pub make: Rc<RefCell<TreeMaker>>,
     /// Java: private Enter enter
@@ -94,7 +94,7 @@ impl TransTypes {
     pub fn new(
         names: Rc<Names>,
         log: Rc<RefCell<Log>>,
-        syms: Rc<RefCell<Symtab>>,
+        syms: Rc<Symtab>,
         make: Rc<RefCell<TreeMaker>>,
         enter: Rc<crate::comp::enter::Enter>,
         types: Rc<Types>,
@@ -248,7 +248,7 @@ impl TransTypes {
 
     /// Java: private Type erasure(Type t) (TransTypes.java).
     fn erasure(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
-        let syms = self.syms.borrow();
+        let syms = &*self.syms;
         self.types.erasure(ctx, &syms, t)
     }
 
@@ -272,7 +272,7 @@ impl TransTypes {
         target: TypeId,
     ) -> TreeId {
         let tree_ty = ctx.tree(tree).ty.expect("tree type");
-        let syms = self.syms.borrow();
+        let syms = &*self.syms;
         let same = self.types.is_same_type(ctx, &syms, tree_ty, target);
         let accessible = ctx
             .typ(target)
@@ -295,7 +295,7 @@ impl TransTypes {
         if !accessible {
             let env = self.env.clone().expect("env");
             {
-                let syms_borrow = self.syms.borrow_mut();
+                let syms_borrow = &*self.syms;
                 self.resolve.log_access_error_internal(
                     ctx,
                     &syms_borrow,
@@ -308,7 +308,7 @@ impl TransTypes {
         let pos = ctx.tree(tree).pos;
         let clazz_tree = {
             let mut make = self.make.borrow_mut();
-            make.at(pos).type_from_type(ctx, &self.syms.borrow(), target)
+            make.at(pos).type_from_type(ctx, &*self.syms, target)
         };
         let cast_tree = {
             let mut make = self.make.borrow_mut();
@@ -338,12 +338,12 @@ impl TransTypes {
     /// Java: JCExpression coerce(JCExpression tree, Type target) (TransTypes.java).
     fn coerce_tree(&mut self, ctx: &mut CompilerContext, tree: TreeId, target: TypeId) -> TreeId {
         let base_target = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.base_type_of(ctx, &syms, target)
         };
         let tree_ty = ctx.tree(tree).ty.expect("tree type");
         if ctx.typ(tree_ty).is_primitive() == ctx.typ(target).is_primitive() {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let assignable = self.types.is_assignable(ctx, &syms, tree_ty, base_target);
             drop(syms);
             if assignable {
@@ -507,7 +507,7 @@ impl TransTypes {
         *ctx.sym_mut(bridge) = bridge_symbol;
         // Java: JCMethodDecl md = make.MethodDef(bridge, null);
         let (bridge_return_type, bridge_param_types) = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let return_type = self.types.get_return_type_public(ctx, bridge_type);
             let param_types = self.types.get_parameter_types_public(ctx, bridge_type);
             let _ = syms;
@@ -517,7 +517,7 @@ impl TransTypes {
         let restype_tree = {
             self.make
                 .borrow_mut()
-                .type_from_type(ctx, &self.syms.borrow(), bridge_return_type)
+                .type_from_type(ctx, &*self.syms, bridge_return_type)
         };
         let mut param_trees: List<TreeId> = List::nil();
         let mut params_current = bridge_params.clone();
@@ -530,7 +530,7 @@ impl TransTypes {
             let p_type_tree = {
                 self.make
                     .borrow_mut()
-                    .type_from_type(ctx, &self.syms.borrow(), param_ty)
+                    .type_from_type(ctx, &*self.syms, param_ty)
             };
             let p_tree = self.make.borrow_mut().var_def(
                 ctx,
@@ -570,7 +570,7 @@ impl TransTypes {
             if ctx.sym(impl_sym).owner == Some(origin) {
                 self.make.borrow_mut().this_expr(ctx, origin_erasure)
             } else {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 let st = self.types.supertype(ctx, &syms, origin_ty, None);
                 let st_tsym = ctx.typ(st).tsym.expect("supertype symbol");
                 let st_erasure = self.symbol_erasure(ctx, st_tsym);
@@ -674,7 +674,7 @@ impl TransTypes {
         let sym_name = ctx.sym(sym).name.clone();
         let sym_flags = ctx.sym(sym).flags_field;
         let is_member = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             crate::code::symbol::symbol_is_member_of(ctx, &self.types, &syms, sym, origin)
         };
         if ctx.sym(sym).kind == Kind::MTH
@@ -686,7 +686,7 @@ impl TransTypes {
         {
             let meth = sym;
             let (bridge, impl_sym) = {
-                let syms = self.syms.borrow_mut();
+                let syms = &*self.syms;
                 let bridge = crate::code::symbol::binary_implementation(ctx, &syms, &self.types, meth, origin);
                 let impl_sym = crate::code::symbol::implementation(ctx, &syms, &self.types, meth, origin, true);
                 (bridge, impl_sym)
@@ -697,7 +697,7 @@ impl TransTypes {
             };
             let impl_different_owner = match (bridge, impl_sym) {
                 (Some(bridge), Some(impl_sym)) => {
-                    let syms = self.syms.borrow();
+                    let syms = &*self.syms;
                     let bridge_owner = ctx.sym(bridge).owner.expect("bridge owner");
                     let impl_owner = ctx.sym(impl_sym).owner.expect("impl owner");
                     !crate::code::symbol::symbol_is_sub_class(ctx, &self.types, &syms, bridge_owner, impl_owner)
@@ -746,7 +746,7 @@ impl TransTypes {
             if !self.is_same_member_when_erased(ctx, dest, impl_sym, impl_erasure) {
                 return true;
             }
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let same = self.types.is_same_type(ctx, &syms, impl_erasure, method_erasure);
             return !same;
         }
@@ -767,11 +767,11 @@ impl TransTypes {
         erasure: TypeId,
     ) -> bool {
         let member_ty = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.member_type(ctx, &syms, ty, method)
         };
         let erased_member = self.erasure(ctx, member_ty);
-        let syms = self.syms.borrow();
+        let syms = &*self.syms;
         self.types.is_same_type(ctx, &syms, erased_member, erasure)
     }
 
@@ -798,7 +798,7 @@ impl TransTypes {
         }
         let i_type = ctx.sym(i).ty.expect("type symbol type");
         let interfaces = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.interfaces(ctx, &syms, i_type)
         };
         let mut current = interfaces;
@@ -822,7 +822,7 @@ impl TransTypes {
     ) {
         let origin_ty = ctx.sym(origin).ty.expect("origin type");
         let mut st = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.supertype(ctx, &syms, origin_ty, None)
         };
         while ctx.typ(st).has_tag(TypeTag::CLASS) {
@@ -830,12 +830,12 @@ impl TransTypes {
                 self.add_bridges_from_type(ctx, pos, tsym, origin, bridges);
             }
             st = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.supertype(ctx, &syms, st, None)
             };
         }
         let interfaces = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.interfaces(ctx, &syms, origin_ty)
         };
         let mut current = interfaces;
@@ -860,7 +860,7 @@ impl TransTypes {
     ) {
         let c_type = ctx.sym(c).ty.expect("class type");
         let st = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.supertype(ctx, &syms, c_type, None)
         };
         if ctx.typ(st).has_tag(TypeTag::CLASS)
@@ -1077,7 +1077,7 @@ impl TreeVisitor for TransTypes {
             _ => panic!("do loop expected"),
         };
         let body = self.translate_with_pt(ctx, body, None);
-        let bool_ty = self.syms.borrow().boolean_type;
+        let bool_ty = self.syms.boolean_type;
         let cond = self.translate_with_pt(ctx, cond, Some(bool_ty));
         if let TreeKind::DoWhileLoop { body: b, cond: c } = &mut ctx.tree_mut(tree).kind {
             *b = body;
@@ -1092,7 +1092,7 @@ impl TreeVisitor for TransTypes {
             TreeKind::WhileLoop { cond, body } => (*cond, *body),
             _ => panic!("while loop expected"),
         };
-        let bool_ty = self.syms.borrow().boolean_type;
+        let bool_ty = self.syms.boolean_type;
         let cond = self.translate_with_pt(ctx, cond, Some(bool_ty));
         let body = self.translate_with_pt(ctx, body, None);
         if let TreeKind::WhileLoop { cond: c, body: b } = &mut ctx.tree_mut(tree).kind {
@@ -1109,7 +1109,7 @@ impl TreeVisitor for TransTypes {
             _ => panic!("for loop expected"),
         };
         let init = self.translate_list_with_pt(ctx, &init, None);
-        let bool_ty = self.syms.borrow().boolean_type;
+        let bool_ty = self.syms.boolean_type;
         let cond = if cond.is_some() {
             self.translate_with_pt(ctx, cond, Some(bool_ty))
         } else {
@@ -1137,7 +1137,7 @@ impl TreeVisitor for TransTypes {
         let expr_erasure = iterable_type.map(|ty| self.erasure(ctx, ty));
         let expr = self.translate_with_pt(ctx, expr, expr_erasure);
         let elemtype = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let expr_ty = expr.and_then(|expr| ctx.tree(expr).ty).expect("foreach expr type");
             self.types.elemtype(ctx, &syms, expr_ty)
         };
@@ -1167,7 +1167,7 @@ impl TreeVisitor for TransTypes {
             let diags = Rc::clone(&self.diags);
             let chk = Rc::clone(&self.chk);
             let chk = chk;
-            let syms = self.syms.borrow_mut();
+            let syms = &*self.syms;
             self.types
                 .lambda_descriptor_type(ctx, &syms, &diags, &chk, target)
         };
@@ -1192,7 +1192,7 @@ impl TreeVisitor for TransTypes {
                         let diags = Rc::clone(&self.diags);
                         let chk = Rc::clone(&self.chk);
                         let chk = chk;
-                        let syms = self.syms.borrow_mut();
+                        let syms = &*self.syms;
                         self.types
                             .find_descriptor_symbol(ctx, &syms, &diags, &chk, tsym)
                             .expect("descriptor symbol")
@@ -1221,14 +1221,14 @@ impl TreeVisitor for TransTypes {
         };
         let selector_ty = selector.and_then(|selector| ctx.tree(selector).ty).expect("switch selector type");
         let enum_switch = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let selsuper = self.types.supertype(ctx, &syms, selector_ty, None);
             ctx.typ(selsuper).tsym == Some(syms.enum_sym)
         };
         let target = if enum_switch {
             self.erasure(ctx, selector_ty)
         } else {
-            self.syms.borrow().int_type
+            self.syms.int_type
         };
         let selector = self.translate_with_pt(ctx, selector, Some(target));
         let cases = self.translate_cases(ctx, &cases);
@@ -1277,14 +1277,14 @@ impl TreeVisitor for TransTypes {
         };
         let selector_ty = selector.and_then(|selector| ctx.tree(selector).ty).expect("selector type");
         let enum_switch = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let selsuper = self.types.supertype(ctx, &syms, selector_ty, None);
             ctx.typ(selsuper).tsym == Some(syms.enum_sym)
         };
         let target = if enum_switch {
             self.erasure(ctx, selector_ty)
         } else {
-            self.syms.borrow().int_type
+            self.syms.int_type
         };
         let selector = self.translate_with_pt(ctx, selector, Some(target));
         let cases = self.translate_cases(ctx, &cases);
@@ -1318,7 +1318,7 @@ impl TreeVisitor for TransTypes {
             _ => panic!("guard pattern expected"),
         };
         let patt = self.translate_with_pt(ctx, patt, None);
-        let bool_ty = self.syms.borrow().boolean_type;
+        let bool_ty = self.syms.boolean_type;
         let expr = self.translate_with_pt(ctx, expr, Some(bool_ty));
         if let TreeKind::GuardPattern { patt: p, expr: e } = &mut ctx.tree_mut(tree).kind {
             *p = patt;
@@ -1351,7 +1351,7 @@ impl TreeVisitor for TransTypes {
             }
             _ => panic!("try expected"),
         };
-        let auto_closeable = self.syms.borrow().auto_closeable_type;
+        let auto_closeable = self.syms.auto_closeable_type;
         let resources = self.translate_list_with_pt(ctx, &resources, Some(auto_closeable));
         let body = self.translate_with_pt(ctx, body, None);
         let catchers = self.translate_catchers(ctx, &catchers);
@@ -1373,7 +1373,7 @@ impl TreeVisitor for TransTypes {
             }
             _ => panic!("conditional expected"),
         };
-        let bool_ty = self.syms.borrow().boolean_type;
+        let bool_ty = self.syms.boolean_type;
         let cond = self.translate_with_pt(ctx, cond, Some(bool_ty));
         let erased = self.erasure(ctx, tree_ty.expect("conditional type"));
         let truepart = self.translate_with_pt(ctx, truepart, Some(erased));
@@ -1393,7 +1393,7 @@ impl TreeVisitor for TransTypes {
             TreeKind::If { cond, thenpart, elsepart } => (*cond, *thenpart, *elsepart),
             _ => panic!("if expected"),
         };
-        let bool_ty = self.syms.borrow().boolean_type;
+        let bool_ty = self.syms.boolean_type;
         let cond = self.translate_with_pt(ctx, cond, Some(bool_ty));
         let thenpart = self.translate_with_pt(ctx, thenpart, None);
         let elsepart = self.translate_with_pt(ctx, elsepart, None);
@@ -1477,7 +1477,7 @@ impl TreeVisitor for TransTypes {
             TreeKind::Assert { cond, detail } => (*cond, *detail),
             _ => panic!("assert expected"),
         };
-        let bool_ty = self.syms.borrow().boolean_type;
+        let bool_ty = self.syms.boolean_type;
         let cond = self.translate_with_pt(ctx, cond, Some(bool_ty));
         let detail_pt = detail.and_then(|detail| ctx.tree(detail).ty).map(|ty| self.erasure(ctx, ty));
         let detail = self.translate_with_pt(ctx, detail, detail_pt);
@@ -1498,7 +1498,7 @@ impl TreeVisitor for TransTypes {
         let meth_sym = tree_info::symbol(ctx, meth).expect("method symbol");
         let mt = self.symbol_erasure(ctx, meth_sym);
         let use_instantiated_pt_args = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.allow_graph_inference
                 && !self.types.is_signature_polymorphic(ctx, &syms, crate::code::symbol::base_symbol(ctx, meth_sym))
         };
@@ -1509,7 +1509,7 @@ impl TreeVisitor for TransTypes {
             self.types.get_parameter_types_public(ctx, mt)
         };
         let is_enum_init = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             ctx.sym(meth_sym).name.content_equals(&self.names.init.to_java_string())
                 && ctx.sym(meth_sym).owner == Some(syms.enum_sym)
         };
@@ -1529,7 +1529,7 @@ impl TreeVisitor for TransTypes {
         {
             let last = argtypes.last().expect("last parameter");
             let elem = {
-                let syms_guard = self.syms.borrow();
+                let syms_guard = &*self.syms;
                 self.types.elemtype(ctx, &syms_guard, last)
             };
             varargs_element = Some(self.erasure(ctx, elem));
@@ -1603,7 +1603,7 @@ impl TreeVisitor for TransTypes {
                 encl = self.translate_with_pt(ctx, Some(encl_tree), pt);
             } else {
                 let env = self.env.clone().expect("env");
-                let null_check = self.attr.borrow_mut().make_null_check(ctx, &self.syms.borrow_mut(), encl_tree);
+                let null_check = self.attr.borrow_mut().make_null_check(ctx, &&*self.syms, encl_tree);
                 let mut new_args: List<TreeId> = List::nil();
                 new_args = new_args.append(null_check);
                 let mut current = args;
@@ -1655,11 +1655,11 @@ impl TreeVisitor for TransTypes {
             _ => panic!("new array expected"),
         };
         let elemtype = self.translate_with_pt(ctx, elemtype, None);
-        let int_ty = self.syms.borrow().int_type;
+        let int_ty = self.syms.int_type;
         let dims = self.translate_list_with_pt(ctx, &dims, Some(int_ty));
         let (elems, erased) = if let Some(tree_ty) = tree_ty {
             let elem = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.elemtype(ctx, &syms, tree_ty)
             };
             let erased = self.erasure(ctx, tree_ty);
@@ -1811,7 +1811,7 @@ impl TreeVisitor for TransTypes {
                 None
             };
             if let Some(cast_ty) = cast_ty {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 if self.types.is_same_type(ctx, &syms, cast_ty, erased) {
                     drop(syms);
                     final_expr = match &ctx.tree(final_expr).kind {
@@ -1827,7 +1827,7 @@ impl TreeVisitor for TransTypes {
             while current.non_empty() {
                 let component = *current.head();
                 let ec = self.erasure(ctx, component);
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 let same_as_cast = self.types.is_same_type(ctx, &syms, ec, erased);
                 let same_as_pt = match self.pt {
                     Some(pt) => self.types.is_same_type(ctx, &syms, ec, pt),
@@ -1871,11 +1871,11 @@ impl TreeVisitor for TransTypes {
         };
         let indexed_pt = indexed.and_then(|indexed| ctx.tree(indexed).ty).map(|ty| self.erasure(ctx, ty));
         let indexed = self.translate_with_pt(ctx, indexed, indexed_pt);
-        let int_ty = self.syms.borrow().int_type;
+        let int_ty = self.syms.int_type;
         let index = self.translate_with_pt(ctx, index, Some(int_ty));
         let indexed_ty = indexed.and_then(|indexed| ctx.tree(indexed).ty).expect("indexed type");
         let elem = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.elemtype(ctx, &syms, indexed_ty)
         };
         if let TreeKind::ArrayAccess { indexed: i, index: n } = &mut ctx.tree_mut(tree).kind {
@@ -1899,7 +1899,7 @@ impl TreeVisitor for TransTypes {
             // Java: result = make.at(tree.pos).Type(et);
             let pos = ctx.tree(tree).pos;
             let type_tree = {
-                self.make.borrow_mut().at(pos).type_from_type(ctx, &self.syms.borrow(), et)
+                self.make.borrow_mut().at(pos).type_from_type(ctx, &*self.syms, et)
             };
             self.result = Some(type_tree);
         } else if ctx.typ(ctx.tree(tree).ty.expect("ident type")).const_value().is_some() {
@@ -2014,7 +2014,7 @@ impl TreeVisitor for TransTypes {
         let expr = if is_unbound {
             let pos = ctx.tree(tree).pos;
             let type_tree = {
-                self.make.borrow_mut().at(pos).type_from_type(ctx, &self.syms.borrow(), receiver_target)
+                self.make.borrow_mut().at(pos).type_from_type(ctx, &*self.syms, receiver_target)
             };
             Some(type_tree)
         } else {
@@ -2030,7 +2030,7 @@ impl TreeVisitor for TransTypes {
                         let diags = Rc::clone(&self.diags);
                         let chk = Rc::clone(&self.chk);
                         let chk = chk;
-                        let syms = self.syms.borrow_mut();
+                        let syms = &*self.syms;
                         self.types
                             .find_descriptor_symbol(ctx, &syms, &diags, &chk, tsym)
                             .expect("descriptor symbol")

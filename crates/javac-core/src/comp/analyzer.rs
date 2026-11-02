@@ -341,7 +341,7 @@ pub struct Analyzer {
     /// Java: final TreeMaker make
     pub make: Rc<RefCell<TreeMaker>>,
     /// Java: final Symtab (injected, ADR 0001)
-    pub syms: Rc<RefCell<crate::code::symtab::Symtab>>,
+    pub syms: Rc<crate::code::symtab::Symtab>,
     /// Java: final Attr attr (adapter cell: Attr and Analyzer are mutually recursive)
     pub attr: Rc<RefCell<Option<Rc<RefCell<Attr>>>>>,
     /// Java: final DeferredAttr deferredAttr (adapter cell)
@@ -382,7 +382,7 @@ impl Analyzer {
         types: Rc<Types>,
         log: Rc<RefCell<Log>>,
         make: Rc<RefCell<TreeMaker>>,
-        syms: Rc<RefCell<crate::code::symtab::Symtab>>,
+        syms: Rc<crate::code::symtab::Symtab>,
         attr: Rc<RefCell<Option<Rc<RefCell<Attr>>>>>,
         options: &Options,
         source: Source,

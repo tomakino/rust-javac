@@ -36,7 +36,7 @@ use javac_source::tree::case_tree::CaseKind;
     /// navigation descends into every child and whose pattern-specific visitors
     /// replace the pattern trees with desugared statements.
 pub struct TransPatterns {
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     pub attr: Rc<RefCell<Attr>>,
     pub rs: Rc<Resolve>,
     pub types: Rc<Types>,
@@ -225,7 +225,7 @@ impl TransPatterns {
     /// - `log` — the compiler log
     /// - `...` — the remaining registered dependency services
     pub fn new(
-        syms: Rc<RefCell<Symtab>>,
+        syms: Rc<Symtab>,
         attr: Rc<RefCell<Attr>>,
         rs: Rc<Resolve>,
         types: Rc<Types>,
@@ -682,7 +682,7 @@ impl TransPatterns {
     fn decorate_statement(&mut self, ctx: &mut CompilerContext, stat: TreeId) -> TreeId {
         let pos = ctx.tree(stat).pos;
         let make = Rc::clone(&self.make);
-        let stats = self.binding_context.binding_vars(ctx, &self.syms.borrow_mut(), &make, pos);
+        let stats = self.binding_context.binding_vars(ctx, &&*self.syms, &make, pos);
         if stats.is_empty() {
             stat
         } else {
@@ -704,7 +704,7 @@ impl TransPatterns {
         let mut result = expr;
         for vsym in hoisted {
             let make = Rc::clone(&self.make);
-            let decl = make_hoisted_var_decl(ctx, &self.syms.borrow_mut(), &make, pos, vsym);
+            let decl = make_hoisted_var_decl(ctx, &&*self.syms, &make, pos, vsym);
             result = {
                 let mut make_ref = make.borrow_mut();
                 make_ref.at(pos);
@@ -751,7 +751,7 @@ impl TransPatterns {
         let seltype = {
             let selector_ty = ctx.tree(selector).ty.expect("switch selector type");
             if ctx.typ(selector_ty).has_tag(crate::code::type_tag::TypeTag::BOT) {
-                self.syms.borrow().object_type
+                self.syms.object_type
             } else {
                 selector_ty
             }
@@ -781,7 +781,7 @@ impl TransPatterns {
             string_type,
             no_symbol,
         ) = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             (
                 syms.object_type,
                 syms.int_type,
@@ -832,13 +832,13 @@ impl TransPatterns {
         if !has_null_case {
             let attr_rc = Rc::clone(&self.attr);
             let mut attr = attr_rc.borrow_mut();
-            let syms = self.syms.borrow_mut();
+            let syms = &*self.syms;
             temp_init = attr.make_null_check(ctx, &syms, selector);
         }
         let temp_def = {
             let mut make = self.make.borrow_mut();
             make.at(pos);
-            let syms = self.syms.borrow_mut();
+            let syms = &*self.syms;
             make.var_def_symbol(ctx, &syms, temp, Some(temp_init))
         };
         statements.push(temp_def);
@@ -854,7 +854,7 @@ impl TransPatterns {
         let index_def = {
             let mut make = self.make.borrow_mut();
             make.at(pos);
-            let syms = self.syms.borrow_mut();
+            let syms = &*self.syms;
             make.var_def_symbol(ctx, &syms, index, Some(zero))
         };
         statements.push(index_def);
@@ -875,7 +875,7 @@ impl TransPatterns {
             class_tsym,
         ));
         let class_array = {
-            let syms = self.syms.borrow_mut();
+            let syms = &*self.syms;
             self.types.make_array_type(ctx, &syms, class_param)
         };
         let static_arg_types = List::from_iterable(vec![
@@ -909,7 +909,7 @@ impl TransPatterns {
             let chk = Rc::clone(&attr.chk);
             let infer = Rc::clone(&attr.infer);
             let chk_borrow = chk;
-            let syms = self.syms.borrow_mut();
+            let syms = &*self.syms;
             let diag_pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> =
                 Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos)));
             let rs = &*self.rs;
@@ -947,7 +947,7 @@ impl TransPatterns {
         let qualifier = {
             let mut make = self.make.borrow_mut();
             make.at(pos);
-            let syms = self.syms.borrow_mut();
+            let syms = &*self.syms;
             let owner = ctx.sym(bsm).owner.expect("bootstrap owner");
             let base = make.qual_ident(ctx, &syms, owner);
             make.select(ctx, base, bootstrap_name.clone())
@@ -1039,7 +1039,7 @@ impl TransPatterns {
                 };
                 let binding_stats = {
                     let make = Rc::clone(&self.make);
-                    let syms = self.syms.borrow_mut();
+                    let syms = &*self.syms;
                     self.binding_context.binding_vars(ctx, &syms, &make, case_pos)
                 };
                 let new_stats = binding_stats.append_list(&stats.prepend(if_tree));
@@ -1161,7 +1161,7 @@ impl TransPatterns {
         use crate::jvm::pool_constant::{BasicConstant, LoadableConstantRef};
         if is_pattern_label(ctx, label) {
             let principal_type = self.principal_type(ctx, label);
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let selector_type = if self.types.is_subtype(ctx, &syms, selector, principal_type) {
                 selector
             } else {
@@ -1236,7 +1236,7 @@ impl TransPatterns {
     fn principal_type(&self, ctx: &mut CompilerContext, pattern: TreeId) -> TypeId {
         let primary = tree_info::primary_pattern_type(ctx, pattern);
         let ty = primary.ty.expect("primary pattern type");
-        let syms_borrow = self.syms.borrow_mut();
+        let syms_borrow = &*self.syms;
         let erased = self.types.erasure(ctx, &syms_borrow, ty);
         self.types.boxed_type_or_type(ctx, &syms_borrow, erased)
     }
@@ -1251,7 +1251,7 @@ impl TransPatterns {
             let mut make = self.make.borrow_mut();
             make.type_test(ctx, lhs, type_tree)
         };
-        let syms = self.syms.borrow();
+        let syms = &*self.syms;
         ctx.tree_mut(tree).ty = Some(syms.boolean_type);
         tree
     }
@@ -1270,7 +1270,7 @@ impl TransPatterns {
         let lhs_ty = ctx.tree(lhs).ty.expect("lhs type");
         let rhs_ty = ctx.tree(rhs).ty.expect("rhs type");
         let operator = {
-            let syms = self.syms.borrow_mut();
+            let syms = &*self.syms;
             self.operators.resolve_binary(
                 ctx,
                 &syms,
@@ -1302,7 +1302,7 @@ impl TransPatterns {
         };
         let arg_ty = ctx.tree(arg).ty.expect("arg type");
         let operator = {
-            let syms = self.syms.borrow_mut();
+            let syms = &*self.syms;
             self.operators.resolve_unary(
                 ctx,
                 &syms,
@@ -1329,7 +1329,7 @@ impl TransPatterns {
     ) -> TreeId {
         let pos = ctx.tree(expr).pos;
         let type_tree = {
-            let syms = self.syms.borrow_mut();
+            let syms = &*self.syms;
             let mut make = self.make.borrow_mut();
             make.at(pos);
             make.type_from_type(ctx, &syms, target)
@@ -1977,7 +1977,7 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         }
         let expr_ty = ctx.tree(expr).ty.expect("instanceof expr type");
         let temp_type = if ctx.typ(expr_ty).has_tag(crate::code::type_tag::TypeTag::BOT) {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             syms.object_type
         } else {
             expr_ty
@@ -2032,7 +2032,7 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         let type_tree = {
             let mut make = self.make.borrow_mut();
             make.at(ctx.tree(tree).pos);
-            let syms = self.syms.borrow_mut();
+            let syms = &*self.syms;
             make.type_from_type(ctx, &syms, principal)
         };
         let current_ident = {
@@ -2047,7 +2047,7 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
             let var_def = {
                 let mut make = self.make.borrow_mut();
                 make.at(ctx.tree(tree).pos);
-                let syms = self.syms.borrow_mut();
+                let syms = &*self.syms;
                 make.var_def_symbol(ctx, &syms, current_value, Some(translated_expr))
             };
             result_expression = {
@@ -2058,7 +2058,7 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
             if let TreeKind::LetExpr { needs_cond: slot, .. } = &mut ctx.tree_mut(result_expression).kind {
                 *slot = true;
             }
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             ctx.tree_mut(result_expression).ty = Some(syms.boolean_type);
         }
         let result_expression = self.decorate_expression(ctx, result_expression);
@@ -2100,7 +2100,7 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
                 make.assign(ctx, lhs, converted)
             };
             let erased = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 let ty = ctx.sym(binding_var).ty.expect("binding variable type");
                 self.types.erasure(ctx, &syms, ty)
             };
@@ -2121,7 +2121,7 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
             if let TreeKind::LetExpr { needs_cond: slot, .. } = &mut ctx.tree_mut(nested).kind {
                 *slot = true;
             }
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             ctx.tree_mut(nested).ty = Some(syms.boolean_type);
             nested
         } else {

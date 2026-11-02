@@ -52,7 +52,7 @@ pub struct Lower {
     /// The diagnostic log.
     pub log: Rc<RefCell<Log>>,
     /// The symbol table.
-    pub syms: Rc<RefCell<Symtab>>,
+    pub syms: Rc<Symtab>,
     /// The resolver.
     pub rs: Rc<Resolve>,
     /// The operator service (installed by the compiler wiring).
@@ -165,7 +165,7 @@ impl Lower {
     pub fn new(
         names: Rc<Names>,
         log: Rc<RefCell<Log>>,
-        syms: Rc<RefCell<Symtab>>,
+        syms: Rc<Symtab>,
         rs: Rc<Resolve>,
         operators: Rc<RefCell<Option<Rc<Operators>>>>,
         chk: Rc<Check>,
@@ -292,7 +292,7 @@ impl Lower {
     /// The null value has no constant payload, so the literal tree carries no
     /// value and the type remains the bottom type.
     fn make_null(&mut self, ctx: &mut CompilerContext) -> TreeId {
-        let bot_type = self.syms.borrow().bot_type;
+        let bot_type = self.syms.bot_type;
         let tree = self.make.borrow_mut().literal(ctx, TypeTag::BOT, None);
         ctx.tree_mut(tree).ty = Some(bot_type);
         tree
@@ -351,7 +351,7 @@ impl Lower {
     ) -> TreeId {
         let tsym = ctx.typ(ctype).tsym.expect("class type symbol");
         let qual = {
-            self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), tsym)
+            self.make.borrow_mut().qual_ident(ctx, &*self.syms, tsym)
         };
         let tree = self.make.borrow_mut().new_class(
             ctx,
@@ -366,7 +366,7 @@ impl Lower {
         let pos = self.make_pos.clone();
         let constructor = {
             let rs = &*self.rs;
-            let mut syms = self.syms.borrow_mut();
+            let mut syms = &*self.syms;
             let mut attr = self.attr.borrow_mut();
             let chk = Rc::clone(&self.chk);
             rs.resolve_constructor(
@@ -402,7 +402,7 @@ impl Lower {
         let pos = ctx.tree(arg).pos;
         let operators = self.operators();
         let operator = {
-            let mut syms = self.syms.borrow_mut();
+            let mut syms = &*self.syms;
             operators.resolve_unary(ctx, &mut syms, &self.types, pos, optag, arg_type)
         };
         let tree = self.make.borrow_mut().unary(ctx, optag, arg);
@@ -431,7 +431,7 @@ impl Lower {
         let pos = ctx.tree(lhs).pos;
         let operators = self.operators();
         let operator = {
-            let mut syms = self.syms.borrow_mut();
+            let mut syms = &*self.syms;
             operators.resolve_binary(ctx, &mut syms, &self.types, pos, optag, lhs_type, rhs_type)
         };
         let tree = self.make.borrow_mut().binary(ctx, optag, lhs, rhs);
@@ -461,7 +461,7 @@ impl Lower {
         let binary_tag = optag.no_assign_op();
         let operators = self.operators();
         let operator = {
-            let mut syms = self.syms.borrow_mut();
+            let mut syms = &*self.syms;
             operators.resolve_binary(ctx, &mut syms, &self.types, pos, binary_tag, lhs_type, rhs_type)
         };
         let tree = self.make.borrow_mut().assignop(ctx, optag, lhs, rhs);
@@ -484,7 +484,7 @@ impl Lower {
         }
         let pos = ctx.tree(tree).pos;
         let diagnostic_pos = Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
-        let string_type = self.syms.borrow().string_type;
+        let string_type = self.syms.string_type;
         let value_of = self.names.valueOf.clone();
         let value_of_sym = self.lookup_method(
             ctx,
@@ -494,7 +494,7 @@ impl Lower {
             List::of(ty),
         );
         let qual = {
-            self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), value_of_sym)
+            self.make.borrow_mut().qual_ident(ctx, &*self.syms, value_of_sym)
         };
         self.make.borrow_mut().app_with_args(ctx, qual, List::of(tree))
     }
@@ -558,7 +558,7 @@ impl Lower {
     ) -> SymbolId {
         let env = self.attr_env.clone().expect("attribution environment");
         let rs = &*self.rs;
-        let mut syms = self.syms.borrow_mut();
+        let mut syms = &*self.syms;
         let mut attr = self.attr.borrow_mut();
         let chk = Rc::clone(&self.chk);
         rs.resolve_internal_method(
@@ -630,7 +630,7 @@ impl Lower {
     ) -> TreeId {
         let empty_name = self.names.empty.clone();
         let c = {
-            let syms = self.syms.borrow_mut();
+            let syms = &*self.syms;
             syms.define_class(ctx, empty_name, Some(owner))
         };
         let flat = match flatname {
@@ -655,7 +655,7 @@ impl Lower {
         }
         ctx.sym_mut(c).flags_field = flags;
         let ctype = ctx.sym(c).ty.expect("class type");
-        let object_type = self.syms.borrow().object_type;
+        let object_type = self.syms.object_type;
         if let TypeKindData::ClassType {
             supertype_field,
             interfaces_field,
@@ -814,7 +814,7 @@ impl Lower {
         }
         let outer_owner = ctx.sym(current_owner).owner?;
         let is_sub = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             crate::code::symbol::symbol_is_sub_class(ctx, &self.types, &syms, c, current_owner)
         };
         if ctx.sym(outer_owner)
@@ -884,7 +884,7 @@ impl Lower {
     /// the cache only memoizes the same computation.
     fn binary_access_operator(&mut self, ctx: &mut CompilerContext, acode: i32, tag: Tag) -> SymbolId {
         let operators = self.operators();
-        let mut syms = self.syms.borrow_mut();
+        let mut syms = &*self.syms;
         let found = operators.lookup_binary_op(ctx, &mut syms, &self.types, &|ctx, _syms, sym| {
             let access = match &ctx.sym(sym).kind_data {
                 SymbolKind::OperatorSymbol { opcode, .. } => {
@@ -1010,7 +1010,7 @@ impl Lower {
         };
         let vsym_kind = ctx.sym(vsym).kind;
         let vsym_ty = ctx.sym(vsym).ty.expect("access symbol type");
-        let expanded = self.types.erasure(ctx, &self.syms.borrow(), vsym_ty);
+        let expanded = self.types.erasure(ctx, &*self.syms, vsym_ty);
         let (mut acode, argtypes, restype, thrown) = match vsym_kind {
             Kind::VAR => {
                 let code = self.access_code(ctx, tree, encl_op);
@@ -1024,14 +1024,14 @@ impl Lower {
                         _ => panic!("AssertionError: operator symbol expected"),
                     };
                     if opcode == crate::jvm::byte_codes::STRING_ADD {
-                        List::of(self.syms.borrow().object_type)
+                        List::of(self.syms.object_type)
                     } else {
                         let operator_ty = ctx.sym(operator).ty.expect("operator type");
                         let params = self.types.get_parameter_types_public(ctx, operator_ty);
                         params.tail()
                     }
                 } else if code == crate::code::symbol::AccessCode::ASSIGN.code() {
-                    List::of(self.types.erasure(ctx, &self.syms.borrow(), vsym_ty))
+                    List::of(self.types.erasure(ctx, &*self.syms, vsym_ty))
                 } else {
                     List::nil()
                 };
@@ -1057,7 +1057,7 @@ impl Lower {
         if (ctx.sym(vsym).flags_field & crate::code::flags::STATIC as i64) == 0 {
             let owner = ctx.sym(vsym).owner.expect("access symbol owner");
             let owner_ty = ctx.sym(owner).ty.expect("access symbol owner type");
-            let owner_erasure = self.types.erasure(ctx, &self.syms.borrow(), owner_ty);
+            let owner_erasure = self.types.erasure(ctx, &*self.syms, owner_ty);
             argtypes = argtypes.prepend(owner_erasure);
         }
         let index = acode as usize;
@@ -1074,7 +1074,7 @@ impl Lower {
             flags |= crate::code::flags::PUBLIC;
         }
         let name = self.access_name(anum, acode);
-        let method_class = self.syms.borrow().method_class;
+        let method_class = self.syms.method_class;
         let method_ty = ctx.alloc_type(Type::new(
             TypeTag::METHOD,
             Some(method_class),
@@ -1125,7 +1125,7 @@ impl Lower {
                 };
                 loop {
                     let is_sub = {
-                        let syms = self.syms.borrow();
+                        let syms = &*self.syms;
                         crate::code::symbol::symbol_is_sub_class(
                             ctx, &self.types, &syms, qualifier, c,
                         )
@@ -1140,7 +1140,7 @@ impl Lower {
                 let sym_owner = ctx.sym(sym).owner.expect("symbol owner");
                 loop {
                     let is_sub = {
-                        let syms = self.syms.borrow();
+                        let syms = &*self.syms;
                         crate::code::symbol::symbol_is_sub_class(
                             ctx, &self.types, &syms, c, sym_owner,
                         )
@@ -1263,11 +1263,11 @@ impl Lower {
                     let prot_access = (ref_super && !self.needs_private_access(ctx, sym))
                         || self.needs_protected_access(ctx, sym, tree);
                     let acc_req = prot_access || self.needs_private_access(ctx, sym);
-                    let predef_class = self.syms.borrow().predef_class;
+                    let predef_class = self.syms.predef_class;
                     let base_req = base.is_none()
                         && Some(owner) != Some(predef_class)
                         && !{
-                            let syms = self.syms.borrow();
+                            let syms = &*self.syms;
                             crate::code::symbol::symbol_is_member_of(
                                 ctx, &self.types, &syms, sym, current_class,
                             )
@@ -1298,7 +1298,7 @@ impl Lower {
                                 self.select_symbol(ctx, base, access)
                             } else {
                                 let qual = {
-                                    self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), access_owner)
+                                    self.make.borrow_mut().qual_ident(ctx, &*self.syms, access_owner)
                                 };
                                 self.select_symbol(ctx, qual, access)
                             };
@@ -1343,7 +1343,7 @@ impl Lower {
         if (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) != 0 {
             let owner = ctx.sym(sym).owner.expect("symbol owner");
             let qual = {
-                self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), owner)
+                self.make.borrow_mut().qual_ident(ctx, &*self.syms, owner)
             };
             // Java: access(make.QualIdent(sym.owner)) — the single-argument
             // access reads the symbol from the qualifier tree (the owner), not
@@ -1399,7 +1399,7 @@ impl Lower {
             return false;
         }
         let is_sub = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             crate::code::symbol::symbol_is_sub_class(ctx, &self.types, &syms, current_class, owner)
         };
         if !is_sub {
@@ -1426,7 +1426,7 @@ impl Lower {
             .and_then(|ty| ctx.typ(ty).tsym);
         match selected_tsym {
             Some(selected_tsym) => {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 !crate::code::symbol::symbol_is_sub_class(
                     ctx, &self.types, &syms, selected_tsym, current_class,
                 )
@@ -1449,7 +1449,7 @@ impl Lower {
         if self.current_class == Some(c) {
             let c_ty = ctx.sym(c).ty.expect("qualifier type");
             let erasure = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.erasure(ctx, &syms, c_ty)
             };
             self.make.borrow_mut().this_expr(ctx, erasure)
@@ -1542,10 +1542,10 @@ impl Lower {
         let sym_owner = ctx.sym(sym).owner.expect("symbol owner");
         let current_class = self.current_class.expect("current class");
         let matches = if precise_match {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             crate::code::symbol::symbol_is_member_of(ctx, &self.types, &syms, sym, current_class)
         } else {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             crate::code::symbol::symbol_is_sub_class(
                 ctx, &self.types, &syms, current_class, sym_owner,
             )
@@ -1553,7 +1553,7 @@ impl Lower {
         if matches {
             let owner_ty = ctx.sym(sym_owner).ty.expect("symbol owner type");
             let erasure = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.erasure(ctx, &syms, owner_ty)
             };
             self.make.borrow_mut().this_expr(ctx, erasure)
@@ -1590,10 +1590,10 @@ impl Lower {
             .expect("outer this type symbol");
         loop {
             let matched = if precise_match {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 crate::code::symbol::symbol_is_member_of(ctx, &self.types, &syms, sym, otc)
             } else {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 crate::code::symbol::symbol_is_sub_class(
                     ctx, &self.types, &syms, otc, sym_owner,
                 )
@@ -1647,7 +1647,7 @@ impl Lower {
     /// The maker needs the symbol table to qualify class names; the borrow is
     /// kept local so callers can continue using the context afterwards.
     fn type_tree(&mut self, ctx: &mut CompilerContext, t: TypeId) -> TreeId {
-        self.make.borrow_mut().type_from_type(ctx, &mut self.syms.borrow_mut(), t)
+        self.make.borrow_mut().type_from_type(ctx, &*self.syms, t)
     }
 
     /// Build a variable declaration tree for a variable symbol.
@@ -1843,7 +1843,7 @@ impl Lower {
         proxy_names.push(proxy_name.clone());
         let v_ty = ctx.sym(v).ty.expect("free variable type");
         let erasure = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.erasure(ctx, &syms, v_ty)
         };
         let symbol = Symbol::new_var_symbol(flags, proxy_name, erasure, owner);
@@ -1922,7 +1922,7 @@ impl Lower {
             .get_enclosing_type()
             .expect("class has no enclosing type");
         let target = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.erasure(ctx, &syms, enclosing)
         };
         let name = self.outer_this_name(ctx, target, owner);
@@ -2011,7 +2011,7 @@ impl Lower {
         let lhs_owner = ctx.sym(lhs).owner.expect("field owner");
         let lhs_owner_ty = ctx.sym(lhs_owner).ty.expect("field owner type");
         let owner_erasure = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.erasure(ctx, &syms, lhs_owner_ty)
         };
         let this = self.make.borrow_mut().this_expr(ctx, owner_erasure);
@@ -2019,7 +2019,7 @@ impl Lower {
         let value = self.make.borrow_mut().ident_symbol(ctx, rhs);
         let assign = self.make.borrow_mut().assign(ctx, field, value);
         let lhs_erasure = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let lhs_ty = ctx.sym(lhs).ty.expect("field type");
             self.types.erasure(ctx, &syms, lhs_ty)
         };
@@ -2069,19 +2069,19 @@ impl Lower {
         let constr_ty = ctx.sym(constr).ty.expect("constructor type");
         let mut argtypes = self.types.get_parameter_types_public(ctx, constr_ty);
         if (ctx.sym(acc_owner).flags_field & crate::code::flags::ENUM as i64) != 0 {
-            let string_type = self.syms.borrow().string_type;
-            let int_type = self.syms.borrow().int_type;
+            let string_type = self.syms.string_type;
+            let int_type = self.syms.int_type;
             argtypes = argtypes.prepend(int_type).prepend(string_type);
         }
         let tag = self.access_constructor_tag(ctx);
         let tag_erasure = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let tag_ty = ctx.sym(tag).ty.expect("tag type");
             self.types.erasure(ctx, &syms, tag_ty)
         };
         let restype = self.types.get_return_type_public(ctx, constr_ty);
         let thrown = ctx.typ(constr_ty).get_thrown_types(ctx);
-        let method_class = self.syms.borrow().method_class;
+        let method_class = self.syms.method_class;
         let method_ty = ctx.alloc_type(Type::new(
             TypeTag::METHOD,
             Some(method_class),
@@ -2205,7 +2205,7 @@ impl Lower {
                 continue;
             }
             let new_erasure = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 let new_ty = ctx.sym(new_ctag).ty.expect("tag type");
                 self.types.erasure(ctx, &syms, new_ty)
             };
@@ -2289,11 +2289,11 @@ impl Lower {
                 let encl = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
                 let encl_ty = ctx.sym(encl).ty.expect("enclosing type");
                 let super_ty = {
-                    let syms = self.syms.borrow();
+                    let syms = &*self.syms;
                     self.types.supertype(ctx, &syms, encl_ty, None)
                 };
                 let erasure = {
-                    let syms = self.syms.borrow();
+                    let syms = &*self.syms;
                     self.types.erasure(ctx, &syms, super_ty)
                 };
                 ctx.tree_mut(site).ty = Some(erasure);
@@ -2414,7 +2414,7 @@ impl Lower {
     ) -> TreeId {
         self.make.borrow_mut().at(pos);
         let external = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             crate::code::symbol::external_type(ctx, &self.types, &syms, &self.names, accessor)
         };
         let md = self.method_def_for_symbol(ctx, accessor, external, None);
@@ -2492,7 +2492,7 @@ impl Lower {
         self.freevar_cache = HashMap::new();
         self.proxies = HashMap::new();
         self.twr_vars = Some(ctx.alloc_scope(crate::code::scope::Scope::new_scope_impl(
-            Some(self.syms.borrow().no_symbol),
+            Some(self.syms.no_symbol),
         )));
         self.outer_this_stack = Vec::new();
         self.access_nums = HashMap::new();
@@ -2759,7 +2759,7 @@ impl Lower {
         let tree_ty = ctx.sym(tree_sym).ty.expect("class type");
         let super_tsym = self
             .types
-            .supertype(ctx, &self.syms.borrow(), tree_ty, None);
+            .supertype(ctx, &*self.syms, tree_ty, None);
         let super_is_enum = ctx
             .typ(super_tsym)
             .tsym
@@ -2909,15 +2909,15 @@ impl Lower {
             }
             let old_erasure = {
                 let method_ty = ctx.sym(tree_sym).ty.expect("method type");
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.erasure(ctx, &syms, method_ty)
             };
-            let string_type = self.syms.borrow().string_type;
-            let int_type = self.syms.borrow().int_type;
+            let string_type = self.syms.string_type;
+            let int_type = self.syms.int_type;
             let params = self.types.get_parameter_types_public(ctx, old_erasure);
             let restype = self.types.get_return_type_public(ctx, old_erasure);
             let thrown = ctx.typ(old_erasure).get_thrown_types(ctx);
-            let method_class = self.syms.borrow().method_class;
+            let method_class = self.syms.method_class;
             let new_erasure = ctx.alloc_type(Type::new(
                 TypeTag::METHOD,
                 Some(method_class),
@@ -2952,9 +2952,9 @@ impl Lower {
             .names
             .from_string(&javac_strings::JavaString::from(text));
         let ty = if is_string {
-            self.syms.borrow().string_type
+            self.syms.string_type
         } else {
-            self.syms.borrow().int_type
+            self.syms.int_type
         };
         let flags = crate::code::flags::PARAMETER;
         let symbol = Symbol::new_var_symbol(flags, name, ty, owner);
@@ -3049,20 +3049,20 @@ impl Lower {
                 }
                 let v_ty = ctx.sym(v).ty.expect("free variable type");
                 let erasure = {
-                    let syms = self.syms.borrow();
+                    let syms = &*self.syms;
                     self.types.erasure(ctx, &syms, v_ty)
                 };
                 added_argtypes = added_argtypes.prepend(erasure);
                 }
                 let old_erasure = {
                     let method_ty = ctx.sym(sym).ty.expect("method type");
-                    let syms = self.syms.borrow();
+                    let syms = &*self.syms;
                     self.types.erasure(ctx, &syms, method_ty)
                 };
                 let params = self.types.get_parameter_types_public(ctx, old_erasure);
                 let restype = self.types.get_return_type_public(ctx, old_erasure);
                 let thrown = ctx.typ(old_erasure).get_thrown_types(ctx);
-                let method_class = self.syms.borrow().method_class;
+                let method_class = self.syms.method_class;
                 let new_erasure = ctx.alloc_type(Type::new(
                     TypeTag::METHOD,
                     Some(method_class),
@@ -3133,12 +3133,12 @@ impl Lower {
         }
         if have_primitive {
             let unboxed = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.unboxed_type_ro(ctx, &syms, ty)
             };
             if !ctx.typ(unboxed).has_tag(TypeTag::NONE) {
                 let is_sub = {
-                    let syms = self.syms.borrow();
+                    let syms = &*self.syms;
                     self.types.is_subtype(ctx, &syms, tree_ty, unboxed)
                 };
                 if !is_sub {
@@ -3150,7 +3150,7 @@ impl Lower {
                     }
                 }
                 let wrapper = {
-                    let syms = self.syms.borrow();
+                    let syms = &*self.syms;
                     self.types.erasure(ctx, &syms, ty)
                 };
                 self.box_primitive(ctx, tree, wrapper)
@@ -3166,7 +3166,7 @@ impl Lower {
     fn box_primitive_auto(&mut self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
         let tree_ty = ctx.tree(tree).ty.expect("tree type");
         let boxed = {
-            let mut syms = self.syms.borrow_mut();
+            let mut syms = &*self.syms;
             self.types.boxed_class(ctx, &mut syms, tree_ty)
         };
         let wrapper = ctx.sym(boxed).ty.expect("boxed type");
@@ -3193,7 +3193,7 @@ impl Lower {
             List::of(tree_ty),
         );
         let qual = {
-            self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), value_of_sym)
+            self.make.borrow_mut().qual_ident(ctx, &*self.syms, value_of_sym)
         };
         // Java: boxPrimitive calls make_at(tree.pos()) before building the
         // valueOf application (Lower.java:3113-3120). Translating the
@@ -3207,7 +3207,7 @@ impl Lower {
     fn unbox(&mut self, ctx: &mut CompilerContext, tree: TreeId, primitive: TypeId) -> TreeId {
         let tree_ty = ctx.tree(tree).ty.expect("tree type");
         let mut unboxed = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.unboxed_type_ro(ctx, &syms, tree_ty)
         };
         let mut tree = tree;
@@ -3217,7 +3217,7 @@ impl Lower {
                 panic!("AssertionError: unboxed type is not primitive");
             }
             let boxed = {
-                let mut syms = self.syms.borrow_mut();
+                let mut syms = &*self.syms;
                 self.types.boxed_class(ctx, &mut syms, unboxed)
             };
             let boxed_ty = ctx.sym(boxed).ty.expect("boxed type");
@@ -3232,7 +3232,7 @@ impl Lower {
             let _ = tree_ty;
         } else {
             let is_sub = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.is_subtype(ctx, &syms, unboxed, primitive)
             };
             if !is_sub {
@@ -3349,8 +3349,8 @@ impl Lower {
             TreeKind::NewClass { args, .. } => args.clone(),
             _ => panic!("expected a new class expression"),
         };
-        let int_type = self.syms.borrow().int_type;
-        let string_type = self.syms.borrow().string_type;
+        let int_type = self.syms.int_type;
+        let string_type = self.syms.string_type;
         let ordinal_lit = self.make_lit(
             ctx,
             int_type,
@@ -3371,7 +3371,7 @@ impl Lower {
     /// Return true when the Object.clone method is available for the enum values
     /// array copy strategy.
     fn use_clone(&mut self, ctx: &mut CompilerContext) -> bool {
-        let object_type = self.syms.borrow().object_type;
+        let object_type = self.syms.object_type;
         let object_sym = match ctx.typ(object_type).tsym {
             Some(sym) => sym,
             None => return false,
@@ -3407,7 +3407,7 @@ impl Lower {
             Some(extending) => extending,
             None => {
                 let super_ty = {
-                    let syms = self.syms.borrow();
+                    let syms = &*self.syms;
                     self.types.supertype(ctx, &syms, tree_ty, None)
                 };
                 self.type_tree(ctx, super_ty)
@@ -3417,10 +3417,10 @@ impl Lower {
             *slot = Some(extending);
         }
         let class_ty = self.class_of_type(ctx, tree_ty, pos);
-        let class_lit_ty = self.syms.borrow().class_type;
+        let class_lit_ty = self.syms.class_type;
         let class_val = self
             .types
-            .erasure(ctx, &self.syms.borrow(), class_lit_ty);
+            .erasure(ctx, &*self.syms, class_lit_ty);
         ctx.tree_mut(class_ty).ty = Some(class_val);
         let mut next_ordinal = 0;
         let mut values: List<TreeId> = List::nil();
@@ -3446,7 +3446,7 @@ impl Lower {
             let value_ident = {
                 self.make
                     .borrow_mut()
-                    .qual_ident(ctx, &mut self.syms.borrow_mut(), def_sym)
+                    .qual_ident(ctx, &*self.syms, def_sym)
             };
             values = values.append(value_ident);
             enum_defs = enum_defs.append(def);
@@ -3455,8 +3455,8 @@ impl Lower {
         }
         }
         let values_name = self.synthetic_name(ctx, tree, "VALUES");
-        let erased_enum_ty = self.types.erasure(ctx, &self.syms.borrow(), tree_ty);
-        let array_class = self.syms.borrow().array_class;
+        let erased_enum_ty = self.types.erasure(ctx, &*self.syms, tree_ty);
+        let array_class = self.syms.array_class;
         let array_ty = ctx.alloc_type(Type::new(
             TypeTag::ARRAY,
             Some(array_class),
@@ -3481,7 +3481,7 @@ impl Lower {
         );
         ctx.tree_mut(new_array).ty = Some(array_ty);
         let values_method_name = self.synthetic_name(ctx, tree, "values");
-        let method_class = self.syms.borrow().method_class;
+        let method_class = self.syms.method_class;
         let values_method_ty = ctx.alloc_type(Type::new(
             TypeTag::METHOD,
             Some(method_class),
@@ -3524,7 +3524,7 @@ impl Lower {
             let values_sym_ty = ctx.sym(values_sym).ty.expect("values method type");
             let return_ty = self.types.get_return_type_public(ctx, values_sym_ty);
             let values_var_ident = self.make.borrow_mut().ident_symbol(ctx, values_var);
-            let array_clone = self.syms.borrow().array_clone_method;
+            let array_clone = self.syms.array_clone_method;
             let clone_sel = self.select_symbol(ctx, values_var_ident, array_clone);
             let clone_app = self.make.borrow_mut().app(ctx, clone_sel);
             let return_ty_tree = self.type_tree(ctx, return_ty);
@@ -3539,7 +3539,7 @@ impl Lower {
             let result_symbol =
                 Symbol::new_var_symbol(result_flags, result_name, array_ty, values_sym);
             let result_var = ctx.alloc_symbol(result_symbol);
-            let length_var = self.syms.borrow().length_var;
+            let length_var = self.syms.length_var;
             let values_var_ident = self.make.borrow_mut().ident_symbol(ctx, values_var);
             let length_sel = self.select_symbol(ctx, values_var_ident, length_var);
             let result_elem_tree = self.type_tree(ctx, erased_enum_ty);
@@ -3552,7 +3552,7 @@ impl Lower {
             ctx.tree_mut(result_array).ty = Some(array_ty);
             let decl = self.var_def_for_symbol(ctx, result_var, Some(result_array));
             let system_arraycopy = self.system_arraycopy_method(ctx);
-            let system_type = self.syms.borrow().system_type;
+            let system_type = self.syms.system_type;
             let system_tsym = ctx.typ(system_type).tsym.expect("system type symbol");
             let system_qual = self.make.borrow_mut().ident_symbol(ctx, system_tsym);
             let copy_sel = self.select_symbol(ctx, system_qual, system_arraycopy);
@@ -3560,7 +3560,7 @@ impl Lower {
             let result_var_ident = self.make.borrow_mut().ident_symbol(ctx, result_var);
             let values_var_ident3 = self.make.borrow_mut().ident_symbol(ctx, values_var);
             let length_sel2 = self.select_symbol(ctx, values_var_ident3, length_var);
-            let int_type = self.syms.borrow().int_type;
+            let int_type = self.syms.int_type;
             let zero1 = self.make_lit(ctx, int_type, &crate::util::constants::ConstantValue::Integer(0));
             let zero2 = self.make_lit(ctx, int_type, &crate::util::constants::ConstantValue::Integer(0));
             let copy_app = self.make.borrow_mut().app_with_args(
@@ -3578,14 +3578,14 @@ impl Lower {
         let values_def = self.method_def_for_symbol(ctx, values_sym, ctx.sym(values_sym).ty.expect("values method type"), Some(values_block));
         enum_defs = enum_defs.append(values_def);
         let value_of_name = self.names.valueOf.clone();
-        let string_type = self.syms.borrow().string_type;
+        let string_type = self.syms.string_type;
         let value_of_sym = self.lookup_method(ctx, None, value_of_name, tree_ty, List::of(string_type));
         let name_arg = match &ctx.sym(value_of_sym).kind_data {
             SymbolKind::MethodSymbol { params, .. } => *params.head(),
             _ => panic!("expected a method symbol"),
         };
         let name_val = self.make.borrow_mut().ident_symbol(ctx, name_arg);
-        let enum_sym = self.syms.borrow().enum_sym;
+        let enum_sym = self.syms.enum_sym;
         let enum_qual = self.make.borrow_mut().ident_symbol(ctx, enum_sym);
         let value_of_name2 = self.names.valueOf.clone();
         let call = self.make_call(ctx, enum_qual, value_of_name2, List::of2(class_ty, name_val));
@@ -3617,10 +3617,10 @@ impl Lower {
         if let Some(method) = self.system_arraycopy_method {
             return method;
         }
-        let object_type = self.syms.borrow().object_type;
-        let int_type = self.syms.borrow().int_type;
-        let void_type = self.syms.borrow().void_type;
-        let method_class = self.syms.borrow().method_class;
+        let object_type = self.syms.object_type;
+        let int_type = self.syms.int_type;
+        let void_type = self.syms.void_type;
+        let method_class = self.syms.method_class;
         let method_ty = ctx.alloc_type(Type::new(
             TypeTag::METHOD,
             Some(method_class),
@@ -3634,7 +3634,7 @@ impl Lower {
         let name = self
             .names
             .from_string(&javac_strings::JavaString::from("arraycopy"));
-        let system_type = self.syms.borrow().system_type;
+        let system_type = self.syms.system_type;
         let system_tsym = ctx.typ(system_type).tsym.expect("system type symbol");
         let flags = (crate::code::flags::PUBLIC | crate::code::flags::STATIC) as i64;
         let symbol = Symbol::new_method_symbol(flags, name, method_ty, system_tsym);
@@ -3670,7 +3670,7 @@ impl Lower {
                     vars = vars.prepend(sym);
                 }
             }
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             current_t = self.types.supertype(ctx, &syms, current_t, None);
         }
         vars
@@ -3793,7 +3793,7 @@ impl Lower {
         };
         let tree_ty = ctx.sym(tree_sym).ty.expect("class type");
         let is_equals = name == self.names.equals;
-        let object_type = self.syms.borrow().object_type;
+        let object_type = self.syms.object_type;
         let object_sym = ctx.typ(object_type).tsym.expect("object symbol");
         let argtypes = if is_equals {
             List::of(object_type)
@@ -3825,9 +3825,9 @@ impl Lower {
         for handle in &handles {
             static_args.push(crate::jvm::pool_constant::LoadableConstantRef::MethodHandle(*handle));
         }
-        let string_type = self.syms.borrow().string_type;
-        let method_handle_type = self.syms.borrow().method_handle_type;
-        let array_class = self.syms.borrow().array_class;
+        let string_type = self.syms.string_type;
+        let method_handle_type = self.syms.method_handle_type;
+        let array_class = self.syms.array_class;
         let method_handle_array = ctx.alloc_type(Type::new(
             TypeTag::ARRAY,
             Some(array_class),
@@ -3836,10 +3836,10 @@ impl Lower {
                 varargs: false,
             },
         ));
-        let class_type = self.syms.borrow().class_type;
-        let method_handle_lookup_type = self.syms.borrow().method_handle_lookup_type;
-        let type_descriptor_type = self.syms.borrow().type_descriptor_type;
-        let object_methods_type = self.syms.borrow().object_methods_type;
+        let class_type = self.syms.class_type;
+        let method_handle_lookup_type = self.syms.method_handle_lookup_type;
+        let type_descriptor_type = self.syms.type_descriptor_type;
+        let object_methods_type = self.syms.object_methods_type;
         let static_arg_types = List::of3(class_type, string_type, method_handle_array);
         let mut call_arg_types = List::of3(
             method_handle_lookup_type,
@@ -3934,7 +3934,7 @@ impl Lower {
                 let tree_ty = ctx.sym(tree_sym).ty.expect("class type");
                 new_argtypes = new_argtypes.prepend(tree_ty);
             }
-            let method_class = self.syms.borrow().method_class;
+            let method_class = self.syms.method_class;
             ctx.alloc_type(Type::new(
                 TypeTag::METHOD,
                 Some(method_class),
@@ -3951,7 +3951,7 @@ impl Lower {
         let dynamic_sym = crate::code::symbol::new_dynamic_method_symbol(
             ctx,
             arg_name.clone(),
-            self.syms.borrow().no_symbol,
+            self.syms.no_symbol,
             bsm,
             indy_type,
             static_arg_values,
@@ -3960,10 +3960,10 @@ impl Lower {
         let site_qual = {
             self.make
                 .borrow_mut()
-                .qual_ident(ctx, &mut self.syms.borrow_mut(), site_tsym)
+                .qual_ident(ctx, &*self.syms, site_tsym)
         };
         let qualifier = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let _ = syms;
             self.make
                 .borrow_mut()
@@ -3997,7 +3997,7 @@ impl Lower {
             | TypeTag::BOOLEAN
             | TypeTag::VOID => {
                 let boxed = {
-                    let mut syms = self.syms.borrow_mut();
+                    let mut syms = &*self.syms;
                     self.types.boxed_class(ctx, &mut syms, ty)
                 };
                 let boxed_ty = ctx.sym(boxed).ty.expect("boxed class type");
@@ -4007,7 +4007,7 @@ impl Lower {
                 );
                 let type_sym = {
                     let rs = &*self.rs;
-                    let mut syms = self.syms.borrow_mut();
+                    let mut syms = &*self.syms;
                     rs.find_ident_in_type(
                         ctx,
                         &mut syms,
@@ -4021,7 +4021,7 @@ impl Lower {
                 };
                 let type_sym = {
                     let rs = &*self.rs;
-                    let mut syms = self.syms.borrow_mut();
+                    let mut syms = &*self.syms;
                     let mut attr = self.attr.borrow_mut();
                     rs.access_base(
                         ctx,
@@ -4040,11 +4040,11 @@ impl Lower {
                 }
                 self.make
                     .borrow_mut()
-                    .qual_ident(ctx, &mut self.syms.borrow_mut(), type_sym)
+                    .qual_ident(ctx, &*self.syms, type_sym)
             }
             TypeTag::CLASS | TypeTag::ARRAY => {
                 let ty_tsym = ctx.typ(ty).tsym.expect("class type symbol");
-                let class_type = self.syms.borrow().class_type;
+                let class_type = self.syms.class_type;
                 let flags = (crate::code::flags::STATIC
                     | crate::code::flags::PUBLIC
                     | crate::code::flags::FINAL) as i64;
@@ -4132,7 +4132,7 @@ impl Lower {
             let field_owner = ctx.sym(field).owner.expect("field owner");
             let field_owner_ty = ctx.sym(field_owner).ty.expect("field owner type");
             let owner_erasure = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.erasure(ctx, &syms, field_owner_ty)
             };
             let this = self.make.borrow_mut().this_expr(ctx, owner_erasure);
@@ -4141,7 +4141,7 @@ impl Lower {
             let assign = self.make.borrow_mut().assign(ctx, field_sel, param_ident);
             let field_ty = ctx.sym(field).ty.expect("field type");
             let field_erasure = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.erasure(ctx, &syms, field_ty)
             };
             ctx.tree_mut(assign).ty = Some(field_erasure);
@@ -4230,7 +4230,7 @@ impl Lower {
         let result = self.make.borrow_mut().type_cast(ctx, pt_tree, tree);
         let result_ty = if ctx.typ(tree_ty).const_value().is_some() {
             {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.cfolder.coerce(ctx, &syms, tree_ty, pt)
         }
         } else {
@@ -4283,7 +4283,7 @@ impl Lower {
                 List::nil(),
                 Some(elems),
             );
-            let array_class = self.syms.borrow().array_class;
+            let array_class = self.syms.array_class;
             let boxed_ty = ctx.alloc_type(Type::new(
                 TypeTag::ARRAY,
                 Some(array_class),
@@ -4325,7 +4325,7 @@ impl Lower {
         self.make_at(&diagnostic_pos);
         let previous_twr = self.twr_vars;
         let new_scope = ctx.alloc_scope(crate::code::scope::Scope::new_scope_impl(
-            Some(self.syms.borrow().no_symbol),
+            Some(self.syms.no_symbol),
         ));
         self.twr_vars = Some(new_scope);
         let resources = match &ctx.tree(tree).kind {
@@ -4394,7 +4394,7 @@ impl Lower {
         } else {
             let resource_ty = ctx.tree(resource).ty.expect("resource type");
             let twr_ty = if ctx.typ(resource_ty).has_tag(TypeTag::BOT) {
-                self.syms.borrow().auto_closeable_type
+                self.syms.auto_closeable_type
             } else {
                 resource_ty
             };
@@ -4432,7 +4432,7 @@ impl Lower {
             .block(ctx, body_only_finalize, List::of(body_close));
         self.make.borrow_mut().at(old_pos);
         let current_method_sym = self.current_method_sym.expect("current method symbol");
-        let throwable_type = self.syms.borrow().throwable_type;
+        let throwable_type = self.syms.throwable_type;
         let primary_name = {
             let text = format!("t{}", self.target.synthetic_name_char());
             self.names
@@ -4525,9 +4525,9 @@ impl Lower {
     /// Build the invocation that closes a try-with-resources resource.
     fn make_resource_close_invocation(&mut self, ctx: &mut CompilerContext, mut resource: TreeId) -> TreeId {
         let resource_ty = ctx.tree(resource).ty.expect("resource type");
-        let auto_closeable = self.syms.borrow().auto_closeable_type;
+        let auto_closeable = self.syms.auto_closeable_type;
         let as_super = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let auto_tsym = ctx.typ(auto_closeable).tsym.expect("auto closeable symbol");
             self.types.as_super(ctx, &syms, resource_ty, auto_tsym)
         };
@@ -4653,7 +4653,7 @@ impl Lower {
                     } => (*indexed, *index),
                     _ => panic!("expected an array access"),
                 };
-                let int_type = self.syms.borrow().int_type;
+                let int_type = self.syms.int_type;
                 let lval_ty = ctx.tree(lval).ty;
                 let _ = lval;
                 let mut indexed_builder = IndexedBuilder {
@@ -4688,7 +4688,7 @@ impl Lower {
     #[allow(dead_code)]
     fn args_type_sig(&mut self, ctx: &mut CompilerContext, type_list: List<TypeId>) -> String {
         let mut signature = LowerSignatureGenerator::new(Rc::clone(&self.types));
-        let syms = self.syms.borrow();
+        let syms = &*self.syms;
         signature
             .assemble_sig_list(ctx, &syms, type_list)
             .expect("assembled signature");
@@ -4707,7 +4707,7 @@ impl Lower {
             } => (*cond, *truepart, *falsepart),
             _ => panic!("expected a conditional"),
         };
-        let bool_type = self.syms.borrow().boolean_type;
+        let bool_type = self.syms.boolean_type;
         let cond = self
             .translate_with_type(ctx, Some(cond), bool_type)
             .expect("translated condition");
@@ -4782,7 +4782,7 @@ impl Lower {
             } => (*cond, *thenpart, *elsepart),
             _ => panic!("expected an if statement"),
         };
-        let bool_type = self.syms.borrow().boolean_type;
+        let bool_type = self.syms.boolean_type;
         let cond = self
             .translate_with_type(ctx, Some(cond), bool_type)
             .expect("translated condition");
@@ -4823,7 +4823,7 @@ impl Lower {
             } => (*cond, *detail),
             _ => panic!("expected an assert statement"),
         };
-        let bool_type = self.syms.borrow().boolean_type;
+        let bool_type = self.syms.boolean_type;
         let cond = self
             .translate_with_type(ctx, Some(cond), bool_type)
             .expect("translated assert condition");
@@ -4843,7 +4843,7 @@ impl Lower {
                 let not_cond = self.make_unary(ctx, Tag::NOT, cond);
                 check = self.make_binary(ctx, Tag::AND, check, not_cond);
             }
-            let assertion_error_type = self.syms.borrow().assertion_error_type;
+            let assertion_error_type = self.syms.assertion_error_type;
             let exception = self.make_new_class(ctx, assertion_error_type, exn_args);
             self.make.borrow_mut().at(pos);
             let throw = self.make.borrow_mut().throw_(ctx, exception);
@@ -4870,7 +4870,7 @@ impl Lower {
         let meth_ty = ctx.sym(meth_sym).ty.expect("method type");
         let mut argtypes = self.types.get_parameter_types_public(ctx, meth_ty);
         let meth_name = ctx.sym(meth_sym).name.clone();
-        let enum_sym = self.syms.borrow().enum_sym;
+        let enum_sym = self.syms.enum_sym;
         if meth_name == self.names.init && ctx.sym(meth_sym).owner == Some(enum_sym) {
             argtypes = argtypes.tail().tail();
         }
@@ -4949,7 +4949,7 @@ impl Lower {
                         _ => panic!("expected a field access"),
                     };
                     let translated = self.translate(ctx, Some(selected)).expect("translated qualifier");
-                    let checked = self.attr.borrow_mut().make_null_check(ctx, &mut self.syms.borrow_mut(), translated);
+                    let checked = self.attr.borrow_mut().make_null_check(ctx, &*self.syms, translated);
                     let new_meth = self.make.borrow_mut().ident_symbol(ctx, constructor);
                     if let Some(meth_name) = meth_tree_name.clone()
                         && let TreeKind::Ident { name, .. } = &mut ctx.tree_mut(new_meth).kind
@@ -4986,7 +4986,7 @@ impl Lower {
                             ctx.tree(tree).pos,
                             crate::util::jc_diagnostic::Error::from(info),
                         );
-                        let bot_type = self.syms.borrow().bot_type;
+                        let bot_type = self.syms.bot_type;
                         self.make_lit(ctx, bot_type, &crate::util::constants::ConstantValue::Integer(0))
                     } else {
                         let pos = ctx.tree(meth).pos;
@@ -5085,7 +5085,7 @@ impl Lower {
         let dollar_name = self.dollar_assertions_disabled.clone();
         let mut assert_disabled = self.lookup_synthetic(ctx, &dollar_name, members);
         if assert_disabled.is_none() {
-            let boolean_type = self.syms.borrow().boolean_type;
+            let boolean_type = self.syms.boolean_type;
             let flags =
                 (crate::code::flags::STATIC | crate::code::flags::FINAL | crate::code::flags::SYNTHETIC)
                     as i64;
@@ -5093,9 +5093,9 @@ impl Lower {
             let var = ctx.alloc_symbol(symbol);
             self.enter_synthetic(ctx, var, members);
             let desired_name = self.names.desiredAssertionStatus.clone();
-            let class_type = self.syms.borrow().class_type;
+            let class_type = self.syms.class_type;
             let class_erasure = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.erasure(ctx, &syms, class_type)
             };
             let desired_sym = self.lookup_method(
@@ -5118,7 +5118,7 @@ impl Lower {
             };
             let outermost_ty = ctx.sym(outermost_sym).ty.expect("outermost class type");
             let outermost_erasure = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types.erasure(ctx, &syms, outermost_ty)
             };
             let class_literal = self.class_of_type(ctx, outermost_erasure, container_pos);
@@ -5150,7 +5150,7 @@ impl Lower {
                 let current_pos = crate::tree::tree_info::get_start_pos(ctx, current_def);
                 self.make.borrow_mut().at(current_pos);
                 let flag_ident = {
-                    self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), var)
+                    self.make.borrow_mut().qual_ident(ctx, &*self.syms, var)
                 };
                 let skip = self.make.borrow_mut().skip(ctx);
                 let dummy = self.make.borrow_mut().if_(ctx, flag_ident, skip, None);
@@ -5232,8 +5232,8 @@ impl Lower {
         let constructor_ty = ctx.sym(constructor).ty.expect("constructor type");
         let mut arg_types = self.types.get_parameter_types_public(ctx, constructor_ty);
         if is_enum {
-            let int_type = self.syms.borrow().int_type;
-            let string_type = self.syms.borrow().string_type;
+            let int_type = self.syms.int_type;
+            let string_type = self.syms.string_type;
             arg_types = arg_types.prepend(int_type).prepend(string_type);
         }
         // The constructor symbol of an inner/local class carries synthetic
@@ -5280,7 +5280,7 @@ impl Lower {
         if ctx.sym(c).has_outer_instance(ctx) {
             let this_arg = if let Some(encl) = encl {
                 let translated = self.translate(ctx, Some(encl)).expect("translated enclosing expression");
-                let checked = self.attr.borrow_mut().make_null_check(ctx, &mut self.syms.borrow_mut(), translated);
+                let checked = self.attr.borrow_mut().make_null_check(ctx, &*self.syms, translated);
                 let encl_ty = ctx.tree(encl).ty;
                 if let Some(encl_ty) = encl_ty {
                     ctx.tree_mut(checked).ty = Some(encl_ty);
@@ -5356,7 +5356,7 @@ impl Lower {
         let elemtype = self.translate(ctx, elemtype);
         let current = dims;
         let mut index = 0;
-        let int_type = self.syms.borrow().int_type;
+        let int_type = self.syms.int_type;
         let mut translated_dims: Vec<TreeId> = Vec::new();
         for dim in &current {
         // Java: Lower.visitNewArray translates every dimension except the
@@ -5375,7 +5375,7 @@ impl Lower {
         let elems = match elems {
             Some(elems) => {
                 let elem_ty = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.elemtype(ctx, &syms, tree_ty)
         };
                 let elem_ty = if ctx.typ(elem_ty).has_tag(TypeTag::NONE) {
@@ -5427,7 +5427,7 @@ impl Lower {
             _ => panic!("expected an array access"),
         };
         let indexed = self.translate(ctx, Some(indexed)).expect("translated indexed expression");
-        let int_type = self.syms.borrow().int_type;
+        let int_type = self.syms.int_type;
         let index = self
             .translate_with_type(ctx, Some(index), int_type)
             .expect("translated index");
@@ -5686,7 +5686,7 @@ impl Lower {
             if ctx.typ(translated_ty).const_value().is_some() {
                 let folded = self.cfolder.fold1(
                     ctx,
-                    &self.syms.borrow(),
+                    &*self.syms,
                     crate::jvm::byte_codes::BOOL_NOT,
                     translated_ty,
                 );
@@ -5794,7 +5794,7 @@ impl Lower {
                 let tsym = ctx.typ(selected_type).tsym;
                 match tsym {
                     Some(tsym) => {
-                        let syms = self.syms.borrow();
+                        let syms = &*self.syms;
                         !self
                             .types
                             .is_direct_super_interface(ctx, &syms, tsym, current_class)
@@ -5823,13 +5823,13 @@ impl Lower {
             && let Some(qualifier_tsym) = qualifier_tsym
         {
             let is_direct = {
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 self.types
                     .is_direct_super_interface(ctx, &syms, qualifier_tsym, current_class)
             };
             if is_direct {
                 let current_class_ty = ctx.sym(current_class).ty.expect("current class type");
-                let syms = self.syms.borrow();
+                let syms = &*self.syms;
                 assert!(
                     self.types.as_super(ctx, &syms, current_class_ty, qualifier_tsym).is_some(),
                     "AssertionError: default super not a superclass"
@@ -5947,7 +5947,7 @@ impl Lower {
             Symbol::new_var_symbol(flags, array_name, expr_ty, current_method_sym);
         let array_cache = ctx.alloc_symbol(array_symbol);
         let array_cache_def = self.var_def_for_symbol(ctx, array_cache, Some(expr));
-        let int_type = self.syms.borrow().int_type;
+        let int_type = self.syms.int_type;
         let len_name = {
             let text = format!("len{}", self.target.synthetic_name_char());
             self.names.from_string(&javac_strings::JavaString::from(text.as_str()))
@@ -5955,7 +5955,7 @@ impl Lower {
         let len_symbol = Symbol::new_var_symbol(flags, len_name, int_type, current_method_sym);
         let len_cache = ctx.alloc_symbol(len_symbol);
         let array_ident = self.make.borrow_mut().ident_symbol(ctx, array_cache);
-        let length_var = self.syms.borrow().length_var;
+        let length_var = self.syms.length_var;
         let length_sel = self.select_symbol(ctx, array_ident, length_var);
         let len_cache_def = self.var_def_for_symbol(ctx, len_cache, Some(length_sel));
         let index_name = {
@@ -5992,7 +5992,7 @@ impl Lower {
         let step = self.make_unary(ctx, Tag::PREINC, index_ident2);
         let step = self.make.borrow_mut().exec(ctx, step);
         let elemtype = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.elemtype(ctx, &syms, expr_ty)
         };
         let array_ident2 = self.make.borrow_mut().ident_symbol(ctx, array_cache);
@@ -6055,12 +6055,12 @@ impl Lower {
         let current_method_sym = self.current_method_sym.expect("current method symbol");
         let expr_ty = ctx.tree(expr).ty.expect("loop expression type");
 
-        let object_type = self.syms.borrow().object_type;
+        let object_type = self.syms.object_type;
         let mut iterator_target = object_type;
         let iterable_type = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let cvar_upper_bound = self.types.cvar_upper_bound(ctx, expr_ty);
-            let iterable_tsym = ctx.typ(self.syms.borrow().iterable_type).tsym.expect("iterable symbol");
+            let iterable_tsym = ctx.typ(self.syms.iterable_type).tsym.expect("iterable symbol");
             self.types.as_super(ctx, &syms, cvar_upper_bound, iterable_tsym)
         };
         let iterable_type = match iterable_type {
@@ -6069,13 +6069,13 @@ impl Lower {
         };
         let type_args = crate::code::types::get_type_arguments_completed(
             ctx,
-            &self.syms.borrow(),
+            &*self.syms,
             iterable_type,
             None,
         );
         if !type_args.is_empty() {
             let head = *type_args.head();
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             iterator_target = self.types.erasure(ctx, &syms, head);
         }
         let e_type = {
@@ -6083,7 +6083,7 @@ impl Lower {
             self.types.skip_type_vars_public(ctx, expr_ty)
         };
         let e_erasure = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.erasure(ctx, &syms, e_type)
         };
         ctx.tree_mut(expr).ty = Some(e_erasure);
@@ -6093,7 +6093,7 @@ impl Lower {
             self.types.is_compound_public(ctx, e_type)
         };
         if is_compound {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             let iterable_erasure = self.types.erasure(ctx, &syms, iterable_type);
             drop(syms);
             let cast_type = self.type_tree(ctx, iterable_erasure);
@@ -6106,13 +6106,13 @@ impl Lower {
         let iterator = self.lookup_method(ctx, None, iterator_name, e_type, List::nil());
         let iterator_ty = ctx.sym(iterator).ty.expect("iterator method type");
         let iterator_ret = self.types.get_return_type_public(ctx, iterator_ty);
-        let iterator_tsym = ctx.typ(self.syms.borrow().iterator_type).tsym.expect("iterator symbol");
+        let iterator_tsym = ctx.typ(self.syms.iterator_type).tsym.expect("iterator symbol");
         let iterator_as_super = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.as_super(ctx, &syms, iterator_ret, iterator_tsym)
         };
         let itvar_ty = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             match iterator_as_super {
                 Some(ty) => self.types.erasure(ctx, &syms, ty),
                 None => iterator_ret,
@@ -6128,7 +6128,7 @@ impl Lower {
         let expr_for_call = expr;
         let iterator_sel = self.select_symbol(ctx, expr_for_call, iterator);
         let iterator_ty_erasure = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.erasure(ctx, &syms, iterator_ty)
         };
         ctx.tree_mut(iterator_sel).ty = Some(iterator_ty_erasure);
@@ -6307,7 +6307,7 @@ impl Lower {
         info_symbol.flags_field |= flags;
         *ctx.sym_mut(package_info) = info_symbol;
         let info_ty = ctx.sym(package_info).ty.expect("package info class type");
-        let object_type = self.syms.borrow().object_type;
+        let object_type = self.syms.object_type;
         if let TypeKindData::ClassType {
             supertype_field,
             interfaces_field,
@@ -6347,7 +6347,7 @@ impl Lower {
                     None => None,
                 };
                 let policy = {
-                    let syms = self.syms.borrow();
+                    let syms = &*self.syms;
                     match sym {
                         Some(sym) => self.types.get_retention(ctx, &syms, sym),
                         None => crate::code::attribute::RetentionPolicy::CLASS,
@@ -6430,39 +6430,39 @@ impl Lower {
         use crate::util::constants::ConstantValue;
         let (tag, constant, ty) = match &value {
             LiteralValue::String(s) => {
-                let ty = self.syms.borrow().string_type;
+                let ty = self.syms.string_type;
                 (TypeTag::CLASS, ConstantValue::String(s.clone()), ty)
             }
             LiteralValue::Integer(v) => {
-                let ty = self.syms.borrow().int_type;
+                let ty = self.syms.int_type;
                 (TypeTag::INT, ConstantValue::Integer(*v), ty)
             }
             LiteralValue::Byte(v) => {
-                let ty = self.syms.borrow().byte_type;
+                let ty = self.syms.byte_type;
                 (TypeTag::BYTE, ConstantValue::Byte(*v), ty)
             }
             LiteralValue::Short(v) => {
-                let ty = self.syms.borrow().short_type;
+                let ty = self.syms.short_type;
                 (TypeTag::SHORT, ConstantValue::Short(*v), ty)
             }
             LiteralValue::Long(v) => {
-                let ty = self.syms.borrow().long_type;
+                let ty = self.syms.long_type;
                 (TypeTag::LONG, ConstantValue::Long(*v), ty)
             }
             LiteralValue::Character(v) => {
-                let ty = self.syms.borrow().char_type;
+                let ty = self.syms.char_type;
                 (TypeTag::CHAR, ConstantValue::Character(*v), ty)
             }
             LiteralValue::Double(v) => {
-                let ty = self.syms.borrow().double_type;
+                let ty = self.syms.double_type;
                 (TypeTag::DOUBLE, ConstantValue::Double(*v), ty)
             }
             LiteralValue::Float(v) => {
-                let ty = self.syms.borrow().float_type;
+                let ty = self.syms.float_type;
                 (TypeTag::FLOAT, ConstantValue::Float(*v), ty)
             }
             LiteralValue::Boolean(v) => {
-                let ty = self.syms.borrow().boolean_type;
+                let ty = self.syms.boolean_type;
                 (TypeTag::BOOLEAN, ConstantValue::Boolean(*v), ty)
             }
         };
@@ -6543,7 +6543,7 @@ impl Lower {
         if has_default {
             return cases;
         }
-        let incompatible = self.syms.borrow().incompatible_class_change_error_type;
+        let incompatible = self.syms.incompatible_class_change_error_type;
         let exception = self.make_new_class(ctx, incompatible, List::nil());
         let throw = self.make.borrow_mut().throw_(ctx, exception);
         let default_label = self.make.borrow_mut().default_case_label(ctx);
@@ -6628,7 +6628,7 @@ impl Lower {
         }
         let selector_ty = ctx.tree(selector).ty.expect("selector type");
         let selsuper = {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.supertype(ctx, &syms, selector_ty, None)
         };
         let selsuper_is_class = ctx.typ(selsuper).has_tag(TypeTag::CLASS);
@@ -6638,9 +6638,9 @@ impl Lower {
                 .tsym
                 .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::ENUM as i64) != 0)
                 .unwrap_or(false);
-        let string_type = self.syms.borrow().string_type;
+        let string_type = self.syms.string_type;
         let string_switch = selsuper_is_class && {
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             self.types.is_same_type(ctx, &syms, selector_ty, string_type)
         };
         let boxed_switch = !enum_switch && !string_switch && !ctx.typ(selector_ty).is_primitive();
@@ -6734,12 +6734,12 @@ impl Lower {
             let ordinal_sel = self.select_symbol(ctx, dollar_ident, ordinal);
             let ordinal_app = self.make.borrow_mut().app(ctx, ordinal_sel);
             let map_ident = {
-                self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), map_var)
+                self.make.borrow_mut().qual_ident(ctx, &*self.syms, map_var)
             };
             let indexed = self.make.borrow_mut().indexed(ctx, map_ident, ordinal_app);
             // Java: Lower.visitSwitch synthesizes the map access with the map's
             // element type; the synthetic tree has no Attr pass to set it.
-            let indexed_elem = self.syms.borrow().int_type;
+            let indexed_elem = self.syms.int_type;
             ctx.tree_mut(indexed).ty = Some(indexed_elem);
             let dollar_ident2 = self.make.borrow_mut().ident_symbol(ctx, dollar_s);
             let null = self.make_null(ctx);
@@ -6755,11 +6755,11 @@ impl Lower {
             let ordinal_sel = self.select_symbol(ctx, selector, ordinal);
             let ordinal_app = self.make.borrow_mut().app(ctx, ordinal_sel);
             let map_ident = {
-                self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), map_var)
+                self.make.borrow_mut().qual_ident(ctx, &*self.syms, map_var)
             };
             let indexed = self.make.borrow_mut().indexed(ctx, map_ident, ordinal_app);
             // Java: the switch map access carries the map's element type.
-            let indexed_elem = self.syms.borrow().int_type;
+            let indexed_elem = self.syms.int_type;
             ctx.tree_mut(indexed).ty = Some(indexed_elem);
             indexed
         };
@@ -6828,11 +6828,11 @@ impl Lower {
         // statement's position, as upstream does.
         self.make.borrow_mut().at(pos);
         if alternatives == 0 {
-            let checked = self.attr.borrow_mut().make_null_check(ctx, &mut self.syms.borrow_mut(), selector);
+            let checked = self.attr.borrow_mut().make_null_check(ctx, &*self.syms, selector);
             return self.make.borrow_mut().exec(ctx, checked);
         }
-        let string_type = self.syms.borrow().string_type;
-        let int_type = self.syms.borrow().int_type;
+        let string_type = self.syms.string_type;
+        let int_type = self.syms.int_type;
         let current_method_sym = self.current_method_sym.expect("current method symbol");
         let mut stmts: Vec<TreeId> = Vec::new();
         let mut case_label_to_position: Vec<(String, i32)> = Vec::new();
@@ -7033,7 +7033,7 @@ impl Lower {
         selector: TreeId,
         cases: List<TreeId>,
     ) -> TreeId {
-        let int_type = self.syms.borrow().int_type;
+        let int_type = self.syms.int_type;
         let mut has_null_case = false;
         let current = cases.clone();
         for case in &current {
@@ -7299,7 +7299,7 @@ impl Lower {
                     .current_method_sym
                     .and_then(|sym| ctx.sym(sym).ty)
                     .map(|ty| {
-                        let syms = self.syms.borrow();
+                        let syms = &*self.syms;
                         self.types.erasure(ctx, &syms, ty)
                     })
                     .and_then(|erased| ctx.typ(erased).get_return_type(ctx));
@@ -7569,7 +7569,7 @@ impl Lower {
         if self.current_method_sym.is_none() {
             let current_class = self.current_class.expect("current class");
             let empty = self.names.empty.clone();
-            let method_class = self.syms.borrow().method_class;
+            let method_class = self.syms.method_class;
             let method_ty = ctx.alloc_type(Type::new(
                 TypeTag::METHOD,
                 Some(method_class),
@@ -7671,8 +7671,8 @@ impl EnumMapping {
             .names
             .from_string(&javac_strings::JavaString::from(var_text.as_str()));
         let outer = lower.outer_cache_class(ctx);
-        let int_type = lower.syms.borrow().int_type;
-        let array_class = lower.syms.borrow().array_class;
+        let int_type = lower.syms.int_type;
+        let array_class = lower.syms.array_class;
         let map_ty = ctx.alloc_type(Type::new(
             TypeTag::ARRAY,
             Some(array_class),
@@ -7737,13 +7737,13 @@ impl EnumMapping {
         let values_name = lower.names.values.clone();
         let values_method = lower.lookup_method(ctx, pos.clone(), values_name, for_enum_ty, List::nil());
         let values_qual = {
-            lower.make.borrow_mut().qual_ident(ctx, &mut lower.syms.borrow_mut(), values_method)
+            lower.make.borrow_mut().qual_ident(ctx, &*lower.syms, values_method)
         };
         let values_app = lower.make.borrow_mut().app(ctx, values_qual);
-        let length_var = lower.syms.borrow().length_var;
+        let length_var = lower.syms.length_var;
         let size = lower.select_symbol(ctx, values_app, length_var);
-        let int_type = lower.syms.borrow().int_type;
-        let array_class = lower.syms.borrow().array_class;
+        let int_type = lower.syms.int_type;
+        let array_class = lower.syms.array_class;
         let array_ty = ctx.alloc_type(Type::new(
             TypeTag::ARRAY,
             Some(array_class),
@@ -7753,7 +7753,7 @@ impl EnumMapping {
             },
         ));
         let type_tree = {
-            lower.make.borrow_mut().type_from_type(ctx, &mut lower.syms.borrow_mut(), int_type)
+            lower.make.borrow_mut().type_from_type(ctx, &*lower.syms, int_type)
         };
         let map_var_init = lower.make.borrow_mut().new_array(
             ctx,
@@ -7764,18 +7764,18 @@ impl EnumMapping {
         ctx.tree_mut(map_var_init).ty = Some(array_ty);
         let ordinal_name = lower.names.ordinal.clone();
         let ordinal_method = lower.lookup_method(ctx, pos.clone(), ordinal_name, for_enum_ty, List::nil());
-        let no_such_field = lower.syms.borrow().no_such_field_error_type;
+        let no_such_field = lower.syms.no_such_field_error_type;
         let ex_name = lower.names.ex.clone();
-        let no_symbol = lower.syms.borrow().no_symbol;
+        let no_symbol = lower.syms.no_symbol;
         let ex_flags = crate::code::flags::PARAMETER;
         let ex_symbol = Symbol::new_var_symbol(ex_flags, ex_name, no_such_field, no_symbol);
         let ex_sym = ctx.alloc_symbol(ex_symbol);
         let ex_type_tree = {
-            lower.make.borrow_mut().type_from_type(ctx, &mut lower.syms.borrow_mut(), no_such_field)
+            lower.make.borrow_mut().type_from_type(ctx, &*lower.syms, no_such_field)
         };
         let ex_mods = lower.make.borrow_mut().modifiers(ctx, 0);
         let ex_param = {
-            let syms = lower.syms.borrow();
+            let syms = &*lower.syms;
             let _ = &syms;
             lower.make.borrow_mut().var_def(ctx, ex_mods, ctx.sym(ex_sym).name.clone(), Some(ex_type_tree), None)
         };
@@ -7791,12 +7791,12 @@ impl EnumMapping {
         let values = self.values.clone();
         for (enumerator, mapped_value) in values {
             let enumerator_qual = {
-                lower.make.borrow_mut().qual_ident(ctx, &mut lower.syms.borrow_mut(), enumerator)
+                lower.make.borrow_mut().qual_ident(ctx, &*lower.syms, enumerator)
             };
             let ordinal_sel = lower.select_symbol(ctx, enumerator_qual, ordinal_method);
             let ordinal_app = lower.make.borrow_mut().app(ctx, ordinal_sel);
             let map_var_ident = {
-                lower.make.borrow_mut().qual_ident(ctx, &mut lower.syms.borrow_mut(), self.map_var)
+                lower.make.borrow_mut().qual_ident(ctx, &*lower.syms, self.map_var)
             };
             let indexed = lower.make.borrow_mut().indexed(ctx, map_var_ident, ordinal_app);
             // Java: the switch map access carries the map's element type.
@@ -7823,7 +7823,7 @@ impl EnumMapping {
         let map_var_flags = ctx.sym(self.map_var).flags_field;
         let map_var_name = ctx.sym(self.map_var).name.clone();
         let map_var_type_tree = {
-            lower.make.borrow_mut().type_from_type(ctx, &mut lower.syms.borrow_mut(), array_ty)
+            lower.make.borrow_mut().type_from_type(ctx, &*lower.syms, array_ty)
         };
         let map_var_mods = lower.make.borrow_mut().modifiers(ctx, map_var_flags);
         let map_var_def = lower.make.borrow_mut().var_def(
@@ -8171,7 +8171,7 @@ struct ConflictsChecker {
     /// The type relations service.
     types: Rc<Types>,
     /// The symbol table.
-    syms: Rc<RefCell<Symtab>>,
+    syms: Rc<Symtab>,
     /// The collected conflicts, as (tree, reported symbol) pairs.
     conflicts: Vec<(TreeId, SymbolId)>,
 }
@@ -8314,7 +8314,7 @@ impl ConflictsChecker {
                     return;
                 }
             }
-            let syms = self.syms.borrow();
+            let syms = &*self.syms;
             ct = self.types.supertype(ctx, &syms, ct, None);
         }
     }
@@ -8340,7 +8340,7 @@ impl ConflictsChecker {
         if bridge1 || bridge2 {
             return false;
         }
-        let syms = self.syms.borrow_mut();
+        let syms = &*self.syms;
         let e1 = self.types.erasure(ctx, &syms, sym_ty);
         let e2 = self.types.erasure(ctx, &syms, sym2_ty);
         self.types.is_same_type(ctx, &syms, e1, e2)
@@ -8846,7 +8846,7 @@ impl TreeBuilder for BoxedAssignopBuilder {
         let new_tag = self.opcode.no_assign_op();
         let operators = lower.operators();
         let operator = {
-            let mut syms = lower.syms.borrow_mut();
+            let mut syms = &*lower.syms;
             operators.resolve_binary(ctx, &mut syms, &lower.types, ctx.tree(lhs).pos, new_tag, self.tree_ty, self.rhs_ty)
         };
         let mut expr = lower.clone_tree(ctx, lhs);
@@ -8863,7 +8863,7 @@ impl TreeBuilder for BoxedAssignopBuilder {
         let return_ty = lower.types.get_return_type_public(ctx, operator_ty);
         ctx.tree_mut(op_result).ty = Some(return_ty);
         let new_rhs = if self.boxing_req {
-            let syms = lower.syms.borrow();
+            let syms = &*lower.syms;
             let unboxed = lower.types.unboxed_type_ro(ctx, &syms, self.tree_ty);
             drop(syms);
             let unboxed_tree = lower.type_tree(ctx, unboxed);
