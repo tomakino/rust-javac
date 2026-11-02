@@ -52,8 +52,9 @@ const SENTENCE_BREAK_TAGS: [&str; 8] = ["H1", "H2", "H3", "H4", "H5", "H6", "PRE
 ///
 /// Java: public class DocTreeMaker implements DocTreeFactory
 pub struct DocTreeMaker {
-    /// The position at which subsequent trees will be created.
-    pub pos: i32,
+    /// The position at which subsequent trees will be created (Cell: at/
+    /// at_diagnostic_position write it, every constructor reads it).
+    pub pos: std::cell::Cell<i32>,
     /// Access to the diag factory for ErroneousTrees.
     ///
     /// Used by newErroneousTree(diagSource, code, args); the accessor keeps
@@ -61,7 +62,7 @@ pub struct DocTreeMaker {
     diags: Rc<Factory>,
     /// Java: private final ReferenceParser referenceParser;
     /// injected explicitly (registered adapter; see new()).
-    reference_parser: Option<Rc<crate::parser::reference_parser::ReferenceParser>>,
+    reference_parser: std::cell::RefCell<Option<Rc<crate::parser::reference_parser::ReferenceParser>>>,
 // REGISTERED P6: trees: JavacTrees (used by getSentenceBreak); ReferenceParser
 // is injected (reference_parser) for newReferenceTree.
 }
@@ -76,9 +77,9 @@ impl DocTreeMaker {
     /// REGISTERED dependency for getSentenceBreak.
     pub fn new(diags: Rc<Factory>) -> DocTreeMaker {
         DocTreeMaker {
-            pos: NOPOS,
+            pos: std::cell::Cell::new(NOPOS),
             diags,
-            reference_parser: None,
+            reference_parser: std::cell::RefCell::new(None),
         }
     }
 
@@ -92,17 +93,17 @@ impl DocTreeMaker {
     /// DocTreeMaker(ParserFactory) constructor; the ported constructor takes the
     /// diagnostic factory only, so the parser is injected explicitly).
     pub fn set_reference_parser(
-        &mut self,
+        &self,
         parser: Rc<crate::parser::reference_parser::ReferenceParser>,
     ) {
-        self.reference_parser = Some(parser);
+        *self.reference_parser.borrow_mut() = Some(parser);
     }
 
     /// Reassign current position.
     ///
     /// Java: public DocTreeMaker at(int pos)
-    pub fn at(&mut self, pos: i32) -> &mut DocTreeMaker {
-        self.pos = pos;
+    pub fn at(&self, pos: i32) -> &DocTreeMaker {
+        self.pos.set(pos);
         self
     }
 
@@ -110,15 +111,15 @@ impl DocTreeMaker {
     ///
     /// Java: public DocTreeMaker at(DiagnosticPosition pos)
     pub fn at_diagnostic_position(
-        &mut self,
+        &self,
         pos: Option<&dyn DiagnosticPosition>,
-    ) -> &mut DocTreeMaker {
-        self.pos = pos.map_or(NOPOS, |position| position.get_start_position());
+    ) -> &DocTreeMaker {
+        self.pos.set(pos.map_or(NOPOS, |position| position.get_start_position()));
         self
     }
 
     fn node(&self, kind: DCKind) -> Rc<DCTree> {
-        Rc::new(DCTree::new(self.pos, kind))
+        Rc::new(DCTree::new(self.pos.get(), kind))
     }
 
     fn to_list(items: &[Rc<DCTree>]) -> List<Rc<DCTree>> {
@@ -128,7 +129,7 @@ impl DocTreeMaker {
     /// Java: public DCAttribute newAttributeTree(Name name, ValueKind vkind,
     /// List<? extends DocTree> value)
     pub fn new_attribute_tree(
-        &mut self,
+        &self,
         name: Name,
         vkind: ValueKind,
         value: Option<&[Rc<DCTree>]>,
@@ -147,13 +148,13 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCAuthor newAuthorTree(List<? extends DocTree> name)
-    pub fn new_author_tree(&mut self, name: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_author_tree(&self, name: &[Rc<DCTree>]) -> Rc<DCTree> {
         let name = Self::to_list(name);
         self.node(DCKind::Author { name })
     }
 
     /// Java: public DCLiteral newCodeTree(TextTree text)
-    pub fn new_code_tree(&mut self, text: &Rc<DCTree>) -> Rc<DCTree> {
+    pub fn new_code_tree(&self, text: &Rc<DCTree>) -> Rc<DCTree> {
         assert_kind(text, "DCLiteral body", Kind::TEXT);
         self.node(DCKind::Literal {
             kind: Kind::CODE,
@@ -163,12 +164,12 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCComment newCommentTree(String text)
-    pub fn new_comment_tree(&mut self, text: JavaString) -> Rc<DCTree> {
+    pub fn new_comment_tree(&self, text: JavaString) -> Rc<DCTree> {
         self.node(DCKind::Comment { body: text })
     }
 
     /// Java: public DCDeprecated newDeprecatedTree(List<? extends DocTree> text)
-    pub fn new_deprecated_tree(&mut self, text: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_deprecated_tree(&self, text: &[Rc<DCTree>]) -> Rc<DCTree> {
         let body = Self::to_list(text);
         self.node(DCKind::Deprecated { body })
     }
@@ -176,7 +177,7 @@ impl DocTreeMaker {
     /// Java: public DCDocComment newDocCommentTree(List<? extends DocTree>
     /// fullBody, List<? extends DocTree> tags)
     pub fn new_doc_comment_tree(
-        &mut self,
+        &self,
         full_body: &[Rc<DCTree>],
         tags: &[Rc<DCTree>],
     ) -> Rc<DCTree> {
@@ -187,7 +188,7 @@ impl DocTreeMaker {
     /// List<? extends DocTree> fullBody, List<? extends DocTree> tags,
     /// List<? extends DocTree> preamble, List<? extends DocTree> postamble)
     pub fn new_doc_comment_tree_with_comment(
-        &mut self,
+        &self,
         comment: Rc<dyn Comment>,
         full_body: &[Rc<DCTree>],
         tags: &[Rc<DCTree>],
@@ -215,15 +216,15 @@ impl DocTreeMaker {
     /// tree.pos on this path (the Java field keeps its 0 default; reproduced by
     /// creating the node at position 0).
     pub fn new_doc_comment_tree_with_preamble(
-        &mut self,
+        &self,
         full_body: &[Rc<DCTree>],
         tags: &[Rc<DCTree>],
         preamble: &[Rc<DCTree>],
         postamble: &[Rc<DCTree>],
     ) -> Rc<DCTree> {
-        let saved_pos = self.pos;
+        let saved_pos = self.pos.get();
         let (first_sentence, body) = self.split_body(full_body);
-        self.pos = saved_pos;
+        self.pos.set(saved_pos);
         // A dummy comment to keep the diagnostics logic happy.
         let comment: Rc<dyn Comment> = Rc::new(DummyComment);
         let dc = DCDocComment {
@@ -239,19 +240,19 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCDocRoot newDocRootTree()
-    pub fn new_doc_root_tree(&mut self) -> Rc<DCTree> {
+    pub fn new_doc_root_tree(&self) -> Rc<DCTree> {
         self.node(DCKind::DocRoot {
             end_pos: std::cell::Cell::new(NOPOS),
         })
     }
 
     /// Java: public DCDocType newDocTypeTree(String text)
-    pub fn new_doc_type_tree(&mut self, text: JavaString) -> Rc<DCTree> {
+    pub fn new_doc_type_tree(&self, text: JavaString) -> Rc<DCTree> {
         self.node(DCKind::DocType { text })
     }
 
     /// Java: public DCEndElement newEndElementTree(Name name)
-    pub fn new_end_element_tree(&mut self, name: Name) -> Rc<DCTree> {
+    pub fn new_end_element_tree(&self, name: Name) -> Rc<DCTree> {
         self.node(DCKind::EndElement {
             name,
             end_pos: std::cell::Cell::new(NOPOS),
@@ -259,13 +260,13 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCEntity newEntityTree(Name name)
-    pub fn new_entity_tree(&mut self, name: Name) -> Rc<DCTree> {
+    pub fn new_entity_tree(&self, name: Name) -> Rc<DCTree> {
         self.node(DCKind::Entity { name })
     }
 
     /// Java: public DCErroneous newErroneousTree(String text, Diagnostic<JavaFileObject> diag)
     pub fn new_erroneous_tree_with_diagnostic(
-        &mut self,
+        &self,
         text: JavaString,
         diag: Rc<JCDiagnostic>,
     ) -> Rc<DCTree> {
@@ -284,7 +285,7 @@ impl DocTreeMaker {
     /// same observable values (getTree null, start = pos, preferred =
     /// pos + body.length() - 1, end = pos + body.length()) without an Rc cycle.
     pub fn new_erroneous_tree(
-        &mut self,
+        &self,
         text: JavaString,
         diag_source: Option<Rc<crate::util::diagnostic_source::DiagnosticSource>>,
         code: &str,
@@ -292,7 +293,7 @@ impl DocTreeMaker {
     ) -> Rc<DCTree> {
         let body_len = text.as_units().len() as i32;
         let position: Rc<dyn DiagnosticPosition> =
-            Rc::new(DCErroneousPosition::new(self.pos, body_len));
+            Rc::new(DCErroneousPosition::new(self.pos.get(), body_len));
         let diag = self.diags.create(
             crate::util::jc_diagnostic::DiagnosticType::ERROR,
             diag_source,
@@ -309,7 +310,7 @@ impl DocTreeMaker {
     /// Java: public DCThrows newExceptionTree(ReferenceTree name,
     /// List<? extends DocTree> description)
     pub fn new_exception_tree(
-        &mut self,
+        &self,
         name: &Rc<DCTree>,
         description: &[Rc<DCTree>],
     ) -> Rc<DCTree> {
@@ -323,19 +324,19 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCHidden newHiddenTree(List<? extends DocTree> text)
-    pub fn new_hidden_tree(&mut self, text: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_hidden_tree(&self, text: &[Rc<DCTree>]) -> Rc<DCTree> {
         let body = Self::to_list(text);
         self.node(DCKind::Hidden { body })
     }
 
     /// Java: public DCIdentifier newIdentifierTree(Name name)
-    pub fn new_identifier_tree(&mut self, name: Name) -> Rc<DCTree> {
+    pub fn new_identifier_tree(&self, name: Name) -> Rc<DCTree> {
         self.node(DCKind::Identifier { name })
     }
 
     /// Java: public DCIndex newIndexTree(DocTree term,
     /// List<? extends DocTree> description)
-    pub fn new_index_tree(&mut self, term: &Rc<DCTree>, description: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_index_tree(&self, term: &Rc<DCTree>, description: &[Rc<DCTree>]) -> Rc<DCTree> {
         let description = Self::to_list(description);
         self.node(DCKind::Index {
             term: term.clone(),
@@ -345,7 +346,7 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCInheritDoc newInheritDocTree()
-    pub fn new_inherit_doc_tree(&mut self) -> Rc<DCTree> {
+    pub fn new_inherit_doc_tree(&self) -> Rc<DCTree> {
         self.node(DCKind::InheritDoc {
             end_pos: std::cell::Cell::new(NOPOS),
         })
@@ -353,7 +354,7 @@ impl DocTreeMaker {
 
     /// Java: public DCLink newLinkTree(ReferenceTree ref,
     /// List<? extends DocTree> label)
-    pub fn new_link_tree(&mut self, ref_: &Rc<DCTree>, label: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_link_tree(&self, ref_: &Rc<DCTree>, label: &[Rc<DCTree>]) -> Rc<DCTree> {
         assert_kind(ref_, "DCLink.ref", Kind::REFERENCE);
         let label = Self::to_list(label);
         self.node(DCKind::Link {
@@ -366,7 +367,7 @@ impl DocTreeMaker {
 
     /// Java: public DCLink newLinkPlainTree(ReferenceTree ref,
     /// List<? extends DocTree> label)
-    pub fn new_link_plain_tree(&mut self, ref_: &Rc<DCTree>, label: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_link_plain_tree(&self, ref_: &Rc<DCTree>, label: &[Rc<DCTree>]) -> Rc<DCTree> {
         assert_kind(ref_, "DCLink.ref", Kind::REFERENCE);
         let label = Self::to_list(label);
         self.node(DCKind::Link {
@@ -378,7 +379,7 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCLiteral newLiteralTree(TextTree text)
-    pub fn new_literal_tree(&mut self, text: &Rc<DCTree>) -> Rc<DCTree> {
+    pub fn new_literal_tree(&self, text: &Rc<DCTree>) -> Rc<DCTree> {
         assert_kind(text, "DCLiteral body", Kind::TEXT);
         self.node(DCKind::Literal {
             kind: Kind::LITERAL,
@@ -390,7 +391,7 @@ impl DocTreeMaker {
     /// Java: public DCParam newParamTree(boolean isTypeParameter,
     /// IdentifierTree name, List<? extends DocTree> description)
     pub fn new_param_tree(
-        &mut self,
+        &self,
         is_type_parameter: bool,
         name: &Rc<DCTree>,
         description: &[Rc<DCTree>],
@@ -407,7 +408,7 @@ impl DocTreeMaker {
     /// Java: public DCProvides newProvidesTree(ReferenceTree name,
     /// List<? extends DocTree> description)
     pub fn new_provides_tree(
-        &mut self,
+        &self,
         name: &Rc<DCTree>,
         description: &[Rc<DCTree>],
     ) -> Rc<DCTree> {
@@ -424,15 +425,15 @@ impl DocTreeMaker {
     /// Uses the injected parser.ReferenceParser; a parse error corresponds to
     /// the upstream IllegalArgumentException (panic channel).
     pub fn new_reference_tree(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         signature: JavaString,
     ) -> Rc<DCTree> {
         let reference_parser = self
             .reference_parser
-            .as_ref()
-            .expect("AssertionError: DocTreeMaker.referenceParser")
-            .clone();
+            .borrow()
+            .clone()
+            .expect("AssertionError: DocTreeMaker.referenceParser");
         match reference_parser.parse(ctx, &signature) {
             Ok(reference) => self.new_reference_tree_with_parts(
                 signature,
@@ -452,7 +453,7 @@ impl DocTreeMaker {
     /// JCTree.JCExpression moduleName, JCTree qualExpr, Name member,
     /// List<JCTree> paramTypes)
     pub fn new_reference_tree_with_parts(
-        &mut self,
+        &self,
         signature: JavaString,
         module_name: Option<TreeId>,
         qual_expr: Option<TreeId>,
@@ -470,14 +471,14 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCReturn newReturnTree(List<? extends DocTree> description)
-    pub fn new_return_tree(&mut self, description: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_return_tree(&self, description: &[Rc<DCTree>]) -> Rc<DCTree> {
         self.new_return_tree_with_inline(false, description)
     }
 
     /// Java: public DCReturn newReturnTree(boolean isInline,
     /// List<? extends DocTree> description)
     pub fn new_return_tree_with_inline(
-        &mut self,
+        &self,
         is_inline: bool,
         description: &[Rc<DCTree>],
     ) -> Rc<DCTree> {
@@ -490,20 +491,20 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCSee newSeeTree(List<? extends DocTree> reference)
-    pub fn new_see_tree(&mut self, reference: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_see_tree(&self, reference: &[Rc<DCTree>]) -> Rc<DCTree> {
         let reference = Self::to_list(reference);
         self.node(DCKind::See { reference })
     }
 
     /// Java: public DCSerial newSerialTree(List<? extends DocTree> description)
-    pub fn new_serial_tree(&mut self, description: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_serial_tree(&self, description: &[Rc<DCTree>]) -> Rc<DCTree> {
         let description = Self::to_list(description);
         self.node(DCKind::Serial { description })
     }
 
     /// Java: public DCSerialData newSerialDataTree(
     /// List<? extends DocTree> description)
-    pub fn new_serial_data_tree(&mut self, description: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_serial_data_tree(&self, description: &[Rc<DCTree>]) -> Rc<DCTree> {
         let description = Self::to_list(description);
         self.node(DCKind::SerialData { description })
     }
@@ -511,7 +512,7 @@ impl DocTreeMaker {
     /// Java: public DCSerialField newSerialFieldTree(IdentifierTree name,
     /// ReferenceTree type, List<? extends DocTree> description)
     pub fn new_serial_field_tree(
-        &mut self,
+        &self,
         name: &Rc<DCTree>,
         type_: &Rc<DCTree>,
         description: &[Rc<DCTree>],
@@ -527,7 +528,7 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCSince newSinceTree(List<? extends DocTree> text)
-    pub fn new_since_tree(&mut self, text: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_since_tree(&self, text: &[Rc<DCTree>]) -> Rc<DCTree> {
         let body = Self::to_list(text);
         self.node(DCKind::Since { body })
     }
@@ -535,7 +536,7 @@ impl DocTreeMaker {
     /// Java: public DCStartElement newStartElementTree(Name name,
     /// List<? extends DocTree> attrs, boolean selfClosing)
     pub fn new_start_element_tree(
-        &mut self,
+        &self,
         name: Name,
         attrs: &[Rc<DCTree>],
         self_closing: bool,
@@ -550,7 +551,7 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCSummary newSummaryTree(List<? extends DocTree> text)
-    pub fn new_summary_tree(&mut self, text: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_summary_tree(&self, text: &[Rc<DCTree>]) -> Rc<DCTree> {
         let summary = Self::to_list(text);
         self.node(DCKind::Summary {
             summary,
@@ -559,7 +560,7 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCSystemProperty newSystemPropertyTree(Name propertyName)
-    pub fn new_system_property_tree(&mut self, property_name: Name) -> Rc<DCTree> {
+    pub fn new_system_property_tree(&self, property_name: Name) -> Rc<DCTree> {
         self.node(DCKind::SystemProperty {
             property_name,
             end_pos: std::cell::Cell::new(NOPOS),
@@ -567,13 +568,13 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCText newTextTree(String text)
-    pub fn new_text_tree(&mut self, text: JavaString) -> Rc<DCTree> {
+    pub fn new_text_tree(&self, text: JavaString) -> Rc<DCTree> {
         self.node(DCKind::Text { text })
     }
 
     /// Java: public DCThrows newThrowsTree(ReferenceTree name,
     /// List<? extends DocTree> description)
-    pub fn new_throws_tree(&mut self, name: &Rc<DCTree>, description: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_throws_tree(&self, name: &Rc<DCTree>, description: &[Rc<DCTree>]) -> Rc<DCTree> {
         assert_kind(name, "DCThrows.name", Kind::REFERENCE);
         let description = Self::to_list(description);
         self.node(DCKind::Throws {
@@ -585,7 +586,7 @@ impl DocTreeMaker {
 
     /// Java: public DCUnknownBlockTag newUnknownBlockTagTree(Name name,
     /// List<? extends DocTree> content)
-    pub fn new_unknown_block_tag_tree(&mut self, name: Name, content: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_unknown_block_tag_tree(&self, name: Name, content: &[Rc<DCTree>]) -> Rc<DCTree> {
         let content = Self::to_list(content);
         self.node(DCKind::UnknownBlockTag { name, content })
     }
@@ -593,7 +594,7 @@ impl DocTreeMaker {
     /// Java: public DCUnknownInlineTag newUnknownInlineTagTree(Name name,
     /// List<? extends DocTree> content)
     pub fn new_unknown_inline_tag_tree(
-        &mut self,
+        &self,
         name: Name,
         content: &[Rc<DCTree>],
     ) -> Rc<DCTree> {
@@ -607,7 +608,7 @@ impl DocTreeMaker {
 
     /// Java: public DCUses newUsesTree(ReferenceTree name,
     /// List<? extends DocTree> description)
-    pub fn new_uses_tree(&mut self, name: &Rc<DCTree>, description: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_uses_tree(&self, name: &Rc<DCTree>, description: &[Rc<DCTree>]) -> Rc<DCTree> {
         assert_kind(name, "DCUses.serviceType", Kind::REFERENCE);
         let description = Self::to_list(description);
         self.node(DCKind::Uses {
@@ -617,7 +618,7 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCValue newValueTree(ReferenceTree ref)
-    pub fn new_value_tree(&mut self, ref_: &Rc<DCTree>) -> Rc<DCTree> {
+    pub fn new_value_tree(&self, ref_: &Rc<DCTree>) -> Rc<DCTree> {
         assert_kind(ref_, "DCValue.ref", Kind::REFERENCE);
         self.node(DCKind::Value {
             reference: ref_.clone(),
@@ -626,13 +627,13 @@ impl DocTreeMaker {
     }
 
     /// Java: public DCVersion newVersionTree(List<? extends DocTree> text)
-    pub fn new_version_tree(&mut self, text: &[Rc<DCTree>]) -> Rc<DCTree> {
+    pub fn new_version_tree(&self, text: &[Rc<DCTree>]) -> Rc<DCTree> {
         let body = Self::to_list(text);
         self.node(DCKind::Version { body })
     }
 
     /// Java: public List<DocTree> getFirstSentence(List<? extends DocTree> list)
-    pub fn get_first_sentence(&mut self, list: &[Rc<DCTree>]) -> Vec<Rc<DCTree>> {
+    pub fn get_first_sentence(&self, list: &[Rc<DCTree>]) -> Vec<Rc<DCTree>> {
         let (first_sentence, _body) = self.split_body(list);
         first_sentence.to_vec()
     }
@@ -647,13 +648,13 @@ impl DocTreeMaker {
      * (hasPrevious/next/nextIndex visits map to index 0 / index / index + 1);
      * the consumed adjacent tree in the TEXT case maps to index += 2.
      */
-    fn split_body(&mut self, list: &[Rc<DCTree>]) -> (List<Rc<DCTree>>, List<Rc<DCTree>>) {
+    fn split_body(&self, list: &[Rc<DCTree>]) -> (List<Rc<DCTree>>, List<Rc<DCTree>>) {
         // pos is modified as we create trees, therefore we save the pos and restore it later.
-        let saved_pos = self.pos;
+        let saved_pos = self.pos.get();
         let mut body: Vec<Rc<DCTree>> = Vec::new();
         let mut first_sentence: Vec<Rc<DCTree>> = Vec::new();
         if list.is_empty() {
-            self.pos = saved_pos;
+            self.pos.set(saved_pos);
             return (List::nil(), List::nil());
         }
         let mut found_first_sentence = false;
@@ -680,18 +681,18 @@ impl DocTreeMaker {
                     let sbreak = self.get_sentence_break(&s, peeked_next);
                     if sbreak > 0 {
                         let s = strip_trailing(&s.substring(0, sbreak as usize));
-                        self.pos = spos;
+                        self.pos.set(spos);
                         let text_node = self.new_text_tree(s);
                         first_sentence.push(text_node);
                         found_first_sentence = true;
                         let nw_pos = skip_white_space(text, sbreak);
                         if nw_pos > 0 {
-                            self.pos = spos + nw_pos;
+                            self.pos.set(spos + nw_pos);
                             let text2 =
                                 self.new_text_tree(text.substring(nw_pos as usize, text.len()));
                             body.push(text2);
                         }
-                        self.pos = saved_pos;
+                        self.pos.set(saved_pos);
                         index += 1;
                         continue;
                     } else if let Some(next) = peeked_next {
@@ -699,11 +700,11 @@ impl DocTreeMaker {
                         if self.is_sentence_break(next, false) {
                             let next = next.clone();
                             let s = strip_trailing(&s);
-                            self.pos = spos;
+                            self.pos.set(spos);
                             let text_node = self.new_text_tree(s);
                             first_sentence.push(text_node);
                             body.push(next);
-                            self.pos = saved_pos;
+                            self.pos.set(saved_pos);
                             found_first_sentence = true;
                             index += 2;
                             continue;
@@ -722,7 +723,7 @@ impl DocTreeMaker {
             first_sentence.push(tree);
             index += 1;
         }
-        self.pos = saved_pos;
+        self.pos.set(saved_pos);
         (
             List::from_iterable(first_sentence),
             List::from_iterable(body),
@@ -905,7 +906,7 @@ mod tests {
     #[test]
     fn at_sets_the_position_of_new_nodes() {
         let mut maker = maker();
-        assert_eq!(maker.pos, NOPOS);
+        assert_eq!(maker.pos.get(), NOPOS);
         let node = maker.at(42).new_doc_root_tree();
         assert_eq!(node.pos, 42);
         assert_eq!(node.get_kind(), Kind::DOC_ROOT);
@@ -1060,7 +1061,7 @@ mod tests {
         assert_eq!(dc.body.length(), 1);
         assert_eq!(contents(dc.body.head()), "Next sentence.");
         // The position is restored after splitBody.
-        assert_eq!(maker.pos, NOPOS);
+        assert_eq!(maker.pos.get(), NOPOS);
     }
 
     #[test]

@@ -133,7 +133,7 @@ pub struct DocCommentParser {
     /// Java: private final Comment comment
     comment: Rc<dyn Comment>,
     /// Java: private final DocTreeMaker m
-    m: Rc<RefCell<DocTreeMaker>>,
+    m: Rc<DocTreeMaker>,
     /// Java: private final boolean isFileContent
     is_file_content: bool,
 
@@ -161,7 +161,7 @@ impl DocCommentParser {
     pub fn new(
         fac: Rc<ParserFactory>,
         names: Rc<Names>,
-        m: Rc<RefCell<DocTreeMaker>>,
+        m: Rc<DocTreeMaker>,
         diag_source: Option<Rc<DiagnosticSource>>,
         comment: Rc<dyn Comment>,
         is_file_content: bool,
@@ -183,7 +183,7 @@ impl DocCommentParser {
             tag_parsers: crate::util::fx_hasher::fx_map_with_capacity(25),
         };
         parser.tag_parsers = parser.create_tag_parsers();
-        parser.m.borrow_mut().set_reference_parser(Rc::new(
+        parser.m.set_reference_parser(Rc::new(
             crate::parser::reference_parser::ReferenceParser::new(Rc::clone(&parser.fac)),
         ));
         parser
@@ -194,7 +194,7 @@ impl DocCommentParser {
     pub fn new_for_comment(
         fac: Rc<ParserFactory>,
         names: Rc<Names>,
-        m: Rc<RefCell<DocTreeMaker>>,
+        m: Rc<DocTreeMaker>,
         diag_source: Option<Rc<DiagnosticSource>>,
         comment: Rc<dyn Comment>,
     ) -> DocCommentParser {
@@ -245,7 +245,7 @@ impl DocCommentParser {
         let body_items = body.to_vec();
         let tag_items = tags.to_vec();
         let postamble_items = postamble.to_vec();
-        self.m.borrow_mut().at(pos).new_doc_comment_tree_with_comment(
+        self.m.at(pos).new_doc_comment_tree_with_comment(
             Rc::clone(&self.comment),
             &body_items,
             &tag_items,
@@ -398,7 +398,6 @@ impl DocCommentParser {
             let items = content.to_vec();
             return Ok(self
                 .m
-                .borrow_mut()
                 .at(p)
                 .new_unknown_block_tag_tree(name, &items));
         }
@@ -448,7 +447,6 @@ impl DocCommentParser {
                 self.next_char();
                 let tree = self
                     .m
-                    .borrow_mut()
                     .at(p)
                     .new_unknown_inline_tag_tree(name, &[Rc::clone(&text)]);
                 tree.set_end_pos(self.bp);
@@ -466,7 +464,7 @@ impl DocCommentParser {
                     // handle block tags (for example, @see) in inline content
                     let text = self.inline_text(WhitespaceRetentionPolicy::RemoveAll)?;
                     self.next_char();
-                    let tree = self.m.borrow_mut().at(p).new_unknown_inline_tag_tree(
+                    let tree = self.m.at(p).new_unknown_inline_tag_tree(
                         name,
                         &[Rc::clone(&text)],
                     );
@@ -509,7 +507,7 @@ impl DocCommentParser {
                     depth -= 1;
                     if depth == 0 {
                         let text = self.new_string(pos, self.bp);
-                        return Ok(self.m.borrow_mut().at(pos).new_text_tree(text));
+                        return Ok(self.m.at(pos).new_text_tree(text));
                     }
                     self.newline = false;
                     self.last_non_white = self.bp;
@@ -646,7 +644,7 @@ impl DocCommentParser {
                     return self.erroneous("dc.missing.semicolon", p);
                 }
                 self.next_char();
-                self.m.borrow_mut().at(p).new_entity_tree(name)
+                self.m.at(p).new_entity_tree(name)
             }
         }
     }
@@ -772,7 +770,7 @@ impl DocCommentParser {
             }
             if self.ch == b'>' as u16 {
                 self.next_char();
-                let tree = self.m.borrow_mut().at(p).new_start_element_tree(
+                let tree = self.m.at(p).new_start_element_tree(
                     name,
                     &attrs.to_vec(),
                     self_closing,
@@ -787,7 +785,7 @@ impl DocCommentParser {
                 self.skip_whitespace();
                 if self.ch == b'>' as u16 {
                     self.next_char();
-                    let tree = self.m.borrow_mut().at(p).new_end_element_tree(name);
+                    let tree = self.m.at(p).new_end_element_tree(name);
                     tree.set_end_pos(self.bp);
                     return Rc::clone(&tree);
                 }
@@ -810,7 +808,7 @@ impl DocCommentParser {
                         if dash >= 2 && self.ch == b'>' as u16 {
                             self.next_char();
                             let text = self.new_string(p, self.bp);
-                            return self.m.borrow_mut().at(p).new_comment_tree(text);
+                            return self.m.at(p).new_comment_tree(text);
                         }
                         self.next_char();
                     }
@@ -825,7 +823,7 @@ impl DocCommentParser {
                         let mark = self.bp;
                         self.next_char();
                         let text = self.new_string(d, mark);
-                        return self.m.borrow_mut().at(d).new_doc_type_tree(text);
+                        return self.m.at(d).new_doc_type_tree(text);
                     }
                     self.next_char();
                 }
@@ -887,7 +885,7 @@ impl DocCommentParser {
                 value = Some(v.to_list());
             }
             let attr = {
-                let mut m = self.m.borrow_mut();
+                let mut m = &*self.m;
                 let value_slice = value.as_ref().map(|list| list.to_vec());
                 m.at(name_pos)
                     .new_attribute_tree(name, vkind, value_slice.as_deref())
@@ -910,7 +908,7 @@ impl DocCommentParser {
         if self.text_start != -1 {
             if self.text_start <= text_end {
                 let text = self.new_string(self.text_start, text_end + 1);
-                let tree = self.m.borrow_mut().at(self.text_start).new_text_tree(text);
+                let tree = self.m.at(self.text_start).new_text_tree(text);
                 list.add(tree);
             }
             self.text_start = -1;
@@ -937,7 +935,6 @@ impl DocCommentParser {
         // to JCDiagnostic.Factory.create.
         let diag_source = self.diag_source.clone();
         self.m
-            .borrow_mut()
             .at(pos)
             .new_erroneous_tree(text, diag_source, code, Vec::new())
     }
@@ -999,7 +996,7 @@ impl DocCommentParser {
         let sig = self.new_string(pos, self.bp);
         match ReferenceParser::new(Rc::clone(&self.fac)).parse(ctx, &sig) {
             Ok(reference) => {
-                let tree = self.m.borrow_mut().at(pos).new_reference_tree_with_parts(
+                let tree = self.m.at(pos).new_reference_tree_with_parts(
                     sig,
                     reference.module_name,
                     reference.qual_expr,
@@ -1020,7 +1017,7 @@ impl DocCommentParser {
 
         if self.is_java_identifier_start(self.ch) {
             let name = self.read_java_identifier();
-            return Ok(self.m.borrow_mut().at(pos).new_identifier_tree(name));
+            return Ok(self.m.at(pos).new_identifier_tree(name));
         }
 
         Err(ParseException::new("dc.identifier.expected"))
@@ -1041,7 +1038,7 @@ impl DocCommentParser {
                     self.next_char();
                     // trim trailing white-space?
                     let text = self.new_string(pos, self.bp);
-                    return Some(self.m.borrow_mut().at(pos).new_text_tree(text));
+                    return Some(self.m.at(pos).new_text_tree(text));
                 }
                 Some('@') => {
                     if self.newline {
@@ -1064,11 +1061,11 @@ impl DocCommentParser {
                 Some('\n') => {
                     self.newline = true;
                     let text = self.new_string(pos, self.bp);
-                    return Some(self.m.borrow_mut().at(pos).new_text_tree(text));
+                    return Some(self.m.at(pos).new_text_tree(text));
                 }
                 Some('\r') | Some('\x0c') | Some(' ') | Some('\t') => {
                     let text = self.new_string(pos, self.bp);
-                    return Some(self.m.borrow_mut().at(pos).new_text_tree(text));
+                    return Some(self.m.at(pos).new_text_tree(text));
                 }
                 Some('@') => {
                     if self.newline {
@@ -1082,7 +1079,7 @@ impl DocCommentParser {
                     depth -= 1;
                     if depth == 0 {
                         let text = self.new_string(pos, self.bp);
-                        return Some(self.m.borrow_mut().at(pos).new_text_tree(text));
+                        return Some(self.m.at(pos).new_text_tree(text));
                     }
                 }
                 _ => {}
@@ -1236,22 +1233,22 @@ impl DocCommentParser {
             Kind::AUTHOR => {
                 let name = self.block_content_default(ctx);
                 let items = name.to_vec();
-                Ok(self.m.borrow_mut().at(pos).new_author_tree(&items))
+                Ok(self.m.at(pos).new_author_tree(&items))
             }
             Kind::CODE => {
                 let text = self.inline_text(WhitespaceRetentionPolicy::RemoveFirstSpace)?;
                 self.next_char();
-                Ok(self.m.borrow_mut().at(pos).new_code_tree(&text))
+                Ok(self.m.at(pos).new_code_tree(&text))
             }
             Kind::DEPRECATED => {
                 let reason = self.block_content_default(ctx);
                 let items = reason.to_vec();
-                Ok(self.m.borrow_mut().at(pos).new_deprecated_tree(&items))
+                Ok(self.m.at(pos).new_deprecated_tree(&items))
             }
             Kind::DOC_ROOT => {
                 if self.ch == b'}' as u16 {
                     self.next_char();
-                    return Ok(self.m.borrow_mut().at(pos).new_doc_root_tree());
+                    return Ok(self.m.at(pos).new_doc_root_tree());
                 }
                 self.inline_text(WhitespaceRetentionPolicy::RemoveAll)?;
                 self.next_char();
@@ -1264,14 +1261,13 @@ impl DocCommentParser {
                 let items = description.to_vec();
                 Ok(self
                     .m
-                    .borrow_mut()
                     .at(pos)
                     .new_exception_tree(&reference, &items))
             }
             Kind::HIDDEN => {
                 let reason = self.block_content_default(ctx);
                 let items = reason.to_vec();
-                Ok(self.m.borrow_mut().at(pos).new_hidden_tree(&items))
+                Ok(self.m.at(pos).new_hidden_tree(&items))
             }
             Kind::INDEX => {
                 self.skip_whitespace();
@@ -1294,12 +1290,12 @@ impl DocCommentParser {
                     List::nil()
                 };
                 let items = description.to_vec();
-                Ok(self.m.borrow_mut().at(pos).new_index_tree(&term, &items))
+                Ok(self.m.at(pos).new_index_tree(&term, &items))
             }
             Kind::INHERIT_DOC => {
                 if self.ch == b'}' as u16 {
                     self.next_char();
-                    return Ok(self.m.borrow_mut().at(pos).new_inherit_doc_tree());
+                    return Ok(self.m.at(pos).new_inherit_doc_tree());
                 }
                 self.inline_text(WhitespaceRetentionPolicy::RemoveAll)?;
                 self.next_char();
@@ -1311,7 +1307,6 @@ impl DocCommentParser {
                 let items = label.to_vec();
                 Ok(self
                     .m
-                    .borrow_mut()
                     .at(pos)
                     .new_link_tree(&reference, &items))
             }
@@ -1321,14 +1316,13 @@ impl DocCommentParser {
                 let items = label.to_vec();
                 Ok(self
                     .m
-                    .borrow_mut()
                     .at(pos)
                     .new_link_plain_tree(&reference, &items))
             }
             Kind::LITERAL => {
                 let text = self.inline_text(WhitespaceRetentionPolicy::RemoveFirstSpace)?;
                 self.next_char();
-                Ok(self.m.borrow_mut().at(pos).new_literal_tree(&text))
+                Ok(self.m.at(pos).new_literal_tree(&text))
             }
             Kind::PARAM => {
                 self.skip_whitespace();
@@ -1349,7 +1343,6 @@ impl DocCommentParser {
                 let items = desc.to_vec();
                 Ok(self
                     .m
-                    .borrow_mut()
                     .at(pos)
                     .new_param_tree(typaram, &id, &items))
             }
@@ -1360,7 +1353,6 @@ impl DocCommentParser {
                 let items = description.to_vec();
                 Ok(self
                     .m
-                    .borrow_mut()
                     .at(pos)
                     .new_provides_tree(&reference, &items))
             }
@@ -1375,7 +1367,6 @@ impl DocCommentParser {
                 let items = description.to_vec();
                 Ok(self
                     .m
-                    .borrow_mut()
                     .at(pos)
                     .new_return_tree_with_inline(kind == TagKind::Inline, &items))
             }
@@ -1392,7 +1383,6 @@ impl DocCommentParser {
                             {
                                 return Ok(self
                                     .m
-                                    .borrow_mut()
                                     .at(pos)
                                     .new_see_tree(&[string]));
                             }
@@ -1403,7 +1393,6 @@ impl DocCommentParser {
                         if !html.is_empty() {
                             return Ok(self
                                 .m
-                                .borrow_mut()
                                 .at(pos)
                                 .new_see_tree(&html.to_vec()));
                         }
@@ -1424,7 +1413,6 @@ impl DocCommentParser {
                             items.insert(0, reference);
                             return Ok(self
                                 .m
-                                .borrow_mut()
                                 .at(pos)
                                 .new_see_tree(&items));
                         }
@@ -1435,7 +1423,7 @@ impl DocCommentParser {
             Kind::SERIAL_DATA => {
                 let description = self.block_content_default(ctx);
                 let items = description.to_vec();
-                Ok(self.m.borrow_mut().at(pos).new_serial_data_tree(&items))
+                Ok(self.m.at(pos).new_serial_data_tree(&items))
             }
             Kind::SERIAL_FIELD => {
                 self.skip_whitespace();
@@ -1455,24 +1443,23 @@ impl DocCommentParser {
                 let items = description.map(|list| list.to_vec()).unwrap_or_default();
                 Ok(self
                     .m
-                    .borrow_mut()
                     .at(pos)
                     .new_serial_field_tree(&name, &type_, &items))
             }
             Kind::SERIAL => {
                 let description = self.block_content_default(ctx);
                 let items = description.to_vec();
-                Ok(self.m.borrow_mut().at(pos).new_serial_tree(&items))
+                Ok(self.m.at(pos).new_serial_tree(&items))
             }
             Kind::SINCE => {
                 let description = self.block_content_default(ctx);
                 let items = description.to_vec();
-                Ok(self.m.borrow_mut().at(pos).new_since_tree(&items))
+                Ok(self.m.at(pos).new_since_tree(&items))
             }
             Kind::SUMMARY => {
                 let summary = self.inline_content(ctx, );
                 let items = summary.to_vec();
-                Ok(self.m.borrow_mut().at(pos).new_summary_tree(&items))
+                Ok(self.m.at(pos).new_summary_tree(&items))
             }
             Kind::SYSTEM_PROPERTY => {
                 self.skip_whitespace();
@@ -1488,7 +1475,6 @@ impl DocCommentParser {
                 self.next_char();
                 Ok(self
                     .m
-                    .borrow_mut()
                     .at(pos)
                     .new_system_property_tree(property_name))
             }
@@ -1499,7 +1485,6 @@ impl DocCommentParser {
                 let items = description.to_vec();
                 Ok(self
                     .m
-                    .borrow_mut()
                     .at(pos)
                     .new_throws_tree(&reference, &items))
             }
@@ -1510,7 +1495,6 @@ impl DocCommentParser {
                 let items = description.to_vec();
                 Ok(self
                     .m
-                    .borrow_mut()
                     .at(pos)
                     .new_uses_tree(&reference, &items))
             }
@@ -1519,7 +1503,7 @@ impl DocCommentParser {
                 self.skip_whitespace();
                 if self.ch == b'}' as u16 {
                     self.next_char();
-                    return Ok(self.m.borrow_mut().at(pos).new_value_tree(&reference));
+                    return Ok(self.m.at(pos).new_value_tree(&reference));
                 }
                 self.next_char();
                 Err(ParseException::new("dc.unexpected.content"))
@@ -1527,7 +1511,7 @@ impl DocCommentParser {
             Kind::VERSION => {
                 let description = self.block_content_default(ctx);
                 let items = description.to_vec();
-                Ok(self.m.borrow_mut().at(pos).new_version_tree(&items))
+                Ok(self.m.at(pos).new_version_tree(&items))
             }
             other => panic!("unexpected tag tree kind {other:?}"),
         }
@@ -1544,7 +1528,7 @@ impl DocCommentParser {
         match self.reference(ctx, allow_member) {
             Some(tree) => tree,
             None => {
-                let tree = self.m.borrow_mut().at(pos).new_reference_tree_with_parts(
+                let tree = self.m.at(pos).new_reference_tree_with_parts(
                     JavaString::from(""),
                     None,
                     None,
@@ -1756,7 +1740,7 @@ mod tests {
 
     struct Env {
         names: Rc<Names>,
-        maker: Rc<RefCell<DocTreeMaker>>,
+        maker: Rc<DocTreeMaker>,
         fac: Rc<crate::parser::parser_factory::ParserFactory>,
     }
 
@@ -1780,7 +1764,7 @@ mod tests {
         ));
         Env {
             names,
-            maker: Rc::new(RefCell::new(maker)),
+            maker: Rc::new(maker),
             fac,
         }
     }

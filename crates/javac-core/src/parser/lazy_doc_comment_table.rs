@@ -10,7 +10,7 @@
 //! - upstream LazyDocCommentTable(ParserFactory fac) reads fac.log.currentSource()
 //!   and constructs DocCommentParser(fac, diagSource, comment). ParserFactory is
 //!   ported; the same dependencies are injected:
-//!   Names, Rc<RefCell<DocTreeMaker>> and the DiagnosticSource that the caller
+//!   Names, Rc<DocTreeMaker> and the DiagnosticSource that the caller
 //!   took from Log.currentSource() (ParserFactory is ported and injected);
 //! - getCommentTree(JCTree) returns DCDocComment upstream; the port returns
 //!   Rc<DCTree> with DCKind::DocComment (single node type, see tree/dc_tree.rs).
@@ -51,7 +51,7 @@ pub struct LazyDocCommentTable {
     fac: Rc<crate::parser::parser_factory::ParserFactory>,
     /// Java: private final Names names (injected)
     names: Rc<Names>,
-    doc_tree_maker: Rc<RefCell<DocTreeMaker>>,
+    doc_tree_maker: Rc<DocTreeMaker>,
     /// Java: private final DiagnosticSource diagSource = fac.log.currentSource()
     diag_source: Option<Rc<DiagnosticSource>>,
     /// Java: private final Map<JCTree, Entry> table
@@ -66,7 +66,7 @@ impl LazyDocCommentTable {
     pub fn new(
         fac: Rc<crate::parser::parser_factory::ParserFactory>,
         names: Rc<Names>,
-        doc_tree_maker: Rc<RefCell<DocTreeMaker>>,
+        doc_tree_maker: Rc<DocTreeMaker>,
         diag_source: Option<Rc<DiagnosticSource>>,
     ) -> LazyDocCommentTable {
         LazyDocCommentTable {
@@ -186,7 +186,7 @@ mod tests {
         let table = LazyDocCommentTable::new(
             fac,
             names,
-            Rc::new(RefCell::new(maker)),
+            Rc::new(maker),
             None,
         );
         (table, TreeId::new(1))

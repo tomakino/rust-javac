@@ -492,9 +492,9 @@ impl JavacParser {
             let names = fac.names.clone();
             let diags = fac.log.diags().clone();
             let diag_source = fac.log.current_source();
-            let doc_tree_maker = Rc::new(std::cell::RefCell::new(
+            let doc_tree_maker = Rc::new(
                 crate::tree::doc_tree_maker::DocTreeMaker::new(diags),
-            ));
+            );
             let table: Rc<std::cell::RefCell<dyn DocCommentTable>> = Rc::new(
                 std::cell::RefCell::new(LazyDocCommentTable::new(
                     Rc::new(fac.clone()),
