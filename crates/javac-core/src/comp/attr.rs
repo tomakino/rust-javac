@@ -12267,7 +12267,7 @@ pub fn wire_attr_services(
             Rc::clone(&log),
             Rc::clone(&diags),
         );
-        *rs.borrow().module_finder.borrow_mut() = Some(Rc::new(RefCell::new(module_finder)));
+        *rs.borrow().module_finder.borrow_mut() = Some(Rc::new(module_finder));
     }
 
     // 2. Operators (Operators.java:100-140)

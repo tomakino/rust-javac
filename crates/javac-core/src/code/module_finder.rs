@@ -129,7 +129,7 @@ pub struct ModuleFinder {
     /// Java: private final JCDiagnostic.Factory diags.
     diags: Rc<Factory>,
     /// Java: ModuleLocationIterator moduleLocationIterator.
-    module_location_iterator: ModuleLocationIterator,
+    module_location_iterator: RefCell<ModuleLocationIterator>,
     /// Java: private ModuleNameReader moduleNameReader (lazy).
     module_name_reader: RefCell<Option<ModuleNameReader>>,
 }
@@ -163,7 +163,7 @@ impl ModuleFinder {
             file_manager,
             log,
             diags,
-            module_location_iterator: ModuleLocationIterator::new(),
+            module_location_iterator: RefCell::new(ModuleLocationIterator::new()),
             module_name_reader: RefCell::new(None),
         }
     }
@@ -182,7 +182,7 @@ impl ModuleFinder {
     ///
     /// Upstream: ModuleFinder.java:167-169.
     pub fn find_module_by_name(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         name: &Name,
@@ -206,7 +206,7 @@ impl ModuleFinder {
     ///
     /// Upstream: ModuleFinder.java:171-184.
     pub fn find_module(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         msym: crate::ids::SymbolId,
@@ -244,7 +244,7 @@ impl ModuleFinder {
     /// # Panics
     ///   - none.
     pub fn find_all_modules(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
     ) -> Vec<crate::ids::SymbolId> {
@@ -271,7 +271,7 @@ impl ModuleFinder {
     /// # Panics
     ///   - none.
     pub fn find_single_module(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
     ) -> Result<crate::ids::SymbolId, CompletionFailure> {
@@ -321,7 +321,7 @@ impl ModuleFinder {
     ///   - none for the upstream Assert.error default case (kept as the ported
     ///     Assert.error panic).
     fn read_module(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         fo: JavaFileObjectRef,
@@ -411,7 +411,7 @@ impl ModuleFinder {
 
     /// Java: private String readModuleName(JavaFileObject jfo)
     /// (ModuleFinder.java:275-279).
-    fn read_module_name(&mut self, fo: &JavaFileObjectRef) -> Option<JavaString> {
+    fn read_module_name(&self, fo: &JavaFileObjectRef) -> Option<JavaString> {
         if self.module_name_reader.borrow().is_none() {
             *self.module_name_reader.borrow_mut() = Some(ModuleNameReader::new());
         }
@@ -470,7 +470,7 @@ impl ModuleFinder {
     /// Java: private List<ModuleSymbol> scanModulePath(ModuleSymbol toFind)
     /// (ModuleFinder.java:290-352).
     fn scan_module_path(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         to_find: Option<crate::ids::SymbolId>,
@@ -480,7 +480,8 @@ impl ModuleFinder {
         let multi_module_mode = self
             .file_manager
             .has_location(&StandardLocation::MODULE_SOURCE_PATH);
-        while let Some(locns) = self.module_location_iterator.next(self.file_manager.as_ref()) {
+        let mut loc_iter = self.module_location_iterator.borrow_mut();
+        while let Some(locns) = loc_iter.next(self.file_manager.as_ref()) {
             names_in_set.clear();
             for location in locns {
                 let name = match self.file_manager.infer_module_name(location.as_ref()) {
@@ -492,9 +493,7 @@ impl ModuleFinder {
                     .iter()
                     .any(|(candidate, _)| candidate.to_java_string() == name.to_java_string());
                 if duplicate {
-                    let outer = self
-                        .module_location_iterator
-                        .outer()
+                    let outer = loc_iter.outer()
                         .expect("module location iterator outer");
                     // Java: log.error(Errors.DuplicateModuleOnPath(
                     //         getDescription(moduleLocationIterator.outer), n));
@@ -543,9 +542,7 @@ impl ModuleFinder {
                         set_patch_output_location(ctx, msym, output);
                     }
                 }
-                let outer = self
-                    .module_location_iterator
-                    .outer()
+                let outer = loc_iter.outer()
                     .expect("module location iterator outer");
                 if outer == StandardLocation::MODULE_SOURCE_PATH {
                     set_source_location(ctx, msym, Some(Rc::clone(&location)));
@@ -586,7 +583,7 @@ impl ModuleFinder {
 
     /// Java: private void findModuleInfo(ModuleSymbol msym)
     /// (ModuleFinder.java:354-392).
-    fn find_module_info(&mut self, ctx: &mut CompilerContext, msym: crate::ids::SymbolId) {
+    fn find_module_info(&self, ctx: &mut CompilerContext, msym: crate::ids::SymbolId) {
         let module_info = module_info_symbol(ctx, msym);
         let mut fo = self.get_module_info_from_location(
             &module_patch_output_location(ctx, msym),

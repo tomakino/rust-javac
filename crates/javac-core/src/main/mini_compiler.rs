@@ -772,13 +772,13 @@ impl MiniCompiler {
             Rc::clone(&pool_writer),
             method_codes,
         )));
-        let module_finder = Rc::new(RefCell::new(ModuleFinder::new(
+        let module_finder = Rc::new(ModuleFinder::new(
             Rc::clone(&names),
             Rc::clone(&finder),
             Rc::clone(&file_manager) as Rc<dyn JavaFileManager>,
             Rc::clone(&log),
             Rc::clone(&diags),
-        )));
+        ));
         let modules = Rc::new_cyclic(|self_ref| {
             Modules::new(
                 Rc::clone(&log),

@@ -86,7 +86,7 @@ pub struct Modules {
     type_envs: Rc<TypeEnvs>,
     types: Rc<crate::code::types::Types>,
     file_manager: Rc<dyn JavaFileManager>,
-    module_finder: Rc<RefCell<ModuleFinder>>,
+    module_finder: Rc<ModuleFinder>,
     source: Source,
     target: Target,
     allow_modules: bool,
@@ -143,7 +143,7 @@ impl Modules {
         type_envs: Rc<TypeEnvs>,
         types: Rc<crate::code::types::Types>,
         file_manager: Rc<dyn JavaFileManager>,
-        module_finder: Rc<RefCell<ModuleFinder>>,
+        module_finder: Rc<ModuleFinder>,
         source: Source,
         target: Target,
         options: &Options,
@@ -318,7 +318,7 @@ impl Modules {
         ctx: &mut CompilerContext,
         syms: &Symtab,
     ) -> CompleterRef {
-        self.module_finder.borrow_mut().find_all_modules(ctx, syms);
+        self.module_finder.find_all_modules(ctx, syms);
         Rc::new(RefCell::new(UnnamedModuleCompleter {
             modules: self.self_ref.upgrade().expect("Modules self"),
         }))
@@ -521,9 +521,7 @@ impl Modules {
                         .names
                         .from_string(&self.module_name(ctx, &plocn));
                     let msym = self
-                        .module_finder
-                        .borrow_mut()
-                        .find_module_by_name(ctx, syms, &name);
+                        .module_finder.find_module_by_name(ctx, syms, &name);
                     set_compilation_unit_module(ctx, *tree, msym);
                     root_modules.push(msym);
                     patches_automatic_modules |=
@@ -739,9 +737,7 @@ impl Modules {
             match root_modules.len() {
                 0 => {
                     let default = match self
-                        .module_finder
-                        .borrow_mut()
-                        .find_single_module(ctx, syms)
+                        .module_finder.find_single_module(ctx, syms)
                     {
                         Ok(default) => default,
                         Err(failure) => {
@@ -758,7 +754,7 @@ impl Modules {
                     *self.default_module.borrow_mut() = Some(default);
                     if default == syms.unnamed_module {
                         if let Some(module_override) = module_override {
-                            let default = self.module_finder.borrow_mut().find_module_by_name(
+                            let default = self.module_finder.find_module_by_name(
                                 ctx,
                                 syms,
                                 &self.names.from_string(&JavaString::from(module_override.as_str())),
@@ -1113,9 +1109,7 @@ impl Modules {
                         observable.contains(&sym)
                     } else {
                         let found = self
-                            .module_finder
-                            .borrow_mut()
-                            .find_module(ctx, syms, sym);
+                            .module_finder.find_module(ctx, syms, sym);
                         ctx.sym(found).kind != Kind::ERR
                     };
                     let jdk_ok = jdk_module_pred(ctx, syms, sym)?;
@@ -2068,7 +2062,7 @@ impl Modules {
         syms: &Symtab,
         sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
-        let msym = self.module_finder.borrow_mut().find_module(ctx, syms, sym);
+        let msym = self.module_finder.find_module(ctx, syms, sym);
         if ctx.sym(msym).kind == Kind::ERR {
             self.init_err_module(ctx, msym);
         } else if (ctx.sym(msym).flags_field & flags::AUTOMATIC_MODULE) != 0 {
@@ -2481,9 +2475,7 @@ impl<'a> ModuleVisitor<'a> {
         let name = tree_info::full_name(self.ctx, module_name).expect("module name");
         let msym = self
             .modules
-            .module_finder
-            .borrow_mut()
-            .find_module_by_name(self.ctx, self.syms, &name);
+            .module_finder.find_module_by_name(self.ctx, self.syms, &name);
         tree_info::set_symbol(self.ctx, module_name, msym);
         msym
     }

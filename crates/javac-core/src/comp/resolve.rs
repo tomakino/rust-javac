@@ -208,7 +208,7 @@ pub struct Resolve {
     /// Java: private final ModuleFinder moduleFinder (Resolve.java:105) — the
     /// module finder service (wired after construction; registered adapter
     /// cell like attr_cell).
-    pub module_finder: Rc<RefCell<Option<Rc<RefCell<crate::code::module_finder::ModuleFinder>>>>>, 
+    pub module_finder: Rc<RefCell<Option<Rc<crate::code::module_finder::ModuleFinder>>>>, 
     /// Java: LogResolveHelper basicLogResolveHelper (Resolve.java:2610-2617) —
     /// the helper read by accessBase (Resolve.java:2586-2592). Attr temporarily
     /// replaces it with the silent helper for the error-recovery enum switch
@@ -2964,7 +2964,7 @@ impl Resolve {
                         .as_ref()
                         .expect("AssertionError: ModuleFinder service is not installed"),
                 );
-                module = finder.borrow_mut().find_module(ctx, syms, module);
+                module = finder.find_module(ctx, syms, module);
             }
             if ctx.sym(module).kind != Kind::ERR {
                 if let Some(sym) = load(ctx, syms, module, name) {
