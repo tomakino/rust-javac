@@ -186,7 +186,7 @@ pub struct LambdaToMethod {
     pub syms: Rc<Symtab>,
     pub rs: Rc<Resolve>,
     pub operators: Rc<Operators>,
-    pub make: Rc<RefCell<TreeMaker>>,
+    pub make: Rc<TreeMaker>,
     pub types: Rc<Types>,
     pub trans_types: Rc<RefCell<TransTypes>>,
     pub enter: Rc<Enter>,
@@ -242,7 +242,7 @@ impl LambdaToMethod {
         syms: Rc<Symtab>,
         rs: Rc<Resolve>,
         operators: Rc<Operators>,
-        make: Rc<RefCell<TreeMaker>>,
+        make: Rc<TreeMaker>,
         types: Rc<Types>,
         trans_types: Rc<RefCell<TransTypes>>,
         enter: Rc<Enter>,
@@ -365,7 +365,7 @@ impl LambdaToMethod {
         ctx: &mut CompilerContext,
         env: &Rc<Env<AttrContext>>,
         cdef: TreeId,
-        make: Rc<RefCell<TreeMaker>>,
+        make: Rc<TreeMaker>,
     ) -> TreeId {
         self.make = make;
         self.attr_env = Some(Rc::clone(env));
@@ -398,14 +398,14 @@ impl LambdaToMethod {
             .map(|info| !info.deserialize_cases.is_empty())
             .unwrap_or(false);
         if has_deserialize_cases {
-            let previous_pos = self.make.borrow().pos;
+            let previous_pos = self.make.pos.get();
             {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.at(ctx.tree(translated).pos);
             }
             let deser = self.make_deserialize_method(ctx, class_sym);
             {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.at(previous_pos);
             }
             if let Some(info) = self.k_info.as_mut() {
@@ -616,7 +616,7 @@ impl LambdaToMethod {
             for fv in captured_symbols(lambda, LambdaSymbolKind::CAPTURED_VAR) {
                 if Some(fv) != self_sym {
                     let captured = {
-                        let mut make = self.make.borrow_mut();
+                        let make = &*self.make;
                         make.at(ctx.tree(tree).pos);
                         make.ident_symbol(ctx, fv)
                     };
@@ -626,7 +626,7 @@ impl LambdaToMethod {
             }
             for fv in captured_symbols(lambda, LambdaSymbolKind::CAPTURED_OUTER_THIS) {
                 let captured = {
-                    let mut make = self.make.borrow_mut();
+                    let make = &*self.make;
                     make.at(ctx.tree(tree).pos);
                     make.qual_this(ctx, &*self.syms, ctx.sym(fv).ty.expect("outer this type"))
                 };
@@ -681,7 +681,7 @@ impl LambdaToMethod {
         let flags_field = flags::PARAMETER | flags::FINAL as i64 | flags::SYNTHETIC as i64;
         let this_sym = self.new_var_symbol(ctx, flags_field, self.names._this.clone(), ty, owner);
         let ident = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.ident_symbol(ctx, this_sym)
         };
         ctx.tree_mut(ident).ty = Some(ty);
@@ -848,7 +848,7 @@ impl LambdaToMethod {
                     }
                 };
                 if let Some(mapped) = mapped {
-                    let ident = self.make.borrow_mut().ident_symbol(ctx, mapped);
+                    let ident = self.make.ident_symbol(ctx, mapped);
                     self.result = Some(ident);
                     return;
                 }
@@ -858,9 +858,9 @@ impl LambdaToMethod {
             self.default_visit_ident(ctx, tree);
             return;
         }
-        let previous_pos = self.make.borrow().pos;
+        let previous_pos = self.make.pos.get();
         {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(ctx.tree(tree).pos);
         }
         let translated = self.translate_ident_in_lambda(ctx, tree);
@@ -870,7 +870,7 @@ impl LambdaToMethod {
             self.default_visit_ident(ctx, tree);
         }
         {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(previous_pos);
         }
     }
@@ -880,9 +880,9 @@ impl LambdaToMethod {
             self.default_visit_select(ctx, tree);
             return;
         }
-        let previous_pos = self.make.borrow().pos;
+        let previous_pos = self.make.pos.get();
         {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(ctx.tree(tree).pos);
         }
         let translated = self.translate_select_in_lambda(ctx, tree);
@@ -892,7 +892,7 @@ impl LambdaToMethod {
             self.default_visit_select(ctx, tree);
         }
         {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(previous_pos);
         }
     }
@@ -902,15 +902,15 @@ impl LambdaToMethod {
             self.default_visit_new_class(ctx, tree);
             return;
         }
-        let previous_pos = self.make.borrow().pos;
+        let previous_pos = self.make.pos.get();
         {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(ctx.tree(tree).pos);
         }
         let translated = self.translate_new_class_in_lambda(ctx, tree);
         self.default_visit_new_class(ctx, translated);
         {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(previous_pos);
         }
     }
@@ -969,7 +969,7 @@ pub struct LambdaAnalyzerPreprocessor {
     pub lower: Rc<RefCell<Lower>>,
     pub log: Rc<crate::util::log::Log>,
     pub trans_types: Rc<RefCell<TransTypes>>,
-    pub make: Rc<RefCell<TreeMaker>>,
+    pub make: Rc<TreeMaker>,
     pub diags: Rc<crate::util::jc_diagnostic::Factory>,
     pub frame_stack: Vec<Frame>,
     pub lambda_count: i32,
@@ -1068,7 +1068,7 @@ impl LambdaAnalyzerPreprocessor {
         lower: Rc<RefCell<Lower>>,
         log: Rc<crate::util::log::Log>,
         trans_types: Rc<RefCell<TransTypes>>,
-        make: Rc<RefCell<TreeMaker>>,
+        make: Rc<TreeMaker>,
         diags: Rc<crate::util::jc_diagnostic::Factory>,
         attr_env: Option<Rc<Env<AttrContext>>>,
         dump_lambda_to_method_stats: bool,
@@ -1983,7 +1983,7 @@ impl LambdaAnalyzerPreprocessor {
             for (_, translated) in captured_orig.iter().chain(outer_this_orig.iter()) {
                 let var_def = {
                     let mut syms = &*self.syms;
-                    let mut make = self.make.borrow_mut();
+                    let make = &*self.make;
                     make.var_def_symbol(ctx, &mut syms, *translated, None)
                 };
                 param_defs = param_defs.append(var_def);
@@ -2000,7 +2000,7 @@ impl LambdaAnalyzerPreprocessor {
                 };
                 let var_def = {
                     let mut syms = &*self.syms;
-                    let mut make = self.make.borrow_mut();
+                    let make = &*self.make;
                     make.var_def_symbol(ctx, &mut syms, translated, None)
                 };
                 param_defs = param_defs.append(var_def);
@@ -2226,12 +2226,12 @@ impl LambdaAnalyzerPreprocessor {
                     let translated = map.iter().find(|(original, _)| *original == proxy).map(|(_, translated)| *translated).expect("translated outer this");
                     let owner_ty = ctx.sym(sym).owner.and_then(|owner| ctx.sym(owner).ty).expect("identifier owner type");
                     let outer = {
-                        let mut make = self.make.borrow_mut();
+                        let make = &*self.make;
                         let mut ident = make.ident_symbol(ctx, translated);
                         ctx.tree_mut(ident).ty = Some(owner_ty);
                         ident = {
                             let name = ctx.sym(sym).name.clone();
-                            let mut make2 = self.make.borrow_mut();
+                            let make2 = &*self.make;
                             make2.select(ctx, ident, name)
                         };
                         ident
@@ -2247,7 +2247,7 @@ impl LambdaAnalyzerPreprocessor {
                 // make.at(tree.pos).Ident(sym), so the replacement keeps the
                 // reference's position instead of the maker's stale one.
                 let ident = {
-                    let mut make = self.make.borrow_mut();
+                    let make = &*self.make;
                     make.at(ctx.tree(tree).pos);
                     make.ident_symbol(ctx, *translated)
                 };
@@ -2282,7 +2282,7 @@ impl LambdaAnalyzerPreprocessor {
         let translated = translated?;
         let owner_ty = ctx.sym(owner).ty.expect("qualified this owner type");
         let ident = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.ident_symbol(ctx, translated)
         };
         ctx.tree_mut(ident).ty = Some(owner_ty);
@@ -2315,7 +2315,7 @@ impl LambdaAnalyzerPreprocessor {
         };
         if let Some(translated) = translated {
             let ident = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.ident_symbol(ctx, translated)
             };
             ctx.tree_mut(ident).ty = Some(enclosing);
@@ -3221,16 +3221,16 @@ impl LambdaToMethod {
                 }
             }
             if is_serializable {
-                let previous_pos = self.make.borrow().pos;
+                let previous_pos = self.make.pos.get();
                 let k_info_class = self.k_info.as_ref().map(|info| info.clazz);
                 if let Some(clazz) = k_info_class {
                     {
-                        let mut make = self.make.borrow_mut();
+                        let make = &*self.make;
                         make.at(ctx.tree(clazz).pos);
                     }
                     self.add_deserialization_case(ctx, ref_sym, target_type, sam_sym, tree, &static_args, indy_type);
                     {
-                        let mut make = self.make.borrow_mut();
+                        let make = &*self.make;
                         make.at(previous_pos);
                     }
                 }
@@ -3255,10 +3255,10 @@ impl LambdaToMethod {
         indy_args: List<TreeId>,
         meth_name: Name,
     ) -> TreeId {
-        let previous_pos = self.make.borrow().pos;
+        let previous_pos = self.make.pos.get();
         let pos = ctx.tree(pos_tree).pos;
         {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(pos);
         }
         let bsm_static_args = {
@@ -3323,7 +3323,7 @@ impl LambdaToMethod {
             dyn_sym
         };
         let qualifier = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(pos);
             let site_tree = {
                 let mut syms = &*self.syms;
@@ -3339,12 +3339,12 @@ impl LambdaToMethod {
         let return_type = ctx.typ(indy_type).get_return_type(ctx).expect("indy return type");
         ctx.tree_mut(qualifier).ty = Some(return_type);
         let proxy_call = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.apply(ctx, List::nil(), qualifier, indy_args)
         };
         ctx.tree_mut(proxy_call).ty = Some(return_type);
         {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(previous_pos);
         }
         proxy_call
@@ -3375,14 +3375,14 @@ impl LambdaToMethod {
             let br = {
                 let clazz = self.k_info.as_ref().map(|info| info.clazz);
                 let pos = clazz.map(|clazz| ctx.tree(clazz).pos).unwrap_or(0);
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.at(pos);
                 make.break_(ctx, None)
             };
             breaks.push(br);
             let stats = List::from_iterable(statements.iter().copied().chain(std::iter::once(br)));
             let label = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.literal(ctx, TypeTag::CLASS, Some(LiteralValue::String(javac_strings::JavaString::from(key.as_str()))))
             };
             {
@@ -3396,7 +3396,7 @@ impl LambdaToMethod {
                 ctx.tree_mut(label).ty = Some(ctx.alloc_type(const_ty));
             }
             let case = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.case(
                     ctx,
                     javac_source::tree::case_tree::CaseKind::STATEMENT,
@@ -3410,7 +3410,7 @@ impl LambdaToMethod {
         let string_type = self.syms.string_type;
         let selector = self.deser_getter(ctx, "getImplMethodName", string_type);
         let switch = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.switch(ctx, selector, List::from_iterable(case_trees))
         };
         for br in &breaks {
@@ -3420,7 +3420,7 @@ impl LambdaToMethod {
         }
         let illegal_argument_exception_type = self.syms.illegal_argument_exception_type;
         let invalid_message = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.literal(ctx, TypeTag::CLASS, Some(LiteralValue::String(javac_strings::JavaString::from("Invalid lambda deserialization"))))
         };
         ctx.tree_mut(invalid_message).ty = Some(self.syms.string_type);
@@ -3431,15 +3431,15 @@ impl LambdaToMethod {
                 List::of(invalid_message),
                 None,
             );
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.throw_(ctx, new_class)
         };
         let body = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.block_pub(ctx, 0, List::from_iterable(vec![switch, throw]))
         };
         let mods = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.modifiers(ctx, ctx.sym(deser_method_sym).flags_field)
         };
         let restype = ctx
@@ -3449,15 +3449,15 @@ impl LambdaToMethod {
             .expect("deserialize method return type");
         let restype_tsym = ctx.typ(restype).tsym.expect("deserialize return type symbol");
         let qual_ident = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.qual_ident(ctx, &*self.syms, restype_tsym)
         };
         let param_def = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.var_def_symbol(ctx, &*self.syms, deser_param_sym, None)
         };
         let deser = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.method_def(
                 ctx,
                 mods,
@@ -3490,12 +3490,12 @@ impl LambdaToMethod {
         cons: Option<SymbolId>,
     ) -> TreeId {
         let clazz = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             let ctype_tsym = ctx.typ(ctype).tsym.expect("new class type symbol");
             make.qual_ident(ctx, &*self.syms, ctype_tsym)
         };
         let tree = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.new_class(ctx, None, List::nil(), clazz, args.clone(), None)
         };
         let constructor = match cons {
@@ -3566,7 +3566,7 @@ impl LambdaToMethod {
         let int_type = self.syms.int_type;
         let method_kind_getter = self.deser_getter(ctx, "getImplMethodKind", int_type);
         let kind_literal = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.literal(ctx, TypeTag::INT, Some(LiteralValue::Integer(reference_kind_of(ctx, pos_tree))))
         };
         ctx.tree_mut(kind_literal).ty = Some(int_type);
@@ -3576,7 +3576,7 @@ impl LambdaToMethod {
         let mut index = 0;
         for param in param_types.iter() {
             let index_arg = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.literal(ctx, TypeTag::INT, Some(LiteralValue::Integer(index)))
             };
             let int_type = self.syms.int_type;
@@ -3595,11 +3595,11 @@ impl LambdaToMethod {
                 self.types.erasure(ctx, &syms, param)
             };
             let type_expr = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.type_from_type(ctx, &*self.syms, erased_param)
             };
             let cast = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.type_cast(ctx, type_expr, getter)
             };
             ser_args.push(cast);
@@ -3618,7 +3618,7 @@ impl LambdaToMethod {
             sam_name,
         );
         let ret = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.return_(ctx, Some(indy_call))
         };
         let mut test = kind_test;
@@ -3628,7 +3628,7 @@ impl LambdaToMethod {
         test = self.deser_test(ctx, test, "getImplClass", &impl_class);
         test = self.deser_test(ctx, test, "getImplMethodSignature", &impl_method_signature);
         let stmt = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.if_(ctx, test, ret, None)
         };
         if let Some(info) = self.k_info.as_mut() {
@@ -3647,7 +3647,7 @@ impl LambdaToMethod {
     }
     fn eq_test(&mut self, ctx: &mut CompilerContext, arg_type: TypeId, arg1: TreeId, arg2: TreeId) -> TreeId {
         let test_expr = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.binary(ctx, Tag::EQ, arg1, arg2)
         };
         let operator = {
@@ -3699,12 +3699,12 @@ impl LambdaToMethod {
         let string_type = self.syms.string_type;
         let getter = self.deser_getter(ctx, func, string_type);
         let literal = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.literal(ctx, TypeTag::CLASS, Some(LiteralValue::String(javac_strings::JavaString::from(lit))))
         };
         ctx.tree_mut(literal).ty = Some(string_type);
         let select = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.select(ctx, getter, ctx.sym(equals_sym).name.clone())
         };
         if let TreeKind::FieldAccess { sym: slot, .. } = &mut ctx.tree_mut(select).kind {
@@ -3712,12 +3712,12 @@ impl LambdaToMethod {
         }
         ctx.tree_mut(select).ty = Some(eqmt);
         let eqtest = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.apply(ctx, List::nil(), select, List::of(literal))
         };
         ctx.tree_mut(eqtest).ty = Some(self.syms.boolean_type);
         let compound = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.binary(ctx, Tag::AND, prev, eqtest)
         };
         let boolean_type = self.syms.boolean_type;
@@ -3777,12 +3777,12 @@ impl LambdaToMethod {
             .map(|info| info.deser_param_sym)
             .expect("klass info");
         let ident = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.ident_symbol(ctx, deser_param_sym)
         };
         ctx.tree_mut(ident).ty = Some(serialized_lambda_type);
         let select = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.select(ctx, ident, name)
         };
         if let TreeKind::FieldAccess { sym: slot, .. } = &mut ctx.tree_mut(select).kind {
@@ -3790,7 +3790,7 @@ impl LambdaToMethod {
         }
         ctx.tree_mut(select).ty = Some(getmt);
         let apply = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.apply(ctx, List::nil(), select, args)
         };
         ctx.tree_mut(apply).ty = Some(ty);
@@ -8518,7 +8518,7 @@ pub struct LambdaBodyTranslator {
     pub result: Option<TreeId>,
     pub base: TreeTranslator,
     pub names: Rc<Names>,
-    pub make: Rc<RefCell<TreeMaker>>,
+    pub make: Rc<TreeMaker>,
     pub syms: Rc<Symtab>,
 }
 
@@ -8677,7 +8677,7 @@ impl LambdaToMethod {
         let thrown_types = ctx.typ(lambda_type).get_thrown_types(ctx);
         let thrown_trees = {
             let mut out: List<TreeId> = List::nil();
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             let mut syms = &*self.syms;
             for ty in thrown_types.iter() {
                 let tree_ty = make.type_from_type(ctx, &mut syms, ty);
@@ -8686,19 +8686,19 @@ impl LambdaToMethod {
             out
         };
         let mods = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.modifiers(ctx, ctx.sym(sym).flags_field)
         };
         let restype_tree = {
             let restype_tsym = ctx.typ(lambda_restype).tsym.expect("lambda return type symbol");
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             let mut syms = &*self.syms;
             make.qual_ident(ctx, &mut syms, restype_tsym)
         };
         let name = ctx.sym(sym).name.clone();
         let params = List::from_iterable(synthetic_params);
         let decl = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.method_def(
                 ctx,
                 mods,
@@ -8726,7 +8726,7 @@ impl LambdaToMethod {
         // return/exec statements carry the lambda's position (and the
         // generated method gets the matching LineNumberTable line).
         let lambda_pos = ctx.tree(tree).pos;
-        self.make.borrow_mut().at(lambda_pos);
+        self.make.at(lambda_pos);
         let (body, can_complete_normally) = match &ctx.tree(tree).kind {
             TreeKind::Lambda { body: Some(body), can_complete_normally, .. } => (*body, *can_complete_normally),
             _ => panic!("expected a lambda body"),
@@ -8752,7 +8752,7 @@ impl LambdaToMethod {
             let syms = &*self.syms;
             self.types.is_same_type(ctx, &syms, restype, boxed_void_ty)
         };
-        let previous_pos = self.make.borrow().pos;
+        let previous_pos = self.make.pos.get();
         // Java: every branch starts with make.at(expr), so the synthesized
         // statement/block carries the body expression's position. That call
         // takes a DiagnosticPosition, so TreeMaker.at uses
@@ -8761,50 +8761,50 @@ impl LambdaToMethod {
         // condition, which is the line the synthesized return is attributed
         // to.
         let expr_start = crate::tree::tree_info::get_start_pos(ctx, expr);
-        self.make.borrow_mut().at(expr_start);
+        self.make.at(expr_start);
         let result = if is_target_void {
             let exec = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.exec(ctx, expr)
             };
             let block = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.block_pub(ctx, 0, List::of(exec))
             };
             block
         } else if is_lambda_void && is_target_void_type {
             let exec = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.exec(ctx, expr)
             };
             let bot_type = self.syms.bot_type;
             let bot = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.literal(ctx, TypeTag::BOT, None)
             };
             ctx.tree_mut(bot).ty = Some(bot_type);
             let return_ = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.return_(ctx, Some(bot))
             };
             let block = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.block_pub(ctx, 0, List::from_iterable(vec![exec, return_]))
             };
             block
         } else {
             let return_ = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.return_(ctx, Some(expr))
             };
             let block = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.block_pub(ctx, 0, List::of(return_))
             };
             block
         };
         {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(previous_pos);
         }
         result
@@ -8837,12 +8837,12 @@ impl LambdaToMethod {
         if complete_normally && is_target_void_type {
             let bot_type = self.syms.bot_type;
             let bot = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.literal(ctx, TypeTag::BOT, None)
             };
             ctx.tree_mut(bot).ty = Some(bot_type);
             let return_ = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.return_(ctx, Some(bot))
             };
             if let TreeKind::Block { stats: slot, .. } = &mut ctx.tree_mut(trans_block).kind {
@@ -9007,7 +9007,7 @@ pub struct MemberReferenceToLambda {
     pub args: Vec<TreeId>,
     pub params: Vec<TreeId>,
     pub receiver_expression: Option<TreeId>,
-    pub make: Rc<RefCell<TreeMaker>>,
+    pub make: Rc<TreeMaker>,
     pub names: Rc<Names>,
     pub syms: Rc<Symtab>,
     pub types: Rc<Types>,
@@ -9022,7 +9022,7 @@ impl MemberReferenceToLambda {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         tree: TreeId,
-        make: Rc<RefCell<TreeMaker>>,
+        make: Rc<TreeMaker>,
         names: Rc<Names>,
         syms: Rc<Symtab>,
         types: Rc<Types>,
@@ -9052,9 +9052,9 @@ impl MemberReferenceToLambda {
     /// MemberReferenceToLambda.lambda).
     pub fn lambda(&mut self, ctx: &mut CompilerContext, owner: SymbolId) -> TreeId {
         self.owner = Some(owner);
-        let previous_pos = self.make.borrow().pos;
+        let previous_pos = self.make.pos.get();
         {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(ctx.tree(self.tree).pos);
         }
         let rcvr = self.add_parameters_return_receiver(ctx);
@@ -9069,7 +9069,7 @@ impl MemberReferenceToLambda {
         };
         let params = List::from_iterable(self.params.clone());
         let lambda = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.lambda(ctx, params, expr)
         };
         let source_target = match &ctx.tree(self.tree).kind {
@@ -9084,7 +9084,7 @@ impl MemberReferenceToLambda {
         ctx.tree_mut(lambda).ty = source_ty;
         ctx.tree_mut(lambda).pos = source_pos;
         {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(previous_pos);
         }
         lambda
@@ -9218,14 +9218,14 @@ impl MemberReferenceToLambda {
             },
         ));
         let var_def = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             let mut syms = &*self.syms;
             make.var_def_symbol(ctx, &mut syms, vsym, None)
         };
         self.params.push(var_def);
         if gen_arg {
             let ident = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.ident_symbol(ctx, vsym)
             };
             self.args.push(ident);
@@ -9237,7 +9237,7 @@ impl MemberReferenceToLambda {
     /// makeReceiver).
     fn make_receiver(&mut self, ctx: &mut CompilerContext, rcvr: SymbolId) -> TreeId {
         let ident = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.ident_symbol(ctx, rcvr)
         };
         let (sym, owner_accessible, expr) = match &ctx.tree(self.tree).kind {
@@ -9274,12 +9274,12 @@ impl MemberReferenceToLambda {
         };
         if !is_subclass {
             let type_tree = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 let mut syms = &*self.syms;
                 make.type_from_type(ctx, &mut syms, rcvr_type)
             };
             let cast = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.type_cast(ctx, type_tree, ident)
             };
             ctx.tree_mut(cast).ty = Some(rcvr_type);
@@ -9352,7 +9352,6 @@ impl MemberReferenceToLambda {
                     let owner = ctx.sym(ref_sym).owner.expect("reference owner");
                     let mut syms = &*self.syms;
                     self.make
-                        .borrow_mut()
                         .qual_ident(ctx, &mut syms, owner)
                 }
             },
@@ -9363,7 +9362,7 @@ impl MemberReferenceToLambda {
         };
         let name = ctx.sym(sym).name.clone();
         let select = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.select(ctx, qualifier, name)
         };
         if let TreeKind::FieldAccess { sym: slot, .. } = &mut ctx.tree_mut(select).kind {
@@ -9378,7 +9377,7 @@ impl MemberReferenceToLambda {
         let return_type = ctx.typ(erased).get_return_type(ctx);
         let args = self.convert_args(ctx, sym, List::from_iterable(self.args.clone()), varargs);
         let apply = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.apply(ctx, List::nil(), select, args)
         };
         ctx.tree_mut(apply).ty = return_type;
@@ -9416,7 +9415,7 @@ impl MemberReferenceToLambda {
                         _ => panic!("expected parameter declaration"),
                     };
                     let ident = {
-                        let mut make = self.make.borrow_mut();
+                        let make = &*self.make;
                         make.ident_symbol(ctx, sym)
                     };
                     ident
@@ -9428,12 +9427,12 @@ impl MemberReferenceToLambda {
                 self.types.elemtype(ctx, &syms, qualifier_ty)
             };
             let array_type = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 let mut syms = &*self.syms;
                 make.type_from_type(ctx, &mut syms, elem_type)
             };
             let array = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.new_array(ctx, Some(array_type), List::of(dim), None)
             };
             ctx.tree_mut(array).ty = Some(qualifier_ty);
@@ -9450,12 +9449,12 @@ impl MemberReferenceToLambda {
             };
             let converted_args = self.convert_args(ctx, sym, List::from_iterable(self.args.clone()), varargs);
             let clazz = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 let mut syms = &*self.syms;
                 make.type_from_type(ctx, &mut syms, qualifier_ty)
             };
             let new_class = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.new_class(ctx, None, List::nil(), clazz, converted_args, None)
             };
             if let TreeKind::NewClass { constructor: slot, .. } = &mut ctx.tree_mut(new_class).kind {
@@ -9511,16 +9510,16 @@ impl LambdaBodyTranslator {
                 owner,
             );
             let var_def = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 let mut syms = &*self.syms;
                 make.var_def_symbol(ctx, &mut syms, loc, Some(expr))
             };
             let return_ = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.return_(ctx, None)
             };
             let block = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.block_pub(ctx, 0, List::from_iterable(vec![var_def, return_]))
             };
             self.result = Some(block);

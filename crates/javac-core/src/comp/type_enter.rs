@@ -70,7 +70,7 @@ pub struct TypeEnter {
     /// The shared symbol table (needed by the import-scope queries;
     /// registered adapter: the Java import scopes read the Context services).
     pub syms: Rc<crate::code::symtab::Symtab>,
-    pub make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
+    pub make: Rc<crate::tree::tree_maker::TreeMaker>,
     pub deferred_lint_handler: Rc<DeferredLintHandler>,
     pub lint: Option<Rc<crate::code::lint::Lint>>,
     pub type_envs: Rc<TypeEnvs>,
@@ -301,7 +301,7 @@ impl TypeEnter {
         chk: Rc<Check>,
         types: Rc<Types>,
         syms: Rc<crate::code::symtab::Symtab>,
-        make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
+        make: Rc<crate::tree::tree_maker::TreeMaker>,
         deferred_lint_handler: Rc<DeferredLintHandler>,
         lint: Option<Rc<crate::code::lint::Lint>>,
         type_envs: Rc<TypeEnvs>,
@@ -1280,7 +1280,7 @@ impl TypeEnter {
     ) {
         let pos = ctx.tree(tree).pos;
         let imp = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(pos);
             let qual = make.qual_ident(ctx, syms, java_lang);
             make.import(ctx, qual, false)
@@ -1572,7 +1572,7 @@ impl TypeEnter {
         symbol: SymbolId,
     ) -> TreeId {
         let class_type = ctx.sym(symbol).ty.expect("enum class type");
-        let mut make = self.make.borrow_mut();
+        let make = &*self.make;
         make.at(pos);
         let qual = make.qual_ident(ctx, syms, syms.enum_sym);
         let ty_tree = make.type_expr(ctx, syms, class_type);
@@ -2566,13 +2566,13 @@ impl TypeEnter {
                     copier.copy_tree(ctx, *vartype)
                 }
                 _ => {
-                    let mut make = self.make.borrow_mut();
+                    let make = &*self.make;
                     make.at(ctx.tree(record_field).pos);
                     make.erroneous_empty(ctx)
                 }
             };
             let getter = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.at(ctx.tree(tree).pos);
                 let mods = make.modifiers_with_annotations(
                     ctx,
@@ -2646,7 +2646,7 @@ impl TypeEnter {
         let sym = class_tree_symbol(ctx, tree).expect("enum symbol");
         let sym_ty = ctx.sym(sym).ty.expect("enum type");
         let values = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(ctx.tree(tree).pos);
             let elem_tree = make.type_expr(ctx, syms, sym_ty);
             let values_type = make.type_array(ctx, elem_tree);
@@ -2670,7 +2670,7 @@ impl TypeEnter {
                 .member_enter(ctx, syms, values, env, attr);
         }
         let value_of = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(ctx.tree(tree).pos);
             let ret = make.type_expr(ctx, syms, sym_ty);
             let param_type = make.type_expr(ctx, syms, syms.string_type);
@@ -2730,7 +2730,7 @@ impl TypeEnter {
         use crate::code::flags;
         let sym = class_tree_symbol(ctx, tree).expect("record symbol");
         let make_no_arg = |this: &TypeEnter, ctx: &mut CompilerContext, syms: &Symtab, name: crate::util::name::Name, ret: TypeId| {
-            let mut make = this.make.borrow_mut();
+            let make = &*this.make;
             make.at(ctx.tree(tree).pos);
             let ret_tree = make.type_expr(ctx, syms, ret);
             let mods = make.modifiers(
@@ -2788,7 +2788,7 @@ impl TypeEnter {
             .is_none()
         {
             let equals = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.at(ctx.tree(tree).pos);
                 let ret = make.type_expr(ctx, syms, syms.boolean_type);
                 let object_ty = make.type_expr(ctx, syms, syms.object_type);
@@ -3028,7 +3028,7 @@ impl TypeEnter {
         let owner_ty = ctx.sym(owner).ty.expect("owner type");
         if owner_ty != syms.object_type {
             let enclosing = helper.enclosing_type(ctx, syms, &self.types);
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(ctx.tree(tree).pos);
             let meth = if enclosing.is_some() {
                 let params = match &ctx.sym(init_sym).kind_data {
@@ -3052,7 +3052,7 @@ impl TypeEnter {
                     List::nil()
                 }
             };
-            let super_names = helper.super_args(ctx, syms, &self.types, &names, &mut make);
+            let super_names = helper.super_args(ctx, syms, &self.types, &names, make);
             let mut super_args: List<TreeId> = List::nil();
             let current = super_names;
             for name in &current {
@@ -3063,11 +3063,11 @@ impl TypeEnter {
             stats = stats.append(exec);
         }
         let body = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.block(ctx, 0, stats)
         };
         let result = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.method_def_symbol(ctx, syms, init_sym, Some(body))
         };
         helper.final_adjustment(ctx, syms, &names, result)
@@ -3383,7 +3383,7 @@ pub trait DefaultConstructorHelper {
         syms: &Symtab,
         types: &crate::code::types::Types,
         names: &Names,
-        make: &mut crate::tree::tree_maker::TreeMaker,
+        make: &crate::tree::tree_maker::TreeMaker,
     ) -> List<crate::util::name::Name>;
     /// Java: default JCMethodDecl finalAdjustment(JCMethodDecl md) { return md; }
     fn final_adjustment(
@@ -3496,7 +3496,7 @@ impl DefaultConstructorHelper for BasicConstructorHelper {
         _syms: &Symtab,
         _types: &crate::code::types::Types,
         _names: &Names,
-        _make: &mut crate::tree::tree_maker::TreeMaker,
+        _make: &crate::tree::tree_maker::TreeMaker,
     ) -> List<crate::util::name::Name> {
         List::nil()
     }
@@ -3644,7 +3644,7 @@ impl DefaultConstructorHelper for AnonClassConstructorHelper {
         syms: &Symtab,
         types: &crate::code::types::Types,
         names: &Names,
-        make: &mut crate::tree::tree_maker::TreeMaker,
+        make: &crate::tree::tree_maker::TreeMaker,
     ) -> List<crate::util::name::Name> {
         let ctor_symbol = self
             .constructor_symbol(ctx, syms, types, names)
@@ -3831,7 +3831,7 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
         _syms: &Symtab,
         _types: &crate::code::types::Types,
         _names: &Names,
-        _make: &mut crate::tree::tree_maker::TreeMaker,
+        _make: &crate::tree::tree_maker::TreeMaker,
     ) -> List<crate::util::name::Name> {
         List::nil()
     }
@@ -3863,9 +3863,7 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
         };
         let original_annos = record_component_original_annos(ctx, rc);
         let copier = crate::tree::tree_copier::TreeCopier {
-            make: Rc::new(std::cell::RefCell::new(
-                crate::tree::tree_maker::TreeMaker::new(None),
-            )),
+            make: Rc::new(crate::tree::tree_maker::TreeMaker::new(None)),
             speculative: false,
             hook: None,
         };
@@ -4609,9 +4607,9 @@ mod tests {
         ));
         let dependencies: Rc<RefCell<dyn Dependencies>> =
             Rc::new(RefCell::new(crate::code::dependencies::DummyDependencies));
-        let make = Rc::new(RefCell::new(crate::tree::tree_maker::TreeMaker::new(Some(
+        let make = Rc::new(crate::tree::tree_maker::TreeMaker::new(Some(
             Rc::clone(&names),
-        ))));
+        )));
         let type_enter = TypeEnter::new(
             Rc::clone(&names),
             enter,

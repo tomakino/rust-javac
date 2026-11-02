@@ -45,7 +45,7 @@ use crate::tree::tree_maker::TreeFactory;
 /// Upstream: Attr.java:3970-4000.
 pub struct AttrRecover {
     pub names: Rc<Names>,
-    pub make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
+    pub make: Rc<crate::tree::tree_maker::TreeMaker>,
     pub syms: Rc<Symtab>,
     pub types: Rc<Types>,
     recovery_todo: RefCell<Vec<RecoverTodo>>,
@@ -87,7 +87,7 @@ impl AttrRecover {
 /// Upstream: Attr.java:3990-4000.
     pub fn new(
         names: Rc<Names>,
-        make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
+        make: Rc<crate::tree::tree_maker::TreeMaker>,
         syms: Rc<Symtab>,
         types: Rc<Types>,
     ) -> AttrRecover {
@@ -116,7 +116,6 @@ impl AttrRecover {
         let err_type = self.syms.err_type;
         let expr = self.make_erroneous(ctx, err_type);
         let maker = Rc::clone(&self.make);
-        let mut maker = maker.borrow_mut();
         maker.at(crate::util::position::NOPOS).return_(ctx, Some(expr))
     }
 }
@@ -877,9 +876,9 @@ mod tests {
         )));
         let recover = AttrRecover::new(
             Rc::clone(&names),
-            Rc::new(RefCell::new(crate::tree::tree_maker::TreeMaker::new(Some(
+            Rc::new(crate::tree::tree_maker::TreeMaker::new(Some(
                 Rc::clone(&names),
-            )))),
+            ))),
             Rc::new(syms),
             types,
         );

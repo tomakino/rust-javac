@@ -2256,7 +2256,7 @@ pub struct DeferredAttrService {
     /// Java: final Log log
     pub log: Rc<crate::util::log::Log>,
     /// Java: final TreeMaker make
-    pub make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
+    pub make: Rc<crate::tree::tree_maker::TreeMaker>,
     /// Java: final Types types
     pub types: Rc<Types>,
     /// Java: final Symtab syms
@@ -2316,7 +2316,7 @@ impl DeferredAttrService {
         enter: Rc<crate::comp::enter::Enter>,
         infer: Rc<crate::comp::infer::Infer>,
         log: Rc<crate::util::log::Log>,
-        make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
+        make: Rc<crate::tree::tree_maker::TreeMaker>,
         types: Rc<Types>,
         syms: Rc<Symtab>,
         names: Rc<Names>,
@@ -2592,7 +2592,7 @@ impl DeferredAttrService {
         let body_is_expression = ctx.tree(body).tag != crate::tree::jc_tree::Tag::BLOCK;
         if body_is_expression {
             let ret = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.at(pos);
                 make.return_(ctx, Some(body))
             };
@@ -2601,7 +2601,7 @@ impl DeferredAttrService {
             stats = stats.append(body);
         }
         let lambda_block = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(pos);
             make.block(ctx, 0, stats)
         };
@@ -2640,7 +2640,7 @@ impl DeferredAttrService {
                 last
             };
             let speculative_lambda = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.at(pos);
                 make.lambda(ctx, args, lambda_body)
             };
@@ -3065,7 +3065,7 @@ impl DeferredAttrService {
             // resolve references to it instead of treating it as an implicit
             // parameter with no type.
             use crate::tree::tree_maker::TreeFactory;
-            let err_type_tree = self.make.borrow_mut().erroneous(ctx, List::nil());
+            let err_type_tree = self.make.erroneous(ctx, List::nil());
             ctx.tree_mut(err_type_tree).pos = ctx.tree(vd).pos;
             ctx.tree_mut(err_type_tree).ty = Some(err_type);
             let new_vd = ctx.alloc_tree(crate::tree::jc_tree::JCTree {

@@ -111,7 +111,7 @@ pub struct Gen {
     /// The resolver.
     pub rs: Rc<crate::comp::resolve::Resolve>,
     /// The tree factory.
-    pub make: Rc<RefCell<TreeMaker>>,
+    pub make: Rc<TreeMaker>,
     /// The name table.
     pub names: Rc<Names>,
     /// The code generation target.
@@ -212,7 +212,7 @@ impl Gen {
         syms: Rc<Symtab>,
         chk: Rc<Check>,
         rs: Rc<crate::comp::resolve::Resolve>,
-        make: Rc<RefCell<TreeMaker>>,
+        make: Rc<TreeMaker>,
         names: Rc<Names>,
         target: Target,
         types: Rc<Types>,
@@ -840,7 +840,7 @@ impl Gen {
                 if !is_static {
                     // Always initialize instance variables.
                     let make = Rc::clone(&self.make);
-                    let stmt = make.borrow_mut().at(pos).assignment(ctx, sym, init);
+                    let stmt = make.at(pos).assignment(ctx, sym, init);
                     init_code.push(stmt);
                     self.end_pos_table_replaced(ctx, def, stmt);
                     let tas = self.get_and_remove_non_field_tas(ctx, sym);
@@ -853,7 +853,7 @@ impl Gen {
                             // Java: Gen.normalizeDefs positions the
                             // initializer at vdef.pos() (the field
                             // declaration position).
-                            let stmt = make.borrow_mut().at(pos).assignment(ctx, sym, init);
+                            let stmt = make.at(pos).assignment(ctx, sym, init);
                             clinit_code.push(stmt);
                             self.end_pos_table_replaced(ctx, def, stmt);
                             let tas = self.get_and_remove_non_field_tas(ctx, sym);
@@ -929,7 +929,7 @@ impl Gen {
             let clinit_stats: List<TreeId> = List::from_iterable(clinit_code.clone());
             let head_pos = ctx.tree(*clinit_stats.head()).pos;
             let make = Rc::clone(&self.make);
-            let block = make.borrow_mut().at(head_pos).block(ctx, 0, clinit_stats.clone());
+            let block = make.at(head_pos).block(ctx, 0, clinit_stats.clone());
             // Java: Gen.java:496-500 sets block.endpos to
             // TreeInfo.endPos(clinitStats.last()) (the closing brace of the
             // user static initializer), not its start position.
@@ -939,7 +939,7 @@ impl Gen {
             }
             let method = {
                 let make = Rc::clone(&self.make);
-                let mut make = make.borrow_mut();
+                let make = &*make;
                 let mods = make.modifiers(ctx, flags);
                 let names = Rc::clone(&self.names);
                 let method = make.method_def_simple(

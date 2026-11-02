@@ -56,7 +56,7 @@ pub struct StringConcat {
     /// The name table.
     pub names: Rc<Names>,
     /// The tree factory.
-    pub make: Rc<RefCell<TreeMaker>>,
+    pub make: Rc<TreeMaker>,
     /// Type relations.
     pub types: Rc<Types>,
     /// The StringBuilder.append methods, indexed by parameter type.
@@ -84,7 +84,7 @@ pub struct StringConcat {
 pub fn make_concat(
     syms: Rc<Symtab>,
     names: Rc<Names>,
-    make: Rc<RefCell<TreeMaker>>,
+    make: Rc<TreeMaker>,
     types: Rc<Types>,
     option: Option<String>,
     target: &Target,
@@ -519,8 +519,8 @@ impl StringConcat {
         dynamic_arg_types: Vec<TypeId>,
     ) {
         let indy_type = make_method_type(ctx, &dynamic_arg_types, ty, self.syms.method_class);
-        let prev_pos = self.make.borrow().pos;
-        self.make.borrow_mut().at(pos);
+        let prev_pos = self.make.pos.get();
+        self.make.at(pos);
         let bsm_static_args = List::of(self.syms.method_handle_lookup_type)
             .append(self.syms.string_type)
             .append(self.syms.method_type_type);
@@ -548,7 +548,7 @@ impl StringConcat {
         let items_rc = generator.get_items();
         let item = items_rc.make_dynamic_item(ctx, dyn_sym);
         items_rc.invoke(ctx, &item);
-        self.make.borrow_mut().at(prev_pos);
+        self.make.at(prev_pos);
     }
 
     /// Emit the invokedynamic concat with constants folded into the recipe.
@@ -644,8 +644,8 @@ impl StringConcat {
         dynamic_arg_types: Vec<TypeId>,
     ) {
         let indy_type = make_method_type(ctx, &dynamic_arg_types, ty, self.syms.method_class);
-        let prev_pos = self.make.borrow().pos;
-        self.make.borrow_mut().at(pos);
+        let prev_pos = self.make.pos.get();
+        self.make.at(pos);
         let mut const_types: Vec<TypeId> = Vec::new();
         let mut constants: Vec<LoadableConstantRef> = Vec::new();
         for t in &static_args {
@@ -688,7 +688,7 @@ impl StringConcat {
         let items_rc = generator.get_items();
         let item = items_rc.make_dynamic_item(ctx, dyn_sym);
         items_rc.invoke(ctx, &item);
-        self.make.borrow_mut().at(prev_pos);
+        self.make.at(prev_pos);
     }
 }
 

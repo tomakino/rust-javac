@@ -469,7 +469,7 @@ pub struct AnnotateServices {
     pub enter: Rc<Enter>,
     pub lint: Rc<Lint>,
     pub resolve: Rc<Resolve>,
-    pub make: Rc<std::cell::RefCell<TreeMaker>>,
+    pub make: Rc<TreeMaker>,
     pub type_envs: Rc<TypeEnvs>,
     pub infer: Rc<crate::comp::infer::Infer>,
     pub queues: Rc<std::cell::RefCell<AnnotateQueues>>,
@@ -513,7 +513,7 @@ impl Annotate {
         enter: Rc<Enter>,
         lint: Rc<Lint>,
         resolve: Rc<Resolve>,
-        make: Rc<std::cell::RefCell<TreeMaker>>,
+        make: Rc<TreeMaker>,
         type_envs: Rc<TypeEnvs>,
         diags: Rc<crate::util::jc_diagnostic::Factory>,
         source: Source,
@@ -1218,11 +1218,11 @@ impl AnnotateServices {
             if !ctx.tree(head).has_tag(Tag::ASSIGN) {
                 let value_name = self.names.value.clone();
                 let ident = {
-                    let mut make = self.make.borrow_mut();
+                    let make = &*self.make;
                     make.ident(ctx, value_name)
                 };
                 let assign = {
-                    let mut make = self.make.borrow_mut();
+                    let make = &*self.make;
                     make.at(ctx.tree(head).pos);
                     make.assign(ctx, ident, head)
                 };
@@ -1604,8 +1604,6 @@ impl AnnotateServices {
                         let name = ctx.typ(selected_ty.expect("selected type")).tsym.map(|tsym| ctx.sym(tsym).name.clone()).unwrap_or_else(|| self.names.empty.clone());
                         let unknown_symbol = syms.unknown_symbol;
                         let class_type = syms.class_type;
-                        let mut make = self.make.borrow_mut();
-                        let _ = &mut make;
                         let err_type =
                             self.types.create_error_type(ctx, name, unknown_symbol, Some(class_type));
                         return Ok(ctx.alloc_attribute(Attribute::new_unresolved_class(Some(expected_element_type), Some(err_type))));
@@ -1683,7 +1681,7 @@ impl AnnotateServices {
         attr: &mut crate::comp::attr::Attr,) -> Result<AttributeId, CompletionFailure> {
         let mut tree = tree;
         if !ctx.tree(tree).has_tag(Tag::NEWARRAY) {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(ctx.tree(tree).pos);
             let array = make.new_array(ctx, None, List::nil(), Some(List::of(tree)));
             tree = array;
@@ -1802,7 +1800,7 @@ impl AnnotateServices {
                 first_position,
             ));
             let anno_tree = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.at(pos);
                 make.translate_attribute(ctx, syms, at)
             };
@@ -1861,7 +1859,7 @@ impl AnnotateServices {
         let container_type = target_container_type.expect("container type");
         let c = ctx.alloc_attribute(Attribute::new_compound(Some(container_type), List::of(pair)));
         let anno_tree = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(pos);
             make.translate_attribute(ctx, syms, c)
         };
@@ -2713,7 +2711,7 @@ struct UnusedFileManager;
     struct AnnotateHarness {
         ctx: CompilerContext,
         annotate: Rc<Annotate>,
-        make: Rc<RefCell<TreeMaker>>,
+        make: Rc<TreeMaker>,
         syms: Rc<Symtab>,
         types: Rc<Types>,
         log: Rc<Log>,
@@ -2764,7 +2762,7 @@ struct UnusedFileManager;
             Rc::clone(&syms),
         ));
         crate::comp::check::attach_self(&check);
-        let make = Rc::new(RefCell::new(TreeMaker::new(Some(Rc::clone(&names)))));
+        let make = Rc::new(TreeMaker::new(Some(Rc::clone(&names))));
         let type_envs = Rc::new(TypeEnvs::new());
         let dependencies: Rc<RefCell<dyn Dependencies>> = Rc::new(RefCell::new(DummyDependencies));
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
@@ -2912,7 +2910,7 @@ struct UnusedFileManager;
         ));
         let compound = h.ctx.alloc_attribute(Attribute::new_compound(Some(bool_type), List::nil()));
         let compound_tree = {
-            let mut make = h.make.borrow_mut();
+            let make = &*h.make;
             make.at(0);
             make.translate_attribute(&mut h.ctx, &&*h.syms, compound)
         };
@@ -2921,7 +2919,7 @@ struct UnusedFileManager;
             .ctx
             .alloc_attribute(Attribute::new_array(Some(string_type), vec![constant]));
         let array_tree = {
-            let mut make = h.make.borrow_mut();
+            let make = &*h.make;
             make.at(0);
             make.translate_attribute(&mut h.ctx, &&*h.syms, array)
         };

@@ -53,7 +53,7 @@ pub trait TreeCopyHook {
 /// Java: public class TreeCopier<P> implements TreeVisitor<JCTree,P>
 pub struct TreeCopier {
     /// Java: private TreeMaker M
-    pub make: Rc<std::cell::RefCell<TreeMaker>>,
+    pub make: Rc<TreeMaker>,
     /// Java: DeferredAttr's anonymous copier subclass flag (adapter): when set,
     /// diamond new-class nodes are copied as speculative new classes (def set to
     /// null) and member references forward their overload kind.
@@ -86,7 +86,7 @@ impl TreeCopier {
 ///   - none.
 ///
 /// Upstream: JCTree.java:3200.
-    pub fn new(make: Rc<std::cell::RefCell<TreeMaker>>) -> TreeCopier {
+    pub fn new(make: Rc<TreeMaker>) -> TreeCopier {
         TreeCopier {
             make,
             speculative: false,
@@ -116,7 +116,7 @@ impl TreeCopier {
 ///   - none.
 ///
 /// Upstream: DeferredAttr.java:530-560.
-    pub fn new_speculative(make: Rc<std::cell::RefCell<TreeMaker>>) -> TreeCopier {
+    pub fn new_speculative(make: Rc<TreeMaker>) -> TreeCopier {
         TreeCopier {
             make,
             speculative: true,
@@ -143,7 +143,7 @@ impl TreeCopier {
 
     /// adapter helper: a copier with the Analyzer overrides installed.
     pub fn with_hook(
-        make: Rc<std::cell::RefCell<TreeMaker>>,
+        make: Rc<TreeMaker>,
         hook: Rc<dyn TreeCopyHook>,
     ) -> TreeCopier {
         TreeCopier {
@@ -1806,7 +1806,7 @@ mod tests {
     }
 
     fn copier() -> TreeCopier {
-        TreeCopier::new(Rc::new(RefCell::new(TreeMaker::new(None))))
+        TreeCopier::new(Rc::new(TreeMaker::new(None)))
     }
 
     fn ident(ctx: &mut CompilerContext, table: &Rc<NameTableHandle>, text: &str) -> TreeId {

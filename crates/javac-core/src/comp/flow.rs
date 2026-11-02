@@ -506,7 +506,7 @@ pub struct Flow {
     pub diags: Rc<Factory>,
     pub lint: Rc<Lint>,
     pub attr_env: Rc<RefCell<Option<Rc<Env<AttrContext>>>>>,
-    pub make: Rc<RefCell<Option<Rc<RefCell<TreeMaker>>>>>,
+    pub make: Rc<RefCell<Option<Rc<TreeMaker>>>>,
     pub allow_effectively_final_in_inner_classes: bool,
     /// Java: the Attr service (Flow.java's outer Attr) used by the resource
     /// close() lookup in FlowAnalyzer (registered adapter: the Rust Flow keeps
@@ -2512,7 +2512,7 @@ fn scan_synthetic_break<V: FlowVisitor>(
     };
     if ctx.tree(swtch).has_tag(Tag::SWITCH_EXPRESSION) {
         let brk = {
-            let mut maker = make.borrow_mut();
+            let maker = &*make;
             maker.at(crate::util::position::NOPOS);
             maker.yield_(ctx, None)
         };
@@ -2522,7 +2522,7 @@ fn scan_synthetic_break<V: FlowVisitor>(
         v.scan(ctx, Some(brk));
     } else {
         let brk = {
-            let mut maker = make.borrow_mut();
+            let maker = &*make;
             maker.at(crate::util::position::NOPOS);
             maker.break_(ctx, None)
         };
@@ -5461,7 +5461,7 @@ impl Flow {
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         env: &Rc<Env<AttrContext>>,
-        make: &Rc<RefCell<TreeMaker>>,
+        make: &Rc<TreeMaker>,
     ) {
         *self.make.borrow_mut() = Some(Rc::clone(make));
         let tree = env.tree.expect("analyzeTree env.tree");
@@ -5480,7 +5480,7 @@ impl Flow {
         syms: &crate::code::symtab::Symtab,
         env: &Rc<Env<AttrContext>>,
         that: TreeId,
-        make: &Rc<RefCell<TreeMaker>>,
+        make: &Rc<TreeMaker>,
         speculative: bool,
     ) {
         if !speculative {
@@ -5503,7 +5503,7 @@ impl Flow {
         syms: &crate::code::symtab::Symtab,
         env: &Rc<Env<AttrContext>>,
         that: TreeId,
-        make: &Rc<RefCell<TreeMaker>>,
+        make: &Rc<TreeMaker>,
     ) -> List<TypeId> {
         self.log
             .install_diagnostic_handler(DiagnosticHandler::Discard { prev: None });
@@ -5528,7 +5528,7 @@ impl Flow {
         syms: &crate::code::symtab::Symtab,
         env: &Rc<Env<AttrContext>>,
         that: TreeId,
-        make: &Rc<RefCell<TreeMaker>>,
+        make: &Rc<TreeMaker>,
     ) -> bool {
         self.log
             .install_diagnostic_handler(DiagnosticHandler::Discard { prev: None });
@@ -5549,7 +5549,7 @@ impl Flow {
         env: &Rc<Env<AttrContext>>,
         _loop_tree: TreeId,
         body: TreeId,
-        make: &Rc<RefCell<TreeMaker>>,
+        make: &Rc<TreeMaker>,
     ) -> bool {
         self.log
             .install_diagnostic_handler(DiagnosticHandler::Discard { prev: None });
@@ -5744,7 +5744,7 @@ mod tests {
             source,
             None,
         );
-        let make = Rc::new(RefCell::new(TreeMaker::new(Some(Rc::clone(&names)))));
+        let make = Rc::new(TreeMaker::new(Some(Rc::clone(&names))));
         // An empty ClassDecl with a class symbol exercises every analyzer's
         // class/method entry point, including the ported Lint.augment.
         let no_type = ctx.alloc_type(Type::new(

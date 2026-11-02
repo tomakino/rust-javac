@@ -26,18 +26,19 @@
 //! * Java null child references are Option<TreeId>; child lists are List<TreeId>. A Java
 //!   null list argument (e.g. the JCExpression extending of a class) maps to Option too, but
 //!   the makeXxx list parameters are kept as List<TreeId> (callers pass List::nil()).
-//! * TreeMaker is a mutable shared object in javac (Parser keeps one); the Rust instance is
-//!   Rc<RefCell<TreeMaker>> (the interior-mutability whitelist used for Options/Log; registered).
-//! * Names is ported (util::names::Names), but the Java Names.instance(Context) adapter is not;
-//!   TreeMaker::instance reads an Option<Rc<Names>> from the Context (registered by the
-//!   caller when available) and the field stays None until then. Types and Symtab are now
-//!   ported services but they are passed explicitly (the Types service is stateful and Symtab
-//!   is &mut at the call sites; ADR 0001); the upstream TreeMaker fields types/syms are
-//!   therefore not stored, and the Symbol/Type convenience factories (Ident(Symbol),
-//!   QualIdent, Type(Type), VarDef(VarSymbol), MethodDef(MethodSymbol), TypeParam, Param(s),
-//!   This/Super/ClassLiteral, Create,...) take ctx/syms (and Types where required) as
-//!   explicit parameters (see TreeMaker.java:703-1144; the Attribute/constType based helpers
-//!   remain registered NOT PORTED, see the Registration list above).
+//! * TreeMaker is shared as Rc<TreeMaker>. pos and toplevel are the only
+//!   post-construction mutable fields (field-level Cell: at/at_diagnostic write
+//!   pos, top_level writes toplevel); names/types/syms/root_package are filled
+//!   by the bootstrap before the maker is wrapped in Rc and are then read-only.
+//! * Names is ported (util::names::Names); TreeMaker::new takes an
+//!   Option<Rc<Names>>. The Java TreeMaker.instance(Context) adapter is not used:
+//!   the bootstrap creates the maker after Symtab is frozen and wires the shared
+//!   Types/Symtab/rootPackage explicitly. Symbol/Type convenience factories
+//!   (Ident(Symbol), QualIdent, Type(Type), VarDef(VarSymbol),
+//!   MethodDef(MethodSymbol), TypeParam, Param(s), This/Super/ClassLiteral,
+//!   Create,...) also take ctx/syms (and Types where required) as explicit
+//!   parameters (see TreeMaker.java:703-1144; the Attribute/constType based
+//!   helpers remain registered NOT PORTED, see the Registration list above).
 //! * at(DiagnosticPosition) takes Option<&dyn DiagnosticPosition> (Java null means NOPOS);
 //!   getStartPosition -> DiagnosticPosition::get_start_position.
 //! * JCLambda/conditional/member-reference constructor defaults: the Java constructors set
@@ -69,13 +70,16 @@ use crate::util::list::List;
 use crate::util::name::Name;
 use crate::util::names::Names;
 use crate::util::position;
+use std::cell::Cell;
 
 /// Java: public class TreeMaker implements JCTree.Factory.
 pub struct TreeMaker {
-    /// Java: public int pos = Position.NOPOS.
-    pub pos: i32,
-    /// Java: public JCCompilationUnit toplevel.
-    pub toplevel: StdOption<TreeId>,
+    /// Java: public int pos = Position.NOPOS (field-level Cell: every
+    /// TreeFactory call reads the position, only at/at_diagnostic write it).
+    pub pos: Cell<i32>,
+    /// Java: public JCCompilationUnit toplevel (field-level Cell: top_level is
+    /// the only writer, after construction).
+    pub toplevel: Cell<StdOption<TreeId>>,
     /// Java: Names names. (See the file header for the Option adaptation.)
     pub names: StdOption<Rc<Names>>,
     /// Java: Types types (the shared type service; registered adapter: linked
@@ -94,8 +98,8 @@ impl TreeMaker {
     /// Java: protected TreeMaker(Context context).
     pub fn new(names: StdOption<Rc<Names>>) -> TreeMaker {
         TreeMaker {
-            pos: position::NOPOS,
-            toplevel: None,
+            pos: Cell::new(position::NOPOS),
+            toplevel: Cell::new(None),
             names,
             types: None,
             syms: None,
@@ -111,25 +115,13 @@ impl TreeMaker {
         syms: StdOption<Rc<crate::code::symtab::Symtab>>,
     ) -> TreeMaker {
         TreeMaker {
-            pos: position::FIRSTPOS,
-            toplevel,
+            pos: Cell::new(position::FIRSTPOS),
+            toplevel: Cell::new(toplevel),
             names,
             types,
             syms,
             root_package: None,
         }
-    }
-
-    /// Java: public static TreeMaker instance(Context context) — cached in the Context.
-    pub fn instance(context: &mut crate::util::context::Context) -> Rc<RefCell<TreeMaker>> {
-        if let Some(instance) = context.get::<RefCell<TreeMaker>>() {
-            return instance;
-        }
-        // Java: names = Names.instance(context); Types/Symtab are not ported yet (file header).
-        let names = context.get::<Names>();
-        let maker = Rc::new(RefCell::new(TreeMaker::new(names)));
-        context.put::<RefCell<TreeMaker>>(Rc::clone(&maker));
-        maker
     }
 
     /// Java: public TreeMaker forToplevel(JCCompilationUnit toplevel).
@@ -145,26 +137,26 @@ impl TreeMaker {
     }
 
     /// Java: public TreeMaker at(int pos).
-    pub fn at(&mut self, pos: i32) -> &mut TreeMaker {
-        self.pos = pos;
+    pub fn at(&self, pos: i32) -> &TreeMaker {
+        self.pos.set(pos);
         self
     }
 
     /// Java: public TreeMaker at(DiagnosticPosition pos).
     ///
     /// Java null -> NOPOS; the Rust parameter is Option<&dyn DiagnosticPosition>.
-    pub fn at_diagnostic(&mut self, pos: StdOption<&dyn DiagnosticPosition>) -> &mut TreeMaker {
-        self.pos = match pos {
+    pub fn at_diagnostic(&self, pos: StdOption<&dyn DiagnosticPosition>) -> &TreeMaker {
+        self.pos.set(match pos {
             Some(pos) => pos.get_start_position(),
             None => position::NOPOS,
-        };
+        });
         self
     }
 
     /// The shared node allocation: Java "new JCxxx(...); tree.pos = pos; return tree;".
-    fn make(&mut self, ctx: &mut CompilerContext, tag: Tag, kind: TreeKind) -> TreeId {
+    fn make(&self, ctx: &mut CompilerContext, tag: Tag, kind: TreeKind) -> TreeId {
         ctx.alloc_tree(JCTree {
-            pos: self.pos,
+            pos: self.pos.get(),
             ty: None,
             tag,
             kind,
@@ -172,7 +164,7 @@ impl TreeMaker {
     }
 
     /// Java: public JCCompilationUnit TopLevel(List<JCTree> defs).
-    pub fn top_level(&mut self, ctx: &mut CompilerContext, defs: List<TreeId>) -> TreeId {
+    pub fn top_level(&self, ctx: &mut CompilerContext, defs: List<TreeId>) -> TreeId {
         for def in defs.iter() {
             let ok = match ctx.tree(def).tag {
                 Tag::CLASSDEF
@@ -208,7 +200,7 @@ impl TreeMaker {
                 end_positions: None,
             },
         );
-        self.toplevel = Some(tree);
+        self.toplevel.set(Some(tree));
         tree
     }
 
@@ -233,16 +225,16 @@ impl TreeMaker {
 /// erroneous / erroneous_empty, new_class / new_class_speculative.
 #[allow(clippy::too_many_arguments)]
 pub trait TreeFactory {
-    fn top_level(&mut self, ctx: &mut CompilerContext, defs: List<TreeId>) -> TreeId;
+    fn top_level(&self, ctx: &mut CompilerContext, defs: List<TreeId>) -> TreeId;
     fn package_decl(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         annotations: List<TreeId>,
         pid: TreeId,
     ) -> TreeId;
-    fn import(&mut self, ctx: &mut CompilerContext, qualid: TreeId, static_import: bool) -> TreeId;
+    fn import(&self, ctx: &mut CompilerContext, qualid: TreeId, static_import: bool) -> TreeId;
     fn class_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         name: Name,
@@ -252,7 +244,7 @@ pub trait TreeFactory {
         defs: List<TreeId>,
     ) -> TreeId;
     fn class_def_permitting(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         name: Name,
@@ -263,7 +255,7 @@ pub trait TreeFactory {
         defs: List<TreeId>,
     ) -> TreeId;
     fn method_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         name: Name,
@@ -276,7 +268,7 @@ pub trait TreeFactory {
         default_value: StdOption<TreeId>,
     ) -> TreeId;
     fn method_def_simple(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         name: Name,
@@ -288,7 +280,7 @@ pub trait TreeFactory {
         default_value: StdOption<TreeId>,
     ) -> TreeId;
     fn var_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         name: Name,
@@ -296,7 +288,7 @@ pub trait TreeFactory {
         init: StdOption<TreeId>,
     ) -> TreeId;
     fn var_def_declared_using_var(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         name: Name,
@@ -307,18 +299,18 @@ pub trait TreeFactory {
     /// Java: JCTree.Factory.ReceiverVarDef(JCModifiers mods, JCExpression nameexpr,
     /// JCExpression vartype) — the receiver parameter (name is Names.empty).
     fn receiver_var_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         nameexpr: TreeId,
         vartype: StdOption<TreeId>,
     ) -> TreeId;
-    fn skip(&mut self, ctx: &mut CompilerContext) -> TreeId;
-    fn block(&mut self, ctx: &mut CompilerContext, flags: i64, stats: List<TreeId>) -> TreeId;
-    fn do_loop(&mut self, ctx: &mut CompilerContext, body: TreeId, cond: TreeId) -> TreeId;
-    fn while_loop(&mut self, ctx: &mut CompilerContext, cond: TreeId, body: TreeId) -> TreeId;
+    fn skip(&self, ctx: &mut CompilerContext) -> TreeId;
+    fn block(&self, ctx: &mut CompilerContext, flags: i64, stats: List<TreeId>) -> TreeId;
+    fn do_loop(&self, ctx: &mut CompilerContext, body: TreeId, cond: TreeId) -> TreeId;
+    fn while_loop(&self, ctx: &mut CompilerContext, cond: TreeId, body: TreeId) -> TreeId;
     fn for_loop(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         init: List<TreeId>,
         cond: StdOption<TreeId>,
@@ -326,89 +318,89 @@ pub trait TreeFactory {
         body: TreeId,
     ) -> TreeId;
     fn foreach_loop(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         var: TreeId,
         expr: TreeId,
         body: TreeId,
     ) -> TreeId;
-    fn labelled(&mut self, ctx: &mut CompilerContext, label: Name, body: TreeId) -> TreeId;
+    fn labelled(&self, ctx: &mut CompilerContext, label: Name, body: TreeId) -> TreeId;
     fn switch(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         selector: TreeId,
         cases: List<TreeId>,
     ) -> TreeId;
     fn switch_expression(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         selector: TreeId,
         cases: List<TreeId>,
     ) -> TreeId;
     fn case(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         case_kind: CaseKind,
         labels: List<TreeId>,
         stats: List<TreeId>,
         body: StdOption<TreeId>,
     ) -> TreeId;
-    fn synchronized(&mut self, ctx: &mut CompilerContext, lock: TreeId, body: TreeId) -> TreeId;
+    fn synchronized(&self, ctx: &mut CompilerContext, lock: TreeId, body: TreeId) -> TreeId;
     fn try_block(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         body: TreeId,
         catchers: List<TreeId>,
         finalizer: StdOption<TreeId>,
     ) -> TreeId;
     fn try_with_resources(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         resources: List<TreeId>,
         body: TreeId,
         catchers: List<TreeId>,
         finalizer: StdOption<TreeId>,
     ) -> TreeId;
-    fn catch(&mut self, ctx: &mut CompilerContext, param: TreeId, body: TreeId) -> TreeId;
+    fn catch(&self, ctx: &mut CompilerContext, param: TreeId, body: TreeId) -> TreeId;
     fn conditional(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         cond: TreeId,
         thenpart: TreeId,
         elsepart: TreeId,
     ) -> TreeId;
     fn if_(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         cond: TreeId,
         thenpart: TreeId,
         elsepart: StdOption<TreeId>,
     ) -> TreeId;
-    fn exec(&mut self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId;
-    fn break_(&mut self, ctx: &mut CompilerContext, label: StdOption<Name>) -> TreeId;
+    fn exec(&self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId;
+    fn break_(&self, ctx: &mut CompilerContext, label: StdOption<Name>) -> TreeId;
     fn yield_(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         value: StdOption<TreeId>,
     ) -> TreeId;
-    fn continue_(&mut self, ctx: &mut CompilerContext, label: StdOption<Name>) -> TreeId;
-    fn return_(&mut self, ctx: &mut CompilerContext, expr: StdOption<TreeId>) -> TreeId;
-    fn throw_(&mut self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId;
+    fn continue_(&self, ctx: &mut CompilerContext, label: StdOption<Name>) -> TreeId;
+    fn return_(&self, ctx: &mut CompilerContext, expr: StdOption<TreeId>) -> TreeId;
+    fn throw_(&self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId;
     fn assert_(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         cond: TreeId,
         detail: StdOption<TreeId>,
     ) -> TreeId;
     fn apply(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         typeargs: List<TreeId>,
         fn_: TreeId,
         args: List<TreeId>,
     ) -> TreeId;
     fn new_class(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         encl: StdOption<TreeId>,
         typeargs: List<TreeId>,
@@ -417,7 +409,7 @@ pub trait TreeFactory {
         def: StdOption<TreeId>,
     ) -> TreeId;
     fn new_class_speculative(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         encl: StdOption<TreeId>,
         typeargs: List<TreeId>,
@@ -427,92 +419,92 @@ pub trait TreeFactory {
         class_def_removed: bool,
     ) -> TreeId;
     fn new_array(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         elemtype: StdOption<TreeId>,
         dims: List<TreeId>,
         elems: StdOption<List<TreeId>>,
     ) -> TreeId;
-    fn parens(&mut self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId;
-    fn assign(&mut self, ctx: &mut CompilerContext, lhs: TreeId, rhs: TreeId) -> TreeId;
+    fn parens(&self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId;
+    fn assign(&self, ctx: &mut CompilerContext, lhs: TreeId, rhs: TreeId) -> TreeId;
     fn assignop(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         opcode: Tag,
         lhs: TreeId,
         rhs: TreeId,
     ) -> TreeId;
-    fn unary(&mut self, ctx: &mut CompilerContext, opcode: Tag, arg: TreeId) -> TreeId;
+    fn unary(&self, ctx: &mut CompilerContext, opcode: Tag, arg: TreeId) -> TreeId;
     fn binary(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         opcode: Tag,
         lhs: TreeId,
         rhs: TreeId,
     ) -> TreeId;
-    fn type_cast(&mut self, ctx: &mut CompilerContext, type_: TreeId, expr: TreeId) -> TreeId;
-    fn type_test(&mut self, ctx: &mut CompilerContext, expr: TreeId, clazz: TreeId) -> TreeId;
-    fn binding_pattern(&mut self, ctx: &mut CompilerContext, var: TreeId) -> TreeId;
-    fn default_case_label(&mut self, ctx: &mut CompilerContext) -> TreeId;
-    fn parenthesized_pattern(&mut self, ctx: &mut CompilerContext, pattern: TreeId) -> TreeId;
-    fn guard_pattern(&mut self, ctx: &mut CompilerContext, patt: TreeId, expr: TreeId) -> TreeId;
-    fn indexed(&mut self, ctx: &mut CompilerContext, indexed: TreeId, index: TreeId) -> TreeId;
-    fn select(&mut self, ctx: &mut CompilerContext, selected: TreeId, selector: Name) -> TreeId;
-    fn ident(&mut self, ctx: &mut CompilerContext, name: Name) -> TreeId;
+    fn type_cast(&self, ctx: &mut CompilerContext, type_: TreeId, expr: TreeId) -> TreeId;
+    fn type_test(&self, ctx: &mut CompilerContext, expr: TreeId, clazz: TreeId) -> TreeId;
+    fn binding_pattern(&self, ctx: &mut CompilerContext, var: TreeId) -> TreeId;
+    fn default_case_label(&self, ctx: &mut CompilerContext) -> TreeId;
+    fn parenthesized_pattern(&self, ctx: &mut CompilerContext, pattern: TreeId) -> TreeId;
+    fn guard_pattern(&self, ctx: &mut CompilerContext, patt: TreeId, expr: TreeId) -> TreeId;
+    fn indexed(&self, ctx: &mut CompilerContext, indexed: TreeId, index: TreeId) -> TreeId;
+    fn select(&self, ctx: &mut CompilerContext, selected: TreeId, selector: Name) -> TreeId;
+    fn ident(&self, ctx: &mut CompilerContext, name: Name) -> TreeId;
     fn literal(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         typetag: TypeTag,
         value: StdOption<LiteralValue>,
     ) -> TreeId;
-    fn type_ident(&mut self, ctx: &mut CompilerContext, typetag: TypeTag) -> TreeId;
-    fn type_array(&mut self, ctx: &mut CompilerContext, elemtype: TreeId) -> TreeId;
+    fn type_ident(&self, ctx: &mut CompilerContext, typetag: TypeTag) -> TreeId;
+    fn type_array(&self, ctx: &mut CompilerContext, elemtype: TreeId) -> TreeId;
     fn type_apply(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         clazz: TreeId,
         arguments: List<TreeId>,
     ) -> TreeId;
     fn type_parameter(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         name: Name,
         bounds: List<TreeId>,
     ) -> TreeId;
     fn wildcard(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         kind: TreeId,
         type_: StdOption<TreeId>,
     ) -> TreeId;
-    fn type_bound_kind(&mut self, ctx: &mut CompilerContext, kind: BoundKind) -> TreeId;
+    fn type_bound_kind(&self, ctx: &mut CompilerContext, kind: BoundKind) -> TreeId;
     fn annotation(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         annotation_type: TreeId,
         args: List<TreeId>,
     ) -> TreeId;
     fn type_annotation(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         annotation_type: TreeId,
         args: List<TreeId>,
     ) -> TreeId;
-    fn modifiers(&mut self, ctx: &mut CompilerContext, flags: i64) -> TreeId;
+    fn modifiers(&self, ctx: &mut CompilerContext, flags: i64) -> TreeId;
     fn modifiers_with_annotations(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         flags: i64,
         annotations: List<TreeId>,
     ) -> TreeId;
     fn annotated_type(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         annotations: List<TreeId>,
         underlying_type: TreeId,
     ) -> TreeId;
     fn module_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         kind: ModuleKind,
@@ -520,45 +512,45 @@ pub trait TreeFactory {
         directives: List<TreeId>,
     ) -> TreeId;
     fn exports(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         qual_id: TreeId,
         module_names: StdOption<List<TreeId>>,
     ) -> TreeId;
     fn opens(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         qual_id: TreeId,
         module_names: StdOption<List<TreeId>>,
     ) -> TreeId;
     fn provides(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         service_name: TreeId,
         impl_names: List<TreeId>,
     ) -> TreeId;
     fn requires(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         is_transitive: bool,
         is_static_phase: bool,
         qual_id: TreeId,
     ) -> TreeId;
-    fn uses(&mut self, ctx: &mut CompilerContext, qual_id: TreeId) -> TreeId;
-    fn erroneous(&mut self, ctx: &mut CompilerContext, errs: List<TreeId>) -> TreeId;
-    fn erroneous_empty(&mut self, ctx: &mut CompilerContext) -> TreeId;
-    fn let_expr(&mut self, ctx: &mut CompilerContext, defs: List<TreeId>, expr: TreeId) -> TreeId;
-    fn type_union(&mut self, ctx: &mut CompilerContext, components: List<TreeId>) -> TreeId;
-    fn type_intersection(&mut self, ctx: &mut CompilerContext, components: List<TreeId>) -> TreeId;
+    fn uses(&self, ctx: &mut CompilerContext, qual_id: TreeId) -> TreeId;
+    fn erroneous(&self, ctx: &mut CompilerContext, errs: List<TreeId>) -> TreeId;
+    fn erroneous_empty(&self, ctx: &mut CompilerContext) -> TreeId;
+    fn let_expr(&self, ctx: &mut CompilerContext, defs: List<TreeId>, expr: TreeId) -> TreeId;
+    fn type_union(&self, ctx: &mut CompilerContext, components: List<TreeId>) -> TreeId;
+    fn type_intersection(&self, ctx: &mut CompilerContext, components: List<TreeId>) -> TreeId;
     fn anonymous_class_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         defs: List<TreeId>,
     ) -> TreeId;
-    fn lambda(&mut self, ctx: &mut CompilerContext, params: List<TreeId>, body: TreeId) -> TreeId;
+    fn lambda(&self, ctx: &mut CompilerContext, params: List<TreeId>, body: TreeId) -> TreeId;
     fn reference(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mode: ReferenceMode,
         name: Name,
@@ -569,12 +561,12 @@ pub trait TreeFactory {
 
 #[allow(clippy::too_many_arguments)]
 impl TreeFactory for TreeMaker {
-    fn top_level(&mut self, ctx: &mut CompilerContext, defs: List<TreeId>) -> TreeId {
+    fn top_level(&self, ctx: &mut CompilerContext, defs: List<TreeId>) -> TreeId {
         TreeMaker::top_level(self, ctx, defs)
     }
 
     fn package_decl(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         annotations: List<TreeId>,
         pid: TreeId,
@@ -590,7 +582,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn import(&mut self, ctx: &mut CompilerContext, qualid: TreeId, static_import: bool) -> TreeId {
+    fn import(&self, ctx: &mut CompilerContext, qualid: TreeId, static_import: bool) -> TreeId {
         self.make(
             ctx,
             Tag::IMPORT,
@@ -603,7 +595,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn class_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         name: Name,
@@ -625,7 +617,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn class_def_permitting(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         name: Name,
@@ -652,7 +644,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn method_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         name: Name,
@@ -684,7 +676,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn method_def_simple(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         name: Name,
@@ -710,7 +702,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn var_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         name: Name,
@@ -734,7 +726,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn var_def_declared_using_var(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         name: Name,
@@ -759,7 +751,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn receiver_var_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         nameexpr: TreeId,
@@ -784,11 +776,11 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn skip(&mut self, ctx: &mut CompilerContext) -> TreeId {
+    fn skip(&self, ctx: &mut CompilerContext) -> TreeId {
         self.make(ctx, Tag::SKIP, TreeKind::Skip {})
     }
 
-    fn block(&mut self, ctx: &mut CompilerContext, flags: i64, stats: List<TreeId>) -> TreeId {
+    fn block(&self, ctx: &mut CompilerContext, flags: i64, stats: List<TreeId>) -> TreeId {
         self.make(
             ctx,
             Tag::BLOCK,
@@ -800,7 +792,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn do_loop(&mut self, ctx: &mut CompilerContext, body: TreeId, cond: TreeId) -> TreeId {
+    fn do_loop(&self, ctx: &mut CompilerContext, body: TreeId, cond: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::DOLOOP,
@@ -811,7 +803,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn while_loop(&mut self, ctx: &mut CompilerContext, cond: TreeId, body: TreeId) -> TreeId {
+    fn while_loop(&self, ctx: &mut CompilerContext, cond: TreeId, body: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::WHILELOOP,
@@ -823,7 +815,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn for_loop(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         init: List<TreeId>,
         cond: StdOption<TreeId>,
@@ -843,7 +835,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn foreach_loop(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         var: TreeId,
         expr: TreeId,
@@ -860,7 +852,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn labelled(&mut self, ctx: &mut CompilerContext, label: Name, body: TreeId) -> TreeId {
+    fn labelled(&self, ctx: &mut CompilerContext, label: Name, body: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::LABELLED,
@@ -872,7 +864,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn switch(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         selector: TreeId,
         cases: List<TreeId>,
@@ -891,7 +883,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn switch_expression(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         selector: TreeId,
         cases: List<TreeId>,
@@ -911,7 +903,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn case(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         case_kind: CaseKind,
         labels: List<TreeId>,
@@ -931,7 +923,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn synchronized(&mut self, ctx: &mut CompilerContext, lock: TreeId, body: TreeId) -> TreeId {
+    fn synchronized(&self, ctx: &mut CompilerContext, lock: TreeId, body: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::SYNCHRONIZED,
@@ -943,7 +935,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn try_block(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         body: TreeId,
         catchers: List<TreeId>,
@@ -953,7 +945,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn try_with_resources(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         resources: List<TreeId>,
         body: TreeId,
@@ -973,7 +965,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn catch(&mut self, ctx: &mut CompilerContext, param: TreeId, body: TreeId) -> TreeId {
+    fn catch(&self, ctx: &mut CompilerContext, param: TreeId, body: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::CATCH,
@@ -985,7 +977,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn conditional(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         cond: TreeId,
         thenpart: TreeId,
@@ -1004,7 +996,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn if_(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         cond: TreeId,
         thenpart: TreeId,
@@ -1021,7 +1013,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn exec(&mut self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId {
+    fn exec(&self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::EXEC,
@@ -1029,7 +1021,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn break_(&mut self, ctx: &mut CompilerContext, label: StdOption<Name>) -> TreeId {
+    fn break_(&self, ctx: &mut CompilerContext, label: StdOption<Name>) -> TreeId {
         self.make(
             ctx,
             Tag::BREAK,
@@ -1041,7 +1033,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn yield_(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         value: StdOption<TreeId>,
     ) -> TreeId {
@@ -1052,7 +1044,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn continue_(&mut self, ctx: &mut CompilerContext, label: StdOption<Name>) -> TreeId {
+    fn continue_(&self, ctx: &mut CompilerContext, label: StdOption<Name>) -> TreeId {
         self.make(
             ctx,
             Tag::CONTINUE,
@@ -1063,16 +1055,16 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn return_(&mut self, ctx: &mut CompilerContext, expr: StdOption<TreeId>) -> TreeId {
+    fn return_(&self, ctx: &mut CompilerContext, expr: StdOption<TreeId>) -> TreeId {
         self.make(ctx, Tag::RETURN, TreeKind::Return { expr })
     }
 
-    fn throw_(&mut self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId {
+    fn throw_(&self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId {
         self.make(ctx, Tag::THROW, TreeKind::Throw { expr: Some(expr) })
     }
 
     fn assert_(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         cond: TreeId,
         detail: StdOption<TreeId>,
@@ -1088,7 +1080,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn apply(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         typeargs: List<TreeId>,
         fn_: TreeId,
@@ -1108,7 +1100,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn new_class(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         encl: StdOption<TreeId>,
         typeargs: List<TreeId>,
@@ -1135,7 +1127,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn new_class_speculative(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         encl: StdOption<TreeId>,
         typeargs: List<TreeId>,
@@ -1155,7 +1147,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn new_array(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         elemtype: StdOption<TreeId>,
         dims: List<TreeId>,
@@ -1174,11 +1166,11 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn parens(&mut self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId {
+    fn parens(&self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId {
         self.make(ctx, Tag::PARENS, TreeKind::Parens { expr: Some(expr) })
     }
 
-    fn assign(&mut self, ctx: &mut CompilerContext, lhs: TreeId, rhs: TreeId) -> TreeId {
+    fn assign(&self, ctx: &mut CompilerContext, lhs: TreeId, rhs: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::ASSIGN,
@@ -1190,7 +1182,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn assignop(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         opcode: Tag,
         lhs: TreeId,
@@ -1207,7 +1199,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn unary(&mut self, ctx: &mut CompilerContext, opcode: Tag, arg: TreeId) -> TreeId {
+    fn unary(&self, ctx: &mut CompilerContext, opcode: Tag, arg: TreeId) -> TreeId {
         self.make(
             ctx,
             opcode,
@@ -1219,7 +1211,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn binary(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         opcode: Tag,
         lhs: TreeId,
@@ -1237,7 +1229,7 @@ impl TreeFactory for TreeMaker {
     }
 
     /// Upstream: TreeMaker.TypeCast(Type type, JCExpression expr).
-    fn type_cast(&mut self, ctx: &mut CompilerContext, type_: TreeId, expr: TreeId) -> TreeId {
+    fn type_cast(&self, ctx: &mut CompilerContext, type_: TreeId, expr: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::TYPECAST,
@@ -1248,7 +1240,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn type_test(&mut self, ctx: &mut CompilerContext, expr: TreeId, clazz: TreeId) -> TreeId {
+    fn type_test(&self, ctx: &mut CompilerContext, expr: TreeId, clazz: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::TYPETEST,
@@ -1259,7 +1251,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn binding_pattern(&mut self, ctx: &mut CompilerContext, var: TreeId) -> TreeId {
+    fn binding_pattern(&self, ctx: &mut CompilerContext, var: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::BINDINGPATTERN,
@@ -1267,11 +1259,11 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn default_case_label(&mut self, ctx: &mut CompilerContext) -> TreeId {
+    fn default_case_label(&self, ctx: &mut CompilerContext) -> TreeId {
         self.make(ctx, Tag::DEFAULTCASELABEL, TreeKind::DefaultCaseLabel {})
     }
 
-    fn parenthesized_pattern(&mut self, ctx: &mut CompilerContext, pattern: TreeId) -> TreeId {
+    fn parenthesized_pattern(&self, ctx: &mut CompilerContext, pattern: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::PARENTHESIZEDPATTERN,
@@ -1281,7 +1273,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn guard_pattern(&mut self, ctx: &mut CompilerContext, patt: TreeId, expr: TreeId) -> TreeId {
+    fn guard_pattern(&self, ctx: &mut CompilerContext, patt: TreeId, expr: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::GUARDPATTERN,
@@ -1292,7 +1284,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn indexed(&mut self, ctx: &mut CompilerContext, indexed: TreeId, index: TreeId) -> TreeId {
+    fn indexed(&self, ctx: &mut CompilerContext, indexed: TreeId, index: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::INDEXED,
@@ -1303,7 +1295,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn select(&mut self, ctx: &mut CompilerContext, selected: TreeId, selector: Name) -> TreeId {
+    fn select(&self, ctx: &mut CompilerContext, selected: TreeId, selector: Name) -> TreeId {
         self.make(
             ctx,
             Tag::SELECT,
@@ -1315,12 +1307,12 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn ident(&mut self, ctx: &mut CompilerContext, name: Name) -> TreeId {
+    fn ident(&self, ctx: &mut CompilerContext, name: Name) -> TreeId {
         self.make(ctx, Tag::IDENT, TreeKind::Ident { name, sym: None })
     }
 
     fn literal(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         typetag: TypeTag,
         value: StdOption<LiteralValue>,
@@ -1328,11 +1320,11 @@ impl TreeFactory for TreeMaker {
         self.make(ctx, Tag::LITERAL, TreeKind::Literal { typetag, value })
     }
 
-    fn type_ident(&mut self, ctx: &mut CompilerContext, typetag: TypeTag) -> TreeId {
+    fn type_ident(&self, ctx: &mut CompilerContext, typetag: TypeTag) -> TreeId {
         self.make(ctx, Tag::TYPEIDENT, TreeKind::PrimitiveTypeTree { typetag })
     }
 
-    fn type_array(&mut self, ctx: &mut CompilerContext, elemtype: TreeId) -> TreeId {
+    fn type_array(&self, ctx: &mut CompilerContext, elemtype: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::TYPEARRAY,
@@ -1343,7 +1335,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn type_apply(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         clazz: TreeId,
         arguments: List<TreeId>,
@@ -1359,7 +1351,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn type_parameter(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         name: Name,
         bounds: List<TreeId>,
@@ -1376,7 +1368,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn wildcard(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         kind: TreeId,
         type_: StdOption<TreeId>,
@@ -1391,12 +1383,12 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn type_bound_kind(&mut self, ctx: &mut CompilerContext, kind: BoundKind) -> TreeId {
+    fn type_bound_kind(&self, ctx: &mut CompilerContext, kind: BoundKind) -> TreeId {
         self.make(ctx, Tag::TYPEBOUNDKIND, TreeKind::TypeBoundKind { kind })
     }
 
     fn annotation(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         annotation_type: TreeId,
         args: List<TreeId>,
@@ -1418,7 +1410,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn type_annotation(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         annotation_type: TreeId,
         args: List<TreeId>,
@@ -1440,12 +1432,12 @@ impl TreeFactory for TreeMaker {
         tree
     }
 
-    fn modifiers(&mut self, ctx: &mut CompilerContext, flags: i64) -> TreeId {
+    fn modifiers(&self, ctx: &mut CompilerContext, flags: i64) -> TreeId {
         self.modifiers_with_annotations(ctx, flags, List::nil())
     }
 
     fn modifiers_with_annotations(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         flags: i64,
         annotations: List<TreeId>,
@@ -1458,7 +1450,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn annotated_type(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         annotations: List<TreeId>,
         underlying_type: TreeId,
@@ -1474,7 +1466,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn module_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         kind: ModuleKind,
@@ -1496,7 +1488,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn exports(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         qual_id: TreeId,
         module_names: StdOption<List<TreeId>>,
@@ -1513,7 +1505,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn opens(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         qual_id: TreeId,
         module_names: StdOption<List<TreeId>>,
@@ -1530,7 +1522,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn provides(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         service_name: TreeId,
         impl_names: List<TreeId>,
@@ -1546,7 +1538,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn requires(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         is_transitive: bool,
         is_static_phase: bool,
@@ -1564,7 +1556,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn uses(&mut self, ctx: &mut CompilerContext, qual_id: TreeId) -> TreeId {
+    fn uses(&self, ctx: &mut CompilerContext, qual_id: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::USES,
@@ -1574,15 +1566,15 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn erroneous(&mut self, ctx: &mut CompilerContext, errs: List<TreeId>) -> TreeId {
+    fn erroneous(&self, ctx: &mut CompilerContext, errs: List<TreeId>) -> TreeId {
         self.make(ctx, Tag::ERRONEOUS, TreeKind::Erroneous { errs })
     }
 
-    fn erroneous_empty(&mut self, ctx: &mut CompilerContext) -> TreeId {
+    fn erroneous_empty(&self, ctx: &mut CompilerContext) -> TreeId {
         self.erroneous(ctx, List::nil())
     }
 
-    fn let_expr(&mut self, ctx: &mut CompilerContext, defs: List<TreeId>, expr: TreeId) -> TreeId {
+    fn let_expr(&self, ctx: &mut CompilerContext, defs: List<TreeId>, expr: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::LETEXPR,
@@ -1594,7 +1586,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn type_union(&mut self, ctx: &mut CompilerContext, components: List<TreeId>) -> TreeId {
+    fn type_union(&self, ctx: &mut CompilerContext, components: List<TreeId>) -> TreeId {
         self.make(
             ctx,
             Tag::TYPEUNION,
@@ -1604,7 +1596,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn type_intersection(&mut self, ctx: &mut CompilerContext, components: List<TreeId>) -> TreeId {
+    fn type_intersection(&self, ctx: &mut CompilerContext, components: List<TreeId>) -> TreeId {
         self.make(
             ctx,
             Tag::TYPEINTERSECTION,
@@ -1613,7 +1605,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn anonymous_class_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mods: TreeId,
         defs: List<TreeId>,
@@ -1632,7 +1624,7 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn lambda(&mut self, ctx: &mut CompilerContext, params: List<TreeId>, body: TreeId) -> TreeId {
+    fn lambda(&self, ctx: &mut CompilerContext, params: List<TreeId>, body: TreeId) -> TreeId {
         // Java: new JCLambda(pos, params, body): paramKind is EXPLICIT when the
         // list is empty or the first parameter has a declared type, IMPLICIT
         // otherwise; PolyKind.STANDALONE (JCLambda constructor).
@@ -1662,7 +1654,7 @@ impl TreeFactory for TreeMaker {
     }
 
     fn reference(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         mode: ReferenceMode,
         name: Name,
@@ -1705,7 +1697,7 @@ impl TreeMaker {
 
     /// Java: public JCIdent Ident(Symbol sym)
     pub fn ident_symbol(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         sym: crate::ids::SymbolId,
     ) -> TreeId {
@@ -1733,7 +1725,7 @@ impl TreeMaker {
 
     /// Java: public JCExpression Select(JCExpression base, Symbol sym)
     pub fn select_symbol(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         base: TreeId,
         sym: crate::ids::SymbolId,
@@ -1750,7 +1742,7 @@ impl TreeMaker {
 
     /// Java: public JCExpression QualIdent(Symbol sym)
     pub fn qual_ident(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         sym: crate::ids::SymbolId,
@@ -1778,7 +1770,7 @@ impl TreeMaker {
 
     /// Java: public JCExpression Ident(JCVariableDecl param)
     pub fn ident_param(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         param: TreeId,
     ) -> TreeId {
@@ -1790,7 +1782,7 @@ impl TreeMaker {
     }
 
     /// Java: public List<JCExpression> Idents(List<JCVariableDecl> params)
-    pub fn idents(&mut self, ctx: &mut CompilerContext, params: List<TreeId>) -> List<TreeId> {
+    pub fn idents(&self, ctx: &mut CompilerContext, params: List<TreeId>) -> List<TreeId> {
         let mut result: List<TreeId> = List::nil();
         let mut current = params;
         while current.non_empty() {
@@ -1805,7 +1797,7 @@ impl TreeMaker {
 
     /// Java: public JCExpression This(Type t)
     pub fn this_expr(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         t: crate::ids::TypeId,
     ) -> TreeId {
@@ -1822,7 +1814,7 @@ impl TreeMaker {
 
     /// Java: public JCExpression QualThis(Type t)
     pub fn qual_this(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         t: crate::ids::TypeId,
@@ -1841,7 +1833,7 @@ impl TreeMaker {
 
     /// Java: public JCExpression ClassLiteral(ClassSymbol clazz)
     pub fn class_literal_symbol(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         clazz: crate::ids::SymbolId,
@@ -1852,7 +1844,7 @@ impl TreeMaker {
 
     /// Java: public JCExpression ClassLiteral(Type t)
     pub fn class_literal(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         t: crate::ids::TypeId,
@@ -1871,7 +1863,7 @@ impl TreeMaker {
 
     /// Java: public JCIdent Super(Type t, TypeSymbol owner)
     pub fn super_expr(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         t: crate::ids::TypeId,
         owner: crate::ids::SymbolId,
@@ -1887,13 +1879,13 @@ impl TreeMaker {
     }
 
     /// Java: public JCMethodInvocation App(JCExpression meth)
-    pub fn app(&mut self, ctx: &mut CompilerContext, meth: TreeId) -> TreeId {
+    pub fn app(&self, ctx: &mut CompilerContext, meth: TreeId) -> TreeId {
         self.app_with_args(ctx, meth, List::nil())
     }
 
     /// Java: public JCMethodInvocation App(JCExpression meth, List<JCExpression> args)
     pub fn app_with_args(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         meth: TreeId,
         args: List<TreeId>,
@@ -1909,7 +1901,7 @@ impl TreeMaker {
 
     /// Java: public JCExpression Create(Symbol ctor, List<JCExpression> args)
     pub fn create(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         types: &Types,
         syms: &crate::code::symtab::Symtab,
@@ -1930,7 +1922,7 @@ impl TreeMaker {
 
     /// Java: public JCExpression Type(Type t)
     pub fn type_expr(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         t: crate::ids::TypeId,
@@ -2058,7 +2050,7 @@ impl TreeMaker {
 
     /// Java: public List<JCExpression> Types(List<Type> ts)
     pub fn types(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         ts: List<crate::ids::TypeId>,
@@ -2076,7 +2068,7 @@ impl TreeMaker {
 
     /// Java: public JCVariableDecl VarDef(VarSymbol v, JCExpression init)
     pub fn var_def_symbol(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         v: crate::ids::SymbolId,
@@ -2097,7 +2089,7 @@ impl TreeMaker {
 
     /// Java: public JCMethodDecl MethodDef(MethodSymbol m, JCBlock body)
     pub fn method_def_symbol(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         m: crate::ids::SymbolId,
@@ -2109,7 +2101,7 @@ impl TreeMaker {
 
     /// Java: public JCMethodDecl MethodDef(MethodSymbol m, Type mtype, JCBlock body)
     pub fn method_def_symbol_with_type(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         m: crate::ids::SymbolId,
@@ -2175,7 +2167,7 @@ impl TreeMaker {
 
     /// Java: public JCTypeParameter TypeParam(Name name, TypeVar tvar)
     pub fn type_param(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         name: Name,
@@ -2190,7 +2182,7 @@ impl TreeMaker {
 
     /// Java: public List<JCTypeParameter> TypeParams(List<Type> typarams)
     pub fn type_params(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         typarams: List<crate::ids::TypeId>,
@@ -2213,7 +2205,7 @@ impl TreeMaker {
 
     /// Java: public JCVariableDecl Param(Name name, Type argtype, Symbol owner)
     pub fn param(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         name: Name,
@@ -2231,7 +2223,7 @@ impl TreeMaker {
 
     /// Java: public List<JCVariableDecl> Params(List<Type> argtypes, Symbol owner)
     pub fn params(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         argtypes: List<crate::ids::TypeId>,
@@ -2274,7 +2266,7 @@ impl TreeMaker {
     }
 
     /// Java: public JCStatement Call(JCExpression apply)
-    pub fn call_statement(&mut self, ctx: &mut CompilerContext, apply: TreeId) -> TreeId {
+    pub fn call_statement(&self, ctx: &mut CompilerContext, apply: TreeId) -> TreeId {
         let is_void = ctx
             .tree(apply)
             .ty
@@ -2289,7 +2281,7 @@ impl TreeMaker {
 
     /// Java: public JCStatement Assignment(Symbol v, JCExpression rhs)
     pub fn assignment(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         v: crate::ids::SymbolId,
         rhs: TreeId,
@@ -2303,7 +2295,7 @@ impl TreeMaker {
 
     /// Java: public JCArrayAccess Indexed(Symbol v, JCExpression index)
     pub fn indexed_symbol(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         v: crate::ids::SymbolId,
@@ -2324,7 +2316,7 @@ impl TreeMaker {
 
     /// Java: public JCTypeCast TypeCast(Type type, JCExpression expr)
     pub fn type_cast_typed(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         ty: crate::ids::TypeId,
@@ -2340,7 +2332,7 @@ impl TreeMaker {
     /// wrapper type (the Attribute/constType part of the upstream method is
     /// registered NOT PORTED, see the file header; the constant type is not set
     /// until the Types.constType).
-    pub fn literal_object(&mut self, ctx: &mut CompilerContext, value: LiteralValue) -> TreeId {
+    pub fn literal_object(&self, ctx: &mut CompilerContext, value: LiteralValue) -> TreeId {
         let typetag = match &value {
             LiteralValue::Integer(_) => TypeTag::INT,
             LiteralValue::Byte(_) => TypeTag::BYTE,
@@ -2407,7 +2399,7 @@ impl TreeMaker {
 
     /// Java: boolean isUnqualifiable(Symbol sym)
     fn is_unqualifiable(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         sym: crate::ids::SymbolId,
@@ -2429,11 +2421,11 @@ impl TreeMaker {
         ) {
             return true;
         }
-        if ctx.sym(sym).kind == crate::code::kinds::Kind::TYP && self.toplevel.is_some() {
+        if ctx.sym(sym).kind == crate::code::kinds::Kind::TYP && self.toplevel.get().is_some() {
             // Java: the named-import, package-member and star-import scopes are
             // queried in that order; the first scope with a candidate decides
             // (the symbol must be the only candidate).
-            let toplevel = self.toplevel.expect("toplevel");
+            let toplevel = self.toplevel.get().expect("toplevel");
             let types = self
                 .types
                 .as_ref()
@@ -2489,23 +2481,23 @@ impl TreeMaker {
     }
 
     /// Java: public Name paramName(int i) { return names.fromString("x" + i); }
-    pub fn param_name(&mut self, i: i32) -> Name {
+    pub fn param_name(&self, i: i32) -> Name {
         self.str_name(&format!("x{i}"))
     }
 
     /// Java: public Name typaramName(int i) { return names.fromString("A" + i); }
-    pub fn typaram_name(&mut self, i: i32) -> Name {
+    pub fn typaram_name(&self, i: i32) -> Name {
         self.str_name(&format!("A{i}"))
     }
 
-    fn str_name(&mut self, text: &str) -> Name {
+    fn str_name(&self, text: &str) -> Name {
         let names = self.names.as_ref().expect("TreeMaker.names");
         names.from_utf(text.as_bytes())
     }
 
     /// Java: Symbol.getRawAttributes() -> Annotations(List<Attribute.Compound>)
     fn raw_annotations(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         sym: crate::ids::SymbolId,
@@ -2522,7 +2514,7 @@ impl TreeMaker {
     /// Java: public List<JCAnnotation> Annotations(List<Attribute.Compound>
     /// attributes)
     pub fn annotations_attributes(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attributes: List<crate::ids::AttributeId>,
@@ -2541,7 +2533,7 @@ impl TreeMaker {
     /// Java: public JCAnnotation Annotation(Attribute a) —
     /// annotationBuilder.translate((Attribute.Compound) a)
     pub fn annotation_attribute(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
@@ -2552,7 +2544,7 @@ impl TreeMaker {
     /// Java: public JCAnnotation TypeAnnotation(Attribute a) —
     /// annotationBuilder.translate((Attribute.TypeCompound) a)
     pub fn type_annotation_attribute(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
@@ -2562,7 +2554,7 @@ impl TreeMaker {
 
     /// Java: AnnotationBuilder.translate(Attribute a) / the Visitor dispatch.
     pub fn translate_attribute(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
@@ -2585,7 +2577,7 @@ impl TreeMaker {
 
     /// Java: public void visitConstant(Attribute.Constant v) (AnnotationBuilder)
     fn visit_constant_attribute(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         attribute: crate::ids::AttributeId,
     ) -> TreeId {
@@ -2613,7 +2605,7 @@ impl TreeMaker {
 
     /// Java: public void visitClass(Attribute.Class clazz) (AnnotationBuilder)
     fn visit_class_attribute(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
@@ -2632,7 +2624,7 @@ impl TreeMaker {
 
     /// Java: public void visitEnum(Attribute.Enum e) (AnnotationBuilder)
     fn visit_enum_attribute(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
@@ -2646,7 +2638,7 @@ impl TreeMaker {
 
     /// Java: public void visitError(Attribute.Error e) (AnnotationBuilder)
     fn visit_error_attribute(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
@@ -2663,7 +2655,7 @@ impl TreeMaker {
     /// Java: public void visitCompound(Attribute.Compound compound)
     /// (AnnotationBuilder dispatch)
     fn visit_compound_attribute(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
@@ -2674,7 +2666,7 @@ impl TreeMaker {
     /// Java: public JCAnnotation visitCompoundInternal(Attribute.Compound
     /// compound) (AnnotationBuilder)
     fn visit_compound_internal(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
@@ -2706,7 +2698,7 @@ impl TreeMaker {
     /// Java: public JCAnnotation visitTypeCompoundInternal(Attribute.TypeCompound
     /// compound) (AnnotationBuilder)
     fn visit_type_compound_internal(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
@@ -2739,7 +2731,7 @@ impl TreeMaker {
 
     /// Java: public void visitArray(Attribute.Array array) (AnnotationBuilder)
     fn visit_array_attribute(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
@@ -2766,7 +2758,7 @@ impl TreeMaker {
     /// the TypeTag/type inference part; see the file header for the Byte/Short
     /// registration.
     pub fn literal_constant(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         value: crate::util::constants::ConstantValue,
@@ -2828,12 +2820,12 @@ fn class_type_arguments(ctx: &CompilerContext, t: crate::ids::TypeId) -> List<cr
 
 impl TreeMaker {
     /// adapter helper: public wrapper of the private block factory (JCTree.java).
-    pub fn block_pub(&mut self, ctx: &mut CompilerContext, flags: i64, stats: List<TreeId>) -> TreeId {
+    pub fn block_pub(&self, ctx: &mut CompilerContext, flags: i64, stats: List<TreeId>) -> TreeId {
         self.block(ctx, flags, stats)
     }
 
     /// adapter helper: public wrapper of the private lambda factory (JCTree.java).
-    pub fn lambda_pub(&mut self, ctx: &mut CompilerContext, params: List<TreeId>, body: TreeId) -> TreeId {
+    pub fn lambda_pub(&self, ctx: &mut CompilerContext, params: List<TreeId>, body: TreeId) -> TreeId {
         self.lambda(ctx, params, body)
     }
 }
@@ -2854,7 +2846,7 @@ impl TreeMaker {
     ///
     /// Upstream: TreeMaker.java:790-860.
     pub fn type_from_type(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
 
@@ -3040,7 +3032,7 @@ mod tests {
         // receives the context services, so the test maker is wired with syms.
         let (mut ctx, _syms, _types, mut maker) = new_maker_with_syms();
         let (unit, cdef) = build_unit(&mut ctx, &mut maker);
-        assert_eq!(maker.toplevel, Some(unit));
+        assert_eq!(maker.toplevel.get(), Some(unit));
         assert_eq!(ctx.tree(unit).tag, Tag::TOPLEVEL);
         assert_eq!(ctx.tree(unit).pos, 2);
         let TreeKind::CompilationUnit { defs, .. } = &ctx.tree(unit).kind else {

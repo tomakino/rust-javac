@@ -44,7 +44,7 @@ pub struct TransTypes {
     /// Java: private Symtab syms
     pub syms: Rc<Symtab>,
     /// Java: private TreeMaker make
-    pub make: Rc<RefCell<TreeMaker>>,
+    pub make: Rc<TreeMaker>,
     /// Java: private Enter enter
     pub enter: Rc<crate::comp::enter::Enter>,
     /// Java: private Types types
@@ -95,7 +95,7 @@ impl TransTypes {
         names: Rc<Names>,
         log: Rc<Log>,
         syms: Rc<Symtab>,
-        make: Rc<RefCell<TreeMaker>>,
+        make: Rc<TreeMaker>,
         enter: Rc<crate::comp::enter::Enter>,
         types: Rc<Types>,
         annotate: Rc<Annotate>,
@@ -307,11 +307,11 @@ impl TransTypes {
         }
         let pos = ctx.tree(tree).pos;
         let clazz_tree = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(pos).type_from_type(ctx, &*self.syms, target)
         };
         let cast_tree = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(pos);
             make.type_cast(ctx, clazz_tree, tree)
         };
@@ -469,7 +469,7 @@ impl TransTypes {
         origin: SymbolId,
         bridges: &mut Vec<TreeId>,
     ) {
-        self.make.borrow_mut().at(pos);
+        self.make.at(pos);
         let impl_type_erasure = self.symbol_erasure(ctx, impl_sym);
         // Java: Type bridgeType = meth.erasure(types);
         let bridge_type = self.symbol_erasure(ctx, meth);
@@ -513,10 +513,9 @@ impl TransTypes {
             let _ = syms;
             (return_type, param_types)
         };
-        let mods = { self.make.borrow_mut().modifiers(ctx, bridge_flags) };
+        let mods = { self.make.modifiers(ctx, bridge_flags) };
         let restype_tree = {
             self.make
-                .borrow_mut()
                 .type_from_type(ctx, &*self.syms, bridge_return_type)
         };
         let mut param_trees: List<TreeId> = List::nil();
@@ -526,13 +525,12 @@ impl TransTypes {
             let param = *params_current.head();
             let param_ty = *types_current.head();
             let (p_name, p_flags) = (ctx.sym(param).name.clone(), ctx.sym(param).flags_field);
-            let p_mods = { self.make.borrow_mut().modifiers(ctx, p_flags) };
+            let p_mods = { self.make.modifiers(ctx, p_flags) };
             let p_type_tree = {
                 self.make
-                    .borrow_mut()
                     .type_from_type(ctx, &*self.syms, param_ty)
             };
-            let p_tree = self.make.borrow_mut().var_def(
+            let p_tree = self.make.var_def(
                 ctx,
                 p_mods,
                 p_name,
@@ -547,7 +545,7 @@ impl TransTypes {
             params_current = params_current.tail();
             types_current = types_current.tail();
         }
-        let md = self.make.borrow_mut().method_def(
+        let md = self.make.method_def(
             ctx,
             mods,
             ctx.sym(bridge).name.clone(),
@@ -568,20 +566,20 @@ impl TransTypes {
             let origin_ty = ctx.sym(origin).ty.expect("origin type");
             let origin_erasure = self.erasure(ctx, origin_ty);
             if ctx.sym(impl_sym).owner == Some(origin) {
-                self.make.borrow_mut().this_expr(ctx, origin_erasure)
+                self.make.this_expr(ctx, origin_erasure)
             } else {
                 let syms = &*self.syms;
                 let st = self.types.supertype(ctx, &syms, origin_ty, None);
                 let st_tsym = ctx.typ(st).tsym.expect("supertype symbol");
                 let st_erasure = self.symbol_erasure(ctx, st_tsym);
                 let _ = syms;
-                self.make.borrow_mut().super_expr(ctx, st_erasure, origin)
+                self.make.super_expr(ctx, st_erasure, origin)
             }
         };
         // Java: Type calltype = implTypeErasure.getReturnType();
         let calltype = self.types.get_return_type_public(ctx, impl_type_erasure);
         let impl_name = ctx.sym(impl_sym).name.clone();
-        let select_tree = self.make.borrow_mut().select(ctx, receiver, impl_name);
+        let select_tree = self.make.select(ctx, receiver, impl_name);
         tree_info::set_symbol(ctx, select_tree, impl_sym);
         ctx.tree_mut(select_tree).ty = Some(calltype);
         let idents = {
@@ -589,20 +587,20 @@ impl TransTypes {
                 TreeKind::MethodDecl { params, .. } => params.clone(),
                 _ => List::nil(),
             };
-            self.make.borrow_mut().idents(ctx, method_params)
+            self.make.idents(ctx, method_params)
         };
         let impl_param_types = self.types.get_parameter_types_public(ctx, impl_type_erasure);
         let call_args = self.translate_args(ctx, idents, impl_param_types, None);
-        let call = self.make.borrow_mut().apply(ctx, List::nil(), select_tree, call_args);
+        let call = self.make.apply(ctx, List::nil(), select_tree, call_args);
         ctx.tree_mut(call).ty = Some(calltype);
         let stat = if ctx.typ(calltype).has_tag(TypeTag::VOID) {
-            self.make.borrow_mut().exec(ctx, call)
+            self.make.exec(ctx, call)
         } else {
             let bridge_return = self.types.get_return_type_public(ctx, bridge_type);
             let coerced = self.coerce_tree(ctx, call, bridge_return);
-            self.make.borrow_mut().return_(ctx, Some(coerced))
+            self.make.return_(ctx, Some(coerced))
         };
-        let body = self.make.borrow_mut().block(ctx, 0, List::of(stat));
+        let body = self.make.block(ctx, 0, List::of(stat));
         if let TreeKind::MethodDecl { body: slot, .. } = &mut ctx.tree_mut(md).kind {
             *slot = Some(body);
         }
@@ -900,10 +898,10 @@ impl TransTypes {
         {
             let toplevel = my_env.toplevel.expect("toplevel");
             let new_make = {
-                let saved = saved_make.borrow();
+                let saved = &*saved_make;
                 saved.for_toplevel(Some(toplevel))
             };
-            self.make = Rc::new(RefCell::new(new_make));
+            self.make = Rc::new(new_make);
         }
         self.pt = None;
         let tree = my_env.tree.expect("class env tree");
@@ -915,7 +913,7 @@ impl TransTypes {
         // Java: visitClassDef passes tree.pos(), a DiagnosticPosition, so the
         // maker position is TreeInfo.getStartPos(tree) — mods.pos for a class.
         let pos = crate::tree::tree_info::get_start_pos(ctx, tree);
-        self.make.borrow_mut().at(pos);
+        self.make.at(pos);
         let mut bridges: Vec<TreeId> = Vec::new();
         let is_interface = (ctx.sym(c).flags_field & crate::code::flags::INTERFACE as i64) != 0;
         if self.allow_interface_bridges || !is_interface {
@@ -950,7 +948,7 @@ impl TransTypes {
         &mut self,
         ctx: &mut CompilerContext,
         cdef: TreeId,
-        make: Rc<RefCell<TreeMaker>>,
+        make: Rc<TreeMaker>,
     ) -> Option<TreeId> {
         self.make = make;
         self.pt = None;
@@ -1899,7 +1897,7 @@ impl TreeVisitor for TransTypes {
             // Java: result = make.at(tree.pos).Type(et);
             let pos = ctx.tree(tree).pos;
             let type_tree = {
-                self.make.borrow_mut().at(pos).type_from_type(ctx, &*self.syms, et)
+                self.make.at(pos).type_from_type(ctx, &*self.syms, et)
             };
             self.result = Some(type_tree);
         } else if ctx.typ(ctx.tree(tree).ty.expect("ident type")).const_value().is_some() {
@@ -2014,7 +2012,7 @@ impl TreeVisitor for TransTypes {
         let expr = if is_unbound {
             let pos = ctx.tree(tree).pos;
             let type_tree = {
-                self.make.borrow_mut().at(pos).type_from_type(ctx, &*self.syms, receiver_target)
+                self.make.at(pos).type_from_type(ctx, &*self.syms, receiver_target)
             };
             Some(type_tree)
         } else {

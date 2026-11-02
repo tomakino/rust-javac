@@ -339,7 +339,7 @@ pub struct Analyzer {
     /// Java: final Log log
     pub log: Rc<Log>,
     /// Java: final TreeMaker make
-    pub make: Rc<RefCell<TreeMaker>>,
+    pub make: Rc<TreeMaker>,
     /// Java: final Symtab (injected, ADR 0001)
     pub syms: Rc<crate::code::symtab::Symtab>,
     /// Java: final Attr attr (adapter cell: Attr and Analyzer are mutually recursive)
@@ -381,7 +381,7 @@ impl Analyzer {
     pub fn new(
         types: Rc<Types>,
         log: Rc<Log>,
-        make: Rc<RefCell<TreeMaker>>,
+        make: Rc<TreeMaker>,
         syms: Rc<crate::code::symtab::Symtab>,
         attr: Rc<RefCell<Option<Rc<RefCell<Attr>>>>>,
         options: &Options,
@@ -661,7 +661,7 @@ impl Analyzer {
         };
         if scope_owner_is_type {
             let block = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.at(crate::util::position::NOPOS);
                 make.block_pub(
                     ctx,
@@ -917,7 +917,7 @@ impl Analyzer {
                 };
                 let pos = ctx.tree(old_tree).pos;
                 let lambda = {
-                    let mut make = self.make.borrow_mut();
+                    let make = &*self.make;
                     make.at(pos).lambda_pub(ctx, params, body)
                 };
                 List::of(lambda)
@@ -942,7 +942,7 @@ impl Analyzer {
                 let new_var = self.rewrite_var_type(ctx, old_var);
                 let body_pos = ctx.tree(new_tree).pos;
                 let empty_block = {
-                    let mut make = self.make.borrow_mut();
+                    let make = &*self.make;
                     make.at(body_pos).block_pub(ctx, 0, List::nil())
                 };
                 if let TreeKind::EnhancedForLoop { var, body, .. } = &mut ctx.tree_mut(new_tree).kind {

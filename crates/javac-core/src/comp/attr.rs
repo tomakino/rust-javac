@@ -93,7 +93,7 @@ pub struct Attr {
     pub chk: Rc<Check>,
     pub member_enter: Rc<MemberEnter>,
     pub type_enter: Rc<RefCell<TypeEnter>>,
-    pub make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
+    pub make: Rc<crate::tree::tree_maker::TreeMaker>,
     pub enter: Rc<Enter>,
     pub types: Rc<Types>,
     pub diags: Rc<Factory>,
@@ -229,7 +229,7 @@ impl Attr {
         chk: Rc<Check>,
         member_enter: Rc<MemberEnter>,
         type_enter: Rc<RefCell<TypeEnter>>,
-        make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
+        make: Rc<crate::tree::tree_maker::TreeMaker>,
         enter: Rc<Enter>,
         types: Rc<Types>,
         diags: Rc<Factory>,
@@ -1198,7 +1198,7 @@ impl Attr {
         let env = self.env.clone().expect("env");
         let class_def = {
             let pos = ctx.tree(tree).pos;
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(pos);
             let mods = make.modifiers(
                 ctx,
@@ -2785,7 +2785,7 @@ impl Attr {
         let err_symbol = syms.err_symbol;
         let err_name = ctx.sym(err_symbol).name.clone();
         let class_def = {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             let mods = make.modifiers(ctx, 0);
             make.class_def_permitting(
                 ctx,
@@ -7802,11 +7802,11 @@ impl Attr {
         ty: TypeId,
     ) {
         let vartype = if ctx.typ(ty).has_tag(TypeTag::ERROR) {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(crate::util::position::NOPOS);
             make.erroneous_empty(ctx)
         } else {
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(crate::util::position::NOPOS);
             make.type_from_type(ctx, syms, ty)
         };
@@ -7976,7 +7976,7 @@ impl Attr {
             //       tree.var.vartype.type = itype; (Attr.java:1552-1554).
             // The synthesized type tree is positioned at the variable so the
             // declaration is no longer considered implicitly typed.
-            let mut make = self.make.borrow_mut();
+            let make = &*self.make;
             make.at(ctx.tree(var).pos);
             let vartype = if ctx.typ(elemtype).has_tag(TypeTag::ERROR) {
                 make.erroneous_empty(ctx)
@@ -10812,14 +10812,6 @@ pub fn wire_attr_services(
             Rc::clone(&a.annotate),
         )
     };
-    {
-        // Java: the TreeMaker singleton holds the Context Types/Symtab
-        // (TreeMaker.java:1105-1135); explicit adapter wiring.
-        let mut maker = make.borrow_mut();
-        maker.types = Some(Rc::clone(&types));
-        maker.syms = Some(Rc::clone(&syms));
-        maker.root_package = Some(syms.root_package);
-    }
     // 1. Resolve (Resolve.java:120-200)
     let rs = Rc::new(crate::comp::resolve::Resolve::new(
         ctx,
@@ -12885,11 +12877,11 @@ impl Attr {
                 _ => panic!("ClassCastException: JCIdent expected"),
             };
             let encl_type_tree = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.at(clazz_pos).type_from_type(ctx, syms, encltype)
             };
             let selected = {
-                let mut make = self.make.borrow_mut();
+                let make = &*self.make;
                 make.at(clazz_pos).select(ctx, encl_type_tree, clazz_name)
             };
             clazzid1 = selected;
@@ -12908,7 +12900,7 @@ impl Attr {
                 if underlying_is_typeapply {
                     if let TreeKind::TypeApply { arguments, .. } = &ctx.tree(clazz).kind {
                         clazzid1 = {
-                            let mut make = self.make.borrow_mut();
+                            let make = &*self.make;
                             make.at(tree_pos(ctx, tree)).type_apply(
                                 ctx,
                                 clazzid1,
@@ -12918,7 +12910,7 @@ impl Attr {
                     }
                 }
                 clazzid1 = {
-                    let mut make = self.make.borrow_mut();
+                    let make = &*self.make;
                     make.at(tree_pos(ctx, tree))
                         .annotated_type(ctx, annotations, clazzid1)
                 };
@@ -12928,7 +12920,7 @@ impl Attr {
                     _ => List::nil(),
                 };
                 clazzid1 = {
-                    let mut make = self.make.borrow_mut();
+                    let make = &*self.make;
                     make.at(tree_pos(ctx, tree))
                         .type_apply(ctx, clazzid1, arguments)
                 };
@@ -14317,7 +14309,7 @@ impl Attr {
         let optag = Tag::NULLCHK;
         let arg_ty = ctx.tree(arg).ty.unwrap_or_else(|| self.no_type(ctx));
         let pos = ctx.tree(arg).pos;
-        let mut make = self.make.borrow_mut();
+        let make = &*self.make;
         let tree = make.at(pos).unary(ctx, optag, arg);
         drop(make);
         let operator = {
@@ -14634,7 +14626,7 @@ impl Attr {
                     crate::tree::tree_info::get_constructor_invocation_name(ctx, &body_stats);
                 if body_stats.is_empty() || invocation_name.is_none() {
                     let super_call = {
-                        let mut make = self.make.borrow_mut();
+                        let make = &*self.make;
                         let pos = ctx.tree(body).pos;
                         make.at(pos);
                         let ident = make.ident(ctx, self.names._super.clone());
@@ -15149,7 +15141,7 @@ impl Attr {
                             crate::util::jc_diagnostic::Error::from(info),
                         );
                         let erroneous = {
-                            let mut make = self.make.borrow_mut();
+                            let make = &*self.make;
                             make.at(ctx.tree(tree).pos);
                             make.erroneous_empty(ctx)
                         };
@@ -16072,14 +16064,14 @@ mod tests {
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         names: &Names,
-        make: &Rc<RefCell<TreeMaker>>,
+        make: &Rc<TreeMaker>,
         clazz_ty: TypeId,
     ) -> (TreeId, TreeId, TreeId) {
         let object_type = syms.object_type;
         let object_tsym = ctx.typ(object_type).tsym.expect("java.lang.Object symbol");
         let object_name = names.from_string(&javac_strings::JavaString::from("Object"));
         let clazz = {
-            let mut m = make.borrow_mut();
+            let m = &*make;
             m.ident(ctx, object_name)
         };
         let clazzid = clazz;
@@ -16090,16 +16082,16 @@ mod tests {
         // Java: new <Object><>() {} — a diamond class creation is a TYPEAPPLY
         // with an empty argument list (TreeInfo.isDiamond).
         let clazz = {
-            let mut m = make.borrow_mut();
+            let m = &*make;
             m.type_apply(ctx, clazzid, List::nil())
         };
         ctx.tree_mut(clazz).ty = Some(clazz_ty);
         let mods = {
-            let mut m = make.borrow_mut();
+            let m = &*make;
             m.modifiers(ctx, 0)
         };
         let cdef = {
-            let mut m = make.borrow_mut();
+            let m = &*make;
             m.class_def(
                 ctx,
                 mods,
@@ -16111,7 +16103,7 @@ mod tests {
             )
         };
         let tree = {
-            let mut m = make.borrow_mut();
+            let m = &*make;
             m.new_class(ctx, None, List::nil(), clazz, List::nil(), Some(cdef))
         };
         (tree, clazz, cdef)
@@ -16390,13 +16382,11 @@ mod tests {
         let type_envs = Rc::new(TypeEnvs::new());
         let dependencies: Rc<RefCell<dyn crate::code::dependencies::Dependencies>> =
             Rc::new(RefCell::new(DummyDependencies));
-        let make = Rc::new(RefCell::new(TreeMaker::new(Some(Rc::clone(&names)))));
-        {
-            let mut maker = make.borrow_mut();
-            maker.types = Some(Rc::clone(&types));
-            maker.syms = Some(Rc::clone(&syms));
-            maker.root_package = Some(syms.root_package);
-        }
+        let mut make = TreeMaker::new(Some(Rc::clone(&names)));
+        make.types = Some(Rc::clone(&types));
+        make.syms = Some(Rc::clone(&syms));
+        make.root_package = Some(syms.root_package);
+        let make = Rc::new(make);
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         // Java: the Check constructor obtains rs/fileManager/profile/preview
         // from the Context; the harness installs the same services explicitly

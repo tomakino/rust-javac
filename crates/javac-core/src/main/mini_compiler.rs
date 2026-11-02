@@ -109,7 +109,7 @@ pub struct MiniCompiler {
     /// The target profile.
     pub profile: Rc<Profile>,
     /// The tree factory.
-    pub make: Rc<RefCell<TreeMaker>>,
+    pub make: Rc<TreeMaker>,
     /// The parser factory.
     pub parser_factory: Rc<crate::parser::parser_factory::ParserFactory>,
     /// The file manager.
@@ -407,7 +407,6 @@ impl MiniCompiler {
         let mut ctx = CompilerContext::new();
         let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), target, source);
         let types = Rc::new(Types::with_names(Rc::clone(&names)));
-        let make = TreeMaker::instance(&mut util_context);
         let deferred_lint_handler = Rc::new(DeferredLintHandler::new());
         let dcfh = DeferredCompletionFailureHandler::instance();
         let fs_info = Rc::new(CacheFSInfo::new());
@@ -527,6 +526,11 @@ impl MiniCompiler {
         let todo = Todo::instance(&mut util_context);
         self_set_initial_completer(&mut ctx, &mut syms, &finder);
         let syms = syms.freeze();
+        let mut make = TreeMaker::new(Some(Rc::clone(&names)));
+        make.types = Some(Rc::clone(&types));
+        make.syms = Some(Rc::clone(&syms));
+        make.root_package = Some(syms.root_package);
+        let make = Rc::new(make);
         let chk = Rc::new(Check::new(
             Rc::clone(&names),
             Rc::clone(&log),
@@ -590,7 +594,7 @@ impl MiniCompiler {
         {
             let predef = syms.predef_class;
             let (def, predef_ty) = {
-                let mut maker = make.borrow_mut();
+                let maker = &*make;
                 let mods = maker.modifiers(&mut ctx, crate::code::flags::PUBLIC as i64);
                 let name = ctx.sym(predef).name.clone();
                 let def = maker.class_def(
@@ -1329,9 +1333,7 @@ impl MiniCompiler {
                 self.last_compiled_classes = Vec::new();
                 return Ok(Vec::new());
             }
-            let local_make = Rc::new(RefCell::new(
-                self.make.borrow().for_toplevel(env.toplevel),
-            ));
+            let local_make = Rc::new(self.make.for_toplevel(env.toplevel));
             // JavaCompiler.desugar: package/module declarations are lowered
             // directly (JavaCompiler.java:1516-1527); class declarations go
             // through TransTypes first.
@@ -1572,10 +1574,8 @@ impl MiniCompiler {
             });
         let prev_source = self.log.use_source(sourcefile);
         let make = Rc::clone(&self.make);
-        make.borrow_mut().at(crate::util::position::FIRSTPOS);
-        let local_make = Rc::new(RefCell::new(
-            self.make.borrow().for_toplevel(env.toplevel),
-        ));
+        make.at(crate::util::position::FIRSTPOS);
+        let local_make = Rc::new(self.make.for_toplevel(env.toplevel));
         let _ = local_make;
         {
             let syms = Rc::clone(&self.syms);
