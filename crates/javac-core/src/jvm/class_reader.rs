@@ -6689,7 +6689,7 @@ mod tests {
             .get_annotation_type_metadata()
             .expect("annotation type metadata");
         assert!(
-            metadata.borrow().is_metadata_for_annotation_type(),
+            metadata.is_metadata_for_annotation_type(),
             "AnnotationTypeMetadata installed for MyAnno"
         );
         assert!(

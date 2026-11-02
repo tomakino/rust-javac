@@ -4014,16 +4014,16 @@ mod tests {
             ..
         } = &mut ctx.sym_mut(class).kind_data
         {
-            *annotation_type_metadata = std::rc::Rc::new(std::cell::RefCell::new(
+            *annotation_type_metadata = std::rc::Rc::new(
                 crate::comp::annotate::AnnotationTypeMetadata::new(class, None),
-            ));
+            );
         }
         assert!(ctx.sym(class).has_annotations());
         match &ctx.sym(class).kind_data {
             SymbolKind::ClassSymbol {
                 annotation_type_metadata,
                 ..
-            } => assert!(annotation_type_metadata.borrow().is_metadata_for_annotation_type()),
+            } => assert!(annotation_type_metadata.is_metadata_for_annotation_type()),
             _ => panic!("class symbol"),
         }
         ctx.sym_mut(class).clear_annotation_metadata();
@@ -4033,7 +4033,7 @@ mod tests {
             SymbolKind::ClassSymbol {
                 annotation_type_metadata,
                 ..
-            } => assert!(!annotation_type_metadata.borrow().is_metadata_for_annotation_type()),
+            } => assert!(!annotation_type_metadata.is_metadata_for_annotation_type()),
             _ => panic!("class symbol"),
         }
         let method = ctx.alloc_symbol(Symbol::new(
