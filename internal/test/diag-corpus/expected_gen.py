@@ -138,6 +138,36 @@ class Example:
                 self.module_source_path_dir = child
 
 
+SKIP_OPTIONS = {"-processor", "-proc:only", "-processorpath", "--processor-module-path"}
+
+
+def skip_reason(example: "Example"):
+    """Match check_examples.py: cases this harness cannot reproduce are not
+    frozen into expected/ (the checker skips the same set)."""
+    options = example.options
+    if example.proc or any(option in SKIP_OPTIONS for option in options):
+        return "annotation-processing"
+    if "-verbose" in options:
+        return "verbose"
+    if "-doe" in options:
+        return "jvm-stacktrace"
+    if "-profile" in options:
+        return "deprecated-profile"
+    if "-source" in options:
+        index = options.index("-source")
+        if index + 1 < len(options) and options[index + 1] == "7":
+            return "deprecated-source"
+    if example.module_path and not any(
+        path.name == "module-info.java" for path in example.module_path
+    ):
+        return "modules-automatic"
+    if "-filemanager" in example.run:
+        return "custom-file-manager"
+    if any(option == "-Xplugin" or option.startswith("-Xplugin:") for option in options):
+        return "plugin"
+    return None
+
+
 def run_javac(javac: str, args: list, cwd: Path):
     command = [javac, "-J-Duser.language=en", "-J-Duser.country=US"] + args
     proc = subprocess.run(
@@ -253,6 +283,10 @@ def main() -> int:
         return 2
     examples_dir = Path(sys.argv[1]).resolve()
     out_dir = Path(sys.argv[2]).resolve()
+    # A regeneration must start from an empty tree, otherwise baselines for
+    # deleted or renamed examples linger as orphans. Always clear it first.
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     javac = resolve_javac(sys.argv)
     if not javac or not Path(javac).is_file():
@@ -269,9 +303,12 @@ def main() -> int:
         if not entry.is_dir() and not entry.name.endswith(".java"):
             continue
         name = entry.name[:-len(".java")] if entry.name.endswith(".java") else entry.name
+        example = Example(name, entry)
+        if skip_reason(example) is not None:
+            continue
         temp = Path(tempfile.mkdtemp(prefix="expected-gen-"))
         try:
-            text = run_example(Example(name, entry), temp, javac, examples_dir)
+            text = run_example(example, temp, javac, examples_dir)
             suffix = ".dir.txt" if entry.is_dir() else ".txt"
             (out_dir / (name + suffix)).write_text(text, encoding="utf-8")
             ok += 1
