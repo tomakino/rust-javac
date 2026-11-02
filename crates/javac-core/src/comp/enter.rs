@@ -55,7 +55,7 @@ pub struct Enter {
     pub lint: Option<Rc<crate::code::lint::Lint>>,
     pub file_manager: Rc<dyn JavaFileManager>,
     pub pkginfo_opt: crate::main::option::PkgInfo,
-    pub type_envs: Rc<RefCell<TypeEnvs>>,
+    pub type_envs: Rc<TypeEnvs>,
     /// Java: private JCClassDecl predefClassDef; set by set_predef_class
     /// (bootstrap adapter for TreeMaker's private factory methods).
     pub predef_class_def: Option<TreeId>,
@@ -97,7 +97,7 @@ impl Enter {
         file_manager: Rc<dyn JavaFileManager>,
         options: &crate::util::options::Options,
         todo: Rc<RefCell<crate::comp::todo::Todo>>,
-        type_envs: Rc<RefCell<TypeEnvs>>,
+        type_envs: Rc<TypeEnvs>,
     ) -> Enter {
         Enter {
             log,
@@ -155,12 +155,12 @@ impl Enter {
 
     /// Java: public Env<AttrContext> getEnv(TypeSymbol sym)
     pub fn get_env(&self, sym: SymbolId) -> Option<Rc<Env<AttrContext>>> {
-        self.type_envs.borrow().get(sym)
+        self.type_envs.get(sym)
     }
 
     /// Java: public Iterable<Env<AttrContext>> getEnvs()
     pub fn get_envs(&self) -> Vec<Rc<Env<AttrContext>>> {
-        self.type_envs.borrow().values()
+        self.type_envs.values()
     }
 
     /// Java: public Env<AttrContext> getClassEnv(TypeSymbol sym)
@@ -519,7 +519,7 @@ impl Enter {
             };
             if is_pkg_info {
                 let package_env = package_env.clone().expect("package env");
-                let existing = self.type_envs.borrow().get(packge);
+                let existing = self.type_envs.get(packge);
                 if let Some(env0) = existing {
                     let tree0 = env0.toplevel.expect("toplevel");
                     let file0 = compilation_unit_sourcefile(ctx, tree0).expect("sourcefile");
@@ -538,7 +538,7 @@ impl Enter {
                         self.log.borrow_mut().warning_at(pos, warn);
                     }
                 }
-                self.type_envs.borrow_mut().put(packge, package_env);
+                self.type_envs.put(packge, package_env);
                 // Java: for (Symbol q = tree.packge; q != null && q.kind == PCK;
                 // q = q.owner) q.flags_field |= EXISTS;
                 let mut q = Some(packge);
@@ -768,7 +768,7 @@ impl Enter {
         }
         // Set up an environment for class block.
         let local_env = self.class_env(ctx, tree, &env);
-        self.type_envs.borrow_mut().put(class, Rc::clone(&local_env));
+        self.type_envs.put(class, Rc::clone(&local_env));
         // Fill out class fields.
         ctx.sym_mut(class).completer = None;
         let tree_pos = ctx.tree(tree).pos;
@@ -906,7 +906,7 @@ impl Enter {
         let env = self.env.borrow().clone().expect("env");
         let module_env = self.module_env(ctx, tree, &env);
         let module = module_tree_symbol(ctx, tree).expect("tree.sym");
-        self.type_envs.borrow_mut().put(module, module_env.clone());
+        self.type_envs.put(module, module_env.clone());
         // Java: if (modules.isInModuleGraph(tree.sym)) todo.append(moduleEnv)
         // (Enter.java:571-573).
         if let Some(modules) = self.modules.borrow().clone()
@@ -1054,7 +1054,7 @@ impl Enter {
     }
 
     pub fn new_round(&self) {
-        self.type_envs.borrow_mut().clear();
+        self.type_envs.clear();
     }
 
     /// Java: public void unenter(JCCompilationUnit topLevel, JCTree tree)
@@ -1083,7 +1083,7 @@ impl Enter {
             // Java: if (csym == null) return; (nested expressions may be left
             // unchecked, nothing to clean up).
             if let Some(csym) = *sym {
-                self.type_envs.borrow_mut().remove(csym);
+                self.type_envs.remove(csym);
                 self.chk.remove_compiled(ctx, csym);
                 self.chk
                     .clear_local_class_name_indexes(ctx, csym);
@@ -1715,7 +1715,7 @@ mod tests {
         crate::comp::check::attach_self(&chk);
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         let todo = crate::comp::todo::Todo::instance(&mut harness.context);
-        let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
+        let type_envs = Rc::new(TypeEnvs::new());
         let enter = Enter::new(
             Rc::clone(&harness.log),
             Rc::clone(&harness.names),

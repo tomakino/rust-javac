@@ -70,7 +70,7 @@ pub struct Lower {
     /// The class-file target.
     pub target: Target,
     /// The environment table used to find class environments.
-    pub type_envs: Rc<RefCell<TypeEnvs>>,
+    pub type_envs: Rc<TypeEnvs>,
     /// The name of the synthetic assertions-disabled field.
     pub dollar_assertions_disabled: Name,
     /// The type relations service.
@@ -173,7 +173,7 @@ impl Lower {
         make: Rc<RefCell<TreeMaker>>,
         cfolder: Rc<ConstFold>,
         target: Target,
-        type_envs: Rc<RefCell<TypeEnvs>>,
+        type_envs: Rc<TypeEnvs>,
         types: Rc<Types>,
         infer: Rc<crate::comp::infer::Infer>,
         pkginfo_opt: crate::main::option::PkgInfo,
@@ -2744,7 +2744,7 @@ impl Lower {
         let prev_method_sym = self.current_method_sym;
         self.current_class = Some(tree_sym);
         self.current_method_sym = None;
-        let removed = self.type_envs.borrow_mut().remove(tree_sym);
+        let removed = self.type_envs.remove(tree_sym);
         self.attr_env = Some(match removed {
             Some(env) => env,
             None => prev_attr_env.clone().expect("attribution environment"),

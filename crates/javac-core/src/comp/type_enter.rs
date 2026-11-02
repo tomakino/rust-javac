@@ -73,7 +73,7 @@ pub struct TypeEnter {
     pub make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
     pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
     pub lint: Option<Rc<crate::code::lint::Lint>>,
-    pub type_envs: Rc<RefCell<TypeEnvs>>,
+    pub type_envs: Rc<TypeEnvs>,
     pub dependencies: Rc<RefCell<dyn Dependencies>>,
     /// Java: boolean allowTypeAnnos
     pub allow_type_annos: bool,
@@ -304,7 +304,7 @@ impl TypeEnter {
         make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
         deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
         lint: Option<Rc<crate::code::lint::Lint>>,
-        type_envs: Rc<RefCell<TypeEnvs>>,
+        type_envs: Rc<TypeEnvs>,
         dependencies: Rc<RefCell<dyn Dependencies>>,
         annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
         todo: Rc<RefCell<crate::comp::todo::Todo>>,
@@ -578,7 +578,7 @@ impl TypeEnter {
             .borrow_mut()
             .push(ctx, sym, CompletionCause::MEMBER_ENTER);
         let env = {
-            let type_envs = self.type_envs.borrow();
+            let type_envs = Rc::clone(&self.type_envs);
             type_envs.get(sym)
         };
         if let Some(env) = &env
@@ -707,7 +707,7 @@ impl TypeEnter {
             ctx.sym_mut(sym).completer = Some(Rc::new(RefCell::new(completer)));
             return Ok(());
         }
-        let env = { self.type_envs.borrow().get(sym) };
+        let env = { self.type_envs.get(sym) };
         if let Some(env) = env {
             phase.phase_do_complete_envs_one(ctx, syms, self, env, attr);
         }
@@ -4590,7 +4590,7 @@ mod tests {
         crate::comp::check::attach_self(&chk);
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         let todo = crate::comp::todo::Todo::instance(&mut context);
-        let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
+        let type_envs = Rc::new(TypeEnvs::new());
         let enter = Rc::new(RefCell::new(Enter::new(
             Rc::clone(&log),
             Rc::clone(&names),

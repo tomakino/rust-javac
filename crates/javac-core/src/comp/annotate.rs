@@ -456,7 +456,7 @@ pub struct AnnotateServices {
     pub lint: Rc<Lint>,
     pub resolve: Rc<std::cell::RefCell<Resolve>>,
     pub make: Rc<std::cell::RefCell<TreeMaker>>,
-    pub type_envs: Rc<std::cell::RefCell<TypeEnvs>>,
+    pub type_envs: Rc<TypeEnvs>,
     pub infer: Rc<crate::comp::infer::Infer>,
     pub queues: Rc<std::cell::RefCell<AnnotateQueues>>,
     /// Java: private final Attribute theUnfinishedDefaultValue
@@ -500,7 +500,7 @@ impl Annotate {
         lint: Rc<Lint>,
         resolve: Rc<std::cell::RefCell<Resolve>>,
         make: Rc<std::cell::RefCell<TreeMaker>>,
-        type_envs: Rc<std::cell::RefCell<TypeEnvs>>,
+        type_envs: Rc<TypeEnvs>,
         diags: Rc<crate::util::jc_diagnostic::Factory>,
         source: Source,
     ) -> Annotate {
@@ -2057,7 +2057,7 @@ impl AnnotateServices {
         syms: &Symtab,
         decl: SymbolId,
     ) -> Option<i32> {
-        let env = self.type_envs.borrow().get(decl)?;
+        let env = self.type_envs.get(decl)?;
         let tree = env.tree?;
         let TreeKind::ClassDecl { mods, .. } = &ctx.tree(tree).kind else {
             return None;
@@ -2415,7 +2415,7 @@ impl TreeScannerVisitor for AnnotationTypeVisitor<'_> {
             _ => None,
         };
         let prev_env = self.env.clone();
-        self.env = sym.and_then(|sym| self.services.type_envs.borrow().get(sym));
+        self.env = sym.and_then(|sym| self.services.type_envs.get(sym));
         let mods = match &ctx.tree(tree).kind {
             TreeKind::ClassDecl { mods, .. } => *mods,
             _ => None,
@@ -2527,7 +2527,7 @@ impl AnnotationTypeCompleter for SourceCompleter {
         sym: SymbolId,
         attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<(), CompletionFailure> {
-        let env = self.services.type_envs.borrow().get(sym);
+        let env = self.services.type_envs.get(sym);
         if let Some(env) = env {
             self.services.attribute_annotation_type(ctx, syms, &env, attr)?;
         }
@@ -2759,7 +2759,7 @@ struct UnusedFileManager;
         ));
         crate::comp::check::attach_self(&check);
         let make = Rc::new(RefCell::new(TreeMaker::new(Some(Rc::clone(&names)))));
-        let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
+        let type_envs = Rc::new(TypeEnvs::new());
         let dependencies: Rc<RefCell<dyn Dependencies>> = Rc::new(RefCell::new(DummyDependencies));
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         let todo = crate::comp::todo::Todo::instance(&mut context);

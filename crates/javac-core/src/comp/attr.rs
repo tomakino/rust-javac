@@ -352,7 +352,7 @@ pub struct Attr {
     pub types: Rc<Types>,
     pub diags: Rc<Factory>,
     pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
-    pub type_envs: Rc<RefCell<TypeEnvs>>,
+    pub type_envs: Rc<TypeEnvs>,
     pub dependencies: Rc<RefCell<dyn Dependencies>>,
     /// Java: final Preview preview (Attr.java:113).
     pub preview: Rc<crate::code::preview::Preview>,
@@ -489,7 +489,7 @@ impl Attr {
         types: Rc<Types>,
         diags: Rc<Factory>,
         deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
-        type_envs: Rc<RefCell<TypeEnvs>>,
+        type_envs: Rc<TypeEnvs>,
         dependencies: Rc<RefCell<dyn Dependencies>>,
         basic_handler: Rc<dyn crate::comp::check::CheckContext>,
         syms: Rc<RefCell<Symtab>>,
@@ -1489,7 +1489,7 @@ impl Attr {
         }
         ctx.sym_mut(owner_class).flags_field |= crate::code::flags::UNATTRIBUTED as i64;
         let class_env = self.enter.borrow().class_env(ctx, class_def, &env);
-        self.type_envs.borrow_mut().put(owner_class, class_env);
+        self.type_envs.put(owner_class, class_env);
         self.attrib_class(ctx, syms, owner_class);
         owntype
     }
@@ -2922,7 +2922,7 @@ impl Attr {
         node: TreeId,
         sym: SymbolId,
     ) -> TypeId {
-        let env = self.type_envs.borrow().get(sym).expect("typeEnvs entry");
+        let env = self.type_envs.get(sym).expect("typeEnvs entry");
         // Java: Env<AttrContext> localEnv = env.dup(node, env.info.dup());
         // The local AttrContext is a copy: modifications inside the local env
         // must not leak into the class env (dup_shared would share info).
@@ -13256,9 +13256,7 @@ impl Attr {
     /// Java: void attribPackage(PackageSymbol p) (Attr.java:5165-5168).
     fn attrib_package(&mut self, ctx: &mut CompilerContext, syms: &Symtab, p: SymbolId) {
         let env = self
-            .type_envs
-            .borrow()
-            .get(p)
+            .type_envs.get(p)
             .expect("type environment for package");
         let tree = env.tree.expect("package tree");
         let pid_pos = match &ctx.tree(tree).kind {
@@ -13311,9 +13309,7 @@ impl Attr {
     /// Java: void attribModule(ModuleSymbol m) (Attr.java:5179-5183).
     fn attrib_module(&mut self, ctx: &mut CompilerContext, syms: &Symtab, m: SymbolId) {
         let env = self
-            .type_envs
-            .borrow()
-            .get(m)
+            .type_envs.get(m)
             .expect("type environment for module");
         let tree = env.tree.expect("module tree");
         self.attrib_stat(ctx, syms, tree, &env);
@@ -13458,7 +13454,7 @@ impl Attr {
             ctx.sym_mut(c).flags_field &= !unattributed;
             // Get environment current at the point of class definition.
             let env = {
-                let type_envs = self.type_envs.borrow();
+                let type_envs = Rc::clone(&self.type_envs);
                 type_envs.get(c)
             };
             let env = match env {
@@ -13990,7 +13986,7 @@ impl Attr {
             chk.validate_list(ctx, syms, env, &implementing);
         }
         {
-            let envs = self.type_envs.borrow();
+            let envs = Rc::clone(&self.type_envs);
             crate::code::symbol::Symbol::mark_abstract_if_needed(
                 ctx,
                 syms,
@@ -14004,7 +14000,7 @@ impl Attr {
         let abstract_or_interface =
             (crate::code::flags::ABSTRACT as i64) | (crate::code::flags::INTERFACE as i64);
         if (flags_value & abstract_or_interface) == 0 {
-            let envs = self.type_envs.borrow();
+            let envs = Rc::clone(&self.type_envs);
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
             chk.check_all_defined(ctx, syms, &envs, ctx.tree(tree).pos, c);
@@ -17801,7 +17797,7 @@ mod tests {
             Rc::clone(&syms),
         ));
         crate::comp::check::attach_self(&chk);
-        let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
+        let type_envs = Rc::new(TypeEnvs::new());
         let dependencies: Rc<RefCell<dyn crate::code::dependencies::Dependencies>> =
             Rc::new(RefCell::new(DummyDependencies));
         let make = Rc::new(RefCell::new(TreeMaker::new(Some(Rc::clone(&names)))));

@@ -1,10 +1,11 @@
-//! This class contains the type environments used by Enter, MemberEnter, Attr,
-//! DeferredAttr, and Lower.
+//! Type environments shared by Enter, MemberEnter, Attr, DeferredAttr and
+//! Lower: a map from type symbols to their attribution environments.
 //!
-//! Adapters (registered):
-//! - TypeSymbol/Env object references -> SymbolId / Rc<Env<AttrContext>>;
-//! - Context.Key instance() -> explicit construction (no Context singletons).
+//! The map is behind a `RefCell` so the service can be shared as
+//! `Rc<TypeEnvs>` and used through `&self` (Java: `TypeEnvs` is a mutable
+//! HashMap service).
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -14,40 +15,40 @@ use crate::ids::SymbolId;
 
 /// Java: class TypeEnvs
 pub struct TypeEnvs {
-    map: HashMap<SymbolId, Rc<Env<AttrContext>>>,
+    map: RefCell<HashMap<SymbolId, Rc<Env<AttrContext>>>>,
 }
 
 impl TypeEnvs {
     /// Java: protected TypeEnvs(Context context)
     pub fn new() -> TypeEnvs {
         TypeEnvs {
-            map: HashMap::new(),
+            map: RefCell::new(HashMap::new()),
         }
     }
 
     /// Java: Env<AttrContext> get(TypeSymbol sym)
     pub fn get(&self, sym: SymbolId) -> Option<Rc<Env<AttrContext>>> {
-        self.map.get(&sym).cloned()
+        self.map.borrow().get(&sym).cloned()
     }
 
     /// Java: Env<AttrContext> put(TypeSymbol sym, Env<AttrContext> env)
-    pub fn put(&mut self, sym: SymbolId, env: Rc<Env<AttrContext>>) -> Option<Rc<Env<AttrContext>>> {
-        self.map.insert(sym, env)
+    pub fn put(&self, sym: SymbolId, env: Rc<Env<AttrContext>>) -> Option<Rc<Env<AttrContext>>> {
+        self.map.borrow_mut().insert(sym, env)
     }
 
     /// Java: Env<AttrContext> remove(TypeSymbol sym)
-    pub fn remove(&mut self, sym: SymbolId) -> Option<Rc<Env<AttrContext>>> {
-        self.map.remove(&sym)
+    pub fn remove(&self, sym: SymbolId) -> Option<Rc<Env<AttrContext>>> {
+        self.map.borrow_mut().remove(&sym)
     }
 
     /// Java: Collection<Env<AttrContext>> values()
     pub fn values(&self) -> Vec<Rc<Env<AttrContext>>> {
-        self.map.values().cloned().collect()
+        self.map.borrow().values().cloned().collect()
     }
 
     /// Java: void clear()
-    pub fn clear(&mut self) {
-        self.map.clear();
+    pub fn clear(&self) {
+        self.map.borrow_mut().clear();
     }
 }
 

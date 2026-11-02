@@ -131,7 +131,7 @@ pub struct MiniCompiler {
     /// The type enter pass.
     pub type_enter: Rc<RefCell<TypeEnter>>,
     /// The type environments.
-    pub type_envs: Rc<RefCell<TypeEnvs>>,
+    pub type_envs: Rc<TypeEnvs>,
     /// The annotation service.
     pub annotate: Rc<Annotate>,
     /// The attribution pass.
@@ -547,7 +547,7 @@ impl MiniCompiler {
         chk
             .set_file_manager(Rc::clone(&file_manager) as Rc<dyn JavaFileManager>);
         chk.set_profile(Rc::clone(&profile));
-        let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
+        let type_envs = Rc::new(TypeEnvs::new());
         let enter = Rc::new(RefCell::new(Enter::new(
             Rc::clone(&log),
             Rc::clone(&names),

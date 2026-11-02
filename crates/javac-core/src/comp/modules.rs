@@ -83,7 +83,7 @@ pub struct Modules {
     attr: Rc<RefCell<Attr>>,
     chk: Rc<Check>,
     deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
-    type_envs: Rc<RefCell<TypeEnvs>>,
+    type_envs: Rc<TypeEnvs>,
     types: Rc<crate::code::types::Types>,
     file_manager: Rc<dyn JavaFileManager>,
     module_finder: Rc<RefCell<ModuleFinder>>,
@@ -140,7 +140,7 @@ impl Modules {
         attr: Rc<RefCell<Attr>>,
         chk: Rc<Check>,
         deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
-        type_envs: Rc<RefCell<TypeEnvs>>,
+        type_envs: Rc<TypeEnvs>,
         types: Rc<crate::code::types::Types>,
         file_manager: Rc<dyn JavaFileManager>,
         module_finder: Rc<RefCell<ModuleFinder>>,
@@ -460,7 +460,7 @@ impl Modules {
                 info: Rc::new(RefCell::new(AttrContext::new())),
                 base_clause: false,
             });
-            self.type_envs.borrow_mut().put(sym, env);
+            self.type_envs.put(sym, env);
         } else if is_module_info && self.multi_module_mode {
             let tree = match &ctx.tree(toplevel).kind {
                 TreeKind::CompilationUnit { defs, .. } if !defs.is_empty() => {
@@ -1619,7 +1619,7 @@ impl Modules {
             if let Some(previous) = previous
                 && previous != exports_from
             {
-                let env = self.type_envs.borrow().get(msym);
+                let env = self.type_envs.get(msym);
                 let orig_source = env
                     .as_ref()
                     .and_then(|env| env.toplevel)
@@ -1748,7 +1748,7 @@ impl Modules {
         for rd in requires.iter() {
             let module = ctx.directive(rd).get_dependency().expect("requires module");
             if !self.all_modules().contains(&module) {
-                let env = self.type_envs.borrow().get(msym);
+                let env = self.type_envs.get(msym);
                 if let Some(env) = env {
                     let source = env
                         .toplevel
@@ -2820,9 +2820,7 @@ impl Modules {
         attr: &mut Attr,
     ) -> Result<(), CompletionFailure> {
         let env = self
-            .type_envs
-            .borrow()
-            .get(msym)
+            .type_envs.get(msym)
             .expect("AssertionError: typeEnvs entry for module");
         let toplevel = env.toplevel.expect("AssertionError: module env toplevel");
         let decl = tree_info::get_module(ctx, toplevel).expect("AssertionError: moduleDecl");
