@@ -305,7 +305,7 @@ impl ClassFinder {
         }
         if !self.reader.borrow().filling
             && let Some(annotate) = self.annotate.borrow().clone() {
-                annotate.flush(ctx, syms)?;
+                annotate.request_flush()?;
             }
         Ok(())
     }

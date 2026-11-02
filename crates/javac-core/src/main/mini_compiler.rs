@@ -1198,8 +1198,10 @@ impl MiniCompiler {
         {
             let syms_rc = Rc::clone(&self.syms);
             let mut syms = &*syms_rc;
+            let attr_rc = Rc::clone(&self.attr);
+            let mut attr = attr_rc.borrow_mut();
             self.annotate
-                .enter_done(&mut self.ctx, &mut syms)
+                .enter_done(&mut self.ctx, &mut syms, &mut attr)
                 .expect("enterDone annotation flush");
         }
         self.enter_done = true;

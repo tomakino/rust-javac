@@ -376,6 +376,37 @@ pub type AnnotateRunnable = Box<
     ) -> Result<(), CompletionFailure>,
 >;
 
+/// One deferred flush epoch: the four queues exactly as they stood when a
+/// flush was requested without an `Attr` available. Keeping epochs separate
+/// preserves the relative order of tasks queued before and after each request.
+pub struct PendingFlush {
+    pub q: VecDeque<AnnotateRunnable>,
+    pub validate_q: VecDeque<AnnotateRunnable>,
+    pub types_q: VecDeque<AnnotateRunnable>,
+    pub after_types_q: VecDeque<AnnotateRunnable>,
+}
+
+impl PendingFlush {
+    fn take(queues: &mut AnnotateQueues) -> PendingFlush {
+        PendingFlush {
+            q: std::mem::take(&mut queues.q),
+            validate_q: std::mem::take(&mut queues.validate_q),
+            types_q: std::mem::take(&mut queues.types_q),
+            after_types_q: std::mem::take(&mut queues.after_types_q),
+        }
+    }
+
+    fn into_queues(self) -> AnnotateQueues {
+        AnnotateQueues {
+            q: self.q,
+            validate_q: self.validate_q,
+            types_q: self.types_q,
+            after_types_q: self.after_types_q,
+            pending: VecDeque::new(),
+        }
+    }
+}
+
 /// Java: static class Annotate.Queues (Annotate.java:1409-1426).
 pub struct AnnotateQueues {
     /// Java: private final ListBuffer<Runnable> q
@@ -386,6 +417,8 @@ pub struct AnnotateQueues {
     pub types_q: VecDeque<AnnotateRunnable>,
     /// Java: private final ListBuffer<Runnable> afterTypesQ
     pub after_types_q: VecDeque<AnnotateRunnable>,
+    /// Deferred flush epochs, in the order their flush was requested.
+    pub pending: VecDeque<PendingFlush>,
 }
 
 impl AnnotateQueues {
@@ -396,7 +429,15 @@ impl AnnotateQueues {
             validate_q: VecDeque::new(),
             types_q: VecDeque::new(),
             after_types_q: VecDeque::new(),
+            pending: VecDeque::new(),
         }
+    }
+
+    fn live_is_empty(&self) -> bool {
+        self.q.is_empty()
+            && self.validate_q.is_empty()
+            && self.types_q.is_empty()
+            && self.after_types_q.is_empty()
     }
 }
 
@@ -584,19 +625,18 @@ impl Annotate {
     }
 
     /// Java: public void unblockAnnotations() (Annotate.java:126-131)
+    ///
+    /// The Attr-less form only records a flush epoch; an Attr-bearing boundary
+    /// drains it. This preserves the caller's annotation order without
+    /// re-borrowing the Attr service.
     pub fn unblock_annotations(
         &self,
-        ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        _ctx: &mut CompilerContext,
+        _syms: &crate::code::symtab::Symtab,
     ) -> Result<(), CompletionFailure> {
         self.block_count.set(self.block_count.get() - 1);
         if self.block_count.get() == 0 {
-            // Port adapter: the flush needs the Attr service; borrow it only
-            // here (the Attr-inside callers use unblock_annotations_with_attr
-            // because they already hold it).
-            let attr_rc = std::rc::Rc::clone(&self.services.attr);
-            let mut attr = attr_rc.borrow_mut();
-            self.flush_with_attr(ctx, syms, &mut attr)?;
+            self.request_flush()?;
         }
         Ok(())
     }
@@ -629,8 +669,9 @@ impl Annotate {
         &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
+        attr: &mut crate::comp::attr::Attr,
     ) -> Result<(), CompletionFailure> {
-        self.unblock_annotations(ctx, syms)
+        self.unblock_annotations_with_attr(ctx, syms, attr)
     }
 
     /// Java: public void normal(Runnable r) (Annotate.java:180-182)
@@ -668,26 +709,26 @@ impl Annotate {
         self.flush_count.set(self.flush_count.get() - 1);
     }
 
-    /// Java: public void flush() (Annotate.java:188-207)
-    pub fn flush(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab,
-    ) -> Result<(), CompletionFailure> {
-        // Port adapter: the Attr-inside callers pass their &mut Attr to
-        // flush_with_attr; the normal path borrows the Attr service once.
-        let attr_rc = std::rc::Rc::clone(&self.services.attr);
-        // Completion can re-enter Annotate while Attr is already mutably
-        // borrowed (e.g. while resolving imports); upstream shares the same
-        // instance, so skip this flush instead of panicking. Annotations are
-        // retried by the normal flush path.
-        let Ok(mut attr) = attr_rc.try_borrow_mut() else {
+    /// Record the current queues as one deferred flush epoch.
+    ///
+    /// Used when Java's flush would run but the Rust caller has no `&mut Attr`.
+    /// A boolean marker would merge this epoch with later tasks and change the
+    /// four-queue order; the queue snapshot keeps the request position.
+    pub fn request_flush(&self) -> Result<(), CompletionFailure> {
+        if self.annotations_blocked() || self.is_flushing() {
             return Ok(());
-        };
-        self.flush_with_attr(ctx, syms, &mut attr)
+        }
+        let mut queues = self.services.queues.borrow_mut();
+        if queues.live_is_empty() {
+            return Ok(());
+        }
+        let pending = PendingFlush::take(&mut queues);
+        queues.pending.push_back(pending);
+        Ok(())
     }
 
-    pub fn flush_with_attr(
+    /// Drain deferred epochs and then the live queues with an explicit Attr.
+    pub fn drain_with_attr(
         &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
@@ -700,44 +741,93 @@ impl Annotate {
             return Ok(());
         }
         self.start_flushing();
-        let result = (|| -> Result<(), CompletionFailure> {
-            loop {
-                let task = self.services.queues.borrow_mut().q.pop_front();
-                match task {
-                    Some(mut task) => task(ctx, syms, attr)?,
-                    None => break,
-                }
-            }
-            loop {
-                let task = self.services.queues.borrow_mut().types_q.pop_front();
-                match task {
-                    Some(mut task) => task(ctx, syms, attr)?,
-                    None => break,
-                }
-            }
-            loop {
-                let task = self
-                    .services
-                    .queues
-                    .borrow_mut()
-                    .after_types_q
-                    .pop_front();
-                match task {
-                    Some(mut task) => task(ctx, syms, attr)?,
-                    None => break,
-                }
-            }
-            loop {
-                let task = self.services.queues.borrow_mut().validate_q.pop_front();
-                match task {
-                    Some(mut task) => task(ctx, syms, attr)?,
-                    None => break,
-                }
-            }
-            Ok(())
-        })();
+        let result = self.drain_pending_with_attr(ctx, syms, attr);
         self.done_flushing();
         result
+    }
+
+    fn drain_pending_with_attr(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        attr: &mut crate::comp::attr::Attr,
+    ) -> Result<(), CompletionFailure> {
+        loop {
+            let segment = self.services.queues.borrow_mut().pending.pop_front();
+            let Some(segment) = segment else {
+                break;
+            };
+            let saved = {
+                let mut queues = self.services.queues.borrow_mut();
+                std::mem::replace(&mut *queues, segment.into_queues())
+            };
+            let result = self.drain_live_queues(ctx, syms, attr);
+            let drained = {
+                let mut queues = self.services.queues.borrow_mut();
+                std::mem::replace(&mut *queues, saved)
+            };
+            if let Err(failure) = result {
+                let mut remaining = drained;
+                let mut queues = self.services.queues.borrow_mut();
+                while let Some(inner) = remaining.pending.pop_back() {
+                    queues.pending.push_front(inner);
+                }
+                queues.pending.push_front(PendingFlush::take(&mut remaining));
+                return Err(failure);
+            }
+        }
+        self.drain_live_queues(ctx, syms, attr)
+    }
+
+    fn drain_live_queues(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        attr: &mut crate::comp::attr::Attr,
+    ) -> Result<(), CompletionFailure> {
+        loop {
+            let task = self.services.queues.borrow_mut().q.pop_front();
+            match task {
+                Some(mut task) => task(ctx, syms, attr)?,
+                None => break,
+            }
+        }
+        loop {
+            let task = self.services.queues.borrow_mut().types_q.pop_front();
+            match task {
+                Some(mut task) => task(ctx, syms, attr)?,
+                None => break,
+            }
+        }
+        loop {
+            let task = self
+                .services
+                .queues
+                .borrow_mut()
+                .after_types_q
+                .pop_front();
+            match task {
+                Some(mut task) => task(ctx, syms, attr)?,
+                None => break,
+            }
+        }
+        loop {
+            let task = self.services.queues.borrow_mut().validate_q.pop_front();
+            match task {
+                Some(mut task) => task(ctx, syms, attr)?,
+                None => break,
+            }
+        }
+        Ok(())
+    }
+
+    pub fn flush_with_attr(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        attr: &mut crate::comp::attr::Attr,
+    ) -> Result<(), CompletionFailure> {
+        self.drain_with_attr(ctx, syms, attr)
     }
 
     /// Java: public Queues setQueues(Queues nue) (Annotate.java:1401-1413)
@@ -2711,6 +2801,7 @@ struct UnusedFileManager;
     struct AnnotateHarness {
         ctx: CompilerContext,
         annotate: Rc<Annotate>,
+        attr: Rc<RefCell<Attr>>,
         make: Rc<TreeMaker>,
         syms: Rc<Symtab>,
         types: Rc<Types>,
@@ -2850,7 +2941,7 @@ struct UnusedFileManager;
             Rc::clone(&syms),
             Rc::clone(&types),
             check,
-            attr,
+            Rc::clone(&attr),
             cfolder,
             deferred,
             enter,
@@ -2865,11 +2956,37 @@ struct UnusedFileManager;
         AnnotateHarness {
             ctx,
             annotate,
+            attr,
             make,
             syms,
             types,
             log,
         }
+    }
+
+    #[test]
+    fn deferred_flush_preserves_flush_epoch_order() {
+        let mut h = harness();
+        let order: Rc<RefCell<Vec<&str>>> = Rc::new(RefCell::new(Vec::new()));
+        let push = |name: &'static str| {
+            let order = Rc::clone(&order);
+            Box::new(
+                move |_ctx: &mut CompilerContext, _syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
+                    order.borrow_mut().push(name);
+                    Ok(())
+                },
+            ) as AnnotateRunnable
+        };
+        h.annotate.unblock_annotations_no_flush();
+        h.annotate.validate(push("validate"));
+        h.annotate.request_flush().expect("defer first epoch");
+        h.annotate.normal(push("normal"));
+        let attr_rc = Rc::clone(&h.attr);
+        let mut attr = attr_rc.borrow_mut();
+        h.annotate
+            .drain_with_attr(&mut h.ctx, &&*h.syms, &mut attr)
+            .expect("drain deferred epochs");
+        assert_eq!(order.borrow().clone(), vec!["validate", "normal"]);
     }
 
     #[test]
@@ -2889,9 +3006,13 @@ struct UnusedFileManager;
         h.annotate.type_annotation(push("types"));
         h.annotate.after_types(push("afterTypes"));
         h.annotate.validate(push("validate"));
-        h.annotate.flush(&mut h.ctx, &&*h.syms).expect("flush while blocked");
+        h.annotate.request_flush().expect("flush while blocked");
         assert!(order.borrow().is_empty(), "blocked annotations must not flush");
-        h.annotate.unblock_annotations(&mut h.ctx, &&*h.syms).expect("unblock");
+        let attr_rc = Rc::clone(&h.attr);
+        let mut attr = attr_rc.borrow_mut();
+        h.annotate
+            .unblock_annotations_with_attr(&mut h.ctx, &&*h.syms, &mut attr)
+            .expect("unblock");
         assert_eq!(
             order.borrow().clone(),
             vec!["normal", "types", "afterTypes", "validate"]
