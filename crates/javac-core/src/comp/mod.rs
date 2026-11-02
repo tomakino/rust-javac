@@ -25,6 +25,7 @@ pub mod attr_contexts;
 pub mod attr_recover;
 pub mod attr_context;
 pub mod check;
+pub mod check_context;
 pub mod compile_states;
 pub mod const_fold;
 pub mod deferred_attr;
