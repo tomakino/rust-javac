@@ -82,7 +82,7 @@ pub struct Modules {
     names: Rc<Names>,
     attr: Rc<RefCell<Attr>>,
     chk: Rc<Check>,
-    deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
+    deferred_lint_handler: Rc<DeferredLintHandler>,
     type_envs: Rc<TypeEnvs>,
     types: Rc<crate::code::types::Types>,
     file_manager: Rc<dyn JavaFileManager>,
@@ -139,7 +139,7 @@ impl Modules {
         names: Rc<Names>,
         attr: Rc<RefCell<Attr>>,
         chk: Rc<Check>,
-        deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
+        deferred_lint_handler: Rc<DeferredLintHandler>,
         type_envs: Rc<TypeEnvs>,
         types: Rc<crate::code::types::Types>,
         file_manager: Rc<dyn JavaFileManager>,
@@ -2000,9 +2000,7 @@ impl Completer for SourceCompleter {
             Some(Rc::clone(&self.sourcefile)),
         );
         let prev_lint = modules
-            .deferred_lint_handler
-            .borrow_mut()
-            .set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(decl).pos)));
+            .deferred_lint_handler.set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(decl).pos)));
         ctx.sym_mut(sym).flags_field |= flags::UNATTRIBUTED as i64;
         let result = {
             let mut visitor = ModuleVisitor::new(&modules, ctx, syms, sym);
@@ -2013,9 +2011,7 @@ impl Completer for SourceCompleter {
         };
         ctx.sym_mut(sym).flags_field &= !(flags::UNATTRIBUTED as i64);
         modules
-            .deferred_lint_handler
-            .borrow_mut()
-            .set_pos_state(prev_lint);
+            .deferred_lint_handler.set_pos_state(prev_lint);
         AbstractLog::use_source(&mut *modules.log.borrow_mut(), prev_source);
         result
     }
@@ -2822,14 +2818,10 @@ impl Modules {
             None => None,
         };
         let prev_lint = self
-            .deferred_lint_handler
-            .borrow_mut()
-            .set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(decl).pos)));
+            .deferred_lint_handler.set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(decl).pos)));
         let mut visitor = UsesProvidesVisitor::new(self, attr, ctx, syms, msym, env.clone());
         visitor.visit_module_def(decl);
-        self.deferred_lint_handler
-            .borrow_mut()
-            .set_pos_state(prev_lint);
+        self.deferred_lint_handler.set_pos_state(prev_lint);
         AbstractLog::use_source(&mut *self.log.borrow_mut(), prev_source);
         Ok(())
     }

@@ -13,6 +13,7 @@
 // position at setPos/flush time, so the queue matches on the diagnostic
 // position value (the treed position or the preferred position) instead of
 // object identity (registered adapter).
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::ids::TreeId;
@@ -100,48 +101,48 @@ fn same_position(a: &Rc<dyn DiagnosticPosition>, b: &Rc<dyn DiagnosticPosition>)
 /// Java: public class DeferredLintHandler
 pub struct DeferredLintHandler {
     /// Java: private DiagnosticPosition currentPos
-    current_pos: CurrentPos,
+    current_pos: RefCell<CurrentPos>,
     /// Java: private Map<DiagnosticPosition, ListBuffer<LintLogger>> loggersQueue
     #[allow(clippy::type_complexity)]
-    loggers_queue: Vec<(Rc<dyn DiagnosticPosition>, Vec<Box<dyn LintLogger>>)>,
+    loggers_queue: RefCell<Vec<(Rc<dyn DiagnosticPosition>, Vec<Box<dyn LintLogger>>)>>,
 }
 
 impl DeferredLintHandler {
     /// Java: protected DeferredLintHandler(Context context)
     pub fn new() -> DeferredLintHandler {
         DeferredLintHandler {
-            current_pos: CurrentPos::Immediate,
-            loggers_queue: Vec::new(),
+            current_pos: RefCell::new(CurrentPos::Immediate),
+            loggers_queue: RefCell::new(Vec::new()),
         }
     }
 
     /// Java: public void report(LintLogger logger)
-    pub fn report(&mut self, mut logger: Box<dyn LintLogger>) {
-        match &self.current_pos {
+    pub fn report(&self, mut logger: Box<dyn LintLogger>) {
+        let current_pos = self.current_pos.borrow().clone();
+        match current_pos {
             CurrentPos::Immediate => logger.report(),
             CurrentPos::Pos(current) => {
-                let current = Rc::clone(current);
-                if let Some((_, loggers)) = self
-                    .loggers_queue
+                let mut queue = self.loggers_queue.borrow_mut();
+                if let Some((_, loggers)) = queue
                     .iter_mut()
                     .find(|(pos, _)| same_position(pos, &current))
                 {
                     loggers.push(logger);
                 } else {
-                    self.loggers_queue.push((current, vec![logger]));
+                    queue.push((current, vec![logger]));
                 }
             }
         }
     }
 
     /// Java: public void flush(DiagnosticPosition pos)
-    pub fn flush(&mut self, pos: &Rc<dyn DiagnosticPosition>) {
-        if let Some(index) = self
-            .loggers_queue
+    pub fn flush(&self, pos: &Rc<dyn DiagnosticPosition>) {
+        let mut queue = self.loggers_queue.borrow_mut();
+        if let Some(index) = queue
             .iter()
             .position(|(candidate, _)| same_position(candidate, pos))
         {
-            let (_, mut loggers) = self.loggers_queue.remove(index);
+            let (_, mut loggers) = queue.remove(index);
             for logger in loggers.iter_mut() {
                 logger.report();
             }
@@ -149,31 +150,34 @@ impl DeferredLintHandler {
     }
 
     /// Java: setPos(tree.pos()) — key the deferred queue by the tree identity.
-    pub fn set_pos_tree(&mut self, tree: TreeId) -> CurrentPos {
+    pub fn set_pos_tree(&self, tree: TreeId) -> CurrentPos {
         self.set_pos(Rc::new(TreeKeyPosition(tree)))
     }
 
     /// Java: flush(tree.pos()) — run the deferred queue of the tree identity.
-    pub fn flush_tree(&mut self, tree: TreeId) {
+    pub fn flush_tree(&self, tree: TreeId) {
         let pos: Rc<dyn DiagnosticPosition> = Rc::new(TreeKeyPosition(tree));
         self.flush(&pos);
     }
 
     /// Java: public DiagnosticPosition setPos(DiagnosticPosition currentPos)
-    pub fn set_pos(&mut self, current_pos: Rc<dyn DiagnosticPosition>) -> CurrentPos {
-        std::mem::replace(&mut self.current_pos, CurrentPos::Pos(current_pos))
+    pub fn set_pos(&self, current_pos: Rc<dyn DiagnosticPosition>) -> CurrentPos {
+        std::mem::replace(
+            &mut *self.current_pos.borrow_mut(),
+            CurrentPos::Pos(current_pos),
+        )
     }
 
     /// Restore a previously saved state (the Java callers pass the previous
     /// DiagnosticPosition back to setPos; the port models the IMMEDIATE state
     /// explicitly, hence this companion of set_pos).
-    pub fn set_pos_state(&mut self, state: CurrentPos) -> CurrentPos {
-        std::mem::replace(&mut self.current_pos, state)
+    pub fn set_pos_state(&self, state: CurrentPos) -> CurrentPos {
+        std::mem::replace(&mut *self.current_pos.borrow_mut(), state)
     }
 
     /// Java: public DiagnosticPosition immediate()
-    pub fn immediate(&mut self) -> CurrentPos {
-        std::mem::replace(&mut self.current_pos, CurrentPos::Immediate)
+    pub fn immediate(&self) -> CurrentPos {
+        std::mem::replace(&mut *self.current_pos.borrow_mut(), CurrentPos::Immediate)
     }
 }
 

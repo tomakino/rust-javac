@@ -115,7 +115,7 @@ pub struct MiniCompiler {
     /// The file manager.
     pub file_manager: Rc<JavacFileManager>,
     /// The deferred lint handler.
-    pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
+    pub deferred_lint_handler: Rc<DeferredLintHandler>,
     /// The deferred completion failure handler.
     pub dcfh: Rc<DeferredCompletionFailureHandler>,
     /// The class reader.
@@ -410,7 +410,7 @@ impl MiniCompiler {
         let syms = Rc::new(RefCell::new(syms_value));
         let types = Rc::new(Types::with_names(Rc::clone(&names)));
         let make = TreeMaker::instance(&mut util_context);
-        let deferred_lint_handler = Rc::new(RefCell::new(DeferredLintHandler::new()));
+        let deferred_lint_handler = Rc::new(DeferredLintHandler::new());
         let dcfh = DeferredCompletionFailureHandler::instance();
         let fs_info = Rc::new(CacheFSInfo::new());
         let file_manager = JavacFileManager::new(

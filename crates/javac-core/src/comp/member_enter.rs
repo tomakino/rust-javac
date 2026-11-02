@@ -53,7 +53,7 @@ pub struct MemberEnter {
     pub log: Rc<RefCell<Log>>,
     pub chk: Rc<Check>,
     pub types: Rc<Types>,
-    pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
+    pub deferred_lint_handler: Rc<DeferredLintHandler>,
     /// Java: protected Env<AttrContext> env;
     pub env: std::cell::RefCell<Option<Rc<Env<AttrContext>>>>,
     /// Java: Annotate annotate = Annotate.instance(context) — explicit
@@ -73,7 +73,7 @@ impl MemberEnter {
         log: Rc<RefCell<Log>>,
         chk: Rc<Check>,
         types: Rc<Types>,
-        deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
+        deferred_lint_handler: Rc<DeferredLintHandler>,
         annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
     ) -> MemberEnter {
         MemberEnter {

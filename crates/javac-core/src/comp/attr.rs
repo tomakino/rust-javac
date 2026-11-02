@@ -351,7 +351,7 @@ pub struct Attr {
     pub enter: Rc<Enter>,
     pub types: Rc<Types>,
     pub diags: Rc<Factory>,
-    pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
+    pub deferred_lint_handler: Rc<DeferredLintHandler>,
     pub type_envs: Rc<TypeEnvs>,
     pub dependencies: Rc<RefCell<dyn Dependencies>>,
     /// Java: final Preview preview (Attr.java:113).
@@ -488,7 +488,7 @@ impl Attr {
         enter: Rc<Enter>,
         types: Rc<Types>,
         diags: Rc<Factory>,
-        deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
+        deferred_lint_handler: Rc<DeferredLintHandler>,
         type_envs: Rc<TypeEnvs>,
         dependencies: Rc<RefCell<dyn Dependencies>>,
         basic_handler: Rc<dyn crate::comp::check::CheckContext>,
@@ -2809,7 +2809,7 @@ impl Attr {
         variable: TreeId,
         ty: TypeId,
     ) -> Option<crate::util::constants::ConstantValue> {
-        let prev_lint_pos = self.deferred_lint_handler.borrow_mut().set_pos(Rc::new(
+        let prev_lint_pos = self.deferred_lint_handler.set_pos(Rc::new(
             crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(variable).pos),
         ));
         let prev_source = env
@@ -2826,9 +2826,7 @@ impl Attr {
             } => *init,
             _ => {
                 self.log.borrow_mut().use_source(prev_source);
-                self.deferred_lint_handler
-                    .borrow_mut()
-                    .set_pos_state(prev_lint_pos);
+                self.deferred_lint_handler.set_pos_state(prev_lint_pos);
                 return None;
             }
         };
@@ -2863,9 +2861,7 @@ impl Attr {
             }
         };
         self.log.borrow_mut().use_source(prev_source);
-        self.deferred_lint_handler
-            .borrow_mut()
-            .set_pos_state(prev_lint_pos);
+        self.deferred_lint_handler.set_pos_state(prev_lint_pos);
         result
     }
 
@@ -13902,8 +13898,7 @@ impl Attr {
             // Java: deferredLintHandler.flush(tree.pos()) in the Attr.visitClassDef
             // finally block (after attribClassBody).
             {
-                let deferred_rc = Rc::clone(&self.deferred_lint_handler);
-                let mut deferred = deferred_rc.borrow_mut();
+                let deferred = Rc::clone(&self.deferred_lint_handler);
                 deferred.flush_tree(env_tree);
             }
             env.info.borrow_mut().return_result = prev_return_res;
@@ -15763,7 +15758,7 @@ impl Attr {
         use crate::code::flags;
         let _deferred_decl = {
             let handler = Rc::clone(&self.deferred_lint_handler);
-            let prev = handler.borrow_mut().set_pos_tree(tree);
+            let prev = handler.set_pos_tree(tree);
             DeferredDeclarationGuard {
                 handler,
                 prev,
@@ -16488,7 +16483,7 @@ impl Attr {
         use crate::code::flags;
         let _deferred_decl = {
             let handler = Rc::clone(&self.deferred_lint_handler);
-            let prev = handler.borrow_mut().set_pos_tree(tree);
+            let prev = handler.set_pos_tree(tree);
             DeferredDeclarationGuard {
                 handler,
                 prev,
@@ -17044,7 +17039,7 @@ impl Attr {
         //       finally { chk.setLint(prevLint); }
         let pos: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
             Rc::new(crate::util::jc_diagnostic::TreeDiagnosticPosition::new(ctx, tree));
-        self.deferred_lint_handler.borrow_mut().flush(&pos);
+        self.deferred_lint_handler.flush(&pos);
         self.chk.set_lint(prev_lint);
         Ok(self.no_type(ctx))
     }
@@ -17054,16 +17049,16 @@ impl Attr {
 /// Attr.visitMethodDef/visitVarDef: the declaration tree is the queue key and
 /// the queue is flushed when the declaration has been attributed.
 struct DeferredDeclarationGuard {
-    handler: Rc<RefCell<crate::code::deferred_lint_handler::DeferredLintHandler>>,
+    handler: Rc<crate::code::deferred_lint_handler::DeferredLintHandler>,
     prev: crate::code::deferred_lint_handler::CurrentPos,
     tree: TreeId,
 }
 
 impl Drop for DeferredDeclarationGuard {
     fn drop(&mut self) {
-        self.handler.borrow_mut().flush_tree(self.tree);
+        self.handler.flush_tree(self.tree);
         let prev = self.prev.clone();
-        self.handler.borrow_mut().set_pos_state(prev);
+        self.handler.set_pos_state(prev);
     }
 }
 
@@ -17779,7 +17774,7 @@ mod tests {
             *slot = Some(Rc::clone(&sourcefile));
         }
         let types = Rc::new(Types::with_names(Rc::clone(&names)));
-        let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
+        let deferred = Rc::new(DeferredLintHandler::new());
         let lint = crate::code::lint::Lint::instance(&mut context);
         let chk = Rc::new(Check::new(
             Rc::clone(&names),

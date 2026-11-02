@@ -1700,7 +1700,7 @@ mod tests {
         }
         let types = Rc::new(crate::code::types::Types::with_names(Rc::clone(&harness.names)));
         let lint = crate::code::lint::Lint::instance(&mut harness.context);
-        let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
+        let deferred = Rc::new(DeferredLintHandler::new());
         let chk = Rc::new(Check::new(
             Rc::clone(&harness.names),
             Rc::clone(&harness.log),

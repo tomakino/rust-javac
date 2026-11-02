@@ -71,7 +71,7 @@ pub struct TypeEnter {
     /// registered adapter: the Java import scopes read the Context services).
     pub syms: Rc<std::cell::RefCell<crate::code::symtab::Symtab>>,
     pub make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
-    pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
+    pub deferred_lint_handler: Rc<DeferredLintHandler>,
     pub lint: Option<Rc<crate::code::lint::Lint>>,
     pub type_envs: Rc<TypeEnvs>,
     pub dependencies: Rc<RefCell<dyn Dependencies>>,
@@ -275,7 +275,7 @@ impl Phase {
         // DiagnosticPosition identity (JCTree.pos() returns the tree itself), so
         // the deferred queue must be keyed by the tree, not by a bare numeric
         // position (numeric keys collide across files).
-        let prev_lint = ty.deferred_lint_handler.borrow_mut().set_pos_tree(tree);
+        let prev_lint = ty.deferred_lint_handler.set_pos_tree(tree);
         ty.dependencies
             .borrow_mut()
             .push(ctx, sym, self.phase_name);
@@ -284,7 +284,7 @@ impl Phase {
                 .completion_error(ctx, ctx.tree(tree).pos, &failure, syms);
         }
         ty.dependencies.borrow_mut().pop();
-        ty.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint);
+        ty.deferred_lint_handler.set_pos_state(prev_lint);
         ty.log.borrow_mut().use_source(prev_source);
     }
 }
@@ -302,7 +302,7 @@ impl TypeEnter {
         types: Rc<Types>,
         syms: Rc<std::cell::RefCell<crate::code::symtab::Symtab>>,
         make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
-        deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
+        deferred_lint_handler: Rc<DeferredLintHandler>,
         lint: Option<Rc<crate::code::lint::Lint>>,
         type_envs: Rc<TypeEnvs>,
         dependencies: Rc<RefCell<dyn Dependencies>>,
@@ -756,9 +756,7 @@ impl TypeEnter {
             let sourcefile = compilation_unit_sourcefile(ctx, toplevel(&env));
             let prev_source = self.log.borrow_mut().use_source(sourcefile);
             let prev_lint = self
-                .deferred_lint_handler
-                .borrow_mut()
-                .set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(tree).pos)));
+                .deferred_lint_handler.set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(tree).pos)));
             let sym = class_tree_symbol(ctx, tree).expect("class symbol");
             self.dependencies
                 .borrow_mut()
@@ -771,7 +769,7 @@ impl TypeEnter {
                 }
             }
             self.dependencies.borrow_mut().pop();
-            self.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint);
+            self.deferred_lint_handler.set_pos_state(prev_lint);
             self.log.borrow_mut().use_source(prev_source);
         }
         queue
@@ -822,9 +820,7 @@ impl TypeEnter {
         let prev_static = self.static_import_filter.borrow().clone();
         let prev_type = self.type_import_filter.borrow().clone();
         let prev_lint_pos = self
-            .deferred_lint_handler
-            .borrow_mut()
-            .immediate();
+            .deferred_lint_handler.immediate();
         // Java: Lint prevLint = chk.setLint(lint); (TypeEnter.java:344)
         let base_lint = match &self.lint {
             Some(lint) => Rc::clone(lint),
@@ -840,9 +836,7 @@ impl TypeEnter {
         }));
         *self.imports_env.borrow_mut() = prev_env;
         self.chk.set_lint(prev_lint);
-        self.deferred_lint_handler
-            .borrow_mut()
-            .set_pos_state(prev_lint_pos);
+        self.deferred_lint_handler.set_pos_state(prev_lint_pos);
         *self.static_import_filter.borrow_mut() = prev_static;
         *self.type_import_filter.borrow_mut() = prev_type;
         if let Err(payload) = outcome {
@@ -4574,7 +4568,7 @@ mod tests {
             Source::JDK17,
         )));
         let types = Rc::new(Types::with_names(Rc::clone(&names)));
-        let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
+        let deferred = Rc::new(DeferredLintHandler::new());
         let lint = crate::code::lint::Lint::instance(&mut context);
         let chk = Rc::new(crate::comp::check::Check::new(
             Rc::clone(&names),

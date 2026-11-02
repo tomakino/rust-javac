@@ -5711,9 +5711,7 @@ mod tests {
         let messages = JavacMessages::instance(&mut jcontext);
         let diags = Rc::new(Factory::new(messages, "compiler"));
         let lint = Lint::instance(&mut jcontext);
-        let deferred = Rc::new(RefCell::new(
-            crate::code::deferred_lint_handler::DeferredLintHandler::new(),
-        ));
+        let deferred = Rc::new(crate::code::deferred_lint_handler::DeferredLintHandler::new());
         let check = Rc::new(Check::new(
             Rc::clone(&names),
             Rc::clone(&log),
@@ -5830,9 +5828,7 @@ mod tests {
         let messages = JavacMessages::instance(&mut jcontext);
         let diags = Rc::new(Factory::new(messages, "compiler"));
         let lint = Lint::instance(&mut jcontext);
-        let deferred = Rc::new(RefCell::new(
-            crate::code::deferred_lint_handler::DeferredLintHandler::new(),
-        ));
+        let deferred = Rc::new(crate::code::deferred_lint_handler::DeferredLintHandler::new());
         let check = Rc::new(Check::new(
             Rc::clone(&names),
             Rc::clone(&log),

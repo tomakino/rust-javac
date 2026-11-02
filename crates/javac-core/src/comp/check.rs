@@ -177,7 +177,7 @@ pub struct Check {
     /// mutability keeps Check re-entrant without borrowing the whole service.
     pub lint: RefCell<Rc<Lint>>,
     /// Java: private DeferredLintHandler deferredLintHandler (Check.java:193)
-    pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
+    pub deferred_lint_handler: Rc<DeferredLintHandler>,
     /// Java: the Symtab service (Symtab.instance(context)); explicit service
     /// per ADR 0001.
     pub syms: Rc<RefCell<Symtab>>,
@@ -302,7 +302,7 @@ impl Check {
         synthetic_name_char: char,
         types: Rc<Types>,
         lint: Rc<Lint>,
-        deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
+        deferred_lint_handler: Rc<DeferredLintHandler>,
         syms: Rc<RefCell<Symtab>>,
     ) -> Check {
         let verbose_deprecated = lint.is_enabled(LintCategory::DEPRECATION);
@@ -1944,9 +1944,7 @@ impl Check {
             {
                 let log = Rc::clone(&self.log);
                 let lint = Rc::clone(&self.lint.borrow());
-                self.deferred_lint_handler
-                    .borrow_mut()
-                    .report(Box::new(move || warn_div_zero(&log, &lint, pos)));
+                self.deferred_lint_handler.report(Box::new(move || warn_div_zero(&log, &lint, pos)));
             }
         }
     }
@@ -2060,9 +2058,7 @@ impl Check {
                 ctx, clazz_type,
             )),
         );
-        self.deferred_lint_handler
-            .borrow_mut()
-            .report(Box::new(move || {
+        self.deferred_lint_handler.report(Box::new(move || {
                 if lint.is_enabled(crate::code::lint::LintCategory::CAST) {
                     use crate::util::abstract_log::AbstractLog;
                     let position: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> =
@@ -10373,7 +10369,7 @@ impl Check {
             let c_display = c_display.clone();
             let pkg_display = pkg_display.clone();
             let mod_display = mod_display.clone();
-            self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+            self.deferred_lint_handler.report(Box::new(move || {
                 if lint
                     .is_enabled(crate::code::lint::LintCategory::MISSING_EXPLICIT_CTOR)
                 {
@@ -10619,7 +10615,7 @@ mod tests {
         let messages = JavacMessages::instance(&mut jcontext);
         let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(messages, "compiler"));
         let lint = crate::code::lint::Lint::instance(&mut jcontext);
-        let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
+        let deferred = Rc::new(DeferredLintHandler::new());
         let check = Rc::new(Check::new(
             Rc::clone(&names),
             Rc::clone(&log),
@@ -10734,7 +10730,7 @@ impl Check {
             );
             let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
                 Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
-            self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+            self.deferred_lint_handler.report(Box::new(move || {
                 if lint.is_enabled(crate::code::lint::LintCategory::MODULE) {
                     log.borrow_mut().warning_lint_pos(
                         crate::code::lint::LintCategory::MODULE,
@@ -10952,9 +10948,7 @@ impl Check {
             let log = Rc::clone(&self.log);
             let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
                 Rc::new(SimpleDiagnosticPosition::new(pos));
-            self.deferred_lint_handler
-                .borrow_mut()
-                .report(Box::new(move || {
+            self.deferred_lint_handler.report(Box::new(move || {
                     AbstractLog::mandatory_warning_pos(
                         &mut *log.borrow_mut(),
                         Some(position.clone()),
@@ -11103,9 +11097,7 @@ impl Check {
         let lint = Rc::clone(&self.lint.borrow());
         // Java: deferredLintHandler.report(...) only; the queue key is the
         // enclosing declaration position installed by the caller.
-        self.deferred_lint_handler
-            .borrow_mut()
-            .report(Box::new(move || {
+        self.deferred_lint_handler.report(Box::new(move || {
                 if lint.is_enabled(LintCategory::STRICTFP) {
                     log.borrow_mut().warning(
                         Some(LintCategory::STRICTFP),
@@ -11168,9 +11160,7 @@ impl Check {
             // Java: deferredLintHandler.report(() -> warnDeprecated(pos, s))
             // (Check.java:3557-3563).
             let warning = self.prepare_deprecated_warning(ctx, pos, s);
-            self.deferred_lint_handler
-                .borrow_mut()
-                .report(Box::new(move || warning.report()));
+            self.deferred_lint_handler.report(Box::new(move || warning.report()));
         }
     }
 
@@ -11215,7 +11205,7 @@ impl Check {
                             SymbolArg::placeholder(sym_name),
                         ),
                     );
-                    self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+                    self.deferred_lint_handler.report(Box::new(move || {
                         if !lint.is_suppressed(LintCategory::PREVIEW) {
                             preview_for_warning
                                 .report_preview_warning(pos_for_warning.as_ref(), warning.clone());
@@ -11232,7 +11222,7 @@ impl Check {
                         SymbolArg::placeholder(sym_name),
                     ),
                 );
-                self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+                self.deferred_lint_handler.report(Box::new(move || {
                     if !lint.is_suppressed(LintCategory::PREVIEW) {
                         preview_for_warning
                             .report_preview_warning(pos_for_warning.as_ref(), warning.clone());
@@ -11254,7 +11244,7 @@ impl Check {
                         SymbolArg::placeholder(sym_name),
                     ),
                 );
-                self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+                self.deferred_lint_handler.report(Box::new(move || {
                     if !lint.is_suppressed(LintCategory::PREVIEW) {
                         preview_for_warning
                             .report_preview_warning(pos_for_warning.as_ref(), warning.clone());
@@ -11294,7 +11284,7 @@ impl Check {
             );
             let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
                 Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
-            self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+            self.deferred_lint_handler.report(Box::new(move || {
                 if lint.is_enabled(LintCategory::OPENS) {
                     // Java: log.warning(pos, Warnings.PackageEmptyOrNotFound)
                     // (Check.java:4273); the lint switch above is the only
@@ -11325,7 +11315,7 @@ impl Check {
             let log = Rc::clone(&self.log);
             let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
                 Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
-            self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+            self.deferred_lint_handler.report(Box::new(move || {
                 if is_transitive
                     && lint.is_enabled(LintCategory::REQUIRES_TRANSITIVE_AUTOMATIC)
                 {
@@ -11601,7 +11591,7 @@ mod diagnostics_tests {
         let messages = JavacMessages::instance(&mut jcontext);
         let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(messages, "compiler"));
         let lint = crate::code::lint::Lint::instance(&mut jcontext);
-        let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
+        let deferred = Rc::new(DeferredLintHandler::new());
         let check = Rc::new(Check::new(
             Rc::clone(&names),
             Rc::clone(&log),

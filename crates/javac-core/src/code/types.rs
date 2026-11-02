@@ -11662,7 +11662,7 @@ mod tests {
         Rc<std::cell::RefCell<crate::util::log::Log>>,
         Rc<crate::util::jc_diagnostic::Factory>,
         Rc<crate::code::lint::Lint>,
-        Rc<std::cell::RefCell<crate::code::deferred_lint_handler::DeferredLintHandler>>,
+        Rc<crate::code::deferred_lint_handler::DeferredLintHandler>,
     ) {
         use crate::code::deferred_lint_handler::DeferredLintHandler;
         use crate::util::context::Context;
@@ -11674,7 +11674,7 @@ mod tests {
         let messages = JavacMessages::instance(&mut context);
         let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(messages, "compiler"));
         let lint = crate::code::lint::Lint::instance(&mut context);
-        let deferred = Rc::new(std::cell::RefCell::new(DeferredLintHandler::new()));
+        let deferred = Rc::new(DeferredLintHandler::new());
         let symtab = Symtab::new(&mut ctx, Rc::clone(&names), Target::DEFAULT, Source::JDK17);
         let symtab = Rc::new(std::cell::RefCell::new(symtab));
         let types = Types::with_names(names);
@@ -11814,7 +11814,7 @@ mod tests {
         diags: &Rc<crate::util::jc_diagnostic::Factory>,
         types: &Types,
         lint: &Rc<crate::code::lint::Lint>,
-        deferred: &Rc<std::cell::RefCell<crate::code::deferred_lint_handler::DeferredLintHandler>>,
+        deferred: &Rc<crate::code::deferred_lint_handler::DeferredLintHandler>,
         syms: &Rc<std::cell::RefCell<Symtab>>,
     ) -> crate::comp::check::Check {
         crate::comp::check::Check::new(

@@ -451,7 +451,7 @@ pub struct AnnotateServices {
     pub chk: Rc<Check>,
     pub attr: Rc<std::cell::RefCell<Attr>>,
     pub cfolder: Rc<ConstFold>,
-    pub deferred_lint_handler: Rc<std::cell::RefCell<DeferredLintHandler>>,
+    pub deferred_lint_handler: Rc<DeferredLintHandler>,
     pub enter: Rc<Enter>,
     pub lint: Rc<Lint>,
     pub resolve: Rc<std::cell::RefCell<Resolve>>,
@@ -495,7 +495,7 @@ impl Annotate {
         chk: Rc<Check>,
         attr: Rc<std::cell::RefCell<Attr>>,
         cfolder: Rc<ConstFold>,
-        deferred_lint_handler: Rc<std::cell::RefCell<DeferredLintHandler>>,
+        deferred_lint_handler: Rc<DeferredLintHandler>,
         enter: Rc<Enter>,
         lint: Rc<Lint>,
         resolve: Rc<std::cell::RefCell<Resolve>>,
@@ -824,18 +824,18 @@ impl Annotate {
         self.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
             let source = env_source_file(ctx, &env);
             let prev = services.log.borrow_mut().use_source(source);
-            let prev_pos = services.deferred_lint_handler.borrow_mut().immediate();
+            let prev_pos = services.deferred_lint_handler.immediate();
             let result = if let Some(defer_pos) = defer_pos {
-                let saved = services.deferred_lint_handler.borrow_mut().set_pos(Rc::new(
+                let saved = services.deferred_lint_handler.set_pos(Rc::new(
                     SimpleDiagnosticPosition::new(defer_pos),
                 ));
                 let r = services.enter_default_value(ctx, syms, default_value, &env, m, _attr);
-                services.deferred_lint_handler.borrow_mut().set_pos_state(saved);
+                services.deferred_lint_handler.set_pos_state(saved);
                 r
             } else {
                 services.enter_default_value(ctx, syms, default_value, &env, m, _attr)
             };
-            services.deferred_lint_handler.borrow_mut().set_pos_state(prev_pos);
+            services.deferred_lint_handler.set_pos_state(prev_pos);
             services.log.borrow_mut().use_source(prev);
             result
         }));
@@ -873,10 +873,8 @@ impl AnnotateServices {
         let prev = self.log.borrow_mut().use_source(source);
         let prev_pos = match defer_pos {
             Some(defer_pos) => self
-                .deferred_lint_handler
-                .borrow_mut()
-                .set_pos(Rc::new(SimpleDiagnosticPosition::new(defer_pos))),
-            None => self.deferred_lint_handler.borrow_mut().immediate(),
+                .deferred_lint_handler.set_pos(Rc::new(SimpleDiagnosticPosition::new(defer_pos))),
+            None => self.deferred_lint_handler.immediate(),
         };
         let prev_lint = if defer_pos.is_some() {
             None
@@ -904,9 +902,7 @@ impl AnnotateServices {
         if let Some(prev_lint) = prev_lint {
             self.chk.set_lint(prev_lint);
         }
-        self.deferred_lint_handler
-            .borrow_mut()
-            .set_pos_state(prev_pos);
+        self.deferred_lint_handler.set_pos_state(prev_pos);
         self.log.borrow_mut().use_source(prev);
         result
     }
@@ -2285,14 +2281,14 @@ impl AnnotateServices {
         let source = env_source_file(ctx, env);
         let prev = self.log.borrow_mut().use_source(source);
         let prev_lint_pos = match defer_pos {
-            Some(defer_pos) => Some(self.deferred_lint_handler.borrow_mut().set_pos(Rc::new(
+            Some(defer_pos) => Some(self.deferred_lint_handler.set_pos(Rc::new(
                 SimpleDiagnosticPosition::new(defer_pos),
             ))),
             None => None,
         };
         let _ = self.annotate_now(ctx, syms, s, annotations, env, true, is_type_param, attr);
         if let Some(prev_lint_pos) = prev_lint_pos {
-            self.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint_pos);
+            self.deferred_lint_handler.set_pos_state(prev_lint_pos);
         }
         self.log.borrow_mut().use_source(prev);
     }
@@ -2745,7 +2741,7 @@ struct UnusedFileManager;
             Source::JDK17,
         )));
         let types = Rc::new(Types::with_names(Rc::clone(&names)));
-        let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
+        let deferred = Rc::new(DeferredLintHandler::new());
         let check = Rc::new(Check::new(
             Rc::clone(&names),
             Rc::clone(&log),
