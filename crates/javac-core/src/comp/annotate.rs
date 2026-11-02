@@ -6,7 +6,7 @@
 //
 // Rust:
 // - the Java AnnotationTypeMetadata holds a ClassSymbol and a completer; the
-// port stores the SymbolId and Rc<RefCell<dyn AnnotationTypeCompleter>>
+// port stores the SymbolId and Rc<dyn AnnotationTypeCompleter>
 // (arena identity + ADR 0001 explicit context).
 // - the AnnotationTypeMetadata object itself is shared through the ClassSymbol
 // (Rc<AnnotationTypeMetadata>, upstream single-object semantics); the
@@ -67,7 +67,7 @@ pub trait AnnotationTypeCompleter {
     /// RefCell<Rc<Attr>> service must not be re-borrowed while it is lent out).
     /// None is the Attr-less entry point, which falls back to that service.
     fn complete(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         sym: SymbolId,
@@ -85,7 +85,7 @@ pub struct AnnotationTypeMetadata {
     /// Java: private Compound repeatable
     repeatable: RefCell<Option<AttributeId>>,
     /// Java: private AnnotationTypeCompleter annotationTypeCompleter
-    annotation_type_completer: RefCell<Option<Rc<RefCell<dyn AnnotationTypeCompleter>>>>,
+    annotation_type_completer: RefCell<Option<Rc<dyn AnnotationTypeCompleter>>>,
     /// Java: NOT_AN_ANNOTATION_TYPE.isMetadataForAnnotationType() == false
     is_metadata_for_annotation_type: bool,
 }
@@ -101,7 +101,7 @@ impl AnnotationTypeMetadata {
     /// AnnotationTypeCompleter annotationTypeCompleter)
     pub fn new(
         meta_data_for: SymbolId,
-        annotation_type_completer: Option<Rc<RefCell<dyn AnnotationTypeCompleter>>>,
+        annotation_type_completer: Option<Rc<dyn AnnotationTypeCompleter>>,
     ) -> AnnotationTypeMetadata {
         AnnotationTypeMetadata {
             meta_data_for: Some(meta_data_for),
@@ -172,7 +172,7 @@ impl AnnotationTypeMetadata {
             completer.take()
         };
         if let Some(completer) = completer {
-            completer.borrow_mut().complete(ctx, syms, meta_data_for, attr)?;
+            completer.complete(ctx, syms, meta_data_for, attr)?;
         }
         Ok(())
     }
@@ -2526,7 +2526,7 @@ impl SourceCompleter {
 
 impl AnnotationTypeCompleter for SourceCompleter {
     fn complete(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         sym: SymbolId,
@@ -2543,8 +2543,8 @@ impl AnnotationTypeCompleter for SourceCompleter {
 impl AnnotateServices {
     /// Java: public AnnotationTypeCompleter annotationTypeSourceCompleter()
     /// (Annotate.java:1199-1201)
-    pub fn annotation_type_source_completer(self: &Rc<AnnotateServices>) -> Rc<std::cell::RefCell<dyn AnnotationTypeCompleter>> {
-        Rc::new(std::cell::RefCell::new(SourceCompleter::new(Rc::clone(self))))
+    pub fn annotation_type_source_completer(self: &Rc<AnnotateServices>) -> Rc<dyn AnnotationTypeCompleter> {
+        Rc::new(SourceCompleter::new(Rc::clone(self)))
     }
 
     /// Java: private void attributeAnnotationType(Env<AttrContext> env)

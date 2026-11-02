@@ -1251,14 +1251,14 @@ impl ClassReader {
         // else c.setAnnotationTypeMetadata(AnnotationTypeMetadata.notAnAnnotationType());
         // (ClassReader.java:2988-2995)
         if (ctx.sym(c).flags_field & flags::ANNOTATION as i64) != 0 {
-            let completer: Rc<RefCell<dyn AnnotationTypeCompleter>> =
-                Rc::new(RefCell::new(CompleterDeproxy::new(
+            let completer: Rc<dyn AnnotationTypeCompleter> =
+                Rc::new(CompleterDeproxy::new(
                     c,
                     self.target.clone(),
                     self.repeatable.clone(),
                     Rc::clone(&self.names),
                     self.reader_handle.clone(),
-                )));
+                ));
             ctx.sym_mut(c)
                 .set_annotation_type_metadata(Rc::new(AnnotationTypeMetadata::new(
                     c,
@@ -5046,7 +5046,7 @@ impl CompleterDeproxy {
 
 impl AnnotationTypeCompleter for CompleterDeproxy {
     fn complete(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
