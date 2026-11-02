@@ -37,6 +37,7 @@ pub mod lower;
 pub mod match_bindings;
 pub mod modules;
 pub mod member_enter;
+pub mod method_resolution;
 pub mod operators;
 pub mod post_attr_analyzer;
 pub mod resolve;
