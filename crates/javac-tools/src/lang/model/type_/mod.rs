@@ -22,7 +22,7 @@
 //! @since 1.6
 //!
 //! the Java package name `type` is a Rust keyword, so the
-//! module is named `type_` (docs/PORTING_RULES.md §3); the file names mirror
+//! module is named `type_` (docs/porting adapter.md §3); the file names mirror
 //! the Java class names in snake_case.
 
 pub mod array_type;

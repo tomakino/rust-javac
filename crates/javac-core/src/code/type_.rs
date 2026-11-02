@@ -336,7 +336,7 @@ impl Type {
     }
 
     /// Java: public Object constValue() (default null; the constant type
-    /// subclasses override). PORTING_RULES: Java null -> Option::None.
+    /// subclasses override). Rust: Java null -> Option::None.
     pub fn const_value(&self) -> Option<&ConstantValue> {
         self.const_value.as_ref()
     }

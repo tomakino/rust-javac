@@ -20,7 +20,7 @@
 //! * declared `UnsupportedOperationException`   -> `Err(Error::UnsupportedOperationException)`
 //! * other runtime exceptions                   -> `panic!` at the call site
 //!   (they express API misuse; entry points catch_unwind, see
-//!   docs/PORTING_RULES.md §6)
+//!   docs/porting adapter.md §6)
 //!
 //! REGISTERED P6: replace this placeholder with the error type introduced by the
 //! `file`/`util` port; the variant names stay aligned with the Java exception

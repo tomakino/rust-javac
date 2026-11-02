@@ -170,7 +170,7 @@ pub(crate) fn dispatch_type<R, P, V: TypeVisitor<R, P> + ?Sized>(
 fn missing_dispatch(t: &dyn TypeMirror) -> ! {
     panic!(
         "ClassCastException: type of kind {} does not provide its subinterface \
-         (PORTING_RULES: concrete TypeMirror implementations must override the \
+         (Rust: concrete TypeMirror implementations must override the \
          as_xxx accessor for their kind)",
         t.get_kind()
     )

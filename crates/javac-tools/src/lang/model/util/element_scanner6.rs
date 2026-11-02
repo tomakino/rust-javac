@@ -5,7 +5,7 @@
 //! * Java concrete class -> Rust trait with the upstream default behavior.
 //! * `Iterable<? extends Element>` -> `&[Rc<dyn Element>]`.
 //! * the Java `public final R scan(Iterable, P)` becomes `scan_all` (overload
-//!   mapping, docs/PORTING_RULES.md §3); it returns the result of the last scan
+//!   mapping, docs/porting adapter.md §3); it returns the result of the last scan
 //!   or DEFAULT_VALUE for an empty iterable (Java null default -> panic, see
 //!   `default_value`).
 //! * `scan(Element, P)` dispatches through the element accept: Rust uses the

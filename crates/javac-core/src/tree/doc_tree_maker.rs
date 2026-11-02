@@ -643,7 +643,7 @@ impl DocTreeMaker {
      * block tag, or a sentence break, as returned by the BreakIterator.
      * Trailing whitespaces are trimmed.
      *
-     * PORTING_RULES: the upstream ListIterator loop is reproduced with an index
+     * Rust: the upstream ListIterator loop is reproduced with an index
      * (hasPrevious/next/nextIndex visits map to index 0 / index / index + 1);
      * the consumed adjacent tree in the TEXT case maps to index += 2.
      */

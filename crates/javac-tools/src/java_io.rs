@@ -12,7 +12,7 @@
 //! Rust has no std equivalent (std::io is byte oriented), so the traits below
 //! are the minimal representation.  Encoding/decoding belongs to the ports of
 //! `java.io.InputStreamReader` / `OutputStreamWriter` (done by the
-//! `com.sun.tools.javac.file` / output layer port, docs/PORTING_RULES.md §7),
+//! `com.sun.tools.javac.file` / output layer port, docs/porting adapter.md §7),
 //! never to this adapter.
 //!
 //! `read(char[] cbuf, int off, int len)` / `write(char[] cbuf, int off, int len)`

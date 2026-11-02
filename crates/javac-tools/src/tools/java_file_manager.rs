@@ -177,7 +177,7 @@ fn name_matches_module_word(name: &JavaString) -> bool {
 /// * ClassLoader, Class and ServiceLoader -> the minimal placeholders of
 ///   crate::jdk.
 /// * getLocationForModule has two overloads; the JavaFileObject one becomes
-///   get_location_for_module_of_file (docs/PORTING_RULES.md §3).
+///   get_location_for_module_of_file (docs/porting adapter.md §3).
 /// * getServiceLoader is generic: it keeps "where Self: Sized" so the trait
 ///   stays usable as dyn JavaFileManager.  Annotation processing is out of
 ///   scope, so no upstream code calls it through dyn.

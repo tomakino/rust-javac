@@ -10,7 +10,7 @@
 //! * Java `Tree.accept(TreeVisitor, D)` is generic and cannot be called on
 //!   `&dyn Tree`; it keeps `where Self: Sized`, and the util layer reproduces
 //!   the dispatch through getKind() plus the object-conversion accessors below
-//!   (docs/PORTING_RULES.md §13/§14).
+//!   (docs/porting adapter.md §13/§14).
 //! * The `as_xxx` accessors are the Rust form of `instanceof`/class cast for
 //!   trees (same contract as javax.lang.model): default None, concrete
 //!   implementations override the applicable one.

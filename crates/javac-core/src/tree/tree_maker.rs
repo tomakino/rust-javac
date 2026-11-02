@@ -227,7 +227,7 @@ impl TreeMaker {
 ///
 /// Java nested interface JCTree.Factory -> trait TreeFactory (Rust traits cannot
 /// be nested); every method takes the CompilerContext arena first, and returns TreeId. Java
-/// overloads are renamed with a suffix (docs/PORTING_RULES.md section 3): class_def (6 args) /
+/// overloads are renamed with a suffix (the porting adapters): class_def (6 args) /
 /// class_def_permitting (7), method_def (with recvparam) / method_def_simple (without),
 /// var_def / var_def_declared_using_var, try_block / try_with_resources, modifiers_with_annotations,
 /// erroneous / erroneous_empty, new_class / new_class_speculative.

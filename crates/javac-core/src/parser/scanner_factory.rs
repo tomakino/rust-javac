@@ -39,12 +39,12 @@ pub struct ScannerFactory {
     pub(crate) log: Rc<RefCell<Log>>,
     pub(crate) names: Rc<Names>,
     pub(crate) source: Source,
-    /// Java: final Preview preview. PORTING_RULES: Preview.instance is ported;
+    /// Java: final Preview preview. Rust: Preview.instance is ported;
     /// the dependency is injected explicitly (ADR 0001), so it is an
     /// optional injection; None is the default (no preview features enabled).
     pub(crate) preview: Option<Rc<Preview>>,
     pub(crate) tokens: Rc<Tokens>,
-    /// Java: final Lint lint. PORTING_RULES: Lint.instance is ported; None is
+    /// Java: final Lint lint. Rust: Lint.instance is ported; None is
     /// the explicit no-Lint case (no -Xlint categories),
     /// matching the Java default Lint state.
     pub(crate) lint: Option<Rc<Lint>>,

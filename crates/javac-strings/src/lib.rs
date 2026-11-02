@@ -7,7 +7,7 @@
 //! uses JavaString internally.
 //!
 //! This crate is the bottom-most layer shared by javac-tools and javac-core.
-//! See docs/PORTING_RULES.md ("String semantics").
+//! See docs/porting adapter.md ("String semantics").
 
 use std::fmt;
 

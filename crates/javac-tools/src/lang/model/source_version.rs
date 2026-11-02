@@ -9,9 +9,9 @@
 //!
 //! — string/collection mapping:
 //! * `CharSequence` parameters -> `&javac_strings::JavaString` (Java String
-//!   semantics; docs/PORTING_RULES.md §7).
+//!   semantics; docs/porting adapter.md §7).
 //! * `SourceVersion` overloads are expressed with distinct function names
-//!   (Java overload mapping, docs/PORTING_RULES.md §3):
+//!   (Java overload mapping, docs/porting adapter.md §3):
 //!   `isName(CharSequence, SourceVersion)`  -> `is_name_version`
 //!   `isKeyword(CharSequence, SourceVersion)` -> `is_keyword_version`
 //!

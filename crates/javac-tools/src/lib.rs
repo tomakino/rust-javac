@@ -29,7 +29,7 @@
 //!   `Rc<RefCell<dyn Writer>>` handed to `JavaCompiler::get_task`, which is
 //!   Java's mutable `Writer` reference.
 //! * Java `String`/`CharSequence` -> `javac_strings::JavaString` (UTF-16 code
-//!   units, docs/PORTING_RULES.md §7).  Java string semantics are never
+//!   units, docs/porting adapter.md §7).  Java string semantics are never
 //!   expressed with Rust `String` in this crate; literal constants are built
 //!   with `JavaString::from("...")`.  `javac-strings` is the bottom-most layer
 //!   shared with `javac-core`.
@@ -42,7 +42,7 @@
 //!   Other runtime exceptions (`IllegalArgumentException`,
 //!   `IllegalStateException`, `NullPointerException`) do not appear in
 //!   signatures; they are API misuse and map to `panic!` (documented per
-//!   method), caught only at entry points (docs/PORTING_RULES.md §6).
+//!   method), caught only at entry points (docs/porting adapter.md §6).
 //! * JDK types without a Rust equivalent are mapped minimally and registered in
 //!   the adapter files: `java.net.URI` -> `crate::uri::URI`;
 //!   `java.io.Reader/Writer` -> `crate::java_io::{Reader, Writer}`;
@@ -54,7 +54,7 @@
 //!   `std::path::PathBuf`.
 //!
 //! REGISTERED P0: register the adapter files `error.rs`, `uri.rs`, `java_io.rs`,
-//! `jdk.rs` in docs/PORTING_RULES.md §9 and docs/STATUS.md (Lead).
+//! `jdk.rs` in docs/porting adapter.md §9 and docs/STATUS.md (Lead).
 //! P2: `java.net.URI` implements create/path/normalize/resolve/relativize/to_url;
 //! REGISTERED: component-level validation and the remaining
 //! `java.net.URI` semantics are added with the `file` package, which is the

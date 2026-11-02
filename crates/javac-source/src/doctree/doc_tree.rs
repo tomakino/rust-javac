@@ -1,6 +1,6 @@
 //! Common interface for all nodes in a documentation syntax tree.
 //!
-//! (docs/PORTING_RULES.md §14):
+//! (docs/porting adapter.md §14):
 //! * Java interface -> Rust trait; the nested DocTree.Kind enum is declared in
 //!   this module (39 constants, Java order) and its Java
 //!   `public final String tagName` field is expressed by `tag_name()`, with

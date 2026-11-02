@@ -58,7 +58,7 @@ pub trait ElementVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit: PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit: Rust: visitor interface method not overridden")
     }
 
     /// Visits a package element.
@@ -69,7 +69,7 @@ pub trait ElementVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit_package: PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_package: Rust: visitor interface method not overridden")
     }
 
     /// Visits a type element.
@@ -80,7 +80,7 @@ pub trait ElementVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit_type: PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_type: Rust: visitor interface method not overridden")
     }
 
     /// Visits a variable element.
@@ -91,7 +91,7 @@ pub trait ElementVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit_variable: PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_variable: Rust: visitor interface method not overridden")
     }
 
     /// Visits an executable element.
@@ -102,7 +102,7 @@ pub trait ElementVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit_executable: PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_executable: Rust: visitor interface method not overridden")
     }
 
     /// Visits a type parameter element.
@@ -113,7 +113,7 @@ pub trait ElementVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit_type_parameter: PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_type_parameter: Rust: visitor interface method not overridden")
     }
 
     /// Visits an unknown kind of element.
@@ -129,7 +129,7 @@ pub trait ElementVisitor<R, P> {
         // Rust: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        panic!("AbstractMethodError: visit_unknown: PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_unknown: Rust: visitor interface method not overridden")
     }
 
     /// Visits a module element.

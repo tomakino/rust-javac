@@ -25,7 +25,7 @@ use std::io::{Read, Write};
 /// — signature mapping:
 /// * `java.net.URI` -> `crate::uri::URI` (minimal mapping, see uri.rs).
 /// * Java `String`/`CharSequence` -> `javac_strings::JavaString` (UTF-16
-///   semantics, docs/PORTING_RULES.md §7).  `getName` -> `JavaString`,
+///   semantics, docs/porting adapter.md §7).  `getName` -> `JavaString`,
 ///   `getCharContent` -> `Option<JavaString>` (`null` means "not available").
 /// * `InputStream`/`OutputStream` -> `Box<dyn std::io::Read>` /
 ///   `Box<dyn std::io::Write>`; `Reader`/`Writer` -> the minimal character

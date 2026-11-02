@@ -24,7 +24,7 @@ use crate::compiler_context::CompilerContext;
 
 /// Kind of symbols.
 ///
-/// Java: Kinds.Kind. PORTING_RULES: the Java enum constructor stores
+/// Java: Kinds.Kind. Rust: the Java enum constructor stores
 /// (category, kindName/absentKind, selector) per constant; Rust expresses
 /// those as match-based accessors.
 #[allow(non_camel_case_types)]

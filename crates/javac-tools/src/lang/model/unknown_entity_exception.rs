@@ -7,7 +7,7 @@
 //! first member instead of extending it.  Java `RuntimeException` maps to a
 //! Rust error value here because the value is part of the visitor contract;
 //! the abstract visitors turn it into `panic!` at the point where Java throws
-//! it (the entry points catch_unwind, docs/PORTING_RULES.md §6).
+//! it (the entry points catch_unwind, docs/porting adapter.md §6).
 
 use javac_strings::JavaString;
 use std::fmt;

@@ -5,7 +5,7 @@
 //! * Java abstract class -> Rust trait with the upstream default behavior.
 //! * the Java `final R visit(Element, P)` forwards to `e.accept(this, p)`;
 //!   Rust cannot call the generic `Element::accept` on `&dyn Element` (see the
-//!   Element trait PORTING_RULES), so this default panics and callers dispatch
+//!   Element trait porting adapter), so this default panics and callers dispatch
 //!   through a concrete element type (registered language-shape limitation).
 //! * the Java constructors and @SupportedSourceVersion annotations have no Rust
 //!   form.
@@ -174,7 +174,7 @@ pub(crate) fn dispatch_element<R, P, V: ElementVisitor<R, P> + ?Sized>(
 fn missing_dispatch(e: &dyn Element) -> ! {
     panic!(
         "ClassCastException: element of kind {} does not provide its subinterface \
-         (PORTING_RULES: concrete Element implementations must override the as_xxx \
+         (Rust: concrete Element implementations must override the as_xxx \
          accessor for their kind)",
         e.get_kind()
     )

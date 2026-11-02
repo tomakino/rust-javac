@@ -222,7 +222,7 @@ fn reduce_lambda_kind(
 pub struct JavacParser {
     /// Is the parser instantiated to parse a module-info file?
     parse_module_info: bool,
-    /// The scanner used for lexical analysis (Java name S kept, PORTING_RULES
+    /// The scanner used for lexical analysis (Java name S kept, porting adapter
     /// section 3; registered naming deviation).
     #[allow(non_snake_case)]
     S: Scanner,

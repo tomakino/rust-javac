@@ -52,7 +52,7 @@
 //!   code/lint.rs in the Lint (registered).
 
 // The upstream setFlag switch is copied verbatim; the clippy style suggestion to
-// collapse the outer type check into the match is not applied (PORTING_RULES
+// collapse the outer type check into the match is not applied (porting adapter
 // section 9: control flow is kept 1:1 with the upstream source).
 #![allow(clippy::collapsible_match)]
 

@@ -21,7 +21,7 @@
 //!   return a LinkedHashSet (input iteration order preserved), which maps to a
 //!   Vec that keeps the input order; the Rust overloads therefore share the
 //!   same filtering helper but keep the two Java methods with distinct names
-//!   (docs/PORTING_RULES.md §3).
+//!   (docs/porting adapter.md §3).
 //! * `ElementFilter` is a non-instantiable utility class -> struct with a
 //!   private field and associated functions.
 
@@ -297,7 +297,7 @@ fn cast<'a, X: ?Sized>(selected: Option<&'a X>, element: &dyn Element) -> &'a X 
     selected.unwrap_or_else(|| {
         panic!(
             "ClassCastException: element of kind {} does not provide the requested \
-             subinterface (PORTING_RULES: concrete Element implementations must \
+             subinterface (Rust: concrete Element implementations must \
              override the as_xxx accessor for their kind)",
             element.get_kind()
         )
@@ -309,7 +309,7 @@ fn cast_directive<'a, D: ?Sized>(selected: Option<&'a D>, directive: &dyn Direct
     selected.unwrap_or_else(|| {
         panic!(
             "ClassCastException: directive of kind {} does not provide the requested \
-             subinterface (PORTING_RULES: concrete Directive implementations must \
+             subinterface (Rust: concrete Directive implementations must \
              override the as_xxx accessor for their kind)",
             directive.get_kind()
         )

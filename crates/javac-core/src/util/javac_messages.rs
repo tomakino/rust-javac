@@ -85,7 +85,7 @@ static LAUNCHER_VARIANTS: &[(&str, ResourceBundleTable)] =
 static JAVAC_VARIANTS: &[(&str, ResourceBundleTable)] =
     &[("zh_CN", &JAVAC_ZH_CN), ("ja", &JAVAC_JA)];
 
-/// Minimal mapping of java.util.Locale (adapter; registered in PORTING_RULES
+/// Minimal mapping of java.util.Locale (adapter; registered in porting adapter
 /// section 9): the locale tag, e.g. "en", "zh_CN", "en_US".
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Locale {

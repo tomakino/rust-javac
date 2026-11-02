@@ -1,7 +1,7 @@
 // PORTING ADAPTER (not a 1:1 port): the Rust form of the Java double dispatch
 // Tree.accept(TreeVisitor, D).  Tree.accept is generic and therefore not
 // callable on &dyn Tree; this function reproduces the dispatch from getKind()
-// plus the §13 object-conversion accessors (docs/PORTING_RULES.md §14), exactly
+// plus the §13 object-conversion accessors (docs/porting adapter.md §14), exactly
 // as javax.lang.model's dispatch_element/dispatch_type do for elements/types.
 // The Kind-to-visit-method mapping follows the Java TreeVisitor method set; the
 // Kind values that share one Java accept method (e.g. the four class kinds ->

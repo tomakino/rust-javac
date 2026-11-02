@@ -66,7 +66,7 @@ use crate::util::position::LineMap;
 
 /// Tree tag values, identifying kinds of trees.
 ///
-/// Java: public enum Tag (JCTree.Tag). PORTING_RULES: the Java enum keeps the
+/// Java: public enum Tag (JCTree.Tag). Rust: the Java enum keeps the
 /// upstream constant names; the enum constructor argument noAssignTag of the
 /// assignment operators is expressed by the no_assign_op() method.
 #[allow(non_camel_case_types)]
