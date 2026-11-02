@@ -677,15 +677,13 @@ impl ClassReader {
                     thrown = thrown.prepend(t);
                 }
                 // if there is a typevar in the throws clause we should state it.
-                let mut l = thrown.clone();
-                while l.non_empty() {
-                    let head = *l.head();
+                let l = thrown.clone();
+                for head in &l {
                     if ctx.typ(head).has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
                         && let Some(tsym) = ctx.typ(head).tsym
                     {
                         ctx.sym_mut(tsym).flags_field |= crate::code::flags::THROWS;
                     }
-                    l = l.tail();
                 }
                 Ok(ctx.alloc_type(crate::code::type_::Type::new_method_type(
                     argtypes,
@@ -1016,14 +1014,12 @@ impl ClassReader {
             let owner_type = ctx.sym(owner).ty.expect("owner type");
             self.enter_typevars(ctx, syms, owner, owner_type);
         }
-        let mut xs = crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
+        let xs = crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
         let typevars = self.typevars.expect("typevars scope");
-        while xs.non_empty() {
-            let head = *xs.head();
+        for head in &xs {
             if let Some(tsym) = ctx.typ(head).tsym {
                 ctx.scope_enter(typevars, tsym);
             }
-            xs = xs.tail();
         }
     }
 
@@ -1286,14 +1282,13 @@ impl ClassReader {
                     self.interim_uses = List::nil();
                     self.interim_provides = List::nil();
                     let mut uses: List<crate::ids::DirectiveId> = List::nil();
-                    let mut list = uses_names;
-                    while list.non_empty() {
-                        let service = self.enter_class(ctx, syms, list.head().clone())?;
+                    let list = uses_names;
+                    for service_name in &list {
+                        let service = self.enter_class(ctx, syms, service_name.clone())?;
                         let directive = ctx.alloc_directive(crate::code::directive::Directive::Uses {
                             service: Some(service),
                         });
                         uses = uses.append(directive);
-                        list = list.tail();
                     }
                     let mut provides: List<crate::ids::DirectiveId> = List::nil();
                     let mut list = provides_names;
