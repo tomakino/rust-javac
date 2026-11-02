@@ -91,9 +91,9 @@ pub struct ClassWriter {
     /// The preview feature helper.
     pub preview: Rc<Preview>,
     /// The class file data buffer.
-    pub databuf: ByteBuffer,
+    pub databuf: RefCell<ByteBuffer>,
     /// The class file constant pool header buffer.
-    pub poolbuf: ByteBuffer,
+    pub poolbuf: RefCell<ByteBuffer>,
     /// The constant pool writer.
     pub pool_writer: Rc<RefCell<PoolWriter>>,
     /// The code objects of the generated methods, indexed by symbol.
@@ -117,7 +117,7 @@ pub struct ClassWriter {
     /// Dump the method modifiers (-XDdumpmodifiers=m).
     pub dump_method_modifiers: bool,
     /// The extra attribute writers.
-    pub extra_attribute_hooks: Vec<ExtraAttributeHook>,
+    pub extra_attribute_hooks: RefCell<Vec<ExtraAttributeHook>>,
 }
 
 impl ClassWriter {
@@ -184,8 +184,8 @@ impl ClassWriter {
             target,
             source,
             preview,
-            databuf: ByteBuffer::with_initial_size(0x0fff0),
-            poolbuf: ByteBuffer::with_initial_size(0x1fff0),
+            databuf: RefCell::new(ByteBuffer::with_initial_size(0x0fff0)),
+            poolbuf: RefCell::new(ByteBuffer::with_initial_size(0x1fff0)),
             pool_writer,
             method_codes,
             verbose,
@@ -197,7 +197,7 @@ impl ClassWriter {
             dump_field_modifiers: dump_field,
             dump_inner_class_modifiers: dump_inner,
             dump_method_modifiers: dump_method,
-            extra_attribute_hooks: Vec::new(),
+            extra_attribute_hooks: RefCell::new(Vec::new()),
         }
     }
 
@@ -206,7 +206,7 @@ impl ClassWriter {
         &mut self,
         extra: ExtraAttributeHook,
     ) {
-        self.extra_attribute_hooks.push(extra);
+        self.extra_attribute_hooks.borrow_mut().push(extra);
     }
 
     /// Return the flag names of the given flags as a space separated list.
@@ -252,27 +252,27 @@ impl ClassWriter {
     /// index.
     pub fn write_attr(&mut self, ctx: &mut CompilerContext, attr_name: Name) -> i32 {
         let index = self.pool_writer.borrow_mut().put_name(attr_name);
-        self.databuf.append_char(index);
-        self.databuf.append_int(0);
+        self.databuf.borrow_mut().append_char(index);
+        self.databuf.borrow_mut().append_int(0);
         let _ = ctx;
-        self.databuf.length
+        self.databuf.borrow().length
     }
 
     /// Fill in the length of an attribute.
     pub fn end_attr(&mut self, index: i32) {
-        let length = self.databuf.length - index;
-        ClassWriter::put_int(&mut self.databuf, index - 4, length);
+        let length = self.databuf.borrow().length - index;
+        ClassWriter::put_int(&mut *self.databuf.borrow_mut(), index - 4, length);
     }
 
     /// Leave space for an attribute count and return its index.
     pub fn begin_attrs(&mut self) -> i32 {
-        self.databuf.append_char(0);
-        self.databuf.length
+        self.databuf.borrow_mut().append_char(0);
+        self.databuf.borrow().length
     }
 
     /// Fill in an attribute count.
     pub fn end_attrs(&mut self, index: i32, count: i32) {
-        ClassWriter::put_char(&mut self.databuf, index - 2, count);
+        ClassWriter::put_char(&mut *self.databuf.borrow_mut(), index - 2, count);
     }
 
     /// Write the EnclosingMethod attribute if needed and return the number of
@@ -317,7 +317,7 @@ impl ClassWriter {
             let mut pool = self.pool_writer.borrow_mut();
             pool.put_class(ctx, &syms.borrow(), ctx.sym(encl_class).ty.expect("class type"))
         };
-        self.databuf.append_char(encl_class_index);
+        self.databuf.borrow_mut().append_char(encl_class_index);
         let method_index = match encl_method {
             None => 0,
             Some(encl_method) => {
@@ -325,7 +325,7 @@ impl ClassWriter {
                 pool.put_name_and_type(ctx, &syms.borrow(), encl_method)
             }
         };
-        self.databuf.append_char(method_index);
+        self.databuf.borrow_mut().append_char(method_index);
         self.end_attr(alen_idx);
         1
     }
@@ -381,7 +381,7 @@ impl ClassWriter {
                 .pool_writer
                 .borrow_mut()
                 .put_signature(ctx, &syms.borrow(), sym);
-            self.databuf.append_char(index);
+            self.databuf.borrow_mut().append_char(index);
             self.end_attr(alen_idx);
             acount += 1;
         }
@@ -434,7 +434,7 @@ impl ClassWriter {
         }
         let attr_name = self.names.MethodParameters.clone();
         let attr_index = self.write_attr(ctx, attr_name);
-        self.databuf.append_byte(allparams);
+        self.databuf.borrow_mut().append_byte(allparams);
         let m_flags = ctx.sym(m).flags();
         for s in &extra_params {
             let s_flags = ctx.sym(*s).flags();
@@ -443,8 +443,8 @@ impl ClassWriter {
                 | (m_flags & flags::SYNTHETIC as i64);
             let name = ctx.sym(*s).name.clone();
             let index = self.pool_writer.borrow_mut().put_name(name);
-            self.databuf.append_char(index);
-            self.databuf.append_char(s_flags as i32);
+            self.databuf.borrow_mut().append_char(index);
+            self.databuf.borrow_mut().append_char(s_flags as i32);
         }
         for s in &params {
             let s_flags = ctx.sym(*s).flags();
@@ -453,8 +453,8 @@ impl ClassWriter {
                 | (m_flags & flags::SYNTHETIC as i64);
             let name = ctx.sym(*s).name.clone();
             let index = self.pool_writer.borrow_mut().put_name(name);
-            self.databuf.append_char(index);
-            self.databuf.append_char(s_flags as i32);
+            self.databuf.borrow_mut().append_char(index);
+            self.databuf.borrow_mut().append_char(s_flags as i32);
         }
         for s in &captured_locals {
             let s_flags = ctx.sym(*s).flags();
@@ -463,8 +463,8 @@ impl ClassWriter {
                 | (m_flags & flags::SYNTHETIC as i64);
             let name = ctx.sym(*s).name.clone();
             let index = self.pool_writer.borrow_mut().put_name(name);
-            self.databuf.append_char(index);
-            self.databuf.append_char(s_flags as i32);
+            self.databuf.borrow_mut().append_char(index);
+            self.databuf.borrow_mut().append_char(s_flags as i32);
         }
         self.end_attr(attr_index);
         1
@@ -477,7 +477,7 @@ impl ClassWriter {
         params: &[SymbolId],
         retention: RetentionPolicy,
     ) {
-        self.databuf.append_byte(params.len() as i32);
+        self.databuf.borrow_mut().append_byte(params.len() as i32);
         for s in params {
             let mut buf: Vec<AttributeId> = Vec::new();
             let raw = ctx.sym(*s).get_raw_attributes();
@@ -487,7 +487,7 @@ impl ClassWriter {
                 buf.push(a);
             }
             }
-            self.databuf.append_char(buf.len() as i32);
+            self.databuf.borrow_mut().append_char(buf.len() as i32);
             for a in buf {
                 self.write_compound_attribute(ctx, a);
             }
@@ -568,7 +568,7 @@ impl ClassWriter {
         if !visibles.is_empty() {
             let name = self.names.RuntimeVisibleAnnotations.clone();
             let attr_index = self.write_attr(ctx, name);
-            self.databuf.append_char(visibles.len() as i32);
+            self.databuf.borrow_mut().append_char(visibles.len() as i32);
             for a in visibles {
                 self.write_compound_attribute(ctx, a);
             }
@@ -578,7 +578,7 @@ impl ClassWriter {
         if !invisibles.is_empty() {
             let name = self.names.RuntimeInvisibleAnnotations.clone();
             let attr_index = self.write_attr(ctx, name);
-            self.databuf.append_char(invisibles.len() as i32);
+            self.databuf.borrow_mut().append_char(invisibles.len() as i32);
             for a in invisibles {
                 self.write_compound_attribute(ctx, a);
             }
@@ -636,7 +636,7 @@ impl ClassWriter {
         if !visibles.is_empty() {
             let name = self.names.RuntimeVisibleTypeAnnotations.clone();
             let attr_index = self.write_attr(ctx, name);
-            self.databuf.append_char(visibles.len() as i32);
+            self.databuf.borrow_mut().append_char(visibles.len() as i32);
             for p in visibles {
                 self.write_type_annotation(ctx, p);
             }
@@ -646,7 +646,7 @@ impl ClassWriter {
         if !invisibles.is_empty() {
             let name = self.names.RuntimeInvisibleTypeAnnotations.clone();
             let attr_index = self.write_attr(ctx, name);
-            self.databuf.append_char(invisibles.len() as i32);
+            self.databuf.borrow_mut().append_char(invisibles.len() as i32);
             for p in invisibles {
                 self.write_type_annotation(ctx, p);
             }
@@ -667,10 +667,10 @@ impl ClassWriter {
                         crate::util::constants::ConstantValue::String(s) => s.clone(),
                         _ => panic!("AssertionError: string constant expected"),
                     };
-                    self.databuf.append_byte('s' as i32);
+                    self.databuf.borrow_mut().append_byte('s' as i32);
                     let name = self.names.from_string(&s);
                     let index = self.pool_writer.borrow_mut().put_name(name);
-                    self.databuf.append_char(index);
+                    self.databuf.borrow_mut().append_char(index);
                 } else {
                     let tag = ctx.typ(ty).get_tag();
                     let marker = match tag {
@@ -684,49 +684,49 @@ impl ClassWriter {
                         crate::code::type_tag::TypeTag::BOOLEAN => 'Z',
                         other => panic!("AssertionError: unsupported constant tag {:?}", other),
                     };
-                    self.databuf.append_byte(marker as i32);
+                    self.databuf.borrow_mut().append_byte(marker as i32);
                     let syms = Rc::clone(&self.syms);
                     let index = self
                         .pool_writer
                         .borrow_mut()
                         .put_constant_value(ctx, &syms.borrow(), &value);
-                    self.databuf.append_char(index);
+                    self.databuf.borrow_mut().append_char(index);
                 }
             }
             AttributeKind::Enum { value } => {
                 let value = value.expect("enum attribute value");
-                self.databuf.append_byte('e' as i32);
+                self.databuf.borrow_mut().append_byte('e' as i32);
                 let syms = Rc::clone(&self.syms);
                 let ty = ctx.sym(value).ty.expect("enum symbol type");
                 let index = {
                     let mut pool = self.pool_writer.borrow_mut();
                     pool.put_descriptor(ctx, &syms.borrow(), ty)
                 };
-                self.databuf.append_char(index);
+                self.databuf.borrow_mut().append_char(index);
                 let name = ctx.sym(value).name.clone();
                 let index = self.pool_writer.borrow_mut().put_name(name);
-                self.databuf.append_char(index);
+                self.databuf.borrow_mut().append_char(index);
             }
             AttributeKind::Class { class_type } => {
                 let class_type = class_type.expect("class attribute type");
-                self.databuf.append_byte('c' as i32);
+                self.databuf.borrow_mut().append_byte('c' as i32);
                 let syms = Rc::clone(&self.syms);
                 let index = {
                     let mut pool = self.pool_writer.borrow_mut();
                     pool.put_descriptor(ctx, &syms.borrow(), class_type)
                 };
-                self.databuf.append_char(index);
+                self.databuf.borrow_mut().append_char(index);
             }
             AttributeKind::Compound { .. } | AttributeKind::TypeCompound { .. } => {
-                self.databuf.append_byte('@' as i32);
+                self.databuf.borrow_mut().append_byte('@' as i32);
                 self.write_compound_attribute(ctx, attr);
             }
             AttributeKind::Error => {
                 panic!("AssertionError: error attribute");
             }
             AttributeKind::Array { values } => {
-                self.databuf.append_byte('[' as i32);
-                self.databuf.append_char(values.len() as i32);
+                self.databuf.borrow_mut().append_byte('[' as i32);
+                self.databuf.borrow_mut().append_char(values.len() as i32);
                 for value in values {
                     self.write_attribute(ctx, value);
                 }
@@ -745,20 +745,20 @@ impl ClassWriter {
             let mut pool = self.pool_writer.borrow_mut();
             pool.put_descriptor(ctx, &syms.borrow(), ty)
         };
-        self.databuf.append_char(index);
+        self.databuf.borrow_mut().append_char(index);
         let values = match &ctx.attr(c).kind {
             AttributeKind::Compound { values, .. } | AttributeKind::TypeCompound { values, .. } => {
                 values.clone()
             }
             _ => panic!("AssertionError: compound attribute expected"),
         };
-        self.databuf.append_char(values.length());
+        self.databuf.borrow_mut().append_char(values.length());
         let mut current = values;
         for pair in &current {
         let (symbol, value) = (pair.fst, pair.snd);
         let name = ctx.sym(symbol).name.clone();
         let index = self.pool_writer.borrow_mut().put_name(name);
-        self.databuf.append_char(index);
+        self.databuf.borrow_mut().append_char(index);
         self.write_attribute(ctx, value);
         }
     }
@@ -775,50 +775,50 @@ impl ClassWriter {
 
     /// Write a type annotation position.
     pub fn write_position(&mut self, p: TypeAnnotationPosition) {
-        self.databuf.append_byte(p.type_.target_type_value());
+        self.databuf.borrow_mut().append_byte(p.type_.target_type_value());
         use TargetType::*;
         match p.type_ {
             INSTANCEOF | NEW | CONSTRUCTOR_REFERENCE | METHOD_REFERENCE => {
-                self.databuf.append_char(p.offset);
+                self.databuf.borrow_mut().append_char(p.offset);
             }
             LOCAL_VARIABLE | RESOURCE_VARIABLE => {
                 let offsets = p.lvar_offset.clone().expect("lvar offsets");
                 let lengths = p.lvar_length.clone().expect("lvar lengths");
                 let indices = p.lvar_index.clone().expect("lvar indices");
-                self.databuf.append_char(offsets.len() as i32);
+                self.databuf.borrow_mut().append_char(offsets.len() as i32);
                 for i in 0..offsets.len() {
-                    self.databuf.append_char(offsets[i]);
-                    self.databuf.append_char(lengths[i]);
-                    self.databuf.append_char(indices[i]);
+                    self.databuf.borrow_mut().append_char(offsets[i]);
+                    self.databuf.borrow_mut().append_char(lengths[i]);
+                    self.databuf.borrow_mut().append_char(indices[i]);
                 }
             }
             EXCEPTION_PARAMETER => {
-                self.databuf.append_char(p.get_exception_index());
+                self.databuf.borrow_mut().append_char(p.get_exception_index());
             }
             METHOD_RECEIVER => {}
             CLASS_TYPE_PARAMETER | METHOD_TYPE_PARAMETER => {
-                self.databuf.append_byte(p.parameter_index);
+                self.databuf.borrow_mut().append_byte(p.parameter_index);
             }
             CLASS_TYPE_PARAMETER_BOUND | METHOD_TYPE_PARAMETER_BOUND => {
-                self.databuf.append_byte(p.parameter_index);
-                self.databuf.append_byte(p.bound_index);
+                self.databuf.borrow_mut().append_byte(p.parameter_index);
+                self.databuf.borrow_mut().append_byte(p.bound_index);
             }
             CLASS_EXTENDS => {
-                self.databuf.append_char(p.type_index);
+                self.databuf.borrow_mut().append_char(p.type_index);
             }
             THROWS => {
-                self.databuf.append_char(p.type_index);
+                self.databuf.borrow_mut().append_char(p.type_index);
             }
             METHOD_FORMAL_PARAMETER => {
-                self.databuf.append_byte(p.parameter_index);
+                self.databuf.borrow_mut().append_byte(p.parameter_index);
             }
             CAST
             | CONSTRUCTOR_INVOCATION_TYPE_ARGUMENT
             | METHOD_INVOCATION_TYPE_ARGUMENT
             | CONSTRUCTOR_REFERENCE_TYPE_ARGUMENT
             | METHOD_REFERENCE_TYPE_ARGUMENT => {
-                self.databuf.append_char(p.offset);
-                self.databuf.append_byte(p.type_index);
+                self.databuf.borrow_mut().append_char(p.offset);
+                self.databuf.borrow_mut().append_byte(p.type_index);
             }
             METHOD_RETURN | FIELD => {}
             UNKNOWN => {
@@ -828,11 +828,11 @@ impl ClassWriter {
         let loc = TypeAnnotationPosition::get_binary_from_type_path(p.location.clone());
         // Java: appendByte(loc.length() / 2) — type_path.path_length counts
         // entries, while getBinaryFromTypePath returns two bytes per entry.
-        self.databuf.append_byte(loc.length() / 2);
+        self.databuf.borrow_mut().append_byte(loc.length() / 2);
         let mut current = loc;
         while current.non_empty() {
             let code = *current.head();
-            self.databuf.append_byte(code);
+            self.databuf.borrow_mut().append_byte(code);
             current = current.tail();
         }
     }
@@ -880,13 +880,13 @@ impl ClassWriter {
             .pool_writer
             .borrow_mut()
             .put_module(ctx, &Rc::clone(&self.syms).borrow(), m);
-        self.databuf.append_char(module_index);
-        self.databuf.append_char(crate::code::symbol::ModuleFlags::value_of(&module_flags));
+        self.databuf.borrow_mut().append_char(module_index);
+        self.databuf.borrow_mut().append_char(crate::code::symbol::ModuleFlags::value_of(&module_flags));
         let version_index = match version {
             None => 0,
             Some(version) => self.pool_writer.borrow_mut().put_name(version),
         };
-        self.databuf.append_char(version_index);
+        self.databuf.borrow_mut().append_char(version_index);
         let mut requires_kept: Vec<SymbolId> = Vec::new();
         let requires_all = requires.clone();
         let mut current = requires_all.clone();
@@ -897,13 +897,13 @@ impl ClassWriter {
             requires_kept.push(module.expect("requires module"));
         }
         }
-        self.databuf.append_char(requires_kept.len() as i32);
+        self.databuf.borrow_mut().append_char(requires_kept.len() as i32);
         for r in requires_kept {
             let index = self
                 .pool_writer
                 .borrow_mut()
                 .put_module(ctx, &Rc::clone(&self.syms).borrow(), r);
-            self.databuf.append_char(index);
+            self.databuf.borrow_mut().append_char(index);
             // The requires flags are read from the directive.
             let mut current = requires_all.clone();
             let mut flags_of = Vec::new();
@@ -914,14 +914,14 @@ impl ClassWriter {
                 flags_of = rflags.clone();
             }
             }
-            self.databuf.append_char(RequiresFlag::value_of(&flags_of));
+            self.databuf.borrow_mut().append_char(RequiresFlag::value_of(&flags_of));
             let version_index = match &ctx.sym(r).kind_data {
                 SymbolKind::ModuleSymbol { version: Some(version), .. } => {
                     self.pool_writer.borrow_mut().put_name(version.clone())
                 }
                 _ => 0,
             };
-            self.databuf.append_char(version_index);
+            self.databuf.borrow_mut().append_char(version_index);
         }
         // exports
         let mut exports_list: Vec<(SymbolId, Vec<ExportsFlag>, Option<List<SymbolId>>)> = Vec::new();
@@ -935,27 +935,27 @@ impl ClassWriter {
             ));
         }
         }
-        self.databuf.append_char(exports_list.len() as i32);
+        self.databuf.borrow_mut().append_char(exports_list.len() as i32);
         for (packge, eflags, modules) in exports_list {
             let index = self
                 .pool_writer
                 .borrow_mut()
                 .put_package(ctx, &Rc::clone(&self.syms).borrow(), packge);
-            self.databuf.append_char(index);
-            self.databuf.append_char(ExportsFlag::value_of(&eflags));
+            self.databuf.borrow_mut().append_char(index);
+            self.databuf.borrow_mut().append_char(ExportsFlag::value_of(&eflags));
             match modules {
                 None => {
-                    self.databuf.append_char(0);
+                    self.databuf.borrow_mut().append_char(0);
                 }
                 Some(modules) => {
-                    self.databuf.append_char(modules.length());
+                    self.databuf.borrow_mut().append_char(modules.length());
                     let mut l = modules;
                     for msym in &l {
                     let index = self
                         .pool_writer
                         .borrow_mut()
                         .put_module(ctx, &Rc::clone(&self.syms).borrow(), msym);
-                    self.databuf.append_char(index);
+                    self.databuf.borrow_mut().append_char(index);
                     }
                 }
             }
@@ -972,27 +972,27 @@ impl ClassWriter {
             ));
         }
         }
-        self.databuf.append_char(opens_list.len() as i32);
+        self.databuf.borrow_mut().append_char(opens_list.len() as i32);
         for (packge, oflags, modules) in opens_list {
             let index = self
                 .pool_writer
                 .borrow_mut()
                 .put_package(ctx, &Rc::clone(&self.syms).borrow(), packge);
-            self.databuf.append_char(index);
-            self.databuf.append_char(OpensFlag::value_of(&oflags));
+            self.databuf.borrow_mut().append_char(index);
+            self.databuf.borrow_mut().append_char(OpensFlag::value_of(&oflags));
             match modules {
                 None => {
-                    self.databuf.append_char(0);
+                    self.databuf.borrow_mut().append_char(0);
                 }
                 Some(modules) => {
-                    self.databuf.append_char(modules.length());
+                    self.databuf.borrow_mut().append_char(modules.length());
                     let mut l = modules;
                     for msym in &l {
                     let index = self
                         .pool_writer
                         .borrow_mut()
                         .put_module(ctx, &Rc::clone(&self.syms).borrow(), msym);
-                    self.databuf.append_char(index);
+                    self.databuf.borrow_mut().append_char(index);
                     }
                 }
             }
@@ -1005,13 +1005,13 @@ impl ClassWriter {
             uses_list.push(*service);
         }
         }
-        self.databuf.append_char(uses_list.len() as i32);
+        self.databuf.borrow_mut().append_char(uses_list.len() as i32);
         for service in uses_list {
             let index = self
                 .pool_writer
                 .borrow_mut()
                 .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), service);
-            self.databuf.append_char(index);
+            self.databuf.borrow_mut().append_char(index);
         }
         // provides (merged by service)
         let mut merged: Vec<(SymbolId, Vec<SymbolId>)> = Vec::new();
@@ -1038,20 +1038,20 @@ impl ClassWriter {
             }
         }
         }
-        self.databuf.append_char(merged.len() as i32);
+        self.databuf.borrow_mut().append_char(merged.len() as i32);
         for (service, impls) in merged {
             let index = self
                 .pool_writer
                 .borrow_mut()
                 .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), service);
-            self.databuf.append_char(index);
-            self.databuf.append_char(impls.len() as i32);
+            self.databuf.borrow_mut().append_char(index);
+            self.databuf.borrow_mut().append_char(impls.len() as i32);
             for impl_ in impls {
                 let index = self
                     .pool_writer
                     .borrow_mut()
                     .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), impl_);
-                self.databuf.append_char(index);
+                self.databuf.borrow_mut().append_char(index);
             }
         }
         let _ = unnamed_package;
@@ -1064,7 +1064,7 @@ impl ClassWriter {
         let attr_name = self.names.InnerClasses.clone();
         let alen_idx = self.write_attr(ctx, attr_name);
         let inner_classes = self.pool_writer.borrow().inner_classes.clone();
-        self.databuf.append_char(inner_classes.len() as i32);
+        self.databuf.borrow_mut().append_char(inner_classes.len() as i32);
         for inner in inner_classes {
             let mut flags_value = adjust_flags(ctx.sym(inner).flags_field);
             if (flags_value & flags::INTERFACE) != 0 {
@@ -1079,7 +1079,7 @@ impl ClassWriter {
                 .pool_writer
                 .borrow_mut()
                 .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), inner);
-            self.databuf.append_char(index);
+            self.databuf.borrow_mut().append_char(index);
             let (owner, name) = (ctx.sym(inner).owner, ctx.sym(inner).name.clone());
             let owner_index = match owner {
                 Some(owner)
@@ -1092,14 +1092,14 @@ impl ClassWriter {
                 }
                 _ => 0,
             };
-            self.databuf.append_char(owner_index);
+            self.databuf.borrow_mut().append_char(owner_index);
             let name_index = if !name.is_empty() {
                 self.pool_writer.borrow_mut().put_name(name)
             } else {
                 0
             };
-            self.databuf.append_char(name_index);
-            self.databuf.append_char(flags_value);
+            self.databuf.borrow_mut().append_char(name_index);
+            self.databuf.borrow_mut().append_char(flags_value);
         }
         self.end_attr(alen_idx);
     }
@@ -1109,17 +1109,17 @@ impl ClassWriter {
         let attr_name = self.names.Record.clone();
         let alen_idx = self.write_attr(ctx, attr_name);
         let components = record_components(ctx, csym);
-        self.databuf.append_char(components.length());
+        self.databuf.borrow_mut().append_char(components.length());
         let mut current = components;
         for v in &current {
         let name = ctx.sym(v).name.clone();
         let name_index = self.pool_writer.borrow_mut().put_name(name);
-        self.databuf.append_char(name_index);
+        self.databuf.borrow_mut().append_char(name_index);
         let descriptor = self
             .pool_writer
             .borrow_mut()
             .put_descriptor_symbol(ctx, &Rc::clone(&self.syms).borrow(), v);
-        self.databuf.append_char(descriptor);
+        self.databuf.borrow_mut().append_char(descriptor);
         let acount_idx = self.begin_attrs();
         let mut acount = 0;
         acount += self.write_member_attrs(ctx, v, true);
@@ -1149,13 +1149,13 @@ impl ClassWriter {
         {
             let attr_name = self.names.NestMembers.clone();
             let alen_idx = self.write_attr(ctx, attr_name);
-            self.databuf.append_char(nested_unique.len() as i32);
+            self.databuf.borrow_mut().append_char(nested_unique.len() as i32);
             for s in nested_unique {
                 let index = self
                     .pool_writer
                     .borrow_mut()
                     .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), s);
-                self.databuf.append_char(index);
+                self.databuf.borrow_mut().append_char(index);
             }
             self.end_attr(alen_idx);
             1
@@ -1180,7 +1180,7 @@ impl ClassWriter {
                 .pool_writer
                 .borrow_mut()
                 .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), outermost);
-            self.databuf.append_char(index);
+            self.databuf.borrow_mut().append_char(index);
             self.end_attr(alen_idx);
             1
         } else {
@@ -1202,14 +1202,14 @@ impl ClassWriter {
         if permitted.non_empty() {
             let attr_name = self.names.PermittedSubclasses.clone();
             let alen_idx = self.write_attr(ctx, attr_name);
-            self.databuf.append_char(permitted.length());
+            self.databuf.borrow_mut().append_char(permitted.length());
             let mut current = permitted;
             for c in &current {
             let index = self
                 .pool_writer
                 .borrow_mut()
                 .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), c);
-            self.databuf.append_char(index);
+            self.databuf.borrow_mut().append_char(index);
             }
             self.end_attr(alen_idx);
             1
@@ -1223,7 +1223,7 @@ impl ClassWriter {
         let attr_name = self.names.BootstrapMethods.clone();
         let alen_idx = self.write_attr(ctx, attr_name);
         let bootstrap = self.pool_writer.borrow().bootstrap_methods.clone();
-        self.databuf.append_char(bootstrap.len() as i32);
+        self.databuf.borrow_mut().append_char(bootstrap.len() as i32);
         for (bsm_key, _) in bootstrap {
             let bsm = bsm_key.bsm.expect("bootstrap method handle");
             let syms = Rc::clone(&self.syms);
@@ -1235,8 +1235,8 @@ impl ClassWriter {
                     crate::jvm::pool_writer::PoolConstantRef::MethodHandle(bsm),
                 )
             };
-            self.databuf.append_char(index);
-            self.databuf.append_char(bsm_key.static_args.len() as i32);
+            self.databuf.borrow_mut().append_char(index);
+            self.databuf.borrow_mut().append_char(bsm_key.static_args.len() as i32);
             for arg in bsm_key.static_args {
                 let syms = Rc::clone(&self.syms);
                 let index = {
@@ -1247,7 +1247,7 @@ impl ClassWriter {
                         loadable_to_pool_constant(&arg),
                     )
                 };
-                self.databuf.append_char(index);
+                self.databuf.borrow_mut().append_char(index);
             }
         }
         self.end_attr(alen_idx);
@@ -1256,11 +1256,10 @@ impl ClassWriter {
     /// Write an extra attribute via the registered hooks and return the count.
     pub fn write_extra_attributes(&mut self, ctx: &mut CompilerContext, sym: SymbolId) -> i32 {
         let mut count = 0;
-        let hooks = std::mem::take(&mut self.extra_attribute_hooks);
+        let hooks = std::mem::take(&mut *self.extra_attribute_hooks.borrow_mut());
         for mut hook in hooks {
             count += hook(ctx, sym);
         }
-        self.extra_attribute_hooks = Vec::new();
         count
     }
 }
@@ -1351,19 +1350,19 @@ impl ClassWriter {
     /// Write a field symbol, entering all references into the constant pool.
     pub fn write_field(&mut self, ctx: &mut CompilerContext, v: SymbolId) {
         let field_flags = adjust_flags(ctx.sym(v).flags());
-        self.databuf.append_char(field_flags);
+        self.databuf.borrow_mut().append_char(field_flags);
         if self.dump_field_modifiers {
             eprintln!("FIELD  {}", ctx.sym(v).name.to_java_string().to_string_lossy());
             eprintln!("---{}", ClassWriter::flag_names(ctx.sym(v).flags()));
         }
         let name = ctx.sym(v).name.clone();
         let name_index = self.pool_writer.borrow_mut().put_name(name);
-        self.databuf.append_char(name_index);
+        self.databuf.borrow_mut().append_char(name_index);
         let descriptor = self
             .pool_writer
             .borrow_mut()
             .put_descriptor_symbol(ctx, &Rc::clone(&self.syms).borrow(), v);
-        self.databuf.append_char(descriptor);
+        self.databuf.borrow_mut().append_char(descriptor);
         let acount_idx = self.begin_attrs();
         let mut acount = 0;
         if let Some(const_value) = ctx.sym(v).get_const_value() {
@@ -1374,7 +1373,7 @@ impl ClassWriter {
                 let mut pool = self.pool_writer.borrow_mut();
                 pool.put_constant_value(ctx, &syms.borrow(), &const_value)
             };
-            self.databuf.append_char(index);
+            self.databuf.borrow_mut().append_char(index);
             self.end_attr(alen_idx);
             acount += 1;
         }
@@ -1386,19 +1385,19 @@ impl ClassWriter {
     /// Write a method symbol, entering all references into the constant pool.
     pub fn write_method(&mut self, ctx: &mut CompilerContext, m: SymbolId) {
         let method_flags = adjust_flags(ctx.sym(m).flags());
-        self.databuf.append_char(method_flags);
+        self.databuf.borrow_mut().append_char(method_flags);
         if self.dump_method_modifiers {
             eprintln!("METHOD  {}", ctx.sym(m).name.to_java_string().to_string_lossy());
             eprintln!("---{}", ClassWriter::flag_names(ctx.sym(m).flags()));
         }
         let name = ctx.sym(m).name.clone();
         let name_index = self.pool_writer.borrow_mut().put_name(name);
-        self.databuf.append_char(name_index);
+        self.databuf.borrow_mut().append_char(name_index);
         let descriptor = self
             .pool_writer
             .borrow_mut()
             .put_descriptor_symbol(ctx, &Rc::clone(&self.syms).borrow(), m);
-        self.databuf.append_char(descriptor);
+        self.databuf.borrow_mut().append_char(descriptor);
         let acount_idx = self.begin_attrs();
         let mut acount = 0;
         let code = self.method_codes.borrow_mut().remove(&m);
@@ -1416,7 +1415,7 @@ impl ClassWriter {
         if thrown.non_empty() {
             let attr_name = self.names.Exceptions.clone();
             let alen_idx = self.write_attr(ctx, attr_name);
-            self.databuf.append_char(thrown.length());
+            self.databuf.borrow_mut().append_char(thrown.length());
             let mut l = thrown;
             for ty in &l {
             let tsym = ctx.typ(ty).tsym.expect("exception type symbol");
@@ -1424,7 +1423,7 @@ impl ClassWriter {
                 .pool_writer
                 .borrow_mut()
                 .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), tsym);
-            self.databuf.append_char(index);
+            self.databuf.borrow_mut().append_char(index);
             }
             self.end_attr(alen_idx);
             acount += 1;
@@ -1482,14 +1481,14 @@ impl ClassWriter {
                 code.meth,
             )
         };
-        self.databuf.append_char(max_stack);
-        self.databuf.append_char(max_locals);
-        self.databuf.append_int(cp);
-        self.databuf.append_bytes_from(&code_bytes, 0, cp);
-        self.databuf.append_char(catch_info.len() as i32);
+        self.databuf.borrow_mut().append_char(max_stack);
+        self.databuf.borrow_mut().append_char(max_locals);
+        self.databuf.borrow_mut().append_int(cp);
+        self.databuf.borrow_mut().append_bytes_from(&code_bytes, 0, cp);
+        self.databuf.borrow_mut().append_char(catch_info.len() as i32);
         for entry in &catch_info {
             for value in entry.iter() {
-                self.databuf.append_char(*value as i32);
+                self.databuf.borrow_mut().append_char(*value as i32);
             }
         }
         let acount_idx = self.begin_attrs();
@@ -1497,12 +1496,12 @@ impl ClassWriter {
         if !line_info.is_empty() {
             let attr_name = self.names.LineNumberTable.clone();
             let alen_idx = self.write_attr(ctx, attr_name);
-            self.databuf.append_char(line_info.length());
+            self.databuf.borrow_mut().append_char(line_info.length());
             let mut l = line_info.reverse();
             while l.non_empty() {
                 let entry = l.head();
-                self.databuf.append_char(entry[0] as i32);
-                self.databuf.append_char(entry[1] as i32);
+                self.databuf.borrow_mut().append_char(entry[0] as i32);
+                self.databuf.borrow_mut().append_char(entry[1] as i32);
                 l = l.tail();
             }
             self.end_attr(alen_idx);
@@ -1521,7 +1520,7 @@ impl ClassWriter {
                     match &mut code_ref.crt {
                         Some(crt) => {
                             let line_map = line_map.expect("line map");
-                            crt.write_crt(ctx, &mut self.databuf, &*line_map, &log)
+                            crt.write_crt(ctx, &mut *self.databuf.borrow_mut(), &*line_map, &log)
                         }
                         None => 0,
                     }
@@ -1539,25 +1538,25 @@ impl ClassWriter {
                 let code = code.borrow();
                 code.get_lvt_size()
             };
-            self.databuf.append_char(lvt_size);
+            self.databuf.borrow_mut().append_char(lvt_size);
             for i in 0..var_buffer_size {
                 let var = match var_buffer.get(i as usize).and_then(|v| v.clone()) {
                     Some(var) => var,
                     None => continue,
                 };
                 for r in &var.alive_ranges {
-                    self.databuf.append_char(r.start_pc);
-                    self.databuf.append_char(r.length);
+                    self.databuf.borrow_mut().append_char(r.start_pc);
+                    self.databuf.borrow_mut().append_char(r.length);
                     let name = ctx.sym(var.sym).name.clone();
                     let name_index = self.pool_writer.borrow_mut().put_name(name);
-                    self.databuf.append_char(name_index);
+                    self.databuf.borrow_mut().append_char(name_index);
                     let descriptor = self.pool_writer.borrow_mut().put_descriptor_symbol(
                         ctx,
                         &Rc::clone(&self.syms).borrow(),
                         var.sym,
                     );
-                    self.databuf.append_char(descriptor);
-                    self.databuf.append_char(var.reg);
+                    self.databuf.borrow_mut().append_char(descriptor);
+                    self.databuf.borrow_mut().append_char(var.reg);
                     let sym_ty = ctx.sym(var.sym).ty.expect("local variable type");
                     if self.needs_local_variable_type_entry(ctx, sym_ty) {
                         n_generic_vars += 1;
@@ -1569,7 +1568,7 @@ impl ClassWriter {
             if n_generic_vars > 0 {
                 let attr_name = self.names.LocalVariableTypeTable.clone();
                 alen_idx = self.write_attr(ctx, attr_name);
-                self.databuf.append_char(n_generic_vars);
+                self.databuf.borrow_mut().append_char(n_generic_vars);
                 let mut count = 0;
                 for i in 0..var_buffer_size {
                     let var = match var_buffer.get(i as usize).and_then(|v| v.clone()) {
@@ -1581,18 +1580,18 @@ impl ClassWriter {
                         continue;
                     }
                     for r in &var.alive_ranges {
-                        self.databuf.append_char(r.start_pc);
-                        self.databuf.append_char(r.length);
+                        self.databuf.borrow_mut().append_char(r.start_pc);
+                        self.databuf.borrow_mut().append_char(r.length);
                         let name = ctx.sym(var.sym).name.clone();
                         let name_index = self.pool_writer.borrow_mut().put_name(name);
-                        self.databuf.append_char(name_index);
+                        self.databuf.borrow_mut().append_char(name_index);
                         let sig = self.pool_writer.borrow_mut().put_signature(
                             ctx,
                             &Rc::clone(&self.syms).borrow(),
                             var.sym,
                         );
-                        self.databuf.append_char(sig);
-                        self.databuf.append_char(var.reg);
+                        self.databuf.borrow_mut().append_char(sig);
+                        self.databuf.borrow_mut().append_char(var.reg);
                         count += 1;
                     }
                 }
@@ -1644,7 +1643,7 @@ impl ClassWriter {
         if self.debug_stackmap {
             eprintln!(" nframes = {}", nframes);
         }
-        self.databuf.append_char(nframes);
+        self.databuf.borrow_mut().append_char(nframes);
         match stack_map_format {
             StackMapFormat::CLDC => {
                 for (i, frame) in stack_map_buffer
@@ -1655,7 +1654,7 @@ impl ClassWriter {
                     if self.debug_stackmap {
                         eprintln!("  {}: pc={}", i, frame.pc);
                     }
-                    self.databuf.append_char(frame.pc);
+                    self.databuf.borrow_mut().append_char(frame.pc);
                     let mut local_count = 0;
                     let mut j = 0;
                     while j < frame.locals.len() {
@@ -1671,7 +1670,7 @@ impl ClassWriter {
                     if self.debug_stackmap {
                         eprintln!(" nlocals={}", local_count);
                     }
-                    self.databuf.append_char(local_count);
+                    self.databuf.borrow_mut().append_char(local_count);
                     let mut j = 0;
                     while j < frame.locals.len() {
                         let t = frame.locals[j];
@@ -1688,7 +1687,7 @@ impl ClassWriter {
                         stack_count += 1;
                         j += width.max(1) as usize;
                     }
-                    self.databuf.append_char(stack_count);
+                    self.databuf.borrow_mut().append_char(stack_count);
                     let mut j = 0;
                     while j < frame.stack.len() {
                         let t = frame.stack[j];
@@ -1717,7 +1716,7 @@ impl ClassWriter {
             if self.debug_stackmap {
                 eprintln!("empty");
             }
-            self.databuf.append_byte(0);
+            self.databuf.borrow_mut().append_byte(0);
             return;
         };
         match ctx.typ(t).get_tag() {
@@ -1729,31 +1728,31 @@ impl ClassWriter {
                 if self.debug_stackmap {
                     eprintln!("int");
                 }
-                self.databuf.append_byte(1);
+                self.databuf.borrow_mut().append_byte(1);
             }
             crate::code::type_tag::TypeTag::FLOAT => {
                 if self.debug_stackmap {
                     eprintln!("float");
                 }
-                self.databuf.append_byte(2);
+                self.databuf.borrow_mut().append_byte(2);
             }
             crate::code::type_tag::TypeTag::DOUBLE => {
                 if self.debug_stackmap {
                     eprintln!("double");
                 }
-                self.databuf.append_byte(3);
+                self.databuf.borrow_mut().append_byte(3);
             }
             crate::code::type_tag::TypeTag::LONG => {
                 if self.debug_stackmap {
                     eprintln!("long");
                 }
-                self.databuf.append_byte(4);
+                self.databuf.borrow_mut().append_byte(4);
             }
             crate::code::type_tag::TypeTag::BOT => {
                 if self.debug_stackmap {
                     eprintln!("null");
                 }
-                self.databuf.append_byte(5);
+                self.databuf.borrow_mut().append_byte(5);
             }
             crate::code::type_tag::TypeTag::CLASS
             | crate::code::type_tag::TypeTag::ARRAY
@@ -1761,25 +1760,25 @@ impl ClassWriter {
                 if self.debug_stackmap {
                     eprintln!("object");
                 }
-                self.databuf.append_byte(7);
+                self.databuf.borrow_mut().append_byte(7);
                 let syms = Rc::clone(&self.syms);
                 let erased = self.types.erasure(ctx, &syms.borrow(), t);
                 let index = self.pool_writer.borrow_mut().put_class(ctx, &syms.borrow(), erased);
-                self.databuf.append_char(index);
+                self.databuf.borrow_mut().append_char(index);
             }
             crate::code::type_tag::TypeTag::UNINITIALIZED_THIS => {
                 if self.debug_stackmap {
                     eprintln!("uninit_this");
                 }
-                self.databuf.append_byte(6);
+                self.databuf.borrow_mut().append_byte(6);
             }
             crate::code::type_tag::TypeTag::UNINITIALIZED_OBJECT => {
                 let offset = crate::jvm::uninitialized_type::offset(ctx, t).expect("uninit offset");
-                self.databuf.append_byte(8);
+                self.databuf.borrow_mut().append_byte(8);
                 if self.debug_stackmap {
                     eprintln!("uninit_object@{}", offset);
                 }
-                self.databuf.append_char(offset);
+                self.databuf.borrow_mut().append_char(offset);
             }
             other => panic!("AssertionError: unexpected stack map type {:?}", other),
         }
@@ -1830,11 +1829,11 @@ impl ClassWriter {
 
 impl StackMapTableWriter for ClassWriter {
     fn append_byte(&mut self, b: i32) {
-        self.databuf.append_byte(b);
+        self.databuf.borrow_mut().append_byte(b);
     }
 
     fn append_char(&mut self, c: i32) {
-        self.databuf.append_char(c);
+        self.databuf.borrow_mut().append_char(c);
     }
 
     fn debug_stackmap(&self) -> bool {
@@ -1931,8 +1930,8 @@ impl ClassWriter {
             eprintln!("---{}", ClassWriter::flag_names(flags_value as i64));
             let _ = flags_value;
         }
-        self.databuf.reset();
-        self.databuf.append_char(flags_value);
+        self.databuf.borrow_mut().reset();
+        self.databuf.borrow_mut().append_char(flags_value);
         let syms = Rc::clone(&self.syms);
         if owner_kind == crate::code::kinds::Kind::MDL {
             let unnamed = match &ctx.sym(owner).kind_data {
@@ -1948,10 +1947,10 @@ impl ClassWriter {
                 &syms.borrow(),
                 module_info,
             );
-            self.databuf.append_char(index);
+            self.databuf.borrow_mut().append_char(index);
         } else {
             let index = self.pool_writer.borrow_mut().put_class_symbol(ctx, &syms.borrow(), c);
-            self.databuf.append_char(index);
+            self.databuf.borrow_mut().append_char(index);
         }
         let super_index = if ctx.typ(supertype).has_tag(crate::code::type_tag::TypeTag::CLASS) {
             let tsym = ctx.typ(supertype).tsym.expect("super type symbol");
@@ -1961,9 +1960,9 @@ impl ClassWriter {
         } else {
             0
         };
-        self.databuf.append_char(super_index);
+        self.databuf.borrow_mut().append_char(super_index);
         let mut interface_tsyms: Vec<SymbolId> = Vec::new();
-        self.databuf.append_char(interfaces.length());
+        self.databuf.borrow_mut().append_char(interfaces.length());
         let mut l = interfaces.clone();
         for ty in &l {
         let tsym = ctx.typ(ty).tsym.expect("interface type symbol");
@@ -1972,7 +1971,7 @@ impl ClassWriter {
             .pool_writer
             .borrow_mut()
             .put_class_symbol(ctx, &syms.borrow(), tsym);
-        self.databuf.append_char(index);
+        self.databuf.borrow_mut().append_char(index);
         }
         let members = ctx.sym(c).members().expect("class members");
         let scope_snapshot = ctx.scope(members).clone();
@@ -2011,9 +2010,9 @@ impl ClassWriter {
         for local in &current {
         self.pool_writer.borrow_mut().enter_inner(ctx, local);
         }
-        self.databuf.append_char(fields_count);
+        self.databuf.borrow_mut().append_char(fields_count);
         self.write_fields(ctx, members);
-        self.databuf.append_char(methods_count);
+        self.databuf.borrow_mut().append_char(methods_count);
         self.write_methods(ctx, members);
         let acount_idx = self.begin_attrs();
         let mut acount = 0;
@@ -2033,7 +2032,7 @@ impl ClassWriter {
                 &Rc::clone(&self.syms).borrow(),
                 c,
             );
-            self.databuf.append_char(index);
+            self.databuf.borrow_mut().append_char(index);
             self.end_attr(alen_idx);
             acount += 1;
         }
@@ -2046,7 +2045,7 @@ impl ClassWriter {
             let simple = simple_name(source_file);
             let name = self.names.from_string(&simple);
             let index = self.pool_writer.borrow_mut().put_name(name);
-            self.databuf.append_char(index);
+            self.databuf.borrow_mut().append_char(index);
             self.end_attr(alen_idx);
             acount += 1;
         }
@@ -2059,7 +2058,7 @@ impl ClassWriter {
                 &crate::util::java_string::JavaString::from(modified.to_string().as_str()),
             );
             let index = self.pool_writer.borrow_mut().put_name(name);
-            self.databuf.append_char(index);
+            self.databuf.borrow_mut().append_char(index);
             self.end_attr(alen_idx);
             acount += 1;
             // CompilationID attribute
@@ -2070,7 +2069,7 @@ impl ClassWriter {
                 &crate::util::java_string::JavaString::from(now.to_string().as_str()),
             );
             let index = self.pool_writer.borrow_mut().put_name(name);
-            self.databuf.append_char(index);
+            self.databuf.borrow_mut().append_char(index);
             self.end_attr(alen_idx);
             acount += 1;
         }
@@ -2086,19 +2085,19 @@ impl ClassWriter {
         }
         acount += self.write_extra_class_attributes(ctx, c);
         acount += self.write_extra_attributes(ctx, c);
-        self.poolbuf.reset();
-        self.poolbuf.append_int(class_file::JAVA_MAGIC);
+        self.poolbuf.borrow_mut().reset();
+        self.poolbuf.borrow_mut().append_int(class_file::JAVA_MAGIC);
         let use_preview = self.preview.is_enabled()
             && sourcefile
                 .as_ref()
                 .map(|file| self.preview.uses_preview(file))
                 .unwrap_or(false);
         if use_preview {
-            self.poolbuf.append_char(class_file::PREVIEW_MINOR_VERSION);
+            self.poolbuf.borrow_mut().append_char(class_file::PREVIEW_MINOR_VERSION);
         } else {
-            self.poolbuf.append_char(self.target.minor_version());
+            self.poolbuf.borrow_mut().append_char(self.target.minor_version());
         }
-        self.poolbuf.append_char(self.target.major_version());
+        self.poolbuf.borrow_mut().append_char(self.target.major_version());
         if owner_kind != crate::code::kinds::Kind::MDL && self.target.has_nestmate_access() {
             acount += self.write_nest_members_if_needed(ctx, c);
             acount += self.write_nest_host_if_needed(ctx, c);
@@ -2120,7 +2119,7 @@ impl ClassWriter {
             acount += 1;
         }
         self.end_attrs(acount_idx, acount);
-        out.extend_from_slice(&self.poolbuf.elems[..self.poolbuf.length as usize]);
+        out.extend_from_slice(&self.poolbuf.borrow().elems[..self.poolbuf.borrow().length as usize]);
         {
             let writer = self.pool_writer.borrow();
             writer
@@ -2137,7 +2136,7 @@ impl ClassWriter {
         if let Some(type_) = signature_error {
             return Err(ClassWriterError::InvalidSignature(type_));
         }
-        out.extend_from_slice(&self.databuf.elems[..self.databuf.length as usize]);
+        out.extend_from_slice(&self.databuf.borrow().elems[..self.databuf.borrow().length as usize]);
         Ok(())
     }
 
