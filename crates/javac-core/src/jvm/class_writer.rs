@@ -479,12 +479,10 @@ impl ClassWriter {
             let mut buf: Vec<AttributeId> = Vec::new();
             let raw = ctx.sym(*s).get_raw_attributes();
             let mut current = raw;
-            while current.non_empty() {
-                let a = *current.head();
-                current = current.tail();
-                if self.attribute_retention(ctx, a) == retention {
-                    buf.push(a);
-                }
+            for a in &current {
+            if self.attribute_retention(ctx, a) == retention {
+                buf.push(a);
+            }
             }
             self.databuf.append_char(buf.len() as i32);
             for a in buf {
@@ -504,14 +502,12 @@ impl ClassWriter {
         for s in params {
             let raw = ctx.sym(*s).get_raw_attributes();
             let mut current = raw;
-            while current.non_empty() {
-                let a = *current.head();
-                current = current.tail();
-                match self.attribute_retention(ctx, a) {
-                    RetentionPolicy::SOURCE => {}
-                    RetentionPolicy::CLASS => has_invisible = true,
-                    RetentionPolicy::RUNTIME => has_visible = true,
-                }
+            for a in &current {
+            match self.attribute_retention(ctx, a) {
+                RetentionPolicy::SOURCE => {}
+                RetentionPolicy::CLASS => has_invisible = true,
+                RetentionPolicy::RUNTIME => has_visible = true,
+            }
             }
         }
         let mut attr_count = 0;
@@ -558,14 +554,12 @@ impl ClassWriter {
         let mut visibles: Vec<AttributeId> = Vec::new();
         let mut invisibles: Vec<AttributeId> = Vec::new();
         let mut current = attrs;
-        while current.non_empty() {
-            let a = *current.head();
-            current = current.tail();
-            match self.attribute_retention(ctx, a) {
-                RetentionPolicy::SOURCE => {}
-                RetentionPolicy::CLASS => invisibles.push(a),
-                RetentionPolicy::RUNTIME => visibles.push(a),
-            }
+        for a in &current {
+        match self.attribute_retention(ctx, a) {
+            RetentionPolicy::SOURCE => {}
+            RetentionPolicy::CLASS => invisibles.push(a),
+            RetentionPolicy::RUNTIME => visibles.push(a),
+        }
         }
         let mut attr_count = 0;
         if !visibles.is_empty() {
@@ -604,38 +598,36 @@ impl ClassWriter {
         let mut visibles: Vec<AttributeId> = Vec::new();
         let mut invisibles: Vec<AttributeId> = Vec::new();
         let mut current = type_annos;
-        while current.non_empty() {
-            let tc = *current.head();
-            current = current.tail();
-            let has_unknown = ctx.attr(tc).has_unknown_position();
-            if has_unknown {
-                let mut attribute = ctx.attr(tc).clone();
-                let fixed = attribute.try_fix_position(ctx);
-                if !fixed {
-                    // This happens for nested types like @A Outer. @B Inner.
-                    eprintln!(
-                        "ClassWriter: Position UNKNOWN in type annotation: {:?}",
-                        tc
-                    );
-                    continue;
-                }
-                *ctx.attr_mut(tc) = attribute;
-            }
-            let position = match ctx.attr(tc).get_position(ctx) {
-                Some(position) => position,
-                None => continue,
-            };
-            if position.type_.is_local() != in_code {
+        for tc in &current {
+        let has_unknown = ctx.attr(tc).has_unknown_position();
+        if has_unknown {
+            let mut attribute = ctx.attr(tc).clone();
+            let fixed = attribute.try_fix_position(ctx);
+            if !fixed {
+                // This happens for nested types like @A Outer. @B Inner.
+                eprintln!(
+                    "ClassWriter: Position UNKNOWN in type annotation: {:?}",
+                    tc
+                );
                 continue;
             }
-            if !position.emit_to_classfile() {
-                continue;
-            }
-            match self.attribute_retention(ctx, tc) {
-                RetentionPolicy::SOURCE => {}
-                RetentionPolicy::CLASS => invisibles.push(tc),
-                RetentionPolicy::RUNTIME => visibles.push(tc),
-            }
+            *ctx.attr_mut(tc) = attribute;
+        }
+        let position = match ctx.attr(tc).get_position(ctx) {
+            Some(position) => position,
+            None => continue,
+        };
+        if position.type_.is_local() != in_code {
+            continue;
+        }
+        if !position.emit_to_classfile() {
+            continue;
+        }
+        match self.attribute_retention(ctx, tc) {
+            RetentionPolicy::SOURCE => {}
+            RetentionPolicy::CLASS => invisibles.push(tc),
+            RetentionPolicy::RUNTIME => visibles.push(tc),
+        }
         }
         let mut attr_count = 0;
         if !visibles.is_empty() {
@@ -759,14 +751,12 @@ impl ClassWriter {
         };
         self.databuf.append_char(values.length());
         let mut current = values;
-        while current.non_empty() {
-            let pair = current.head().clone();
-            current = current.tail();
-            let (symbol, value) = (pair.fst, pair.snd);
-            let name = ctx.sym(symbol).name.clone();
-            let index = self.pool_writer.borrow_mut().put_name(name);
-            self.databuf.append_char(index);
-            self.write_attribute(ctx, value);
+        for pair in &current {
+        let (symbol, value) = (pair.fst, pair.snd);
+        let name = ctx.sym(symbol).name.clone();
+        let index = self.pool_writer.borrow_mut().put_name(name);
+        self.databuf.append_char(index);
+        self.write_attribute(ctx, value);
         }
     }
 
@@ -897,14 +887,12 @@ impl ClassWriter {
         let mut requires_kept: Vec<SymbolId> = Vec::new();
         let requires_all = requires.clone();
         let mut current = requires_all.clone();
-        while current.non_empty() {
-            let id = *current.head();
-            current = current.tail();
-            if let Directive::Requires { module, flags: rflags } = ctx.directive(id)
-                && !rflags.contains(&RequiresFlag::EXTRA)
-            {
-                requires_kept.push(module.expect("requires module"));
-            }
+        for id in &current {
+        if let Directive::Requires { module, flags: rflags } = ctx.directive(id)
+            && !rflags.contains(&RequiresFlag::EXTRA)
+        {
+            requires_kept.push(module.expect("requires module"));
+        }
         }
         self.databuf.append_char(requires_kept.len() as i32);
         for r in requires_kept {
@@ -916,14 +904,12 @@ impl ClassWriter {
             // The requires flags are read from the directive.
             let mut current = requires_all.clone();
             let mut flags_of = Vec::new();
-            while current.non_empty() {
-                let id = *current.head();
-                current = current.tail();
-                if let Directive::Requires { module: Some(module), flags: rflags } = ctx.directive(id)
-                    && *module == r
-                {
-                    flags_of = rflags.clone();
-                }
+            for id in &current {
+            if let Directive::Requires { module: Some(module), flags: rflags } = ctx.directive(id)
+                && *module == r
+            {
+                flags_of = rflags.clone();
+            }
             }
             self.databuf.append_char(RequiresFlag::value_of(&flags_of));
             let version_index = match &ctx.sym(r).kind_data {
@@ -937,16 +923,14 @@ impl ClassWriter {
         // exports
         let mut exports_list: Vec<(SymbolId, Vec<ExportsFlag>, Option<List<SymbolId>>)> = Vec::new();
         let mut current = exports;
-        while current.non_empty() {
-            let id = *current.head();
-            current = current.tail();
-            if let Directive::Exports { packge, modules, flags: eflags } = ctx.directive(id) {
-                exports_list.push((
-                    packge.expect("exports package"),
-                    eflags.clone(),
-                    modules.clone(),
-                ));
-            }
+        for id in &current {
+        if let Directive::Exports { packge, modules, flags: eflags } = ctx.directive(id) {
+            exports_list.push((
+                packge.expect("exports package"),
+                eflags.clone(),
+                modules.clone(),
+            ));
+        }
         }
         self.databuf.append_char(exports_list.len() as i32);
         for (packge, eflags, modules) in exports_list {
@@ -963,14 +947,12 @@ impl ClassWriter {
                 Some(modules) => {
                     self.databuf.append_char(modules.length());
                     let mut l = modules;
-                    while l.non_empty() {
-                        let msym = *l.head();
-                        l = l.tail();
-                        let index = self
-                            .pool_writer
-                            .borrow_mut()
-                            .put_module(ctx, &Rc::clone(&self.syms).borrow(), msym);
-                        self.databuf.append_char(index);
+                    for msym in &l {
+                    let index = self
+                        .pool_writer
+                        .borrow_mut()
+                        .put_module(ctx, &Rc::clone(&self.syms).borrow(), msym);
+                    self.databuf.append_char(index);
                     }
                 }
             }
@@ -978,16 +960,14 @@ impl ClassWriter {
         // opens
         let mut opens_list: Vec<(SymbolId, Vec<OpensFlag>, Option<List<SymbolId>>)> = Vec::new();
         let mut current = opens;
-        while current.non_empty() {
-            let id = *current.head();
-            current = current.tail();
-            if let Directive::Opens { packge, modules, flags: oflags } = ctx.directive(id) {
-                opens_list.push((
-                    packge.expect("opens package"),
-                    oflags.clone(),
-                    modules.clone(),
-                ));
-            }
+        for id in &current {
+        if let Directive::Opens { packge, modules, flags: oflags } = ctx.directive(id) {
+            opens_list.push((
+                packge.expect("opens package"),
+                oflags.clone(),
+                modules.clone(),
+            ));
+        }
         }
         self.databuf.append_char(opens_list.len() as i32);
         for (packge, oflags, modules) in opens_list {
@@ -1004,14 +984,12 @@ impl ClassWriter {
                 Some(modules) => {
                     self.databuf.append_char(modules.length());
                     let mut l = modules;
-                    while l.non_empty() {
-                        let msym = *l.head();
-                        l = l.tail();
-                        let index = self
-                            .pool_writer
-                            .borrow_mut()
-                            .put_module(ctx, &Rc::clone(&self.syms).borrow(), msym);
-                        self.databuf.append_char(index);
+                    for msym in &l {
+                    let index = self
+                        .pool_writer
+                        .borrow_mut()
+                        .put_module(ctx, &Rc::clone(&self.syms).borrow(), msym);
+                    self.databuf.append_char(index);
                     }
                 }
             }
@@ -1019,12 +997,10 @@ impl ClassWriter {
         // uses
         let mut uses_list: Vec<SymbolId> = Vec::new();
         let mut current = uses;
-        while current.non_empty() {
-            let id = *current.head();
-            current = current.tail();
-            if let Directive::Uses { service: Some(service) } = ctx.directive(id) {
-                uses_list.push(*service);
-            }
+        for id in &current {
+        if let Directive::Uses { service: Some(service) } = ctx.directive(id) {
+            uses_list.push(*service);
+        }
         }
         self.databuf.append_char(uses_list.len() as i32);
         for service in uses_list {
@@ -1037,29 +1013,27 @@ impl ClassWriter {
         // provides (merged by service)
         let mut merged: Vec<(SymbolId, Vec<SymbolId>)> = Vec::new();
         let mut current = provides;
-        while current.non_empty() {
-            let id = *current.head();
-            current = current.tail();
-            if let Directive::Provides { service: Some(service), impls } = ctx.directive(id) {
-                match merged.iter_mut().find(|(s, _)| *s == *service) {
-                    Some((_, list)) => {
-                        let mut l = impls.clone();
-                        while l.non_empty() {
-                            list.push(*l.head());
-                            l = l.tail();
-                        }
-                    }
-                    None => {
-                        let mut list = Vec::new();
-                        let mut l = impls.clone();
-                        while l.non_empty() {
-                            list.push(*l.head());
-                            l = l.tail();
-                        }
-                        merged.push((*service, list));
+        for id in &current {
+        if let Directive::Provides { service: Some(service), impls } = ctx.directive(id) {
+            match merged.iter_mut().find(|(s, _)| *s == *service) {
+                Some((_, list)) => {
+                    let mut l = impls.clone();
+                    while l.non_empty() {
+                        list.push(*l.head());
+                        l = l.tail();
                     }
                 }
+                None => {
+                    let mut list = Vec::new();
+                    let mut l = impls.clone();
+                    while l.non_empty() {
+                        list.push(*l.head());
+                        l = l.tail();
+                    }
+                    merged.push((*service, list));
+                }
             }
+        }
         }
         self.databuf.append_char(merged.len() as i32);
         for (service, impls) in merged {
@@ -1134,21 +1108,19 @@ impl ClassWriter {
         let components = record_components(ctx, csym);
         self.databuf.append_char(components.length());
         let mut current = components;
-        while current.non_empty() {
-            let v = *current.head();
-            current = current.tail();
-            let name = ctx.sym(v).name.clone();
-            let name_index = self.pool_writer.borrow_mut().put_name(name);
-            self.databuf.append_char(name_index);
-            let descriptor = self
-                .pool_writer
-                .borrow_mut()
-                .put_descriptor_symbol(ctx, &Rc::clone(&self.syms).borrow(), v);
-            self.databuf.append_char(descriptor);
-            let acount_idx = self.begin_attrs();
-            let mut acount = 0;
-            acount += self.write_member_attrs(ctx, v, true);
-            self.end_attrs(acount_idx, acount);
+        for v in &current {
+        let name = ctx.sym(v).name.clone();
+        let name_index = self.pool_writer.borrow_mut().put_name(name);
+        self.databuf.append_char(name_index);
+        let descriptor = self
+            .pool_writer
+            .borrow_mut()
+            .put_descriptor_symbol(ctx, &Rc::clone(&self.syms).borrow(), v);
+        self.databuf.append_char(descriptor);
+        let acount_idx = self.begin_attrs();
+        let mut acount = 0;
+        acount += self.write_member_attrs(ctx, v, true);
+        self.end_attrs(acount_idx, acount);
         }
         self.end_attr(alen_idx);
         1
@@ -1229,14 +1201,12 @@ impl ClassWriter {
             let alen_idx = self.write_attr(ctx, attr_name);
             self.databuf.append_char(permitted.length());
             let mut current = permitted;
-            while current.non_empty() {
-                let c = *current.head();
-                current = current.tail();
-                let index = self
-                    .pool_writer
-                    .borrow_mut()
-                    .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), c);
-                self.databuf.append_char(index);
+            for c in &current {
+            let index = self
+                .pool_writer
+                .borrow_mut()
+                .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), c);
+            self.databuf.append_char(index);
             }
             self.end_attr(alen_idx);
             1
@@ -1354,10 +1324,8 @@ fn list_nested(ctx: &mut CompilerContext, sym: SymbolId, seen: &mut Vec<SymbolId
         _ => List::nil(),
     };
     let mut current = trans_local;
-    while current.non_empty() {
-        let s = *current.head();
-        current = current.tail();
-        list_nested(ctx, s, seen);
+    for s in &current {
+    list_nested(ctx, s, seen);
     }
 }
 
@@ -1447,15 +1415,13 @@ impl ClassWriter {
             let alen_idx = self.write_attr(ctx, attr_name);
             self.databuf.append_char(thrown.length());
             let mut l = thrown;
-            while l.non_empty() {
-                let ty = *l.head();
-                l = l.tail();
-                let tsym = ctx.typ(ty).tsym.expect("exception type symbol");
-                let index = self
-                    .pool_writer
-                    .borrow_mut()
-                    .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), tsym);
-                self.databuf.append_char(index);
+            for ty in &l {
+            let tsym = ctx.typ(ty).tsym.expect("exception type symbol");
+            let index = self
+                .pool_writer
+                .borrow_mut()
+                .put_class_symbol(ctx, &Rc::clone(&self.syms).borrow(), tsym);
+            self.databuf.append_char(index);
             }
             self.end_attr(alen_idx);
             acount += 1;
@@ -1996,16 +1962,14 @@ impl ClassWriter {
         let mut interface_tsyms: Vec<SymbolId> = Vec::new();
         self.databuf.append_char(interfaces.length());
         let mut l = interfaces.clone();
-        while l.non_empty() {
-            let ty = *l.head();
-            l = l.tail();
-            let tsym = ctx.typ(ty).tsym.expect("interface type symbol");
-            interface_tsyms.push(tsym);
-            let index = self
-                .pool_writer
-                .borrow_mut()
-                .put_class_symbol(ctx, &syms.borrow(), tsym);
-            self.databuf.append_char(index);
+        for ty in &l {
+        let tsym = ctx.typ(ty).tsym.expect("interface type symbol");
+        interface_tsyms.push(tsym);
+        let index = self
+            .pool_writer
+            .borrow_mut()
+            .put_class_symbol(ctx, &syms.borrow(), tsym);
+        self.databuf.append_char(index);
         }
         let members = ctx.sym(c).members().expect("class members");
         let scope_snapshot = ctx.scope(members).clone();
@@ -2041,10 +2005,8 @@ impl ClassWriter {
             _ => List::nil(),
         };
         let mut current = trans_local;
-        while current.non_empty() {
-            let local = *current.head();
-            current = current.tail();
-            self.pool_writer.borrow_mut().enter_inner(ctx, local);
+        for local in &current {
+        self.pool_writer.borrow_mut().enter_inner(ctx, local);
         }
         self.databuf.append_char(fields_count);
         self.write_fields(ctx, members);

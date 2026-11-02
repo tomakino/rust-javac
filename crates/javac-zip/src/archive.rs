@@ -75,7 +75,7 @@ impl ZipArchive {
     pub fn open(path: &Path) -> Result<ZipArchive, Error> {
         let data = std::fs::read(path).map_err(Error::Io)?;
         let archive_offset = compute_archive_offset(&data);
-        let mut raw = rawzip::ZipArchive::<()>::from_slice(data)
+        let raw = rawzip::ZipArchive::<()>::from_slice(data)
             .map_err(|error| Error::NotAZip(format!("zip: {error}")))?;
         let mut entries = Vec::new();
         let mut entry_index: HashMap<String, usize, FxBuildHasher> = HashMap::default();

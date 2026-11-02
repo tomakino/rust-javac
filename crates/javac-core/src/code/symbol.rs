@@ -1957,19 +1957,17 @@ fn symbol_hidden_in_internal(
     let supertype = types.supertype(ctx, syms, current_ty, None);
     let mut supers = types.interfaces(ctx, syms, current_ty).prepend(supertype);
     let mut hidden_sym: Option<SymbolId> = None;
-    while supers.non_empty() {
-        let st = *supers.head();
-        supers = supers.tail();
-        let tsym = match (ctx.typ(st).has_tag(crate::code::type_tag::TypeTag::CLASS), ctx.typ(st).tsym) {
-            (true, Some(tsym)) => tsym,
-            _ => continue,
-        };
-        let result = symbol_hidden_in_internal(ctx, types, syms, symbol, tsym);
-        if result == Some(symbol) {
-            return Some(symbol);
-        } else if let Some(other) = result {
-            hidden_sym = Some(other);
-        }
+    for st in &supers {
+    let tsym = match (ctx.typ(st).has_tag(crate::code::type_tag::TypeTag::CLASS), ctx.typ(st).tsym) {
+        (true, Some(tsym)) => tsym,
+        _ => continue,
+    };
+    let result = symbol_hidden_in_internal(ctx, types, syms, symbol, tsym);
+    if result == Some(symbol) {
+        return Some(symbol);
+    } else if let Some(other) = result {
+        hidden_sym = Some(other);
+    }
     }
     hidden_sym
 }
@@ -2426,23 +2424,21 @@ fn hidden_in_internal(
             .interfaces(ctx, syms, current_ty)
             .prepend(types.supertype(ctx, syms, current_ty, None));
     let mut hidden_sym: Option<SymbolId> = None;
-    while supertypes.non_empty() {
-        let st = *supertypes.head();
-        supertypes = supertypes.tail();
-        if !ctx
-            .typ(st)
-            .has_tag(crate::code::type_tag::TypeTag::CLASS)
-        {
-            continue;
-        }
-        let tsym = ctx.typ(st).tsym.expect("class symbol");
-        let found = hidden_in_internal(ctx, syms, types, sym, tsym);
-        if found == Some(sym) {
-            return Some(sym);
-        }
-        if found.is_some() {
-            hidden_sym = found;
-        }
+    for st in &supertypes {
+    if !ctx
+        .typ(st)
+        .has_tag(crate::code::type_tag::TypeTag::CLASS)
+    {
+        continue;
+    }
+    let tsym = ctx.typ(st).tsym.expect("class symbol");
+    let found = hidden_in_internal(ctx, syms, types, sym, tsym);
+    if found == Some(sym) {
+        return Some(sym);
+    }
+    if found.is_some() {
+        hidden_sym = found;
+    }
     }
     hidden_sym
 }
@@ -3780,12 +3776,10 @@ impl Symbol {
         };
         let field_name = ctx.sym(field).name.clone();
         let mut current = record_components.clone();
-        while current.non_empty() {
-            let rc = *current.head();
-            current = current.tail();
-            if ctx.sym(rc).name == field_name {
-                return Some(rc);
-            }
+        for rc in &current {
+        if ctx.sym(rc).name == field_name {
+            return Some(rc);
+        }
         }
         None
     }
@@ -3821,18 +3815,16 @@ impl Symbol {
         };
         let mut to_remove: Option<SymbolId> = None;
         let mut current = record_components.clone();
-        while current.non_empty() {
-            let rc = *current.head();
-            current = current.tail();
-            let (rc_pos, _rc_varargs) = match &ctx.sym(rc).kind_data {
-                crate::code::symbol::SymbolKind::RecordComponent { pos, is_varargs, .. } => {
-                    (*pos, *is_varargs)
-                }
-                _ => (crate::util::position::NOPOS, false),
-            };
-            if ctx.sym(rc).name == name && pos == rc_pos {
-                to_remove = Some(rc);
+        for rc in &current {
+        let (rc_pos, _rc_varargs) = match &ctx.sym(rc).kind_data {
+            crate::code::symbol::SymbolKind::RecordComponent { pos, is_varargs, .. } => {
+                (*pos, *is_varargs)
             }
+            _ => (crate::util::position::NOPOS, false),
+        };
+        if ctx.sym(rc).name == name && pos == rc_pos {
+            to_remove = Some(rc);
+        }
         }
         to_remove
     }

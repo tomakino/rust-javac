@@ -144,12 +144,10 @@ impl TypeAnnotations {
             _ => return None,
         };
         let mut current = values;
-        while current.non_empty() {
-            let pair = current.head().clone();
-            current = current.tail();
-            if &ctx.sym(pair.fst).name == name {
-                return Some(pair.snd);
-            }
+        for pair in &current {
+        if &ctx.sym(pair.fst).name == name {
+            return Some(pair.snd);
+        }
         }
         None
     }
@@ -192,11 +190,9 @@ impl TypeAnnotations {
             Some(targets) => {
                 let mut acc = AnnotationType::NONE;
                 let mut current = targets;
-                while current.non_empty() {
-                    let target = *current.head();
-                    current = current.tail();
-                    let at = self.target_to_annotation_type(ctx, target, s);
-                    acc = self.combine_annotation_type(acc, at);
+                for target in &current {
+                let at = self.target_to_annotation_type(ctx, target, s);
+                acc = self.combine_annotation_type(acc, at);
                 }
                 acc
             }
@@ -568,18 +564,16 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
                     _ => List::nil(),
                 };
                 let mut current = components;
-                while current.non_empty() {
-                    let component = *current.head();
-                    current = current.tail();
-                    let accessor = match &ctx.sym(component).kind_data {
-                        crate::code::symbol::SymbolKind::RecordComponent { accessor_meth, .. } => {
-                            *accessor_meth
-                        }
-                        _ => None,
-                    };
-                    if let Some(accessor) = accessor {
-                        self.scan_list(ctx, &List::of(accessor));
+                for component in &current {
+                let accessor = match &ctx.sym(component).kind_data {
+                    crate::code::symbol::SymbolKind::RecordComponent { accessor_meth, .. } => {
+                        *accessor_meth
                     }
+                    _ => None,
+                };
+                if let Some(accessor) = accessor {
+                    self.scan_list(ctx, &List::of(accessor));
+                }
                 }
             }
         }
@@ -677,34 +671,32 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
             }
             let mut index = 0i32;
             let mut params_current = params.clone();
-            while params_current.non_empty() {
-                let param = *params_current.head();
-                params_current = params_current.tail();
-                let param_mods_annotations = match &ctx.tree(param).kind {
-                    crate::tree::jc_tree::TreeKind::VariableDecl { mods, .. } => self.modifiers_annotations(ctx, *mods),
-                    _ => List::nil(),
+            for param in &params_current {
+            let param_mods_annotations = match &ctx.tree(param).kind {
+                crate::tree::jc_tree::TreeKind::VariableDecl { mods, .. } => self.modifiers_annotations(ctx, *mods),
+                _ => List::nil(),
+            };
+            if !param_mods_annotations.is_empty() {
+                let param_sym = match &ctx.tree(param).kind {
+                    crate::tree::jc_tree::TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
+                    _ => return,
                 };
-                if !param_mods_annotations.is_empty() {
-                    let param_sym = match &ctx.tree(param).kind {
-                        crate::tree::jc_tree::TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
-                        _ => return,
-                    };
-                    let vartype = match &ctx.tree(param).kind {
-                        crate::tree::jc_tree::TreeKind::VariableDecl { vartype: Some(vartype), .. } => *vartype,
-                        _ => return,
-                    };
-                    let pos = crate::code::type_annotation_position::TypeAnnotationPosition::method_parameter(
-                        List::nil(),
-                        index,
-                        ctx.tree(vartype).pos,
-                        None,
-                    );
-                    self.push(param);
-                    let param_type = ctx.sym(param_sym).ty.expect("parameter type");
-                    self.separate_annotations_kinds(ctx, vartype, Some(param_type), param_sym, pos);
-                    self.pop();
-                }
-                index += 1;
+                let vartype = match &ctx.tree(param).kind {
+                    crate::tree::jc_tree::TreeKind::VariableDecl { vartype: Some(vartype), .. } => *vartype,
+                    _ => return,
+                };
+                let pos = crate::code::type_annotation_position::TypeAnnotationPosition::method_parameter(
+                    List::nil(),
+                    index,
+                    ctx.tree(vartype).pos,
+                    None,
+                );
+                self.push(param);
+                let param_type = ctx.sym(param_sym).ty.expect("parameter type");
+                self.separate_annotations_kinds(ctx, vartype, Some(param_type), param_sym, pos);
+                self.pop();
+            }
+            index += 1;
             }
         }
         if self.sig_only {
@@ -732,35 +724,33 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
         };
         let mut index = 0i32;
         let mut current = params.clone();
-        while current.non_empty() {
-            let param = *current.head();
-            current = current.tail();
-            let annotations = match &ctx.tree(param).kind {
-                crate::tree::jc_tree::TreeKind::VariableDecl { mods, .. } => self.modifiers_annotations(ctx, *mods),
-                _ => List::nil(),
-            };
-            if !annotations.is_empty() {
-                let (param_sym, vartype, declared_using_var) = match &ctx.tree(param).kind {
-                    crate::tree::jc_tree::TreeKind::VariableDecl { sym: Some(sym), vartype: Some(vartype), declared_using_var, .. } => (*sym, *vartype, *declared_using_var),
-                    _ => {
-                        index += 1;
-                        continue;
-                    }
-                };
-                let pos = crate::code::type_annotation_position::TypeAnnotationPosition::method_parameter(
-                    List::nil(),
-                    index,
-                    ctx.tree(vartype).pos,
-                    Some(tree),
-                );
-                self.push(param);
-                if !declared_using_var {
-                    let param_type = ctx.sym(param_sym).ty.expect("lambda parameter type");
-                    self.separate_annotations_kinds(ctx, vartype, Some(param_type), param_sym, pos);
+        for param in &current {
+        let annotations = match &ctx.tree(param).kind {
+            crate::tree::jc_tree::TreeKind::VariableDecl { mods, .. } => self.modifiers_annotations(ctx, *mods),
+            _ => List::nil(),
+        };
+        if !annotations.is_empty() {
+            let (param_sym, vartype, declared_using_var) = match &ctx.tree(param).kind {
+                crate::tree::jc_tree::TreeKind::VariableDecl { sym: Some(sym), vartype: Some(vartype), declared_using_var, .. } => (*sym, *vartype, *declared_using_var),
+                _ => {
+                    index += 1;
+                    continue;
                 }
-                self.pop();
+            };
+            let pos = crate::code::type_annotation_position::TypeAnnotationPosition::method_parameter(
+                List::nil(),
+                index,
+                ctx.tree(vartype).pos,
+                Some(tree),
+            );
+            self.push(param);
+            if !declared_using_var {
+                let param_type = ctx.sym(param_sym).ty.expect("lambda parameter type");
+                self.separate_annotations_kinds(ctx, vartype, Some(param_type), param_sym, pos);
             }
-            index += 1;
+            self.pop();
+        }
+        index += 1;
         }
         let body = match &ctx.tree(tree).kind {
             crate::tree::jc_tree::TreeKind::Lambda { body, .. } => *body,
@@ -875,19 +865,17 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
                         _ => List::nil(),
                     };
                     let mut current = components;
-                    while current.non_empty() {
-                        let component = *current.head();
-                        current = current.tail();
-                        let matches = match &ctx.sym(component).kind_data {
-                            crate::code::symbol::SymbolKind::RecordComponent { pos, .. } => *pos == ctx.tree(tree).pos,
-                            _ => false,
-                        };
-                        if matches {
-                            let raw_type_attributes = ctx.sym(sym).get_raw_type_attributes();
-                            ctx.sym_mut(component).set_type_attributes(raw_type_attributes);
-                            ctx.sym_mut(component).ty = ctx.sym(sym).ty;
-                            break;
-                        }
+                    for component in &current {
+                    let matches = match &ctx.sym(component).kind_data {
+                        crate::code::symbol::SymbolKind::RecordComponent { pos, .. } => *pos == ctx.tree(tree).pos,
+                        _ => false,
+                    };
+                    if matches {
+                        let raw_type_attributes = ctx.sym(sym).get_raw_type_attributes();
+                        ctx.sym_mut(component).set_type_attributes(raw_type_attributes);
+                        ctx.sym_mut(component).ty = ctx.sym(sym).ty;
+                        break;
+                    }
                     }
                 }
             }
@@ -971,21 +959,19 @@ impl<'a, 'b> crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationPos
         let mut depth: List<TypePathEntry> = List::nil();
         let mut dim_current = dim_annotations.clone();
         let mut dim_index = 0i32;
-        while dim_current.non_empty() {
-            let dim_annos = dim_current.head().clone();
-            dim_current = dim_current.tail();
-            let mut location: List<TypePathEntry> = List::nil();
-            if dim_index != 0 {
-                depth = depth.append(TypePathEntry::ARRAY);
-                location = depth.clone();
-            }
-            let pos = crate::code::type_annotation_position::TypeAnnotationPosition::new_obj(
-                location,
-                ctx.tree(tree).pos,
-                self.current_lambda,
-            );
-            self.set_type_annotation_pos(ctx, &dim_annos, pos);
-            dim_index += 1;
+        for dim_annos in &dim_current {
+        let mut location: List<TypePathEntry> = List::nil();
+        if dim_index != 0 {
+            depth = depth.append(TypePathEntry::ARRAY);
+            location = depth.clone();
+        }
+        let pos = crate::code::type_annotation_position::TypeAnnotationPosition::new_obj(
+            location,
+            ctx.tree(tree).pos,
+            self.current_lambda,
+        );
+        self.set_type_annotation_pos(ctx, &dim_annos, pos);
+        dim_index += 1;
         }
         let mut elem = elemtype;
         depth = depth.append(TypePathEntry::ARRAY);
@@ -1054,20 +1040,18 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
         position: crate::code::type_annotation_position::TypeAnnotationPosition,
     ) {
         let mut current = annotations.clone();
-        while current.non_empty() {
-            let anno = *current.head();
-            current = current.tail();
-            let attribute = match &ctx.tree(anno).kind {
-                crate::tree::jc_tree::TreeKind::Annotation { attribute, .. } => *attribute,
-                _ => None,
-            };
-            if let Some(attribute) = attribute {
-                if let crate::code::attribute::AttributeKind::TypeCompound { position: slot, .. } =
-                    &mut ctx.attr_mut(attribute).kind
-                {
-                    *slot = Some(position.clone());
-                }
+        for anno in &current {
+        let attribute = match &ctx.tree(anno).kind {
+            crate::tree::jc_tree::TreeKind::Annotation { attribute, .. } => *attribute,
+            _ => None,
+        };
+        if let Some(attribute) = attribute {
+            if let crate::code::attribute::AttributeKind::TypeCompound { position: slot, .. } =
+                &mut ctx.attr_mut(attribute).kind
+            {
+                *slot = Some(position.clone());
             }
+        }
         }
     }
 
@@ -1151,28 +1135,26 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
         let mut type_annos: List<crate::ids::AttributeId> = List::nil();
         let mut only_type_annos: List<crate::ids::AttributeId> = List::nil();
         let mut current = all_annotations;
-        while current.non_empty() {
-            let a = *current.head();
-            current = current.tail();
-            let target = self
-                .type_annotations
-                .annotation_target_type(ctx, self.syms, a, sym, self.attr.as_deref_mut());
-            match target {
-                AnnotationType::DECLARATION => {
-                    decl_annos = decl_annos.append(a);
-                }
-                AnnotationType::BOTH => {
-                    decl_annos = decl_annos.append(a);
-                    let ta = self.to_type_compound(ctx, a, pos.clone());
-                    type_annos = type_annos.append(ta);
-                }
-                AnnotationType::TYPE => {
-                    let ta = self.to_type_compound(ctx, a, pos.clone());
-                    type_annos = type_annos.append(ta);
-                    only_type_annos = only_type_annos.append(ta);
-                }
-                AnnotationType::NONE => {}
+        for a in &current {
+        let target = self
+            .type_annotations
+            .annotation_target_type(ctx, self.syms, a, sym, self.attr.as_deref_mut());
+        match target {
+            AnnotationType::DECLARATION => {
+                decl_annos = decl_annos.append(a);
             }
+            AnnotationType::BOTH => {
+                decl_annos = decl_annos.append(a);
+                let ta = self.to_type_compound(ctx, a, pos.clone());
+                type_annos = type_annos.append(ta);
+            }
+            AnnotationType::TYPE => {
+                let ta = self.to_type_compound(ctx, a, pos.clone());
+                type_annos = type_annos.append(ta);
+                only_type_annos = only_type_annos.append(ta);
+            }
+            AnnotationType::NONE => {}
+        }
         }
         if type_annos.is_empty() {
             return;
@@ -2236,27 +2218,25 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
         let old_attributes = ctx.sym(sym).get_raw_type_attributes();
         let mut new_attributes: List<crate::ids::AttributeId> = List::nil();
         let mut current = old_attributes;
-        while current.non_empty() {
-            let old = *current.head();
-            current = current.tail();
-            let (old_ty, old_values, old_position, synthesized) = match &ctx.attr(old).kind {
-                crate::code::attribute::AttributeKind::TypeCompound { values, position, synthesized } => {
-                    (ctx.attr(old).ty, values.clone(), position.clone(), *synthesized)
-                }
-                _ => continue,
-            };
-            let old_location = old_position.map(|p| p.location).unwrap_or_else(List::nil);
-            if old_location == expected_location {
-                let new_attr = ctx.alloc_attribute(crate::code::attribute::Attribute::new(
-                    old_ty,
-                    crate::code::attribute::AttributeKind::TypeCompound {
-                        values: old_values,
-                        position: Some(pos.clone()),
-                        synthesized,
-                    },
-                ));
-                new_attributes = new_attributes.append(new_attr);
+        for old in &current {
+        let (old_ty, old_values, old_position, synthesized) = match &ctx.attr(old).kind {
+            crate::code::attribute::AttributeKind::TypeCompound { values, position, synthesized } => {
+                (ctx.attr(old).ty, values.clone(), position.clone(), *synthesized)
             }
+            _ => continue,
+        };
+        let old_location = old_position.map(|p| p.location).unwrap_or_else(List::nil);
+        if old_location == expected_location {
+            let new_attr = ctx.alloc_attribute(crate::code::attribute::Attribute::new(
+                old_ty,
+                crate::code::attribute::AttributeKind::TypeCompound {
+                    values: old_values,
+                    position: Some(pos.clone()),
+                    synthesized,
+                },
+            ));
+            new_attributes = new_attributes.append(new_attr);
+        }
         }
         ctx.sym_mut(owner).append_unique_type_attributes(new_attributes);
     }

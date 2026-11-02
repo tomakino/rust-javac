@@ -1007,14 +1007,12 @@ impl Enter {
                     .unwrap_or(false);
                 if !modules_initialized {
                     let mut current = trees;
-                    while current.non_empty() {
-                        let tree = *current.head();
-                        current = current.tail();
-                        if tree_info::get_module(ctx, tree).is_some() {
-                            self.unfinished_modules.borrow_mut().push(tree);
-                        } else {
-                            self.ensure_imports_checked(ctx, syms, List::of(tree));
-                        }
+                    for tree in &current {
+                    if tree_info::get_module(ctx, tree).is_some() {
+                        self.unfinished_modules.borrow_mut().push(tree);
+                    } else {
+                        self.ensure_imports_checked(ctx, syms, List::of(tree));
+                    }
                     }
                 } else {
                     let unfinished =

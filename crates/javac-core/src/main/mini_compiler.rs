@@ -1315,7 +1315,7 @@ impl MiniCompiler {
         let t_desugar = std::time::Instant::now();
         // JavaCompiler.desugar(envs): TransTypes then Lower.
         let mut classes: Vec<CompiledClass> = Vec::new();
-        let mut t_gen_total = std::time::Duration::ZERO;
+        let t_gen_total = std::time::Duration::ZERO;
         for env in envs {
             let t_one = std::time::Instant::now();
                         if std::env::var_os("DSH_DEBUG_ENV").is_some() {
@@ -1427,10 +1427,8 @@ impl MiniCompiler {
             }
             // JavaCompiler.generate(queue)
             let mut current = defs;
-            while current.non_empty() {
-                let classdef = *current.head();
-                current = current.tail();
-                self.generate_class(&env, classdef)?;
+            for classdef in &current {
+            self.generate_class(&env, classdef)?;
             }
             let mut generated = self.take_generated_classes()?;
             classes.append(&mut generated);
@@ -1511,10 +1509,8 @@ impl MiniCompiler {
             } => (*class_sym, *extending, defs.clone(), self.ctx.tree(tree).pos),
             crate::tree::jc_tree::TreeKind::CompilationUnit { defs, .. } => {
                 let mut current = defs.clone();
-                while current.non_empty() {
-                    let def = *current.head();
-                    current = current.tail();
-                    self.check_enum_tree(def);
+                for def in &current {
+                self.check_enum_tree(def);
                 }
                 return;
             }
@@ -1555,10 +1551,8 @@ impl MiniCompiler {
             }
         }
         let mut current = defs;
-        while current.non_empty() {
-            let def = *current.head();
-            current = current.tail();
-            self.check_enum_tree(def);
+        for def in &current {
+        self.check_enum_tree(def);
         }
     }
 

@@ -3417,10 +3417,8 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                             ctx,
                             member_type,
                         );
-                    while thrown.non_empty() {
-                        let exc = *thrown.head();
-                        thrown = thrown.tail();
-                        self.mark_thrown(ctx, resource, exc);
+                    for exc in &thrown {
+                    self.mark_thrown(ctx, resource, exc);
                     }
                 }
                 }

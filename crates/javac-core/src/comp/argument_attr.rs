@@ -1226,16 +1226,14 @@ impl ArgumentAttr {
                 }
                 let yields = self.switch_expression_yields(ctx, data, speculative_tree);
                 let mut yield_list = yields;
-                while yield_list.non_empty() {
-                    let yield_tree = *yield_list.head();
-                    yield_list = yield_list.tail();
-                    let value = match &ctx.tree(yield_tree).kind {
-                        crate::tree::jc_tree::TreeKind::Yield { value, .. } => *value,
-                        _ => panic!("ClassCastException: JCYield expected"),
-                    };
-                    if let Some(value) = value {
-                        self.check_speculative(ctx, syms, &types_rc, attr, value, result_info)?;
-                    }
+                for yield_tree in &yield_list {
+                let value = match &ctx.tree(yield_tree).kind {
+                    crate::tree::jc_tree::TreeKind::Yield { value, .. } => *value,
+                    _ => panic!("ClassCastException: JCYield expected"),
+                };
+                if let Some(value) = value {
+                    self.check_speculative(ctx, syms, &types_rc, attr, value, result_info)?;
+                }
                 }
                 Ok(local_info.pt.unwrap_or_else(|| no_type_of(ctx)))
             }
@@ -1305,18 +1303,16 @@ impl ArgumentAttr {
                 } else {
                     let returns = self.lambda_return_expressions(ctx, data, speculative_tree);
                     let mut return_list = returns;
-                    while return_list.non_empty() {
-                        let ret = *return_list.head();
-                        return_list = return_list.tail();
-                        self.check_return_in_statement_lambda(
-                            ctx,
-                            syms,
-                            attr,
-                            &types_rc,
-                            speculative_tree,
-                            ret,
-                            &body_result_info,
-                        )?;
+                    for ret in &return_list {
+                    self.check_return_in_statement_lambda(
+                        ctx,
+                        syms,
+                        attr,
+                        &types_rc,
+                        speculative_tree,
+                        ret,
+                        &body_result_info,
+                    )?;
                     }
                 }
                 let check_context = Rc::clone(&result_info.check_context);

@@ -758,17 +758,15 @@ impl TransPatterns {
         };
         let mut merged: Vec<TreeId> = Vec::new();
         let mut current = cases.clone();
-        while current.non_empty() {
-            let head = *current.head();
-            current = current.tail();
-            if case_stats(ctx, head).is_empty() && current.non_empty() {
-                let next = *current.head();
-                let head_labels = case_labels(ctx, head);
-                let next_labels = case_labels(ctx, next);
-                set_case_labels(ctx, next, head_labels.append_list(&next_labels));
-            } else {
-                merged.push(head);
-            }
+        for head in &current {
+        if case_stats(ctx, head).is_empty() && current.non_empty() {
+            let next = *current.head();
+            let head_labels = case_labels(ctx, head);
+            let next_labels = case_labels(ctx, next);
+            set_case_labels(ctx, next, head_labels.append_list(&next_labels));
+        } else {
+            merged.push(head);
+        }
         }
         let cases = List::from_iterable(merged);
         let (

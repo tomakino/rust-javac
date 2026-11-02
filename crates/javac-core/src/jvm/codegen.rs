@@ -494,10 +494,8 @@ impl Gen {
                 }
                 let params = ctx.typ(t).get_parameter_types(ctx);
                 let mut rest = params;
-                while rest.non_empty() {
-                    let head = *rest.head();
-                    rest = rest.tail();
-                    self.check_dimension_internal(ctx, pos, head);
+                for head in &rest {
+                self.check_dimension_internal(ctx, pos, head);
                 }
             }
             TypeTag::ARRAY => {
@@ -817,78 +815,76 @@ impl Gen {
         let mut clinit_tas: Vec<crate::ids::AttributeId> = Vec::new();
         let mut method_defs: Vec<TreeId> = Vec::new();
         let mut l = defs;
-        while l.non_empty() {
-            let def = *l.head();
-            l = l.tail();
-            match &ctx.tree(def).kind {
-                TreeKind::Block { flags, .. } => {
-                    if (flags & crate::code::flags::STATIC as i64) != 0 {
-                        clinit_code.push(def);
-                    } else if (flags & crate::code::flags::SYNTHETIC as i64) == 0 {
-                        init_code.push(def);
-                    }
+        for def in &l {
+        match &ctx.tree(def).kind {
+            TreeKind::Block { flags, .. } => {
+                if (flags & crate::code::flags::STATIC as i64) != 0 {
+                    clinit_code.push(def);
+                } else if (flags & crate::code::flags::SYNTHETIC as i64) == 0 {
+                    init_code.push(def);
                 }
-                TreeKind::MethodDecl { .. } => {
-                    method_defs.push(def);
-                }
-                TreeKind::VariableDecl {
-                    sym: Some(sym),
-                    init: Some(init),
-                    ..
-                } => {
-                    let sym = *sym;
-                    let init = *init;
-                    let pos = ctx.tree(def).pos;
-                    let sym_ty = ctx.sym(sym).ty.expect("variable type");
-                    self.check_dimension(ctx, pos, sym_ty);
-                    let flags = ctx.sym(sym).flags_field;
-                    let is_static = (flags & crate::code::flags::STATIC as i64) != 0;
-                    if !is_static {
-                        // Always initialize instance variables.
-                        let make = Rc::clone(&self.make);
-                        let stmt = make.borrow_mut().at(pos).assignment(ctx, sym, init);
-                        init_code.push(stmt);
-                        self.end_pos_table_replaced(ctx, def, stmt);
-                        let tas = self.get_and_remove_non_field_tas(ctx, sym);
-                        init_tas.extend(tas);
-                    } else {
-                        let const_value = ctx.sym(sym).get_const_value();
-                        match const_value {
-                            None => {
-                                let make = Rc::clone(&self.make);
-                                // Java: Gen.normalizeDefs positions the
-                                // initializer at vdef.pos() (the field
-                                // declaration position).
-                                let stmt = make.borrow_mut().at(pos).assignment(ctx, sym, init);
-                                clinit_code.push(stmt);
-                                self.end_pos_table_replaced(ctx, def, stmt);
-                                let tas = self.get_and_remove_non_field_tas(ctx, sym);
-                                clinit_tas.extend(tas);
-                            }
-                            Some(value) => {
-                                let init_pos = ctx.tree(init).pos;
-                                self.check_string_constant(ctx, init_pos, Some(&value));
-                                // If the init references an external class, add
-                                // it to the constant pool.
-                                self.class_reference_scan(ctx, init);
-                            }
+            }
+            TreeKind::MethodDecl { .. } => {
+                method_defs.push(def);
+            }
+            TreeKind::VariableDecl {
+                sym: Some(sym),
+                init: Some(init),
+                ..
+            } => {
+                let sym = *sym;
+                let init = *init;
+                let pos = ctx.tree(def).pos;
+                let sym_ty = ctx.sym(sym).ty.expect("variable type");
+                self.check_dimension(ctx, pos, sym_ty);
+                let flags = ctx.sym(sym).flags_field;
+                let is_static = (flags & crate::code::flags::STATIC as i64) != 0;
+                if !is_static {
+                    // Always initialize instance variables.
+                    let make = Rc::clone(&self.make);
+                    let stmt = make.borrow_mut().at(pos).assignment(ctx, sym, init);
+                    init_code.push(stmt);
+                    self.end_pos_table_replaced(ctx, def, stmt);
+                    let tas = self.get_and_remove_non_field_tas(ctx, sym);
+                    init_tas.extend(tas);
+                } else {
+                    let const_value = ctx.sym(sym).get_const_value();
+                    match const_value {
+                        None => {
+                            let make = Rc::clone(&self.make);
+                            // Java: Gen.normalizeDefs positions the
+                            // initializer at vdef.pos() (the field
+                            // declaration position).
+                            let stmt = make.borrow_mut().at(pos).assignment(ctx, sym, init);
+                            clinit_code.push(stmt);
+                            self.end_pos_table_replaced(ctx, def, stmt);
+                            let tas = self.get_and_remove_non_field_tas(ctx, sym);
+                            clinit_tas.extend(tas);
+                        }
+                        Some(value) => {
+                            let init_pos = ctx.tree(init).pos;
+                            self.check_string_constant(ctx, init_pos, Some(&value));
+                            // If the init references an external class, add
+                            // it to the constant pool.
+                            self.class_reference_scan(ctx, init);
                         }
                     }
                 }
-                TreeKind::VariableDecl { sym: Some(sym), init: None, .. } => {
-                    let pos = ctx.tree(def).pos;
-                    let sym_ty = ctx.sym(*sym).ty.expect("variable type");
-                    self.check_dimension(ctx, pos, sym_ty);
-                }
-                // Upstream Gen.normalizeDefs (JDK17 Gen.java:421-476) partitions
-                // the class defs into BLOCK/METHODDEF/VARDEF only and asserts on any
-                // other tag, so a nested JCClassDecl never reaches the genClass defs
-                // loop (Gen.java:2419-2421); each nested class is generated by its
-                // own genClass invocation. Keep that invariant: ignore nested class
-                // declarations here, and keep panicking on any other unexpected tag.
-                TreeKind::ClassDecl { .. } => {}
-                _ => panic!("AssertionError: unexpected class member"),
             }
+            TreeKind::VariableDecl { sym: Some(sym), init: None, .. } => {
+                let pos = ctx.tree(def).pos;
+                let sym_ty = ctx.sym(*sym).ty.expect("variable type");
+                self.check_dimension(ctx, pos, sym_ty);
+            }
+            // Upstream Gen.normalizeDefs (JDK17 Gen.java:421-476) partitions
+            // the class defs into BLOCK/METHODDEF/VARDEF only and asserts on any
+            // other tag, so a nested JCClassDecl never reaches the genClass defs
+            // loop (Gen.java:2419-2421); each nested class is generated by its
+            // own genClass invocation. Keep that invariant: ignore nested class
+            // declarations here, and keep panicking on any other unexpected tag.
+            TreeKind::ClassDecl { .. } => {}
+            _ => panic!("AssertionError: unexpected class member"),
+        }
         }
         // Insert any instance initializers into all constructors.
         if !init_code.is_empty() {
@@ -1030,22 +1026,20 @@ impl Gen {
         let mut field_tas: Vec<crate::ids::AttributeId> = Vec::new();
         let mut nonfield_tas: Vec<crate::ids::AttributeId> = Vec::new();
         let mut current = tas;
-        while current.non_empty() {
-            let ta = *current.head();
-            current = current.tail();
-            let pos = ctx
-                .attr(ta)
-                .get_position(ctx)
-                .expect("AssertionError: type attribute position");
-            assert!(
-                pos.type_ != crate::code::target_type::TargetType::UNKNOWN,
-                "AssertionError: unknown type attribute position"
-            );
-            if pos.type_ == crate::code::target_type::TargetType::FIELD {
-                field_tas.push(ta);
-            } else {
-                nonfield_tas.push(ta);
-            }
+        for ta in &current {
+        let pos = ctx
+            .attr(ta)
+            .get_position(ctx)
+            .expect("AssertionError: type attribute position");
+        assert!(
+            pos.type_ != crate::code::target_type::TargetType::UNKNOWN,
+            "AssertionError: unknown type attribute position"
+        );
+        if pos.type_ == crate::code::target_type::TargetType::FIELD {
+            field_tas.push(ta);
+        } else {
+            nonfield_tas.push(ta);
+        }
         }
         let mut symbol = ctx.sym(sym).clone();
         // The arena port: a clone does not copy the symbol id, which
@@ -1244,10 +1238,8 @@ impl Gen {
     /// Generate code for a statement list.
     fn gen_stats(&mut self, ctx: &mut CompilerContext, trees: List<TreeId>) {
         let mut l = trees;
-        while l.non_empty() {
-            let head = *l.head();
-            l = l.tail();
-            self.gen_stat_crt(ctx, head, CRT_STATEMENT);
+        for head in &l {
+        self.gen_stat_crt(ctx, head, CRT_STATEMENT);
         }
     }
 
@@ -1456,13 +1448,11 @@ impl Gen {
     fn gen_args(&mut self, ctx: &mut CompilerContext, trees: List<TreeId>, pts: List<TypeId>) {
         let mut l = trees;
         let mut pts = pts;
-        while l.non_empty() {
-            let head = *l.head();
-            l = l.tail();
-            let pt = *pts.head();
-            pts = pts.tail();
-            let item = self.gen_expr(ctx, head, pt);
-            self.item_load(ctx, &item);
+        for head in &l {
+        let pt = *pts.head();
+        pts = pts.tail();
+        let item = self.gen_expr(ctx, head, pt);
+        self.item_load(ctx, &item);
         }
         assert!(pts.is_empty(), "AssertionError: argument lists must match");
     }
@@ -1870,18 +1860,16 @@ impl Gen {
         };
         let mut l = params;
         let mut registered_symbols: Vec<crate::ids::SymbolId> = Vec::new();
-        while l.non_empty() {
-            let head = *l.head();
-            l = l.tail();
-            let param_sym = match &ctx.tree(head).kind {
-                TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
-                _ => panic!("AssertionError: parameter symbol"),
-            };
-            let param_ty = ctx.sym(param_sym).ty.expect("parameter type");
-            self.check_dimension(ctx, ctx.tree(head).pos, param_ty);
-            let reg = code.borrow_mut().new_local_symbol(ctx, param_sym);
-            code.borrow_mut().set_defined_at(ctx, reg);
-            registered_symbols.push(param_sym);
+        for head in &l {
+        let param_sym = match &ctx.tree(head).kind {
+            TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
+            _ => panic!("AssertionError: parameter symbol"),
+        };
+        let param_ty = ctx.sym(param_sym).ty.expect("parameter type");
+        self.check_dimension(ctx, ctx.tree(head).pos, param_ty);
+        let reg = code.borrow_mut().new_local_symbol(ctx, param_sym);
+        code.borrow_mut().set_defined_at(ctx, reg);
+        registered_symbols.push(param_sym);
         }
         // Synthetic lambda methods keep their captured parameters in
         // MethodSymbol.extra_params (they have no VariableDecl tree nodes).
@@ -1894,26 +1882,22 @@ impl Gen {
             _ => (List::nil(), List::nil()),
         };
         let mut extra = extra_params;
-        while extra.non_empty() {
-            let param_sym = *extra.head();
-            extra = extra.tail();
-            if registered_symbols.contains(&param_sym) {
-                continue;
-            }
-            registered_symbols.push(param_sym);
-            let reg = code.borrow_mut().new_local_symbol(ctx, param_sym);
-            code.borrow_mut().set_defined_at(ctx, reg);
+        for param_sym in &extra {
+        if registered_symbols.contains(&param_sym) {
+            continue;
+        }
+        registered_symbols.push(param_sym);
+        let reg = code.borrow_mut().new_local_symbol(ctx, param_sym);
+        code.borrow_mut().set_defined_at(ctx, reg);
         }
         let mut captured = captured_locals;
-        while captured.non_empty() {
-            let param_sym = *captured.head();
-            captured = captured.tail();
-            if registered_symbols.contains(&param_sym) {
-                continue;
-            }
-            registered_symbols.push(param_sym);
-            let reg = code.borrow_mut().new_local_symbol(ctx, param_sym);
-            code.borrow_mut().set_defined_at(ctx, reg);
+        for param_sym in &captured {
+        if registered_symbols.contains(&param_sym) {
+            continue;
+        }
+        registered_symbols.push(param_sym);
+        let reg = code.borrow_mut().new_local_symbol(ctx, param_sym);
+        code.borrow_mut().set_defined_at(ctx, reg);
         }
         let startpc_crt = if self.gen_crt {
             code.borrow_mut().cur_cp(ctx)
@@ -2762,24 +2746,22 @@ impl Gen {
         };
         if startpc != endpc {
             let mut l = catchers;
-            while l.non_empty() {
-                let catcher = *l.head();
-                l = l.tail();
-                let param_ty = catch_param_type(ctx, catcher);
-                let state = {
-                    let code = self.get_code();
-                    let mut code = code.borrow_mut();
-                    code.entry_point_state_pushed(ctx, &state_try, param_ty)
-                };
-                let _ = state;
-                self.gen_catch(ctx, catcher, env, startpc, endpc, &gaps);
-                self.gen_finalizer(ctx, env);
-                if has_finalizer || l.non_empty() {
-                    self.get_code().borrow_mut().stat_begin(env_tree_end);
-                    let branch = self.get_code().borrow_mut().branch(ctx, GOTO);
-                    exit_chain = Code::merge_chains(exit_chain, branch);
-                }
-                self.end_finalizer_gap(ctx, env);
+            for catcher in &l {
+            let param_ty = catch_param_type(ctx, catcher);
+            let state = {
+                let code = self.get_code();
+                let mut code = code.borrow_mut();
+                code.entry_point_state_pushed(ctx, &state_try, param_ty)
+            };
+            let _ = state;
+            self.gen_catch(ctx, catcher, env, startpc, endpc, &gaps);
+            self.gen_finalizer(ctx, env);
+            if has_finalizer || l.non_empty() {
+                self.get_code().borrow_mut().stat_begin(env_tree_end);
+                let branch = self.get_code().borrow_mut().branch(ctx, GOTO);
+                exit_chain = Code::merge_chains(exit_chain, branch);
+            }
+            self.end_finalizer_gap(ctx, env);
             }
         }
         if has_finalizer && (startpc != endpc || !actual_try) {
@@ -2997,18 +2979,16 @@ impl Gen {
         let head = *alts.head();
         res.push((first, head));
         let mut rest = alts.tail();
-        while rest.non_empty() {
-            let alt = *rest.head();
-            rest = rest.tail();
-            if ctx.tree(alt).has_tag(Tag::ANNOTATED_TYPE) {
-                if let TreeKind::AnnotatedType { annotations, .. } = &ctx.tree(alt).kind {
-                    let annotations = annotations.clone();
-                    let tas = self.annotate.from_annotations(ctx, &annotations);
-                    res.push((tas, alt));
-                }
-            } else {
-                res.push((List::nil(), alt));
+        for alt in &rest {
+        if ctx.tree(alt).has_tag(Tag::ANNOTATED_TYPE) {
+            if let TreeKind::AnnotatedType { annotations, .. } = &ctx.tree(alt).kind {
+                let annotations = annotations.clone();
+                let tas = self.annotate.from_annotations(ctx, &annotations);
+                res.push((tas, alt));
             }
+        } else {
+            res.push((List::nil(), alt));
+        }
         }
         res
     }
@@ -3557,17 +3537,15 @@ impl Gen {
                 let arr = self.make_new_array(ctx, ctx.tree(tree).pos, tree_ty, 1);
                 let mut i = 0;
                 let mut l = elems;
-                while l.non_empty() {
-                    let head = *l.head();
-                    l = l.tail();
-                    self.item_duplicate(ctx, &arr);
-                    self.load_int_const(ctx, i);
-                    i += 1;
-                    let item = self.gen_expr(ctx, head, elemtype);
-                    self.item_load(ctx, &item);
-                    let items = self.get_items();
-                    let indexed = items.borrow().make_indexed_item(ctx, elemtype);
-                    items.borrow_mut().store(ctx, &indexed);
+                for head in &l {
+                self.item_duplicate(ctx, &arr);
+                self.load_int_const(ctx, i);
+                i += 1;
+                let item = self.gen_expr(ctx, head, elemtype);
+                self.item_load(ctx, &item);
+                let items = self.get_items();
+                let indexed = items.borrow().make_indexed_item(ctx, elemtype);
+                items.borrow_mut().store(ctx, &indexed);
                 }
                 self.result = Some(arr);
             }
@@ -3578,11 +3556,9 @@ impl Gen {
                 };
                 let int_type = self.syms.borrow().int_type;
                 let mut l = dims.clone();
-                while l.non_empty() {
-                    let head = *l.head();
-                    l = l.tail();
-                    let item = self.gen_expr(ctx, head, int_type);
-                    self.item_load(ctx, &item);
+                for head in &l {
+                let item = self.gen_expr(ctx, head, int_type);
+                self.item_load(ctx, &item);
                 }
                 let ndims = dims.length();
                 self.result = Some(self.make_new_array(ctx, ctx.tree(tree).pos, tree_ty, ndims));
@@ -4362,10 +4338,8 @@ impl Gen {
         });
         self.env = Some(Rc::clone(&local_env));
         let mut l = defs;
-        while l.non_empty() {
-            let head = *l.head();
-            l = l.tail();
-            self.gen_def(ctx, head);
+        for head in &l {
+        self.gen_def(ctx, head);
         }
         let pool_size = self.pool_writer.borrow().size();
         if pool_size > PoolWriter::MAX_ENTRIES {
@@ -4403,23 +4377,21 @@ fn fix_type_annotations(
     cp: i32,
 ) {
     let mut current = attrs;
-    while current.non_empty() {
-        let attr = *current.head();
-        current = current.tail();
-        let mut attribute = ctx.attr(attr).clone();
-        if attribute.has_unknown_position() && attribute.try_fix_position(ctx) {
-            *ctx.attr_mut(attr) = attribute;
-        }
-        if let Some(mut pos) = ctx.attr(attr).get_position(ctx)
-            && pos.matches_pos(tree_pos)
+    for attr in &current {
+    let mut attribute = ctx.attr(attr).clone();
+    if attribute.has_unknown_position() && attribute.try_fix_position(ctx) {
+        *ctx.attr_mut(attr) = attribute;
+    }
+    if let Some(mut pos) = ctx.attr(attr).get_position(ctx)
+        && pos.matches_pos(tree_pos)
+    {
+        pos.update_pos_offset(cp);
+        if let crate::code::attribute::AttributeKind::TypeCompound { position, .. } =
+            &mut ctx.attr_mut(attr).kind
         {
-            pos.update_pos_offset(cp);
-            if let crate::code::attribute::AttributeKind::TypeCompound { position, .. } =
-                &mut ctx.attr_mut(attr).kind
-            {
-                *position = Some(pos);
-            }
+            *position = Some(pos);
         }
+    }
     }
 }
 

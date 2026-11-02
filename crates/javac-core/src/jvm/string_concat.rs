@@ -234,13 +234,11 @@ impl StringConcat {
         // Append all other strings to the builder.
         let args = self.collect_all(ctx, rhs);
         let mut current = args;
-        while current.non_empty() {
-            let t = *current.head();
-            current = current.tail();
-            let ty = ctx.tree(t).ty.expect("argument type");
-            let item = generator.gen_expr(ctx, t, ty);
-            generator.get_items().borrow_mut().load(ctx, &item);
-            self.append_string(ctx, generator, t);
+        for t in &current {
+        let ty = ctx.tree(t).ty.expect("argument type");
+        let item = generator.gen_expr(ctx, t, ty);
+        generator.get_items().borrow_mut().load(ctx, &item);
+        self.append_string(ctx, generator, t);
         }
         self.builder_to_string(ctx, generator, pos);
         l
@@ -254,13 +252,11 @@ impl StringConcat {
         self.new_string_builder(ctx, generator, tree);
         let args = self.collect_all(ctx, tree);
         let mut current = args;
-        while current.non_empty() {
-            let t = *current.head();
-            current = current.tail();
-            let ty = ctx.tree(t).ty.expect("argument type");
-            let item = generator.gen_expr(ctx, t, ty);
-            generator.get_items().borrow_mut().load(ctx, &item);
-            self.append_string(ctx, generator, t);
+        for t in &current {
+        let ty = ctx.tree(t).ty.expect("argument type");
+        let item = generator.gen_expr(ctx, t, ty);
+        generator.get_items().borrow_mut().load(ctx, &item);
+        self.append_string(ctx, generator, t);
         }
         self.builder_to_string(ctx, generator, pos);
         let syms = Rc::clone(&self.syms);
@@ -409,25 +405,23 @@ impl StringConcat {
         let mut slots = 0;
         let mut current: Vec<TreeId> = Vec::new();
         let mut rest = args;
-        while rest.non_empty() {
-            let t = *rest.head();
-            rest = rest.tail();
-            let tag = ctx
-                .tree(t)
-                .ty
-                .map(|ty| ctx.typ(ty).get_tag())
-                .expect("argument type");
-            let need_slots = if tag == TypeTag::LONG || tag == TypeTag::DOUBLE {
-                2
-            } else {
-                1
-            };
-            if slots + need_slots >= MAX_INDY_CONCAT_ARG_SLOTS {
-                splits.push(std::mem::take(&mut current));
-                slots = 0;
-            }
-            current.push(t);
-            slots += need_slots;
+        for t in &rest {
+        let tag = ctx
+            .tree(t)
+            .ty
+            .map(|ty| ctx.typ(ty).get_tag())
+            .expect("argument type");
+        let need_slots = if tag == TypeTag::LONG || tag == TypeTag::DOUBLE {
+            2
+        } else {
+            1
+        };
+        if slots + need_slots >= MAX_INDY_CONCAT_ARG_SLOTS {
+            splits.push(std::mem::take(&mut current));
+            slots = 0;
+        }
+        current.push(t);
+        slots += need_slots;
         }
         if !current.is_empty() {
             splits.push(current);

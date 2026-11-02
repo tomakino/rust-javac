@@ -2221,12 +2221,10 @@ impl TypeEnter {
                 };
                 let mut copied: List<TreeId> = List::nil();
                 let mut a = original_annos;
-                while a.non_empty() {
-                    let anno = *a.head();
-                    a = a.tail();
-                    if let Some(copy) = copier.copy(ctx, Some(anno)) {
-                        copied = copied.append(copy);
-                    }
+                for anno in &a {
+                if let Some(copy) = copier.copy(ctx, Some(anno)) {
+                    copied = copied.append(copy);
+                }
                 }
                 if let TreeKind::VariableDecl { mods: Some(mods), .. } = &ctx.tree(field).kind
                     && let TreeKind::Modifiers { annotations, .. } =
@@ -2302,12 +2300,10 @@ impl TypeEnter {
                         };
                         let mut copied: List<TreeId> = List::nil();
                         let mut a = annotations.clone();
-                        while a.non_empty() {
-                            let anno = *a.head();
-                            a = a.tail();
-                            if let Some(copy) = copier.copy(ctx, Some(anno)) {
-                                copied = copied.append(copy);
-                            }
+                        for anno in &a {
+                        if let Some(copy) = copier.copy(ctx, Some(anno)) {
+                            copied = copied.append(copy);
+                        }
                         }
                         copied
                     }
@@ -2925,26 +2921,22 @@ impl TypeEnter {
             };
             let mut param_types: List<TypeId> = List::nil();
             let mut p = params;
-            while p.non_empty() {
-                let param = *p.head();
-                p = p.tail();
-                if let TreeKind::VariableDecl {
-                    sym: Some(param_sym),
-                    ..
-                } = &ctx.tree(param).kind
-                    && let Some(ty) = ctx.sym(*param_sym).ty
-                {
-                    param_types = param_types.append(ty);
-                }
+            for param in &p {
+            if let TreeKind::VariableDecl {
+                sym: Some(param_sym),
+                ..
+            } = &ctx.tree(param).kind
+                && let Some(ty) = ctx.sym(*param_sym).ty
+            {
+                param_types = param_types.append(ty);
+            }
             }
             let mut erased_params: List<TypeId> = List::nil();
             let syms_borrow = syms;
             let types = Rc::clone(&self.types);
             let mut current2 = param_types;
-            while current2.non_empty() {
-                let ty = *current2.head();
-                current2 = current2.tail();
-                erased_params = erased_params.append(types.erasure(ctx, syms_borrow, ty));
+            for ty in &current2 {
+            erased_params = erased_params.append(types.erasure(ctx, syms_borrow, ty));
             }
             let same = {
                 let types = Rc::clone(&self.types);
@@ -3887,12 +3879,10 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
         } else {
             let mut copied: List<TreeId> = List::nil();
             let mut a = original_annos;
-            while a.non_empty() {
-                let anno = *a.head();
-                a = a.tail();
-                if let Some(copy) = copier.copy(ctx, Some(anno)) {
-                    copied = copied.append(copy);
-                }
+            for anno in &a {
+            if let Some(copy) = copier.copy(ctx, Some(anno)) {
+                copied = copied.append(copy);
+            }
             }
             copied
         };

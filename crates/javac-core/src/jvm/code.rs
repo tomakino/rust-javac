@@ -2653,22 +2653,20 @@ impl Code {
         let lvar_index: Vec<i32> = valid_ranges.iter().map(|_| lv.reg).collect();
         let attrs = crate::code::symbol::symbol_raw_type_attributes(ctx, lv.sym);
         let mut current = attrs;
-        while current.non_empty() {
-            let attr = *current.head();
-            current = current.tail();
-            let Some(mut pos) = ctx.attr(attr).get_position(ctx) else {
-                continue;
-            };
-            pos.lvar_offset = Some(append_array(pos.lvar_offset, &lvar_offset));
-            pos.lvar_length = Some(append_array(pos.lvar_length, &lvar_length));
-            pos.lvar_index = Some(append_array(pos.lvar_index, &lvar_index));
-            pos.is_valid_offset = true;
-            if let crate::code::attribute::AttributeKind::TypeCompound {
-                position, ..
-            } = &mut ctx.attr_mut(attr).kind
-            {
-                *position = Some(pos);
-            }
+        for attr in &current {
+        let Some(mut pos) = ctx.attr(attr).get_position(ctx) else {
+            continue;
+        };
+        pos.lvar_offset = Some(append_array(pos.lvar_offset, &lvar_offset));
+        pos.lvar_length = Some(append_array(pos.lvar_length, &lvar_length));
+        pos.lvar_index = Some(append_array(pos.lvar_index, &lvar_index));
+        pos.is_valid_offset = true;
+        if let crate::code::attribute::AttributeKind::TypeCompound {
+            position, ..
+        } = &mut ctx.attr_mut(attr).kind
+        {
+            *position = Some(pos);
+        }
 
         }
     }
@@ -2687,26 +2685,24 @@ impl Code {
             }
             let attrs = crate::code::symbol::symbol_raw_type_attributes(ctx, lv.sym);
             let mut current = attrs;
-            while current.non_empty() {
-                let attr = *current.head();
-                current = current.tail();
-                let Some(mut pos) = ctx.attr(attr).get_position(ctx) else {
-                    continue;
-                };
-                if pos.has_catch_type() {
-                    let idx = self.find_exception_index(&pos);
-                    assert!(
-                        idx != -1,
-                        "AssertionError: Could not find exception index for type annotation"
-                    );
-                    pos.set_exception_index(idx);
-                    if let crate::code::attribute::AttributeKind::TypeCompound {
-                        position, ..
-                    } = &mut ctx.attr_mut(attr).kind
-                    {
-                        *position = Some(pos);
-                    }
+            for attr in &current {
+            let Some(mut pos) = ctx.attr(attr).get_position(ctx) else {
+                continue;
+            };
+            if pos.has_catch_type() {
+                let idx = self.find_exception_index(&pos);
+                assert!(
+                    idx != -1,
+                    "AssertionError: Could not find exception index for type annotation"
+                );
+                pos.set_exception_index(idx);
+                if let crate::code::attribute::AttributeKind::TypeCompound {
+                    position, ..
+                } = &mut ctx.attr_mut(attr).kind
+                {
+                    *position = Some(pos);
                 }
+            }
             }
         }
     }

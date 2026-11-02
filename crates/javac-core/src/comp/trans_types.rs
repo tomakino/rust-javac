@@ -173,13 +173,11 @@ impl TransTypes {
     ) -> List<TreeId> {
         let mut result: List<TreeId> = List::nil();
         let mut current = trees.clone();
-        while current.non_empty() {
-            let tree = *current.head();
-            current = current.tail();
-            match self.translate(ctx, Some(tree)) {
-                Some(translated) => result = result.append(translated),
-                None => panic!("translation of a list element produced null"),
-            }
+        for tree in &current {
+        match self.translate(ctx, Some(tree)) {
+            Some(translated) => result = result.append(translated),
+            None => panic!("translation of a list element produced null"),
+        }
         }
         result
     }

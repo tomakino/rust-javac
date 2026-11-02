@@ -2738,16 +2738,14 @@ impl ClassReader {
                                     // ex.getDetailValue()))
                                     let mut annotation_args = Vec::new();
                                     let mut attrs = ctx.sym(sym).get_raw_type_attributes();
-                                    while attrs.non_empty() {
-                                        let attr = *attrs.head();
-                                        attrs = attrs.tail();
-                                        if let Some(ty) = ctx.attr(attr).ty {
-                                            annotation_args.push(
-                                                crate::resources::diagnostic_contract::AnnotationArg::placeholder(
-                                                    format!("@{}", crate::code::printer::visit_type(ctx, ty)),
-                                                ),
-                                            );
-                                        }
+                                    for attr in &attrs {
+                                    if let Some(ty) = ctx.attr(attr).ty {
+                                        annotation_args.push(
+                                            crate::resources::diagnostic_contract::AnnotationArg::placeholder(
+                                                format!("@{}", crate::code::printer::visit_type(ctx, ty)),
+                                            ),
+                                        );
+                                    }
                                     }
                                     let owner_text = ctx
                                         .sym(sym)
