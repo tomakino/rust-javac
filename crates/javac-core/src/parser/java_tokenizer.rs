@@ -1237,11 +1237,6 @@ mod unicode_classification_tests {
     fn ascii_identifier_fast_path_matches_the_jdk_tables() {
         for unit in 0u16..=0x7F {
             let expected = javac_unicode::is_java_identifier_part(i32::from(unit));
-            assert_eq!(
-                super::is_ascii_identifier_part(unit) || !super::is_ascii_identifier_part(0x20),
-                expected || true,
-                "sanity"
-            );
             // The fast path returns true only for the identifier-part ASCII
             // characters; the scanIdent switch handles the rest as ignorable.
             if super::is_ascii_identifier_part(unit) {
