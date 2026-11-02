@@ -5884,10 +5884,12 @@ impl Types {
         let mut interfaces: List<TypeId> = List::nil();
         let mut to_skip: Vec<TypeId> = Vec::new();
         let cl = cl;
+        let mut rest = cl.clone();
         for current in &cl {
+        rest = rest.tail();
         let mut keep = !to_skip.contains(&current);
         if keep && ctx.typ(current).has_tag(TypeTag::TYPEVAR) {
-            let mut tail = cl.tail();
+            let mut tail = rest.clone();
             while tail.non_empty() {
                 let t = *tail.head();
                 if self.is_subtype_no_capture(ctx, syms, t, current) {
@@ -5903,7 +5905,7 @@ impl Types {
             } else {
                 classes = classes.append(current);
             }
-            let mut tail = cl.tail();
+            let mut tail = rest.clone();
             while tail.non_empty() {
                 let t = *tail.head();
                 if self.is_subtype_no_capture(ctx, syms, current, t) {
