@@ -14,6 +14,7 @@ pub mod class_reader;
 pub mod module_name_reader;
 pub mod pool_constant;
 pub mod pool_reader;
+pub mod pool_state;
 pub mod stack_map;
 pub mod string_concat;
 pub mod pool_writer;
