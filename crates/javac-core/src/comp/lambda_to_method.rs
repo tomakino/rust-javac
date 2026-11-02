@@ -1757,11 +1757,19 @@ impl LambdaAnalyzerPreprocessor {
                         TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
                         _ => continue,
                     };
-                    let is_member = ctx
-                        .sym(sym)
-                        .owner
-                        .map(|owner| owner == class_sym)
-                        .unwrap_or(false);
+                    // Java: Symbol.isMemberOf walks the superclass chain
+                    // (Symbol.java:552), so a field inherited from a
+                    // superclass still counts as a member of this class --
+                    // an implicit `this.field` access must capture `this`.
+                    let syms = self.syms.borrow();
+                    let is_member = crate::code::symbol::symbol_is_member_of(
+                        ctx,
+                        &self.types,
+                        &syms,
+                        sym,
+                        class_sym,
+                    );
+                    drop(syms);
                     if is_member {
                         return if current_depth > depth { None } else { Some(frame.tree) };
                     }
