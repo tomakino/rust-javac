@@ -1,9 +1,11 @@
-// Origin: com/sun/source/util/DocTreePathScanner.java @ 982d53c (jdk-17.0.19-ga)
-
-//! A DocTreeVisitor that visits all the child doc tree nodes, and provides
-//! support for maintaining a path for the parent nodes.
+//! A `DocTreeVisitor` that visits all child doc tree nodes and maintains the
+//! path to the parent nodes.
 //!
-//! PORTING_RULES (§14.4 方案 B for doc trees, §14.7):
+//! Java's `DocTreePathScanner` extends `DocTreeScanner`; Rust has no trait
+//! inheritance that routes the default visit methods through an override, so
+//! the 36 visit defaults are materialized here and scan their children through
+//! this trait. `get_current_path`/`set_current_path` replace the Java private
+//! path field, and `scan_path` takes an `Rc<DocTreePath>`.
 //! * Java DocTreePathScanner<R,P> extends DocTreeScanner<R,P> is ported as an
 //!   independent trait (Rust trait inheritance cannot route the default visit
 //!   methods through this trait's scan override); the 36 visit defaults are

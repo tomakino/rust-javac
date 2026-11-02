@@ -1,217 +1,334 @@
-# rust-javac 项目历程（完整整理）
+# rust-javac project history
 
-> 2026-10-25 → 2026-11-01，282 个提交（`4b08a1e` → `8486e92`）。
-> 目标：用 Rust 对 JDK 17（jdk17u@982d53c，17.0.19+10）的 `javac` 做 **1:1 行为等价**重实现。
+> 2026-10-25 to 2026-11-01, 282 commits (`4b08a1e` to `8486e92`).
+> Goal: a 1:1 behavior-equivalent reimplementation of JDK 17 javac
+> (jdk17u@982d53c, 17.0.19+10) in Rust.
 
-## 1. 目标与红线
+## 1. Goals and red lines
 
-- **验收口径**：`.class` 逐字节一致、`-XDrawDiagnostics` 逐行一致（内容/位置/数量/顺序）、CLI 输出与退出码一致。
-- **唯一依据**：官方 JDK 17 源码（`internal/reference/jdk17u`）。不近似、不兜底、不特判；发现端口与官方偏离时按官方源码修正。
-- **不重蹈官方废弃/错误路线**：不为废弃机制（`-profile`、`-source 7`）和已知错误的官方行为补实现；CLI 只加非废弃、语义正确的功能。
-- **历史债务要还**：未实现点（`unimplemented!`/`unreachable!`/静默占位）不以"以后再说"方式保留，逐批审计清零并登记。
-- 用户偏好：全程中文；质量优先于速度；不做 `Start-Sleep` 空转；不用 adb 手势/截图估坐标验证。
+- **Acceptance**: byte-identical `.class` files, line-identical
+  `-XDrawDiagnostics` output (content, position, count, order), and identical
+  CLI output and exit codes.
+- **Single source of truth**: the official JDK 17 sources
+  (`internal/reference/jdk17u`). No approximations, fallbacks, or special
+  cases; any deviation found in the port is corrected against the official
+  source.
+- **Do not reproduce deprecated or incorrect upstream paths**: `-profile`
+  and `-source 7` are not implemented; the CLI only adds non-deprecated
+  options with correct semantics.
+- **Pay down debt**: unimplemented points (`unimplemented!`/`unreachable!`/
+  silent placeholders) are audited and cleared in batches, not left as
+  "later".
 
-## 2. 时间线（按提交历史）
+## 2. Timeline
 
-### 2.1 基础设施与并行移植（P0/P0.5，10-25/26）
+### 2.1 Infrastructure and parallel porting (P0/P0.5, 10-25/26)
 
-- 建立多 crate 结构：`javac-core`（流水线+诊断）、`rust-javac`（CLI）、`javac-tools`（javax.tools 风格 FileManager）、`javac-source`（com.sun.source）、`javac-unicode`、`javac-floating`、`javac-jimage`/`jmod`/`zip`/`ctsym`/`classpath`/`charset`/`fs`、`javac-tests`（语料/oracle）、`xtask`（资源生成）。
-- 并行"util-porter"批次移植；checkpoint 恢复机制（网络中断后从工作区恢复）。
-- 早期关键契约：arena id（`TreeId`/`SymbolId`/`TypeId`，ADR 0001）、服务显式传参、`.properties` 资源 `include_str!` 嵌入。
+- Multi-crate layout: `javac-core` (pipeline + diagnostics), `rust-javac`
+  (CLI), `javac-tools` (javax.tools-style file manager), `javac-source`
+  (com.sun.source), `javac-unicode`, `javac-floating`, `javac-jimage`/`jmod`/
+  `zip`/`ctsym`/`classpath`/`charset`/`fs`, `javac-tests` (corpus/oracle),
+  `xtask` (resource generation).
+- Parallel "util-porter" batches; checkpoint recovery after network
+  interruptions.
+- Early contracts: arena ids (`TreeId`/`SymbolId`/`TypeId`, ADR 0001),
+  explicit service parameters, embedded `.properties` resources via
+  `include_str!`.
 
-### 2.2 解析器与 tree oracle（P1）
+### 2.2 Parser and tree oracle (P1)
 
-- `JavacParser` 完整语法：record/sealed/pattern/lambda/method-ref/switch-expr/module/annotation。
-- `TreeMaker`、`Pretty`、`TreeInfo`、`TreeCopier`（1849 行、~75 visitor）逐 1:1。
-- tree-oracle 分层比对最终 **37/37**；反复以官方 tree 输出修正解析器细节。
-- 坑：`>>>` 嵌套泛型由 `Scanner.split` 语义错误导致——`split` 应返回右半 token 并把左半存入 `prev_token`（官方 `Scanner.split`），修复后解析通过。
+- Full `JavacParser` grammar: records, sealed types, patterns, lambdas,
+  method references, switch expressions, modules, annotations.
+- `TreeMaker`, `Pretty`, `TreeInfo`, and `TreeCopier` (1849 lines, about 75
+  visitors) ported 1:1.
+- Layered tree-oracle comparison ended at **37/37**.
+- Pitfall: nested generic `>>>` failed because `Scanner.split` must return
+  the right half and store the left half in `prev_token`; fixing it restored
+  parsing.
 
-### 2.3 ClassReader / ClassFinder（P2）
+### 2.3 ClassReader and ClassFinder (P2)
 
-- `ClassReader` 全部 26 类 attribute reader（Signature/Record/PermittedSubclasses/MethodParameters/LVT/Module/ModuleResolution/Runtime*Annotations/AnnotationDefault/TypeAnnotations/TypeAnnotationPosition/InnerClasses/EnclosingMethod/SourceFile/ConstantValue/Code…），并用 `javap` 做 oracle。
-- `ClassFinder` 完成 `complete/completeOwners/fillIn/loadClass/includeClassFile/scan` 与 `Symbol.completer`/`DCFH`/`Symtab` 绑定。
-- 注解代理（AnnotationProxyMaker）、`BadEnclosingMethod`、`ProxyType` deproxy、版本/预览 classfile 诊断。
+- `ClassReader` with all 26 attribute readers (Signature, Record,
+  PermittedSubclasses, MethodParameters, LVT, Module, ModuleResolution,
+  Runtime*Annotations, AnnotationDefault, TypeAnnotations,
+  TypeAnnotationPosition, InnerClasses, EnclosingMethod, SourceFile,
+  ConstantValue, Code, ...), verified against `javap`.
+- `ClassFinder`: `complete`/`completeOwners`/`fillIn`/`loadClass`/
+  `includeClassFile`/`scan`, bound to `Symbol.completer`/`DCFH`/`Symtab`.
+- Annotation proxies (`AnnotationProxyMaker`), `BadEnclosingMethod`,
+  `ProxyType` deproxy, classfile version/preview diagnostics.
 
-### 2.4 Enter / MemberEnter / TypeEnter（P3）
+### 2.4 Enter / MemberEnter / TypeEnter (P3)
 
-- `Env`/`AttrContext`/`TypeEnvs`/`Enter`/`MemberEnter`/`TypeEnter` 全量；`Scope` 的 `dup/leave/import` 语义。
-- `TypeEnter` 阶段（Imports/Hierarchy/Permits/Header/Record/Members）、默认构造器、record/enum 成员、`finishClass`。
-- 模块系统（`Modules` 3435 行）、`ModuleFinder`、`Locations`（含 `getLocationForModule(Path)`、`--patch-module`、`--module-source-path`）、JRT/ct.sym/jmod 读取。
+- Full `Env`/`AttrContext`/`TypeEnvs`/`Enter`/`MemberEnter`/`TypeEnter`;
+  `Scope` `dup`/`leave`/`import` semantics.
+- `TypeEnter` phases (Imports/Hierarchy/Permits/Header/Record/Members),
+  default constructors, record/enum members, `finishClass`.
+- Module system (`Modules`, 3435 lines), `ModuleFinder`, `Locations`
+  (`getLocationForModule(Path)`, `--patch-module`, `--module-source-path`),
+  JRT/ct.sym/jmod readers.
 
-### 2.5 Resolve / Types / Infer / DeferredAttr（P3 后段）
+### 2.5 Resolve / Types / Infer / DeferredAttr (late P3)
 
-- `Resolve` A+B：`findField/Var/Type/Ident`、访问检查、`selectBest`、`mostSpecific`、`mergeAbstracts`、成员引用族、多态签名、verbose 诊断、`code/Printer` 1:1。
-- `Types`：关系（adapt/rewriteSupers/capture/glb/closure/asSub/…）、投影、`SignatureGenerator`、126 项审计补全。
-- `Infer`：InferenceContext、图求解、`instantiateMethod/instantiateFunctionalInterface`、多态签名。
-- `DeferredAttr`：DeferredType/Node/Context/Map、speculative、stuck 策略；`ArgumentAttr`（6 种实参类型、`UniquePos`）；`AttrRecover`；`StructuralStuckChecker`。
-- 关键语义：`InferenceException extends InapplicableMethodException`；`ArgumentAttr.speculativeTypes` 以 `ResultInfo.id` 为键。
+- `Resolve` A+B: `findField`/`findVar`/`findType`/`findIdent`, access checks,
+  `selectBest`, `mostSpecific`, `mergeAbstracts`, member-reference family,
+  polymorphic signatures, verbose diagnostics, `code/Printer` 1:1.
+- `Types`: relations (adapt/rewriteSupers/capture/glb/closure/asSub/...),
+  projections, `SignatureGenerator`, 126 audited items.
+- `Infer`: InferenceContext, graph solver, `instantiateMethod`/
+  `instantiateFunctionalInterface`, polymorphic signatures.
+- `DeferredAttr`: DeferredType/Node/Context/Map, speculative and stuck
+  strategies; `ArgumentAttr` (six argument kinds, `UniquePos`);
+  `AttrRecover`; `StructuralStuckChecker`.
+- Key semantics: `InferenceException extends InapplicableMethodException`;
+  `ArgumentAttr.speculativeTypes` keyed by `ResultInfo.id`.
 
-### 2.6 Flow / Lint / Annotate（Batch 1-3.5）
+### 2.6 Flow / Lint / Annotate (batches 1-3.5)
 
-- `Flow` 完整（AliveAnalyzer/CaptureAnalyzer/AssignAnalyzer、match bindings、effectively-final 片段含嵌套 JCDiagnostic）。
-- `Lint` 完整（`augment`/AugmentVisitor、`-Xlint` 解析与默认集）。
-- `Annotate` 完整（annotateLater/annotateNow/TypeAnnotate/queue/flush/重复容器、合成注解类型）。
+- `Flow`: AliveAnalyzer/CaptureAnalyzer/AssignAnalyzer, match bindings,
+  effectively-final analysis with nested JCDiagnostic.
+- `Lint`: `augment`/AugmentVisitor, `-Xlint` parsing and defaults.
+- `Annotate`: annotateLater/annotateNow/TypeAnnotate/queue/flush, repeatable
+  containers, synthetic annotation types.
 
-### 2.7 Attr 全量（Batch 5-6）
+### 2.7 Full Attr (batches 5-6)
 
-- 表达式：Ident/Select/Apply/NewArray/Assert/Conditional/Assignop/Unary/Binary/TypeCast/Lambda/Reference/NewClass/匿名类。
-- 语句：Block/循环/Try/同步/Switch/SwitchExpr/pattern（type test/binding/guard）/Return/Throw/Yield。
-- 类型：attribClass/attribClassBody、visitTypeParameter/checkIntersection、type annotations 校验。
-- 依赖族：`checkAllDefined`/`nonCyclic`/cyclic constructors、override/hide/clash、`checkDeprecatedAnnotation`/`checkFunctionalInterface`/`checkLeaksNotAccessible`、`PostAttrAnalyzer`、`Analyzer`。
+- Expressions: Ident/Select/Apply/NewArray/Assert/Conditional/Assignop/
+  Unary/Binary/TypeCast/Lambda/Reference/NewClass/anonymous classes.
+- Statements: Block/loops/Try/synchronized/Switch/SwitchExpr/patterns
+  (type test/binding/guard)/Return/Throw/Yield.
+- Types: attribClass/attribClassBody, visitTypeParameter/checkIntersection,
+  type-annotation validation.
+- Supporting families: `checkAllDefined`/`nonCyclic`/cyclic constructors,
+  override/hide/clash, `checkDeprecatedAnnotation`/
+  `checkFunctionalInterface`/`checkLeaksNotAccessible`,
+  `PostAttrAnalyzer`, `Analyzer`.
 
 ### 2.8 TypeAnnotations / Analyzer / B7
 
-- `TypeAnnotations` ~2200 行：AnnotationType/targets/positions/separateAnnotationsKinds/resolveFrame/visits/organizeBodies+Signatures。
-- 匿名类 diamond 监听（快照/重放）、`NewClass.classDeclRemoved`。
+- `TypeAnnotations` (~2200 lines): annotation types, targets, positions,
+  separateAnnotationsKinds, resolveFrame, visitors, organizeBodies+Signatures.
+- Anonymous-class diamond listener (snapshot/replay),
+  `NewClass.classDeclRemoved`.
 
-### 2.9 编译器后端
+### 2.9 Backend
 
-- `TransTypes`（2328 行：cast/coerce/retype/bridges/translateClass）。
-- `TransPatterns`（~2780 行）与 `LambdaToMethod`（10241 行；indy/metafactory、去重、静态捕获）。
-- `Lower`（8775 行全 visitor：StringConcat、TWR、enum/record、class literal、assert、条件、访问器）。
-- `Code`（2974 行）、`Items`（1066）、`StringConcat`（778）、`Gen`（4333）、`ClassWriter`（2261）、`PoolWriter`、`CRTable`、`StackMapTableFrame`（370）。
-- `JNIWriter` 1:1。
+- `TransTypes` (2328 lines: cast/coerce/retype/bridges/translateClass).
+- `TransPatterns` (~2780 lines) and `LambdaToMethod` (10241 lines;
+  indy/metafactory, dedup, static capture).
+- `Lower` (8775 lines, all visitors: StringConcat, TWR, enum/record, class
+  literals, assert, conditionals, accessors).
+- `Code` (2974), `Items` (1066), `StringConcat` (778), `Gen` (4333),
+  `ClassWriter` (2261), `PoolWriter`, `CRTable`, `StackMapTableFrame` (370).
+- `JNIWriter` 1:1.
 
-### 2.10 装配与模块
+### 2.10 Assembly and modules
 
-- `mini_compiler` 装配 JavaCompiler 链：parse → modules → enter → process → attr → flow → desugar(transTypes→TransPatterns→LambdaToMethod→Lower) → gen；`should-stop` 策略（PARSE/ENTER/PROCESS/ATTR/FLOW/TRANSTYPES/TRANSPATTERNS/UNLAMBDA/LOWER/GENERATE）。
-- 模块测试（module-info uses/provides）真实端到端通过；`java.home` 发现顺序修正（JAVA_HOME → PATH → 基线 JDK 17）。
+- `mini_compiler` wires the JavaCompiler chain: parse -> modules -> enter ->
+  process -> attr -> flow -> desugar (transTypes -> TransPatterns ->
+  LambdaToMethod -> Lower) -> gen; `should-stop` supports PARSE/ENTER/
+  PROCESS/ATTR/FLOW/TRANSTYPES/TRANSPATTERNS/UNLAMBDA/LOWER/GENERATE.
+- Module tests (module-info uses/provides) pass end to end; `java.home`
+  discovery order fixed (JAVA_HOME -> PATH -> baseline JDK 17).
 
-### 2.11 债务清理（10-27/28）
+### 2.11 Debt cleanup (10-27/28)
 
-- `unimplemented!` 从 ~349 逐批降到 **0**；`unreachable!` 102 → **0**（统一 `util/assert` 的 Assert.error 语义）。
-- `let _` 清理 424 → 412（保留有依据的）；panic 分类表（`AUDIT_PANIC_TABLE.md` 237 行）。
-- 诊断审计（935 个工厂）：wired 639 / 可接线 67 / 未移植 40 / 范围外 24 / 官方无触发 165。
+- `unimplemented!` reduced from ~349 to **0** in batches; `unreachable!`
+  102 -> **0** (unified `util/assert` Assert.error semantics).
+- `let _` cleanup 424 -> 412 (justified exceptions kept); panic
+  classification table (`AUDIT_PANIC_TABLE.md`, 237 lines).
+- Diagnostic audit (935 factories): wired 639 / wireable 67 / not ported 40 /
+  out of scope 24 / no upstream trigger 165.
 
-### 2.12 真实项目攻坚（Gson / okhttp）
+### 2.12 Real projects (Gson / OkHttp)
 
-- **Gson 2.10.1（80 源）**：从 161 个诊断/0 class → 13 → 10 → **0 错误、207 class 逐字节一致**；随后 Gson JUnit 1258/2（与官方一致）。
-- **okhttp 3.14.9（229 源）**：0 错误；okhttp 官方 JUnit 默认 4 类 416 tests、internal 15 类 256 tests 全绿。
-- 关键根因：`Infer.instantiateMethod` 自加参数检查、`finishImports` 时序、`ResolvedConstructorType.overloadCheck` 非官方特判、`InferenceException` 捕获、`speculativeTypes` 身份键。
+- **Gson 2.10.1 (80 sources)**: from 161 diagnostics/0 classes to 13 -> 10 ->
+  **0 errors and 207 byte-identical classes**; the Gson JUnit suite then
+  reported 1258/2, matching javac.
+- **OkHttp 3.14.9 (229 sources)**: 0 errors; the official JUnit suites passed
+  (4 classes / 416 tests; internal 15 classes / 256 tests).
+- Root causes: the extra parameter check in `Infer.instantiateMethod`, the
+  `finishImports` ordering, the non-upstream `ResolvedConstructorType.
+  overloadCheck` special case, `InferenceException` catching, and the
+  `speculativeTypes` identity key.
 
-### 2.13 诊断语料库
+### 2.13 Diagnostic corpus
 
-- 官方 langtools 669 个诊断示例，与固化 expected 归一化比对：547 → 612 → **602 通过 / 0 失败 / 67 跳过**。
-- 67 skip 白名单：annotation-processing 47、deprecated-source 12、custom-file-manager 2、modules-automatic 2、jvm-stacktrace 1、plugin 1、verbose 1、deprecated-profile 1。
+- 669 upstream langtools examples compared against checked-in expected
+  output: 547 -> 612 -> **602 pass / 0 fail / 67 skip** at the time.
+- Skip whitelist: annotation processing 47, deprecated source 12, custom file
+  manager 2, automatic modules 2, JVM stack trace 1, plugin 1, verbose 1,
+  deprecated profile 1.
 
-### 2.14 CLI 对齐
+### 2.14 CLI parity
 
-- 官方帮助/扩展帮助/版本/无参/非法选项/文件不存在/退出码；`@argfile`（`#` 注释、空白分隔）。
-- `--help-lint`（31 key + all/none，逐字节一致）、`-Xstdout`（含 CRLF 的 `LineSeparatorWriter`）、`-J<flag>`（含 `-J-Duser.language` 影响诊断）。
-- 诊断语言：Windows UI 语言检测；`-J-Duser.language` 注入进程默认 locale。
-- 移除废弃机制：`-profile`、`-source 7` 对应语料标记 skip，不实现。
+- Official help/extended help/version/no-args/invalid option/file not found/
+  exit codes; `@argfile` (`#` comments, whitespace-separated).
+- `--help-lint` (31 keys plus all/none, byte-identical), `-Xstdout`
+  (`LineSeparatorWriter`, including CRLF), `-J<flag>` (including
+  `-J-Duser.language` affecting diagnostics).
+- Diagnostic language: Windows UI language detection; `-J-Duser.language`
+  installs the process default locale.
+- Deprecated mechanisms removed: `-profile` and `-source 7` are skipped in
+  the corpus and not implemented.
 
-### 2.15 性能
+### 2.15 Performance
 
-- 坑：仓库根 `-cp .` 扫描 `internal/reference` 导致单文件 45 s；跳过 `internal/reference` 后 1.26 s（干净目录 0.70 s）。
-- release：fat LTO + codegen-units=1；`target-cpu=native`（本机基准）。
-- 优化：`Name` 去 bytes（共享 name table，修正版通过）、`FxNameMap`（预分配）、`Symtab` flat-name 索引、inapplicable 失败通道 Result 化（-17.5%）、`javac-zip` 整文件驻留 + rawzip slice + zlib-rs（-16~21%）。
-- 结果（2026-10-31）：Gson release 0.973 s（javac 2.40 s）；okhttp release 24.28 s（javac 8.17 s）。E2E 计划记录 Gson release 中位数 **0.82 s vs javac 2.44 s**。
-- 不可行方案登记：PGO（缺 profiler_builtins）、mimalloc（缺完整 MinGW/Windows SDK）、samply（ETW GBK 崩溃，本地补丁不入库）。
+- Pitfall: `-cp .` in the repository root scanned `internal/reference` and
+  made a single-file compile take 45 s; skipping it yields 1.26 s (0.70 s in
+  a clean directory).
+- Release: fat LTO + codegen-units=1; `target-cpu=native` for local
+  benchmarks.
+- Optimizations: `Name` without bytes (shared name table, corrected
+  version), `FxNameMap` (preallocated), flat-name index in `Symtab`,
+  Result-based inapplicable channel (-17.5%), `javac-zip` whole-file
+  residency + rawzip slice + zlib-rs (-16 to -21%).
+- Results (2026-10-31): Gson release 0.973 s (javac 2.40 s); OkHttp release
+  24.28 s (javac 8.17 s). The E2E plan records a Gson release median of
+  **0.82 s vs javac 2.44 s**.
+- Infeasible approaches: PGO (missing `profiler_builtins`), mimalloc (needs
+  a full MinGW/Windows SDK), samply (ETW GBK crash; local patch not
+  committed).
 
-### 2.16 字节一致性攻坚（okhttp 69 → 0）
+### 2.16 Byte-parity effort (OkHttp 69 -> 0)
 
-- `InnerClasses` 缺被引用成员类（`SignatureGenerator.classReference`→`enterInner`，合并签名类引用）。
-- lambda 合成方法 `LineNumberTable` 行号（lambda 体定位到 lambda 表达式；官方默认关闭 dedup）。
-- `EnclosingMethod` 用 lambda 原始外层方法；本地类名索引键用外层类 flatname。
-- 常量池 key：`Symbol.poolKey = Pair(newOwner, baseSymbol())`——继承接口方法按调用点克隆、mergeAbstracts 用身份 key、import 作用域克隆补 `baseSymbol`。
-- `try-with-resources` 异常路径 `make.pos` 恢复；字符串 switch 合成节点定位到 switch 语句。
-- 最终：**okhttp 547/547 字节一致，Gson 207/207 字节一致**。
+- `InnerClasses` missing referenced member classes
+  (`SignatureGenerator.classReference` -> `enterInner`, merging signature
+  class references).
+- Lambda synthetic methods' `LineNumberTable` (lambda body positioned at the
+  lambda expression; upstream dedup disabled by default).
+- `EnclosingMethod` uses the lambda's original enclosing method; local class
+  name index keys use the enclosing class flat name.
+- Constant-pool key: `Symbol.poolKey = Pair(newOwner, baseSymbol())`;
+  inherited interface methods are cloned per call site, `mergeAbstracts`
+  uses identity keys, and import-scope clones get `baseSymbol`.
+- `try-with-resources` restores `make.pos` on exception paths; string-switch
+  synthetic nodes are positioned at the switch statement.
+- Final: **OkHttp 547/547, Gson 207/207** byte-identical at the time.
 
-### 2.17 E2E 计划与门禁
+### 2.17 E2E plan and gates
 
-- `docs/e2e-test-plan.md` + `scripts/e2e.ps1`：L1 单元（846）、L2 诊断语料（669）、L3 项目字节（Gson/okhttp）、L4 CLI、L5 性能。
-- 每次提交 L1 全绿；每日 L2+L3+L4；发布前 L1-L5。
+- `docs/e2e-test-plan.md` plus `scripts/e2e.ps1`: L1 unit (846), L2
+  diagnostics (669), L3 project bytes (Gson/OkHttp), L4 CLI, L5 performance.
+- L1 green on every commit; L2+L3+L4 daily; L1-L5 before release.
 
-### 2.18 诊断顺序攻坚（本会话，2026-11-01）
+### 2.18 Diagnostic-order effort (2026-11-01)
 
-问题：okhttp 诊断内容/位置/数量已一致，但 2 条 warning 相对顺序不同（`RecordedRequest.java:139:17`、`FakeSSLSession.java:73:10`）。
+Problem: OkHttp diagnostics matched in content/position/count, but two
+warnings were ordered differently (`RecordedRequest.java:139:17`,
+`FakeSSLSession.java:73:10`). The earlier "HashMap iteration order"
+conclusion was wrong; the real causes were:
 
-**此前的"HashMap 迭代序 → 跨语言不可复现"结论被证明是错的。** 真实根因（按官方源码修复）：
+1. The port lacked the `TypeEnter` phase-queue semantics
+   (`Phase.completeEnvs` `firstToComplete`, `AbstractMembersPhase`
+   `todo/completing`, `HierarchyPhase` as class completer, `TypeEnter.java:
+   249-1022`); the `Phase` structure, `topLevelPhase`, and
+   `HierarchyCompleter` were added.
+2. `Resolve.member_scope` did not complete `Symbol.members()` first, so
+   `Http2Reader` was appended late (port #153 vs javac #73).
+3. `TypeEnter.complete` did not reinstall the completer when completion was
+   closed (upstream `sym.completer = this`).
+4. `MemberEnter` did not complete classes referenced by member types
+   (upstream `attribType` completion side effect).
+5. The deferred lint queue must be keyed by the `JCTree` object identity
+   (`tree.pos()`), not by a numeric position; the port merged or flushed
+   same-offset trees across files (a spurious `FileSystem.java:57:9`).
+6. `Check.checkDeprecated` must be deferred; `Attr.visitMethodDef`/
+   `visitVarDef` must `setPos(tree.pos())` at declaration and `flush(tree.
+   pos())` in a finally block; class flush moved after `attribClassBody`.
+7. `warnOnExplicitStrictfp` no longer sets a position (upstream only
+   reports; the caller sets the key).
 
-1. 端口缺 `TypeEnter` 阶段队列语义：`Phase.completeEnvs` 的 `firstToComplete`、`AbstractMembersPhase` 的 `todo/completing`、`HierarchyPhase` 作为 class completer（`TypeEnter.java:249-1022`）；`Phase` 结构、`topLevelPhase`、`HierarchyCompleter` 全部落地。
-2. `Resolve.member_scope` 未实现 `Symbol.members()`（任何带 completer 的符号先 complete），`Http2Reader` 因此延迟到测试类才 append（#153 vs javac #73）。
-3. `TypeEnter.complete` 在 completion 关闭时未重装 completer（官方 `sym.completer = this`）。
-4. `MemberEnter` 未完成成员类型引用的类（官方 `attribType` 的完成副作用）。
-5. 延迟 lint 队列键：官方以 `JCTree` 对象身份（`tree.pos()`）为键，端口用数值位置，跨文件同偏移会误 flush（出现 `FileSystem.java:57:9` 虚假诊断）。
-6. `Check.checkDeprecated` 应为 deferred；`Attr.visitMethodDef/visitVarDef` 需在声明期 `setPos(tree.pos())` 并在 finally `flush(tree.pos())`；类 flush 移到 `attribClassBody` 之后。
-7. `warnOnExplicitStrictfp` 去掉端口自加的 `setPos`（官方只 report，键由调用方设置）。
+Result: OkHttp `todo` append order **229/229**, `-XDrawDiagnostics`
+**11/11 lines positionally identical**, with Gson 207/207, OkHttp 547/547,
+lib 846, and E2E 8/8 preserved.
 
-结果：okhttp `todo` append 顺序 **229/229**、`-XDrawDiagnostics` **11/11 行逐行一致（positional diff 0）**；Gson 207/207、okhttp 547/547、846 lib、E2E 8/8 全部保持。
+## 3. Key technical decisions
 
-## 3. 关键技术决策
-
-| 决策 | 内容 | 依据 |
+| Decision | Content | Rationale |
 |---|---|---|
-| arena id | `TreeId`/`SymbolId`/`TypeId` 代替对象引用 | ADR 0001 |
-| 服务显式传参 | 无全局 Context；关键服务显式传入 | ADR 0001 |
-| 诊断资源 | 官方 `.properties` `include_str!` 嵌入 + 类型化工厂 | `compiler.properties` |
-| 中文补丁 | `compiler_zh_CN.properties` 追加 24 条，覆盖 936/936 | 本地化 |
-| 重入适配 | 字段级 `Cell/RefCell` + 短借用；`complete_with_attr` 贯穿 Attr 链 | Java 单线程重入 vs Rust 借用 |
-| 官方源码标注 | 文件头 `Origin: … @ 982d53c`；`docs/PORTING_MAP.md` 记录映射 | 可审计 |
-| 资源读取 | JRT/ct.sym/jmod/zip 常驻内存 + 索引 | 性能 |
+| arena ids | `TreeId`/`SymbolId`/`TypeId` instead of object references | ADR 0001 |
+| explicit services | no global context; key services passed explicitly | ADR 0001 |
+| diagnostic resources | upstream `.properties` embedded with `include_str!` plus typed factories | `compiler.properties` |
+| Chinese patches | 24 entries appended to `compiler_zh_CN.properties`, 936/936 coverage | localization |
+| reentrancy adaptation | field-level `Cell`/`RefCell` with short borrows; `complete_with_attr` through the Attr chain | Java single-thread reentrancy vs Rust borrows |
+| traceability | per-file registry in `docs/PORTING_MAP.md` (headers are ordinary module docs) | auditability |
+| resource reads | JRT/ct.sym/jmod/zip resident in memory with indexes | performance |
 
-## 4. 验证矩阵（当前）
+## 4. Verification matrix (current)
 
-| 项目 | 结果 |
+| Area | Result |
 |---|---|
-| Gson 字节 | **207/207** |
-| okhttp 字节 | **547/547** |
-| okhttp `-XDrawDiagnostics` | **11 行，逐行一致** |
-| okhttp append 顺序（探针） | **229/229** |
-| `javac-core --lib` | **846 passed, 0 failed** |
-| Java 9–17 feature-matrix（23 单元） | **23/23** |
-| CLI 集成（cli/cli_parity/diag_examples/diagnostic_corpus） | 5 / 18 / 1 / 1 全过 |
-| diag-corpus | **602 pass, 0 fail, 67 skip**（共 669） |
-| `scripts/e2e.ps1 -IncludeOkhttp` | **8/8** |
-| Gson release 性能 | **0.82 s vs javac 2.44 s**（5 次中位数） |
+| Gson bytes | **208/208** |
+| OkHttp bytes | **542/542** |
+| Guava bytes | **1970/1970** |
+| OkHttp `-XDrawDiagnostics` | 11 lines, positionally identical |
+| OkHttp append order (probe) | 229/229 |
+| `javac-core --lib` | **743 passed, 0 failed** |
+| Java 9-17 feature matrix | **43/43** |
+| CLI integration | 5/5 |
+| diag-corpus | **588 pass, 14 fail, 67 skip** (602 comparable) |
+| Gson release performance | ~0.82 s vs javac ~2.44 s (median of 5) |
 
-## 5. 已知缺口（明确不实现或暂不纳入门禁）
+## 5. Known gaps
 
-1. JVM 宿主机制：注解处理器（`-processor`/`-proc:only`）、`-Xplugin`、`-doe` JVM 栈、自定义 `-filemanager`——本质不可行，语料 skip。
-2. 官方废弃机制：`-profile`、`-source 7`——不实现，语料 skip。
-3. 67 个 diag-corpus skip（见 §2.13）。
-4. 性能：okhttp release 仍慢于 javac（24.28 s vs 8.17 s，2026-10-31 口径），Gson 已反超。
-5. 可选增强：okhttp 11 行诊断加入 L2 门禁命令；实时对照模式（不依赖固化 expected）；CI。
+1. JVM-host mechanisms: annotation processors (`-processor`/`-proc:only`),
+   `-Xplugin`, `-doe` stack traces, custom `-filemanager`; omitted by
+   design and skipped in the corpus.
+2. Deprecated mechanisms (`-profile`, `-source 7`) are not implemented.
+3. 67 diagnostic skips (see 2.13).
+4. Performance: OkHttp release remains slower than javac (24.28 s vs
+   8.17 s at the 2026-10-31 measurement); Gson is faster.
+5. Optional: add the 11 OkHttp diagnostic lines to the L2 gate; add live
+   reference mode instead of checked-in expected output; add CI.
+6. Declared-position semantics remain split between diagnostics (name token)
+   and line-number tables (declaration start); see PN-001.
 
-## 6. 方法论与教训
+## 6. Methodology
 
-- **根因优先**：先证据链（javac 侧补丁打印 + 端口探针），再改代码；一次只动一个变量。
-- **官方源码是唯一裁判**：所有修复都指向具体文件/方法/行为；端口自加适配必须标注理由，能被官方语义推翻就推翻。
-- **不迷信已有结论**：`HashMap` 排序结论被本会话推翻——诊断顺序实际由 TypeEnter 阶段队列与延迟 lint 键决定。
-- **探针用完即删**：临时 `eprintln!`、`DSH_TRACE_*` 必须清理，避免污染诊断/性能。
-- **隔离 cwd 再测性能**：`-cp .` 会扫描仓库参考树。
-- **历史债务逐批清零**：`unimplemented`/`unreachable`/静默占位不留尾巴。
-- **测试与文档同步**：E2E 计划、门禁、skip 白名单、方案失败记录（PGO/mimalloc/samply）都落盘。
+- **Root cause first**: build an evidence chain (javac-side patched prints
+  and port probes) before changing code; change one variable at a time.
+- **Upstream source is the only judge**: every fix points to a concrete
+  file/method/behavior; port-specific adaptations must justify themselves and
+  are removed when upstream semantics contradict them.
+- **Do not trust earlier conclusions**: the `HashMap` ordering theory was
+  disproved; diagnostic order comes from the TypeEnter phase queue and the
+  deferred-lint key.
+- **Remove probes**: temporary `eprintln!` and `DSH_TRACE_*` must be cleaned
+  up.
+- **Isolate the working directory before measuring performance**: `-cp .`
+  scans the reference tree.
+- **Pay down debt in batches**: no leftover `unimplemented`/`unreachable`/
+  silent placeholders.
+- **Keep tests and docs in sync**: the E2E plan, gates, skip whitelist, and
+  failed approaches (PGO/mimalloc/samply) are all recorded.
 
-## 7. 提交索引（按主题）
+## 7. Commit index (by topic)
 
-| 主题 | 代表提交 |
+| Topic | Representative commits |
 |---|---|
-| P0 基础设施 | `4b08a1e` |
-| 解析器/tree oracle | `fe31f28`、`9a04e88` |
-| ClassReader/ClassFinder | `76d0437`、`4972554`、`ac2da35` |
-| Enter/TypeEnter | `c242a3c`、`50aedec`、`4af90e3` |
-| Resolve/Types/Infer | `1be2159`、`62a76ec`、`ff75f6d` |
-| Flow/Lint/Annotate | `b2d12f2`、`66cfcbe`、`a66c58c` |
-| Attr 全量 | `3c17e8e`、`68eefac` |
-| 后端 | `b34ebd2`、`5778054`、`d7650b7`、`2f8f51d` |
-| 债务清零 | `f496fe9`、`5b664fe` |
-| Lambda/Pattern | `4973fa9`、`9356682` |
-| Gson 字节一致 | `b979d25` |
-| okhttp 全绿 | `e0a5d1f`、`f0f0894` |
-| CLI | `3758e21`、`ce38d06` |
-| 性能 | `393a588`、`b9a47e5`、`b34685e` |
-| 字节差异攻坚 | `77dac48`、`b4eb1f4`、`b02f67a` |
-| 诊断顺序攻坚 | `8459da1`、`0e16acd` |
-| 测试 harness | `8486e92` |
+| P0 infrastructure | `4b08a1e` |
+| parser/tree oracle | `fe31f28`, `9a04e88` |
+| ClassReader/ClassFinder | `76d0437`, `4972554`, `ac2da35` |
+| Enter/TypeEnter | `c242a3c`, `50aedec`, `4af90e3` |
+| Resolve/Types/Infer | `1be2159`, `62a76ec`, `ff75f6d` |
+| Flow/Lint/Annotate | `b2d12f2`, `66cfcbe`, `a66c58c` |
+| full Attr | `3c17e8e`, `68eefac` |
+| backend | `b34ebd2`, `5778054`, `d7650b7`, `2f8f51d` |
+| debt cleanup | `f496fe9`, `5b664fe` |
+| lambda/patterns | `4973fa9`, `9356682` |
+| Gson byte parity | `b979d25` |
+| OkHttp green | `e0a5d1f`, `f0f0894` |
+| CLI | `3758e21`, `ce38d06` |
+| performance | `393a588`, `b9a47e5`, `b34685e` |
+| byte-diff effort | `77dac48`, `b4eb1f4`, `b02f67a` |
+| diagnostic order | `8459da1`, `0e16acd` |
+| test harness | `8486e92` |
 
-## 8. 下一步（建议，非承诺）
+## 8. Next steps (not commitments)
 
-- 把 okhttp `-XDrawDiagnostics` 11 行逐行对比加入 L2 门禁命令。
-- okhttp release 性能基准纳入 L5，建立回归阈值。
-- diag-corpus 实时对照模式（防止 JDK 升级后 expected 漂移）。
-- feature-matrix 已 23/23。声明位置按官方规则区分：实例字段取 `mods.pos`（有注解时），
-  static 字段取名字 token；`Lower.lower_compact_record_ctor` 改用 `TreeInfo.recordFields`
-  语义（不依赖 Flow 的 `UNINITIALIZED_FIELD`）；`Flow.initParam/visitLambda` 跳过未分配 adr 的变量。
-- CI 串联 L1-L4。
+- Add the 11 OkHttp `-XDrawDiagnostics` lines to the L2 gate.
+- Add an OkHttp release benchmark to L5 with a regression threshold.
+- Add live reference mode to the diagnostic corpus.
+- Resolve PN-001 (declaration positions and line-number sources).
+- Wire L1-L4 into CI.

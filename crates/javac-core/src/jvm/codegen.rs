@@ -1,7 +1,10 @@
-//! This pass maps flat Java (without inner classes) to bytecodes.
+//! Bytecode generation.
 //!
-//! 对应：com/sun/tools/javac/jvm/Gen.java
-//! 偏差/登记：见 docs/PORTING_MAP.md#jvmcodegen
+//! `Gen` lowers attributed and desugared trees to JVM instructions: it walks
+//! statements and expressions, emits code through `Code`, and records line
+//! numbers, local variable tables, and stack-map frames. Constant-pool
+//! management and class-file serialization live in `ClassWriter` and
+//! `PoolWriter`.
 
 use std::cell::RefCell;
 use std::collections::HashMap;

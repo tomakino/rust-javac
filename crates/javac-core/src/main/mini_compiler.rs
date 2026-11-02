@@ -1,7 +1,9 @@
-//! Minimal compiler wiring for the compilation pipeline.
+//! Minimal in-process compilation driver.
 //!
-//! 对应：com/sun/tools/javac/main/JavaCompiler.java（minimal wiring subset）
-//! 偏差/登记：见 docs/PORTING_MAP.md#mainmini-compiler
+//! Runs the javac phase sequence (parse, enter, attribute, flow, desugar,
+//! generate) over an in-memory source set and writes class files through the
+//! standard file manager. The `JavaCompiler` task/listener infrastructure and
+//! annotation processing are intentionally omitted.
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};

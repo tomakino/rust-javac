@@ -1,86 +1,103 @@
-# rust-javac 端到端测试计划
+# rust-javac end-to-end test plan
 
-## 1. 目标与范围
+## 1. Goals and scope
 
-**E2E 定义**：从命令行入口（`rust-javac.exe`）到最终产物（`.class`、诊断文本、退出码），与官方 `javac` 逐项对照；不测内部函数（那是 `--lib` 单元测试的职责）。
+**E2E definition**: from the command-line entry point (`rust-javac.exe`) to the
+final artifacts (`.class` files, diagnostic text, exit codes), compared item by
+item with the official `javac`; internal functions are out of scope (that is the
+job of the `--lib` unit tests).
 
-**覆盖**：CLI 解析 → 文件查找/读取 → 解析/进入/属性/流程/转译/降级/生成 → 输出/诊断/退出码 → 性能。
+**Covered**: CLI parsing -> file lookup/reading -> parse/enter/attr/flow/
+transTypes/lower/gen -> output/diagnostics/exit codes -> performance.
 
-**不覆盖（本质不可行）**：JVM 插件（`-Xplugin`）、注解处理器（`-processor`/`-proc:only`）、`-doe` 的 JVM 堆栈、自定义 `-filemanager`、`-profile`/`-source 7` 等废弃机制。
+**Not covered (not feasible by design)**: JVM plugins (`-Xplugin`), annotation
+processors (`-processor`/`-proc:only`), JVM stack traces for `-doe`, custom
+`-filemanager`, and deprecated mechanisms such as `-profile`/`-source 7`.
 
-## 2. 测试分层
+## 2. Test layers
 
-| 层 | 内容 | 命令 | 耗时 |
+| Layer | Content | Command | Time |
 |---|---|---|---|
-| L1 单元 | 846 个 lib 测试 | `cargo test -p javac-core --lib` | ~3s |
-| L2 诊断语料 | 669 官方示例（全文对比） | `cargo test -p rust-javac --test diag_examples` | ~40s |
-| L3 项目字节 | Gson 207 class、okhttp 547 class | `scripts/e2e.ps1` | ~10s / ~90s |
-| L4 CLI 行为 | help/版本/错误/退出码 | `scripts/e2e.ps1` | ~5s |
-| L5 性能 | release 基准 | `scripts/e2e.ps1 -Perf` | ~10s |
+| L1 unit | 743 lib tests | `cargo test -p javac-core --lib` | ~3 s |
+| L2 diagnostics | 602 comparable upstream examples | `py scripts/check_examples.py` | ~50 s |
+| L3 project bytes | Gson 208 classes, OkHttp 542, Guava 1970 | `py scripts/check_gson.py` etc. | ~50 s |
+| L4 CLI behavior | help/version/errors/exit codes | `py scripts/check_cli.py` | ~5 s |
+| L5 performance | release benchmarks | `py scripts/bench_rust_javac.py` | ~10 s |
 
-## 3. L4 CLI 行为用例矩阵
+## 3. L4 CLI behavior matrix
 
-| 用例 | 预期（对齐 javac） |
+| Case | Expected (aligned with javac) |
 |---|---|
-| `--help` | 标准选项表（含 `-J<flag>` 行） |
-| `--help-extra` | 扩展选项表，**不含** `-J` |
-| `--help-lint` | 与 javac **逐字节一致**（31 key + `all`/`none`） |
+| `--help` | standard option table (including the `-J<flag>` line) |
+| `--help-extra` | extended option table, **without** `-J` |
+| `--help-lint` | **byte-identical** to javac (31 keys plus `all`/`none`) |
 | `--version` / `--full-version` | `javac 17.0.19` |
-| 无参数 | 打印标准 help，退出码 **2** |
-| `-J<flag>` | 被 launcher 吞掉（`-J-Duser.language=en` 生效） |
-| `-Xstdout <file>` | 诊断写入文件、控制台空、**文件与 javac 字节一致**（含 CRLF） |
-| `@argfile` | 读参数文件（`#` 注释、空白分隔） |
-| 非法选项 | `error: invalid flag: <arg>` + usage，退出码 **2** |
-| 不存在的源文件 | `error: file not found: <path>` + usage，退出码 **2** |
-| `-Werror` | 有警告时 `error: warnings found and -Werror specified`，退出码 **1** |
-| `-Xmaxerrs N` / `-Xmaxwarns N` | 超过上限后截断 + 汇总行 |
-| `-encoding` | UTF-8 / GBK 正确读源；无效编码报错 |
-| `-Xlint:all` / `-Xlint:none` / `-Xlint:-rawtypes` | 警告集合正确 |
+| no arguments | standard help, exit code **2** |
+| `-J<flag>` | consumed by the launcher (`-J-Duser.language=en` takes effect) |
+| `-Xstdout <file>` | diagnostics go to the file, console empty, **file byte-identical** to javac (including CRLF) |
+| `@argfile` | reads the argument file (`#` comments, whitespace-separated) |
+| invalid option | `error: invalid flag: <arg>` plus usage, exit code **2** |
+| missing source file | `error: file not found: <path>` plus usage, exit code **2** |
+| `-Werror` | `error: warnings found and -Werror specified` when warnings exist, exit code **1** |
+| `-Xmaxerrs N` / `-Xmaxwarns N` | truncation after the limit plus a summary line |
+| `-encoding` | correct UTF-8/GBK reading; an invalid encoding is an error |
+| `-Xlint:all` / `-Xlint:none` / `-Xlint:-rawtypes` | correct warning set |
 
-## 4. L3 项目字节与诊断
+## 4. L3 project bytes and diagnostics
 
-| 用例 | 通过标准 |
+| Case | Pass criterion |
 |---|---|
-| Gson（80 源 → 207 class） | **207/207 SHA-256 一致**；`-XDrawDiagnostics` diff 空 |
-| okhttp（229 源 → 547 class） | **547/547 一致**；诊断 diff 空（当前有 3 类已知差异，见 §7） |
-| 编译产物可运行（可选） | 用 `java` 跑 rust 编译出的 class（如 JUnit），验证运行时行为等价 |
-| 增量/重复运行 | 同一输入跑 2 次，输出字节稳定 |
+| Gson (80 sources -> 208 classes) | **208/208 SHA-256 identical**; `-XDrawDiagnostics` diff empty |
+| OkHttp (229 sources -> 542 classes) | **542/542 identical**; diagnostic diff empty |
+| Guava (630 sources -> 1970 classes) | **1970/1970 identical** |
+| Produced classes run (optional) | run JUnit with classes compiled by rust-javac |
+| Incremental/repeat runs | the same input twice produces stable bytes |
 
-## 5. L2 诊断语料门禁
+## 5. L2 diagnostic corpus gate
 
-- `fail=0`；
-- `skip` **白名单固定为 67**：annotation-processing=47、custom-file-manager=2、jvm-stacktrace=1、modules-automatic=2、plugin=1、verbose=1、deprecated-profile=1、deprecated-source=12；
-- **实时对照模式（建议新增）**：不依赖固化 `expected/`，用 `javac` 现场生成参考，防止 JDK 升级后 expected 漂移。
+- Target: `fail=0`; current: 588 pass / 14 fail / 67 skip out of 602.
+- The `skip` whitelist is fixed: annotation processing, custom file managers,
+  JVM stack traces, automatic modules, plugins, `-verbose`, and deprecated
+  `-profile`/`-source` mechanisms.
+- Live reference mode (recommended): generate the reference with `javac` at
+  run time instead of relying only on checked-in `expected/` files, so a JDK
+  upgrade cannot silently rot the baselines.
 
-## 6. L5 性能基准（release）
+## 6. L5 performance baseline (release)
 
-| 用例 | 当前基线 | 阈值 |
+| Case | Baseline | Threshold |
 |---|---|---|
-| Gson 编译 | rust release **0.82s** vs javac **2.44s** | rust ≤ javac × 1.2 |
-| okhttp 编译 | 待测（release） | 同上，另设回归阈值（如 ≤ 上次 × 1.1） |
-| 冷启动 vs 热运行 | 各跑 5 次取中位数 | 记录趋势 |
+| Gson compilation | rust release **~0.8 s** vs javac **~2.4 s** | rust <= javac x 1.2 |
+| OkHttp compilation | see the benchmark script | same, plus a regression threshold |
+| Cold start vs warm runs | median of 5 runs | record the trend |
 
-## 7. 已知缺口（不纳入门禁）
+## 7. Known gaps (outside the gate)
 
-1. okhttp 诊断（`-XDrawDiagnostics`）的**内容、位置、数量与顺序**已与 javac 完全一致（11 行，逐行 positional diff = 0）。此前的 2 条顺序差异（`RecordedRequest.java:139:17`、`FakeSSLSession.java:73:10`）根因**不是** `HashMap` 迭代序，而是两处源码级偏差：(a) 端口缺少官方 `TypeEnter` 的阶段队列语义（`Phase.completeEnvs` 的 `firstToComplete`、`AbstractMembersPhase` 的 `todo/completing`、`HierarchyPhase` 作为 class completer）以及 `Symbol.members()` 的完成副作用；(b) 延迟 lint 队列的键：官方以 `JCTree` 对象身份（`tree.pos()`）为键，端口原以数值位置为键，跨文件同偏移会误合并/误 flush。两处均已按官方源码修复（`type_enter.rs`、`resolve.rs`、`member_enter.rs`、`deferred_lint_handler.rs`、`attr.rs`、`check.rs`），建议将 okhttp 原始诊断（11 行逐行一致）补充进 L2 门禁命令；
-2. diag-corpus 的 67 个 SKIP：47 个注解处理、1 个插件、1 个 `-verbose`、1 个 `-doe`、2 个自动模块、2 个自定义 FileManager、2 个废弃机制；
-3. `-proc:none`/`-proc:only` 未支持（JVM 处理器）；
-4. expected 为固化文本，随 JDK 升级可能过时（建议加实时对照）。
+1. Module-system diagnostics: ten `check_examples` cases fail (see
+   `docs/PORTING_NOTES.md`, PN-003).
+2. `IllegalSignature` generation error is missing (PN-004).
+3. 67 diagnostic cases are skipped: annotation processing, plugin,
+   `-verbose`, `-doe`, automatic modules, custom file managers, deprecated
+   mechanisms.
+4. `-proc:none`/`-proc:only` are not supported.
+5. `expected/` is checked-in text and can go stale after a JDK upgrade; add
+   live reference mode.
 
-## 8. 执行节奏与门禁
+## 8. Execution cadence
 
-- **每次提交**：L1（846）必须全绿；
-- **每日/大改**：L2（fail=0、skip=67）+ L3（Gson 207/207、okhttp 547/547）+ L3.5（feature-matrix 23 个单元，当前 21/23，见其 README 的两个已知差异）+ L4 CLI 用例；
-- **发布前**：全量 L1–L5 + 性能基准 + 冷启动；
-- **失败处理**：L2 失败按 `DIAG_EXAMPLES_VERBOSE=1` 看首个差异行；L3 失败用 `javap -v` 做常量池/指令 diff。
+- **Every code change**: L0 (`cargo test -p javac-core --lib`).
+- **Daily/large changes**: L2 + L3 (Gson/OkHttp/Guava) + L4.
+- **Before release**: full L0-L5 plus benchmarks.
+- **Failure triage**: L2 with `--filter` or verbose output for the first
+  diff; L3 with `javap -v` for constant-pool/instruction diffs.
 
-## 9. 脚本
+## 9. Scripts
 
-`scripts/e2e.ps1`：
-
-```powershell
-pwsh ./scripts/e2e.ps1                 # L3(Gson) + L4
-pwsh ./scripts/e2e.ps1 -IncludeOkhttp  # 加上 okhttp 字节对比
-pwsh ./scripts/e2e.ps1 -IncludeFeatureMatrix  # 加上 Java 9-17 feature-matrix
-pwsh ./scripts/e2e.ps1 -Perf           # 加上 L5 性能基准
+```text
+py scripts/gate.py                 # select the level for the current diff
+py scripts/check_examples.py       # diagnostic corpus (L2), with --filter
+py scripts/check_gson.py           # Gson byte parity (L3)
+py scripts/check_okhttp.py         # OkHttp byte parity (L3)
+py scripts/check_guava.py          # Guava byte parity (L3)
+py scripts/check_cli.py            # CLI behavior (L4)
 ```

@@ -1,11 +1,13 @@
-# rust-javac 移植映射（PORTING_MAP）
+# Porting Map
 
-本文件收纳每个 Rust 文件与官方 javac 的对应关系、移植状态，以及从文件头迁出的移植登记。
-源码文件头只保留职责、官方类、偏差链接（见 docs/STYLE.md）。
+This file records the per-module mapping between rust-javac and OpenJDK
+javac, together with the porting registry moved out of source headers.
+Source headers are ordinary module documentation; all porting metadata
+(upstream classes, status, original registries) is recorded here.
 
-## 总览
+## Overview
 
-| Rust 文件 | 官方类 | 状态 | 原头行数 |
+| Rust file | Upstream | Status | Original header lines |
 |---|---|---|---|
 | comp/infer.rs | com/sun/tools/javac/comp/Infer.java | ported | 48 |
 | comp/attr.rs | com/sun/tools/javac/comp/Attr.java | ported | 39 |
@@ -18,19 +20,23 @@
 | code/types.rs | com/sun/tools/javac/code/Types.java | ported | 134 |
 | main/mini_compiler.rs | com/sun/tools/javac/main/JavaCompiler.java | adapter | 13 |
 
-说明：
-- 10 个代表文件的条目已建立，原头部登记完全保留在下方 details 中。
-- 源码头部迁移分批进行：infer.rs、mini_compiler.rs、codegen.rs 为第一批；其余 7 个在 P0 第二批处理。
-- 新增文件时，按 STYLE.md 模板写头，并把登记追加到本文件。
+Notes:
+- Ten representative modules are registered here; their complete original
+  headers are preserved in the details blocks below.
+- Header migration is batched: infer.rs, mini_compiler.rs, and codegen.rs
+  are in the first batch; the remaining seven follow in the second P0
+  batch.
+- New modules follow the template in docs/STYLE.md and append their
+  registry here.
 
 ## compinfer
 
-- Rust：crates/javac-core/src/comp/infer.rs
-- 官方：com/sun/tools/javac/comp/Infer.java
-- 状态：ported（登记见下）
-- 原登记：// Origin: com/sun/tools/javac/comp/Infer.java @ 982d53c (jdk-17.0.19-ga)
+- Rust: crates/javac-core/src/comp/infer.rs
+- Upstream: com/sun/tools/javac/comp/Infer.java
+- Status: ported (registry below)
+- Original registry: com/sun/tools/javac/comp/Infer.java @ 982d53c (jdk-17.0.19-ga) (header migrated in P0 first batch)
 
-<details><summary>原文件头（迁移自源码）</summary>
+<details><summary>Original file header (migrated from source)</summary>
 
     #![allow(clippy::result_large_err, clippy::needless_pass_by_ref_mut)]
     // Origin: com/sun/tools/javac/comp/Infer.java @ 982d53c (jdk-17.0.19-ga)
@@ -85,12 +91,12 @@
 
 ## compattr
 
-- Rust：crates/javac-core/src/comp/attr.rs
-- 官方：com/sun/tools/javac/comp/Attr.java
-- 状态：ported（登记见下）
-- 原登记：// Origin: com/sun/tools/javac/comp/Attr.java @ 982d53c (jdk-17.0.19-ga)
+- Rust: crates/javac-core/src/comp/attr.rs
+- Upstream: com/sun/tools/javac/comp/Attr.java
+- Status: ported (registry below)
+- Original registry: com/sun/tools/javac/comp/Attr.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second batch))
 
-<details><summary>原文件头（迁移自源码）</summary>
+<details><summary>Original file header (migrated from source)</summary>
 
     #![allow(clippy::result_large_err)]
     // Origin: com/sun/tools/javac/comp/Attr.java @ 982d53c (jdk-17.0.19-ga)
@@ -136,12 +142,12 @@
 
 ## compcheck
 
-- Rust：crates/javac-core/src/comp/check.rs
-- 官方：com/sun/tools/javac/comp/Check.java
-- 状态：ported（登记见下）
-- 原登记：// Origin: com/sun/tools/javac/comp/Check.java @ 982d53c (jdk-17.0.19-ga)
+- Rust: crates/javac-core/src/comp/check.rs
+- Upstream: com/sun/tools/javac/comp/Check.java
+- Status: ported (registry below)
+- Original registry: com/sun/tools/javac/comp/Check.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second batch))
 
-<details><summary>原文件头（迁移自源码）</summary>
+<details><summary>Original file header (migrated from source)</summary>
 
 
     // Origin: com/sun/tools/javac/comp/Check.java @ 982d53c (jdk-17.0.19-ga)
@@ -174,12 +180,12 @@
 
 ## compresolve
 
-- Rust：crates/javac-core/src/comp/resolve.rs
-- 官方：com/sun/tools/javac/comp/Resolve.java
-- 状态：ported（登记见下）
-- 原登记：// Origin: com/sun/tools/javac/comp/Resolve.java @ 982d53c (jdk-17.0.19-ga)
+- Rust: crates/javac-core/src/comp/resolve.rs
+- Upstream: com/sun/tools/javac/comp/Resolve.java
+- Status: ported (registry below)
+- Original registry: com/sun/tools/javac/comp/Resolve.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second batch))
 
-<details><summary>原文件头（迁移自源码）</summary>
+<details><summary>Original file header (migrated from source)</summary>
 
     // PORTING_RULES: the upstream-shaped method-check code keeps large error
     // enums and nested conditionals; the lints are allowed locally (registered).
@@ -248,12 +254,12 @@
 
 ## complower
 
-- Rust：crates/javac-core/src/comp/lower.rs
-- 官方：com/sun/tools/javac/comp/Lower.java
-- 状态：ported（登记见下）
-- 原登记：// Origin: com/sun/tools/javac/comp/Lower.java @ 982d53c (jdk-17.0.19-ga)
+- Rust: crates/javac-core/src/comp/lower.rs
+- Upstream: com/sun/tools/javac/comp/Lower.java
+- Status: ported (registry below)
+- Original registry: com/sun/tools/javac/comp/Lower.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second batch))
 
-<details><summary>原文件头（迁移自源码）</summary>
+<details><summary>Original file header (migrated from source)</summary>
 
     // Origin: com/sun/tools/javac/comp/Lower.java @ 982d53c (jdk-17.0.19-ga)
 
@@ -274,12 +280,12 @@
 
 ## compflow
 
-- Rust：crates/javac-core/src/comp/flow.rs
-- 官方：com/sun/tools/javac/comp/Flow.java
-- 状态：ported（登记见下）
-- 原登记：// Origin: com/sun/tools/javac/comp/Flow.java @ 982d53c (jdk-17.0.19-ga)
+- Rust: crates/javac-core/src/comp/flow.rs
+- Upstream: com/sun/tools/javac/comp/Flow.java
+- Status: ported (registry below)
+- Original registry: com/sun/tools/javac/comp/Flow.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second batch))
 
-<details><summary>原文件头（迁移自源码）</summary>
+<details><summary>Original file header (migrated from source)</summary>
 
     // Origin: com/sun/tools/javac/comp/Flow.java @ 982d53c (jdk-17.0.19-ga)
     //
@@ -308,12 +314,12 @@
 
 ## jvmcodegen
 
-- Rust：crates/javac-core/src/jvm/codegen.rs
-- 官方：com/sun/tools/javac/jvm/Gen.java
-- 状态：ported（登记见下）
-- 原登记：// Source: com/sun/tools/javac/jvm/Gen.java
+- Rust: crates/javac-core/src/jvm/codegen.rs
+- Upstream: com/sun/tools/javac/jvm/Gen.java
+- Status: ported (registry below)
+- Original registry: com/sun/tools/javac/jvm/Gen.java (header migrated in P0 first batch)
 
-<details><summary>原文件头（迁移自源码）</summary>
+<details><summary>Original file header (migrated from source)</summary>
 
     // Source: com/sun/tools/javac/jvm/Gen.java
 
@@ -324,12 +330,12 @@
 
 ## parserjavac-parser
 
-- Rust：crates/javac-core/src/parser/javac_parser.rs
-- 官方：com/sun/tools/javac/parser/JavacParser.java
-- 状态：ported（登记见下）
-- 原登记：// Origin: com/sun/tools/javac/parser/JavacParser.java @ 982d53c (jdk-17.0.19-ga)
+- Rust: crates/javac-core/src/parser/javac_parser.rs
+- Upstream: com/sun/tools/javac/parser/JavacParser.java
+- Status: ported (registry below)
+- Original registry: com/sun/tools/javac/parser/JavacParser.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second batch))
 
-<details><summary>原文件头（迁移自源码）</summary>
+<details><summary>Original file header (migrated from source)</summary>
 
     // Origin: com/sun/tools/javac/parser/JavacParser.java @ 982d53c (jdk-17.0.19-ga)
     // Gap registration (method-level audit of the ported upstream class):
@@ -382,12 +388,12 @@
 
 ## codetypes
 
-- Rust：crates/javac-core/src/code/types.rs
-- 官方：com/sun/tools/javac/code/Types.java
-- 状态：ported（登记见下）
-- 原登记：// Origin: com/sun/tools/javac/code/Types.java @ 982d53c (jdk-17.0.19-ga)
+- Rust: crates/javac-core/src/code/types.rs
+- Upstream: com/sun/tools/javac/code/Types.java
+- Status: ported (registry below)
+- Original registry: com/sun/tools/javac/code/Types.java @ 982d53c (jdk-17.0.19-ga) (header migration pending (P0 second batch))
 
-<details><summary>原文件头（迁移自源码）</summary>
+<details><summary>Original file header (migrated from source)</summary>
 
     #![allow(clippy::result_large_err)]
     #![allow(clippy::type_complexity)]
@@ -528,12 +534,12 @@
 
 ## mainmini-compiler
 
-- Rust：crates/javac-core/src/main/mini_compiler.rs
-- 官方：com/sun/tools/javac/main/JavaCompiler.java
-- 状态：adapter（最小驱动，JavaCompiler 全量移植延后）
-- 原登记：// Source: com/sun/tools/javac/main/JavaCompiler.java (minimal wiring subset)
+- Rust: crates/javac-core/src/main/mini_compiler.rs
+- Upstream: com/sun/tools/javac/main/JavaCompiler.java
+- Status: adapter (minimal driver; the full JavaCompiler port is deferred)
+- Original registry: com/sun/tools/javac/main/JavaCompiler.java (minimal wiring subset) (header migrated in P0 first batch)
 
-<details><summary>原文件头（迁移自源码）</summary>
+<details><summary>Original file header (migrated from source)</summary>
 
     // Source: com/sun/tools/javac/main/JavaCompiler.java (minimal wiring subset)
 

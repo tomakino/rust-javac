@@ -1,111 +1,160 @@
-# rust-javac 移植偏差登记（PORTING_NOTES）
+# Porting Deviations
 
-本文件登记 rust-javac 与官方 javac（jdk17u @ 982d53c，jdk-17.0.19-ga）的已知行为偏差。
+This registry lists the known behavioral differences between rust-javac and
+OpenJDK javac at `jdk17u @ 982d53c` (jdk-17.0.19-ga).
 
-格式：每条一个编号（PN-xxx），包含：现象、官方行为、本地行为、影响、状态、计划阶段、验证方式。
-源码中只保留编号引用（见 docs/STYLE.md），详细内容集中在这里。
+Each entry has a stable id (`PN-xxx`), the observed behavior, the upstream
+behavior, the local behavior, the impact, the current status, and the plan.
+Source comments reference the id; the full record stays here.
 
-## PN-001 字段/参数的声明位置与 LineNumberTable 双来源
+## PN-001 Field and parameter declaration positions
 
-- 现象：3 个诊断用例的 caret 列偏左（DeprecatedAnnotationHasNoEffect、IllegalComboModifiers、VarNotIntializedInDefaultConstructor）。
-- 官方行为：JavacParser.variableDeclarators / variableDeclaratorId 取 token.pos（名字 token）；诊断位置来自 JCVariableDecl.pos（名字）；但字段初始化器在 LineNumberTable 的行号来自声明起点（带注解字段时是注解行，如 Guava CacheBuilder 的 295 行）。
-- 本地行为：parser 的字段/参数路径使用 mods.pos（声明起点），导致诊断 caret 指向修饰符；若改为名字，则 Guava 10 个类的字段初始化器行号差 1。
-- 影响：诊断语料 3 个 fail；或 Guava 10 类字节不一致（二者只能取一）。
-- 状态：已定位根因，已回滚改动（保持 Guava 位对位）。待配套修 Lower/Gen 的字段初始化器 statBegin 来源为 TreeInfo.getStartPos。
-- 计划：P1/P2（先用 getStartPos 修行号，再改 parser 位置）。
-- 验证：check_examples --filter <3 个用例>；check_guava。
+- Observed: three diagnostic examples place the caret on the first modifier
+  instead of the declared name: `DeprecatedAnnotationHasNoEffect`,
+  `IllegalComboModifiers`, `VarNotIntializedInDefaultConstructor`.
+- Upstream: `JavacParser.variableDeclarators` and `variableDeclaratorId`
+  take `token.pos` (the name token); `JCVariableDecl.pos` is the name, and
+  diagnostics use it. Line-number tables for field initializers, however,
+  are emitted from the declaration start (`TreeInfo.getStartPos`), which is
+  the annotation line for annotated fields (e.g. Guava `CacheBuilder` 295).
+- Local: the parser uses `mods.pos` for field and parameter declarations, so
+  diagnostics point at the modifiers. Switching to the name token aligns the
+  diagnostics but shifts the field-initializer line numbers in 10 Guava
+  classes by one.
+- Impact: either three diagnostic examples fail, or 10 Guava classes differ.
+- Status: root cause identified; the change was reverted to keep Guava
+  byte-identical. The missing piece is emitting field-initializer line
+  numbers from `TreeInfo.getStartPos` while keeping `VarDecl.pos` at the
+  name.
+- Plan: P1/P2 (fix the line-number source first, then the parser positions).
+- Verification: `check_examples.py --filter` for the three cases;
+  `check_guava.py`.
 
-## PN-002 dupTo 的 clone 标志
+## PN-002 `dupTo` clone flags
 
-- 现象：InferenceContext.dupTo 生成的副本与官方在 clone 标志/状态上存在差异（历史审计发现）。
-- 官方行为：dupTo 复制推理上下文并保持 clone 语义。
-- 本地行为：副本的部分标志未完全对齐。
-- 影响：暂未在现有语料中观察到字节差异；属于潜在风险。
-- 状态：已登记，未修复。
-- 计划：P3（错误模型/推断清理时一并审计）。
-- 验证：lib 单元测试 + Guava/Gson 位对位。
+- Observed: `InferenceContext.dupTo` produces copies whose clone flags and
+  cached state are not fully aligned with upstream.
+- Upstream: `dupTo` duplicates an inference context while preserving clone
+  semantics.
+- Local: some flags are not copied.
+- Impact: no byte difference has been observed in the current corpora; it is
+  a latent correctness risk.
+- Status: registered, not fixed.
+- Plan: audit together with P3 (inference/error model work).
+- Verification: library tests plus Guava/Gson parity.
 
-## PN-003 模块系统诊断缺口（10 个语料用例）
+## PN-003 Module-system diagnostics (10 corpus cases)
 
-- 现象：check_examples 失败 10 个：HasBeenDeprecatedModule、HasBeenDeprecatedRemovalModule、MultiModuleOutputCannotBeExplodedModule、NotDefAccessDoesNotReadFromUnnamed、NotDefAccessDoesNotReadUnnamed、NotDefAccessNotExportedFromUnnamed、NotDefAccessNotExportedToModuleFromUnnamed、PackageClashFromRequiresInUnnamed、PackageEmptyOrNotFoundWarning、WarnModuleNotFound。
-- 官方行为：模块解析/可见性/lint/多模块输出校验的完整诊断集合。
-- 本地行为：模块系统部分实现，缺少上述诊断路径。
-- 影响：诊断语料 10 个 fail；模块相关项目行为不完整。
-- 状态：已登记，未修复。
-- 计划：功能补齐（独立于重构阶段；建议在 P3/P4 后单独立项）。
-- 验证：check_examples --filter <模块用例>。
+- Observed: ten `check_examples.py` cases fail:
+  `HasBeenDeprecatedModule`, `HasBeenDeprecatedRemovalModule`,
+  `MultiModuleOutputCannotBeExplodedModule`,
+  `NotDefAccessDoesNotReadFromUnnamed`, `NotDefAccessDoesNotReadUnnamed`,
+  `NotDefAccessNotExportedFromUnnamed`,
+  `NotDefAccessNotExportedToModuleFromUnnamed`,
+  `PackageClashFromRequiresInUnnamed`, `PackageEmptyOrNotFoundWarning`,
+  `WarnModuleNotFound`.
+- Upstream: the complete module resolution, readability, lint, and
+  multi-module output checks.
+- Local: the module system is partially implemented; these diagnostic paths
+  are missing.
+- Impact: ten diagnostic examples fail; module-heavy projects behave
+  differently.
+- Status: registered, not fixed.
+- Plan: separate feature work after the P3/P4 refactors; not part of the
+  refactoring itself.
+- Verification: `check_examples.py --filter` for the module cases.
 
-## PN-004 生成阶段 IllegalSignature 错误缺失
+## PN-004 Missing `IllegalSignature` generation error
 
-- 现象：check_examples 的 IllegalSignature 用例失败：缺 error while generating class ... (illegal signature attribute for type CAP#1)。
-- 官方行为：Signature 属性生成失败时由 Gen/ClassWriter 报错并结束。
-- 本地行为：未检测/未上报该错误路径。
-- 影响：诊断语料 1 个 fail；异常类型的 class 生成行为不一致。
-- 状态：已登记，未修复。
-- 计划：P3（错误通道）之后补生成错误路径。
-- 验证：check_examples --filter IllegalSignature。
+- Observed: the `IllegalSignature` corpus case misses
+  `error while generating class ... (illegal signature attribute for type CAP#1)`.
+- Upstream: `Gen`/`ClassWriter` reports the failure while emitting the
+  Signature attribute.
+- Local: the failure path is not detected or not reported.
+- Impact: one diagnostic example fails; class generation for such types
+  diverges.
+- Status: registered, not fixed.
+- Plan: add the generation error path after P3 (error channel).
+- Verification: `check_examples.py --filter IllegalSignature`.
 
-## PN-005 注解处理、插件、FileManager、JVM 栈帧不支持
+## PN-005 Annotation processing, plugins, file managers, stack traces
 
-- 现象：check_examples 有 67 个 skip；javac-tools/javac-source 中存在 unimplemented 的模拟 API。
-- 官方行为：支持 -processor、-Xplugin、自定义 JavaFileManager、-doe 等。
-- 本地行为：未实现（模拟层返回 UnsupportedOperationException 或跳过）。
-- 影响：带注解处理器的项目不可用；工具 API 不完整。
-- 状态：明确不支持（登记）。
-- 计划：不在 P0–P5 范围内；未来单独立项。
-- 验证：无（skip 覆盖）。
+- Observed: 67 `check_examples.py` cases are skipped; `javac-tools` and
+  `javac-source` contain unimplemented simulation APIs.
+- Upstream: `-processor`, `-Xplugin`, custom `JavaFileManager`, `-doe`.
+- Local: not implemented.
+- Impact: projects with annotation processors cannot be compiled; the tool
+  API surface is incomplete.
+- Status: explicitly unsupported and registered.
+- Plan: out of scope for P0-P5; separate feature work.
+- Verification: covered by the skip list.
 
-## PN-006 Rc<RefCell> 适配层
+## PN-006 `Rc<RefCell<...>>` adaptation layer
 
-- 现象：javac-core 中 Rc<RefCell< 530 处、borrow_mut() 2130 处。
-- 原因：1:1 移植 Java 的共享可变对象图（Log/Warner/Scope/推断上下文等）。
-- 影响：借用重入 panic 风险；可读性与并发扩展性差。
-- 状态：技术债（适配层）。
-- 计划：P2 按热点分批收敛（lambda_to_method → codegen → argument_attr → check → attr）。
-- 验证：每批 L1/L2；BorrowMutError 零容忍。
+- Observed: `Rc<RefCell<` appears 530 times and `borrow_mut()` 2130 times in
+  `javac-core`.
+- Cause: a 1:1 port of Java's shared mutable object graph (log, warner,
+  scopes, inference contexts, lambda translation state).
+- Impact: runtime borrow panics, reduced readability, no `Send`/`Sync`.
+- Status: technical debt, explicitly an adaptation layer.
+- Plan: P2, batch by hotspot (`lambda_to_method` -> `codegen` ->
+  `argument_attr` -> `check` -> `attr`).
+- Verification: each batch runs L1/L2; `BorrowMutError` is a hard failure.
 
-## PN-007 panic 模拟异常通道
+## PN-007 Panic-based exception channel
 
-- 现象：InapplicableMethodException / InferenceException 用 panic + catch_unwind 实现控制流；expect() 3008 处。
-- 官方行为：Java 异常（throw/catch）。
-- 本地行为：panic payload + 线程局部栈。
-- 影响：用户可触发路径可能 panic；错误传播不可读。
-- 状态：技术债。
-- 计划：P3（先 resolve/infer，再 attr/check）；expect() 分类清理。
-- 验证：负例输入不 panic；examples fail 不增加。
+- Observed: `InapplicableMethodException` and `InferenceException` are
+  implemented with panic payloads and `catch_unwind`; `expect()` appears
+  3008 times.
+- Upstream: Java exceptions (`throw`/`catch`).
+- Local: panics plus thread-local stacks.
+- Impact: user-reachable paths can panic; propagation is opaque.
+- Status: technical debt.
+- Plan: P3 (resolve/infer first, then attr/check); classify and reduce
+  `expect()`.
+- Verification: negative-input tests must not panic; example failures must
+  not increase.
 
-## PN-008 Windows launcher 行过滤
+## PN-008 Windows launcher line filtering
 
-- 现象：javac launcher 在内部错误（exit 4）时打印 printing javac parameters to: <cwd>\javac.<timestamp>.args，内容不可重复。
-- 处理：expected_gen.py 的 normalize() 过滤该行；expected 基线已清理。
-- 状态：已处理。
-- 验证：check_examples --filter DuplicateModule。
+- Observed: on internal errors (exit 4) the javac launcher prints
+  `printing javac parameters to: <cwd>\javac.<timestamp>.args`, whose content
+  is not reproducible.
+- Handling: `expected_gen.py` filters the line during normalization; the
+  baseline was cleaned.
+- Status: handled.
+- Verification: `check_examples.py --filter DuplicateModule`.
 
-## PN-009 Guava warnings 数差异
+## PN-009 Guava warning count
 
-- 现象：javac 41 条警告 vs rust 53 条（Guava 编译时）。
-- 原因：诊断位对位未完成（部分警告重复/位置不同）。
-- 影响：stderr 不完全一致；不影响 class 字节。
-- 状态：已登记，未修复。
-- 计划：诊断位对位专项（与 PN-001 相关）。
-- 验证：check_guava 的 warnings 比较。
+- Observed: javac emits 41 warnings while rust-javac emits 53 when compiling
+  Guava.
+- Cause: diagnostic-position and lint parity is incomplete.
+- Impact: stderr differs; class files are unaffected.
+- Status: registered, not fixed.
+- Plan: diagnostic parity work, related to PN-001.
+- Verification: the warning comparison in `check_guava.py`.
 
-## PN-010 NOT PORTED 方法清单
+## PN-010 Not-ported method inventory
 
-- 现象：239 行 NOT PORTED 标记，分布在 29 个文件；343 处 unimplemented/todo（多在 javac-tools/javac-source 模拟层）。
-- 影响：边界场景可能缺功能或 panic；主编译路径已覆盖。
-- 状态：登记在 docs/PORTING_MAP.md（每文件 details）与源码注释。
-- 计划：随对应阶段逐步清零；不承诺一次性全部移植。
-- 验证：对应语料/测试。
+- Observed: 239 `NOT PORTED` lines across 29 files; 343
+  `unimplemented!`/`todo!`/`UnsupportedOperationException` markers, mostly in
+  the `javac-tools`/`javac-source` simulation layer.
+- Impact: edge cases may be missing or panic; the main compilation path is
+  covered.
+- Status: tracked in `docs/PORTING_MAP.md` per file and in source comments.
+- Plan: clear incrementally with the owning phase; no promise of a one-shot
+  port.
+- Verification: the corpus and library tests for the owning area.
 
-## 模板（新增偏差时复制）
+## Template
 
-## PN-xxx 标题
+## PN-xxx Title
 
-- 现象：
-- 官方行为：
-- 本地行为：
-- 影响：
-- 状态：
-- 计划：
-- 验证：
+- Observed:
+- Upstream:
+- Local:
+- Impact:
+- Status:
+- Plan:
+- Verification:

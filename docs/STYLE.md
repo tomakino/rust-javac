@@ -1,97 +1,136 @@
-# rust-javac 代码与注释规范
+# Code and Documentation Style
 
-本规范适用于 crates/javac-core 及后续重构阶段（P0–P5）。
+rust-javac is an open-source port of OpenJDK javac. All repository text is
+written in English: source comments, module documentation, `docs/`, commit
+messages, and issue/PR descriptions.
 
-## 1. 文件头模板（不超过 10 行）
+## 1. Keep porting metadata out of the source
 
-    //! Attr：标注与类型检查主流程。
-    //!
-    //! 对应：com/sun/tools/javac/comp/Attr.java @ 982d53c
-    //! 偏差：见 docs/PORTING_NOTES.md#attr
+Source files contain ordinary Rust documentation: what the module does, the
+key types and invariants, and non-obvious design decisions. They do **not**
+contain:
 
-规则：
+- upstream file paths, class names, or commit hashes;
+- porting status, "ported in this file" inventories, or NOT PORTED lists;
+- links to `docs/PORTING_MAP.md` or `docs/PORTING_NOTES.md`.
 
-- 第一行是职责（一句话，中文），不是“移植登记”。
-- “对应”写官方包路径 + 提交哈希（982d53c）。
-- “偏差”指向 docs/PORTING_NOTES.md 的锚点；没有偏差时写“无已知偏差”。
-- 已移植方法清单、NOT PORTED 清单、Registration 映射一律迁到 docs/PORTING_MAP.md，不再放在文件头。
-- #![allow(...)] 等内层属性保留在文件最顶部，顺序不变。
+Per-module mapping, status, and deviation records live in `docs/` only. A
+reader of the source should never need the porting paperwork to understand
+the code.
 
-## 2. 注释的三类
+## 2. Module documentation
 
-### 2.1 锚点（Anchor）
+Every module starts with a `//!` block of two to six lines:
 
-用于把 Rust 代码定位到官方实现，一行一个：
+1. **What it does** (one sentence).
+2. **Key types and flow** (one or two sentences): the main entry points and
+   how data moves through them.
+3. **Non-obvious constraints** (optional): ordering, ownership, invariants,
+   or a Rust-specific representation choice.
 
-    // Java: checkFlags(Check.java:2914)
+Example:
 
-- 只写官方方法名与行号，不写解释。
-- 保留官方命名（checkFlags），不翻译成 snake_case。
-- 锚点允许出现在函数上方或分支上方，但不得重复。
+```rust
+//! Bytecode generation.
+//!
+//! `Gen` lowers attributed and desugared trees to JVM instructions: it walks
+//! statements and expressions, emits code through `Code`, and records line
+//! numbers, local variable tables, and stack-map frames. Constant-pool
+//! management and class-file serialization live in `ClassWriter` and
+//! `PoolWriter`.
+```
 
-### 2.2 偏差（Port note）
+A one-line header such as `//! Infer: inference.` is not documentation and
+is rejected in review.
 
-用于记录本地实现与官方的差异，必须简短：
+## 3. Comments
 
-    // Port note PN-001: 字段声明位置有两个来源（诊断用名字、行号用声明起点），
-    // 当前共用 VarDecl.pos；详见 docs/PORTING_NOTES.md#pn-001。
+A comment must state something the code does not: an invariant, a
+non-obvious reason, a constraint, or the meaning of a magic value. Do not
+restate the next line of code.
 
-规则：
+### 3.1 Upstream anchors (optional)
 
-- 每条偏差在 PORTING_NOTES 有唯一编号（PN-xxx），注释只写编号 + 一句话。
-- 偏差条目必须包含：官方行为、本地行为、影响、状态、计划阶段。
-- 不允许在源码里写“当时为什么这么改”的长篇历史；历史进 commit message 或 PORTING_NOTES 的“历史”栏。
+Where a review benefits from knowing the exact upstream method, add one
+line above the item:
 
-### 2.3 实现说明（Why）
+```rust
+// Java: checkFlags(Check.java:2914)
+```
 
-用于解释 Rust 特有的设计（借用、arena、所有权、性能），不涉及官方语义：
+Anchors stay inside the file, never in the module header. Keep the upstream
+name; do not translate it.
 
-    // Rust: 树节点保存在 arena 中，跨阶段可变状态集中在 Session，
-    // 避免 Rc<RefCell> 的借用重入。
+### 3.2 Implementation rationale
 
-- 只解释“为什么这样写”，不重复代码本身。
-- 不写“这行代码做了 X”式的复述。
+Explain why the Rust code takes this shape:
 
-## 3. 禁止事项
+```rust
+// Rust: trees live in an arena and are addressed by `TreeId`, so phases can
+// borrow disjoint fields instead of sharing `Rc<RefCell<_>>`.
+```
 
-- 文件头大段 “Ported in this file / NOT PORTED / Registration” 清单（迁 PORTING_MAP）。
-- 历史叙事式注释（“之前用 isSameType 导致…所以改成…”）。
-- 重复注释（同一事实在文件头、函数上、行内各写一遍）。
-- 用注释“证明”与官方一致（由测试与 // Java: 锚点承担）。
+### 3.3 Behavior deviations
 
-## 4. 命名
+When local behavior intentionally differs from javac, write one concise
+note next to the code and keep the full record in `docs/PORTING_NOTES.md`:
 
-- 类型名对应官方类（Attr、Check、TreeInfo），保持可搜索。
-- 函数名用 snake_case；官方方法在锚点中保留原名。
-- 字段名用 snake_case；与官方字段一一对应时，可在首次出现处加 // Java: fieldName。
+```rust
+// The declaration position is the name token; initializer line numbers use
+// the declaration start. See PN-001.
+```
 
-## 5. 错误与所有权约定
+## 4. Forbidden patterns
 
-- 用户可触发的失败返回 PResult<T>（Result<T, Diagnostic>）；expect() 只用于内部不变量。
-- panic 只用于“不可能发生”的状态，且必须带明确消息。
-- 跨阶段可变状态进入 Session；单阶段可变用 &mut；只读共享用 &T / Rc<T>（无 RefCell）。
-- 回调使用 FnMut，不使用 Rc<RefCell<dyn Fn>>。
+- Upstream paths, class names, or commit hashes in source comments.
+- Links to local documentation from source comments.
+- Template one-liners and bare pointers.
+- Historical narration (`previously X failed because Y, so now Z`).
+- Duplicating the same fact in the module header, the item, and inline.
+- Non-English text in code, comments, or `docs/`.
 
-## 6. 文档
+## 5. Naming
 
-- 每个模块必须有 //! 文档：职责、对应官方类、偏差链接。
-- //! 不超过 6 行；详细登记进 PORTING_MAP。
-- 公共 API 使用 /// 文档；内部函数按需。
+- Types mirror the upstream class names (`Attr`, `Check`, `TreeInfo`).
+- Functions use snake_case; upstream names live in anchors.
+- Fields use snake_case; add `// Java: fieldName` only when the mapping is
+  not obvious.
 
-## 7. 门禁（scripts/gate.py）
+## 6. Errors and ownership
 
-| 级别 | 内容 | 触发 |
+- User-reachable failures return `PResult<T>` (`Result<T, Diagnostic>`).
+- `expect()` is reserved for internal invariants and must state the
+  invariant.
+- Panics are for impossible states only; `catch_unwind` is a last-resort
+  boundary, not control flow.
+- Cross-phase mutable state lives in `Session`; single-phase mutation uses
+  `&mut`; read-only sharing uses `&T` or `Rc<T>` without `RefCell`.
+- Callbacks use `FnMut`; do not store `Rc<RefCell<dyn Fn>>`.
+
+## 7. Documentation layout
+
+- `docs/PORTING_MAP.md`: per-module mapping, status, and the original
+  registry moved out of headers.
+- `docs/PORTING_NOTES.md`: behavioral deviations with stable ids (`PN-xxx`).
+- `docs/STYLE.md`: this file.
+
+## 8. Verification gates
+
+`scripts/gate.py` selects the minimal suite from the current diff.
+
+| Level | Commands | When |
 |---|---|---|
-| none | 不跑 | 仅 docs/脚本/注释 |
-| L0 | cargo test -p javac-core --lib | 任何代码改动 |
-| L1 | L0 + repros + gson | parser、诊断、CLI、小逻辑 |
-| L2 | L1 + guava + okhttp | 类型、推断、Attr、Lower、Codegen |
-| L3 | 全量 | 合并点、每日、大改 |
+| none | nothing | docs/scripts/comment-only changes |
+| L0 | `cargo test -p javac-core --lib` | any code change |
+| L1 | L0 + `check_repros.py` + `check_gson.py` | parser, diagnostics, CLI |
+| L2 | L1 + `check_guava.py` + `check_okhttp.py` | types, inference, Attr, Lower, codegen |
+| L3 | full suite | merge points, daily, large refactors |
 
-- 日常只跑 L0/L1；L2 仅在触及类型/生成时；L3 仅在合并前。
-- 失败即停，不继续更高级别。
+Run the level declared by the diff; do not escalate on failure. Full L3 is
+reserved for merge points and refactor boundaries.
 
-## 8. 提交
+## 9. Commits
 
-- 一个逻辑单元一个 commit；禁止为“改一行”单独提交。
-- commit message 写“做了什么 + 验证级别 + 结果”，不写历史叙事。
+- One logical change per commit; do not commit per line.
+- State what changed, which gate ran, and the result.
+- Do not rewrite published history; do not squash unrelated work.

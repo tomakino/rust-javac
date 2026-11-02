@@ -1,25 +1,25 @@
-# 目录说明
+# Repository layout
 
-```
-crates/                 编译器及支撑 crate
-  javac-core/           解析、enter、attr、flow、lower、代码生成、诊断
-  rust-javac/           CLI 二进制与 CLI 测试
-  javac-tools/          javax.tools 风格的文件管理器 API
-  javac-source/         com.sun.source 树 API
-  javac-unicode/        Unicode 表
-  javac-floating/       浮点/BigDecimal 辅助
-  javac-jimage/         jimage 读取
-  javac-jmod/           jmod 读取
-  javac-zip/            zip 读取
-  javac-ctsym/          ct.sym 读取
-  javac-classpath/      classpath 处理
-  javac-charset/        字符集支持
-  javac-fs/             文件系统辅助
-  javac-tests/          语料/diff/oracle 工具
-xtask/                  cargo xtask 生成器
-tools/                  Java oracle 生成器
-docs/                   文档
+```text
+crates/                 compiler and support crates
+  javac-core/           parser, enter, attr, flow, lower, code generation, diagnostics
+  rust-javac/           CLI binary and CLI tests
+  javac-tools/          javax.tools-style file manager API
+  javac-source/         com.sun.source tree API
+  javac-unicode/        Unicode tables
+  javac-floating/       floating-point/BigDecimal helpers
+  javac-jimage/         jimage reader
+  javac-jmod/           jmod reader
+  javac-zip/            zip reader
+  javac-ctsym/          ct.sym reader
+  javac-classpath/      classpath handling
+  javac-charset/        charset support
+  javac-fs/             filesystem helpers
+  javac-tests/          corpus/diff/oracle tooling
+xtask/                  cargo xtask generators
+tools/                  Java oracle generators
+docs/                   documentation
 ```
 
-`crates/javac-core/resources/l10n/` 保存官方 `.properties` 语言包，由
-`include_str!` 嵌入二进制，运行时惰性解析。
+`crates/javac-core/resources/l10n/` holds the official `.properties`
+language bundles, embedded with `include_str!` and parsed lazily at runtime.

@@ -1,8 +1,11 @@
 #![allow(clippy::result_large_err, clippy::needless_pass_by_ref_mut)]
-//! Infer：泛型推断与推断上下文。
+//! Generic type inference.
 //!
-//! 对应：com/sun/tools/javac/comp/Infer.java、InferenceContext.java @ 982d53c
-//! 偏差/登记：见 docs/PORTING_MAP.md#compinfer
+//! `Infer` instantiates generic methods and constructors: it collects
+//! constraints from argument types, bounds, and target types, then solves them
+//! through the graph-based or legacy solver. `InferenceContext` stores the
+//! inference variables and their bounds, plus the dependency graph the solver
+//! mutates; the two are mutually dependent and live in this module.
 
 use std::cell::RefCell;
 use std::rc::Rc;
