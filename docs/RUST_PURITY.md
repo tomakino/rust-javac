@@ -97,9 +97,33 @@ the script.
 | Local/test candidates (`A`, `Vec<&str>`, `Vec<String>`, `Vec<Entry>`, `Vec<TableSlot>`) | 7 | Locally actionable | Small test fixtures or parser/generator-local buffers; no cross-phase service identity was found. Each still needs an ownership check before changing. | Audit the concrete owner; replace the shared cell with an owned value or `&`. |
 | Textual placeholders (`...`, `..`, comment fragment) | 11 | Not runtime | Documentation/comments; the fixed script counts them, no object exists. | None. |
 
-Category totals: **99** real sharing, **69** state machine, **27** public API,
-**12** trait receiver constraint, **7** local candidates, **11** textual
+Category totals: **99** real sharing, **62** state machine, **27** public API,
+**19** trait receiver constraint, **7** local candidates, **11** textual
 placeholders; total **225**.
+
+### Textual placeholder sources
+
+The fixed script counts these eleven fragments; none is a runtime object. The
+last entry is a documentation reference to a real type whose code occurrences
+are counted separately.
+
+| Location | Fragment |
+|---|---|
+| `crates/javac-core/src/compiler_context.rs:10` | `Rc<RefCell<...>>` |
+| `crates/javac-core/src/parser/doc_comment_parser.rs:18` | `Rc<RefCell<...>>` |
+| `crates/javac-core/src/util/forwarding_diagnostic_formatter.rs:16` | `Rc<RefCell<...>>` |
+| `crates/javac-core/src/util/name.rs:14` | `Rc<RefCell<...>>` |
+| `crates/javac-core/src/code/scope.rs:169` | `Rc<RefCell<...>>` |
+| `crates/javac-core/src/code/scope.rs:414` | `Rc<RefCell<...>>` |
+| `crates/javac-core/src/comp/argument_attr.rs:93` | `Rc<RefCell<...>>` |
+| `crates/javac-tools/src/tools/java_compiler.rs:177` | `Rc<RefCell<..>>` |
+| `crates/javac-tools/src/tools/java_compiler.rs:178` | `Rc<RefCell<..>>` |
+| `crates/javac-tools/src/lib.rs:28` | `Rc<RefCell<..>>` |
+| `crates/javac-core/src/util/forwarding_diagnostic_formatter.rs:11-12` | `Rc<RefCell<dyn` / `//! DiagnosticFormatter<D>>>` |
+
+The split fragment describes `Rc<RefCell<dyn DiagnosticFormatter<D>>>`; the
+actual code uses of that type are counted in the `dyn DiagnosticFormatter<D>`
+and `dyn DiagnosticFormatter<u32>` rows, so it is not a missed occurrence.
 
 ## Conclusion
 
@@ -111,10 +135,10 @@ placeholders; total **225**.
   Annotate, TypeEnter, completion, flow, type annotations, and the optional
   service slots form a real object graph, and their borrow boundaries are
   explicit.
-- The 69 state-machine occurrences are phase workspaces. Replacing them with
+- The 62 state-machine occurrences are phase workspaces. Replacing them with
   field-level cells would multiply mutable fields and borrow guards without
   proving ownership; they should remain until the owning phase is redesigned.
-- The 39 public/trait occurrences are interface constraints. Their
+- The 46 public/trait occurrences are interface constraints. Their
   `&mut self` methods are part of the javac API; changing them would change
   the contract, not remove debt.
 - The 11 placeholder matches are a measurement artifact.
