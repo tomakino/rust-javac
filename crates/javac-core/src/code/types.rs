@@ -10396,24 +10396,22 @@ impl Types {
             _ => return vis,
         };
         let mut current = values;
-        while current.non_empty() {
-            let pair = current.head().clone();
-            current = current.tail();
-            if ctx.sym(pair.fst).name != names.value {
-                continue;
+        for pair in &current {
+        if ctx.sym(pair.fst).name != names.value {
+            continue;
+        }
+        if let crate::code::attribute::AttributeKind::Enum { value: Some(enum_sym) } =
+            &ctx.attr(pair.snd).kind
+        {
+            let level = ctx.sym(*enum_sym).name.clone();
+            if level == names.SOURCE {
+                vis = RetentionPolicy::SOURCE;
+            } else if level == names.CLASS {
+                vis = RetentionPolicy::CLASS;
+            } else if level == names.RUNTIME {
+                vis = RetentionPolicy::RUNTIME;
             }
-            if let crate::code::attribute::AttributeKind::Enum { value: Some(enum_sym) } =
-                &ctx.attr(pair.snd).kind
-            {
-                let level = ctx.sym(*enum_sym).name.clone();
-                if level == names.SOURCE {
-                    vis = RetentionPolicy::SOURCE;
-                } else if level == names.CLASS {
-                    vis = RetentionPolicy::CLASS;
-                } else if level == names.RUNTIME {
-                    vis = RetentionPolicy::RUNTIME;
-                }
-            }
+        }
         }
         vis
     }

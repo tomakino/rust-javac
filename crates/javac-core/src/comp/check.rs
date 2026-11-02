@@ -2296,23 +2296,21 @@ impl Check {
                     let mut filtered: crate::util::list::List<crate::ids::AttributeId> =
                         crate::util::list::List::nil();
                     let mut current = ctx.sym(s).get_raw_attributes();
-                    while current.non_empty() {
-                        let annotation = *current.head();
-                        current = current.tail();
-                        let anno_ty = ctx.attr(annotation).ty.expect("annotation type");
-                        let anno_tsym = ctx.typ(anno_ty).tsym.expect("annotation tsym");
-                        let anno_targets = self.get_target_names(
-                            ctx,
-                            syms,
-                            anno_tsym,
-                            attr.as_deref_mut(),
-                        )?;
-                        if anno_targets
-                            .iter()
-                            .any(|name| *name == self.names.RECORD_COMPONENT)
-                        {
-                            filtered = filtered.append_list(&crate::util::list::List::of(annotation));
-                        }
+                    for annotation in &current {
+                    let anno_ty = ctx.attr(annotation).ty.expect("annotation type");
+                    let anno_tsym = ctx.typ(anno_ty).tsym.expect("annotation tsym");
+                    let anno_targets = self.get_target_names(
+                        ctx,
+                        syms,
+                        anno_tsym,
+                        attr.as_deref_mut(),
+                    )?;
+                    if anno_targets
+                        .iter()
+                        .any(|name| *name == self.names.RECORD_COMPONENT)
+                    {
+                        filtered = filtered.append_list(&crate::util::list::List::of(annotation));
+                    }
                     }
                     ctx.sym_mut(record_component).append_attributes(filtered);
                 }
@@ -5916,20 +5914,18 @@ impl Check {
             _ => List::nil(),
         };
         let mut current = defs;
-        while current.non_empty() {
-            let def = *current.head();
-            current = current.tail();
-            if !ctx.tree(def).has_tag(crate::tree::jc_tree::Tag::METHODDEF) {
-                continue;
-            }
-            let restype = match &ctx.tree(def).kind {
-                crate::tree::jc_tree::TreeKind::MethodDecl { restype: Some(restype), .. } => match ctx.tree(*restype).ty {
-                    Some(t) => t,
-                    None => continue,
-                },
-                _ => continue,
-            };
-            self.check_annotation_res_type(ctx, ctx.tree(def).pos, restype);
+        for def in &current {
+        if !ctx.tree(def).has_tag(crate::tree::jc_tree::Tag::METHODDEF) {
+            continue;
+        }
+        let restype = match &ctx.tree(def).kind {
+            crate::tree::jc_tree::TreeKind::MethodDecl { restype: Some(restype), .. } => match ctx.tree(*restype).ty {
+                Some(t) => t,
+                None => continue,
+            },
+            _ => continue,
+        };
+        self.check_annotation_res_type(ctx, ctx.tree(def).pos, restype);
         }
         ctx.sym_mut(sym).flags_field &= !(crate::code::flags::LOCKED as i64);
         ctx.sym_mut(sym).flags_field |= crate::code::flags::ACYCLIC_ANN;
@@ -6054,32 +6050,30 @@ impl Check {
         let mut call_map: std::collections::HashMap<SymbolId, SymbolId> =
             std::collections::HashMap::new();
         let mut current = defs;
-        while current.non_empty() {
-            let def = *current.head();
-            current = current.tail();
-            let app = match crate::tree::tree_info::first_constructor_call(ctx, def) {
-                Some(app) => app,
-                None => continue,
-            };
-            let meth_sym = match &ctx.tree(def).kind {
-                crate::tree::jc_tree::TreeKind::MethodDecl { sym: Some(sym), .. } => *sym,
-                _ => continue,
-            };
-            let app_meth = match &ctx.tree(app).kind {
-                crate::tree::jc_tree::TreeKind::MethodInvocation { meth: Some(meth), .. } => *meth,
-                _ => continue,
-            };
-            let app_name = match crate::tree::tree_info::name(ctx, app_meth) {
-                Some(name) => name,
-                None => continue,
-            };
-            if app_name == self.names._this {
-                if let Some(callee) = crate::tree::tree_info::symbol(ctx, app_meth) {
-                    call_map.insert(meth_sym, callee);
-                }
-            } else {
-                ctx.sym_mut(meth_sym).flags_field |= crate::code::flags::ACYCLIC as i64;
+        for def in &current {
+        let app = match crate::tree::tree_info::first_constructor_call(ctx, def) {
+            Some(app) => app,
+            None => continue,
+        };
+        let meth_sym = match &ctx.tree(def).kind {
+            crate::tree::jc_tree::TreeKind::MethodDecl { sym: Some(sym), .. } => *sym,
+            _ => continue,
+        };
+        let app_meth = match &ctx.tree(app).kind {
+            crate::tree::jc_tree::TreeKind::MethodInvocation { meth: Some(meth), .. } => *meth,
+            _ => continue,
+        };
+        let app_name = match crate::tree::tree_info::name(ctx, app_meth) {
+            Some(name) => name,
+            None => continue,
+        };
+        if app_name == self.names._this {
+            if let Some(callee) = crate::tree::tree_info::symbol(ctx, app_meth) {
+                call_map.insert(meth_sym, callee);
             }
+        } else {
+            ctx.sym_mut(meth_sym).flags_field |= crate::code::flags::ACYCLIC as i64;
+        }
         }
         let callers: Vec<SymbolId> = call_map.keys().copied().collect();
         for caller in callers {
@@ -6354,24 +6348,22 @@ impl Check {
                     _ => List::nil(),
                 };
                 let mut current = annotations;
-                while current.non_empty() {
-                    let anno = *current.head();
-                    current = current.tail();
-                    let anno_type_tree = match &ctx.tree(anno).kind {
-                        crate::tree::jc_tree::TreeKind::Annotation {
-                            annotation_type: Some(annotation_type),
-                            ..
-                        } => Some(*annotation_type),
-                        _ => None,
-                    };
-                    if let Some(anno_type_tree) = anno_type_tree {
-                        if ctx.tree(anno_type_tree).ty.and_then(|ty| ctx.typ(ty).tsym)
-                            == Some(functional_tsym)
-                        {
-                            pos = ctx.tree(anno).pos;
-                            break;
-                        }
+                for anno in &current {
+                let anno_type_tree = match &ctx.tree(anno).kind {
+                    crate::tree::jc_tree::TreeKind::Annotation {
+                        annotation_type: Some(annotation_type),
+                        ..
+                    } => Some(*annotation_type),
+                    _ => None,
+                };
+                if let Some(anno_type_tree) = anno_type_tree {
+                    if ctx.tree(anno_type_tree).ty.and_then(|ty| ctx.typ(ty).tsym)
+                        == Some(functional_tsym)
+                    {
+                        pos = ctx.tree(anno).pos;
+                        break;
                     }
+                }
                 }
             }
             let details = ex
@@ -7877,14 +7869,12 @@ fn find_export(
         _ => return None,
     };
     let mut current = exports;
-    while current.non_empty() {
-        let directive = *current.head();
-        current = current.tail();
-        if let crate::code::directive::Directive::Exports { packge, modules, .. } = ctx.directive(directive) {
-            if *packge == Some(pack) {
-                return Some((*packge, modules.clone()));
-            }
+    for directive in &current {
+    if let crate::code::directive::Directive::Exports { packge, modules, .. } = ctx.directive(directive) {
+        if *packge == Some(pack) {
+            return Some((*packge, modules.clone()));
         }
+    }
     }
     None
 }
@@ -8418,52 +8408,50 @@ impl Check {
             return;
         };
         let mut current = defs;
-        while current.non_empty() {
-            let def = *current.head();
-            current = current.tail();
-            let import_scope = match &ctx.tree(def).kind {
-                TreeKind::Import { import_scope, .. } => *import_scope,
-                _ => continue,
-            };
-            let Some(import_scope) = import_scope else {
-                continue;
-            };
-            let candidates = ctx.scope_get_symbols_ctx(
-                import_scope,
-                crate::code::scope::LookupKind::NON_RECURSIVE,
-                &|_| true,
-                &self.types,
+        for def in &current {
+        let import_scope = match &ctx.tree(def).kind {
+            TreeKind::Import { import_scope, .. } => *import_scope,
+            _ => continue,
+        };
+        let Some(import_scope) = import_scope else {
+            continue;
+        };
+        let candidates = ctx.scope_get_symbols_ctx(
+            import_scope,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+            &self.types,
+            syms,
+            attr.as_deref_mut(),
+        );
+        let symbols: Vec<SymbolId> = candidates
+            .into_iter()
+            .filter(|sym| ctx.sym(*sym).kind == crate::code::kinds::Kind::TYP)
+            .collect();
+        let is_static = match &ctx.tree(def).kind {
+            TreeKind::Import { static_import, .. } => *static_import,
+            _ => false,
+        };
+        for sym in symbols {
+            self.check_unique_import(
+                ctx,
                 syms,
-                attr.as_deref_mut(),
+                def,
+                ordinally_imported_scope,
+                statically_imported_scope,
+                top_level_scope,
+                sym,
+                is_static,
             );
-            let symbols: Vec<SymbolId> = candidates
-                .into_iter()
-                .filter(|sym| ctx.sym(*sym).kind == crate::code::kinds::Kind::TYP)
-                .collect();
-            let is_static = match &ctx.tree(def).kind {
-                TreeKind::Import { static_import, .. } => *static_import,
-                _ => false,
-            };
-            for sym in symbols {
-                self.check_unique_import(
-                    ctx,
-                    syms,
-                    def,
-                    ordinally_imported_scope,
-                    statically_imported_scope,
-                    top_level_scope,
-                    sym,
-                    is_static,
-                );
-                if is_static {
-                    ctx.scope_enter(statically_imported_scope, sym);
-                } else {
-                    ctx.scope_enter(ordinally_imported_scope, sym);
-                }
+            if is_static {
+                ctx.scope_enter(statically_imported_scope, sym);
+            } else {
+                ctx.scope_enter(ordinally_imported_scope, sym);
             }
-            if let TreeKind::Import { import_scope, .. } = &mut ctx.tree_mut(def).kind {
-                *import_scope = None;
-            }
+        }
+        if let TreeKind::Import { import_scope, .. } = &mut ctx.tree_mut(def).kind {
+            *import_scope = None;
+        }
         }
     }
 
@@ -8565,67 +8553,65 @@ impl Check {
             return;
         };
         let mut current = defs;
-        while current.non_empty() {
-            let imp = *current.head();
-            current = current.tail();
-            let (static_import, qualid) = match &ctx.tree(imp).kind {
-                TreeKind::Import {
-                    static_import,
-                    qualid,
-                    ..
-                } => (*static_import, *qualid),
-                _ => continue,
-            };
-            if !static_import {
-                continue;
-            }
-            let Some(qualid) = qualid else {
-                continue;
-            };
-            let TreeKind::FieldAccess {
-                selected: Some(selected),
-                name,
+        for imp in &current {
+        let (static_import, qualid) = match &ctx.tree(imp).kind {
+            TreeKind::Import {
+                static_import,
+                qualid,
                 ..
-            } = &ctx.tree(qualid).kind
-            else {
-                continue;
-            };
-            let (selected, name) = (*selected, name.clone());
-            if name == self.names.asterisk {
-                continue;
-            }
-            let Some(origin) = ctx.tree(selected).ty else {
-                continue;
-            };
-            let Some(site) = ctx.typ(origin).tsym else {
-                continue;
-            };
-            if ctx.sym(site).kind != crate::code::kinds::Kind::TYP {
-                continue;
-            }
-            let mut processed: Vec<SymbolId> = Vec::new();
-            if !self.check_type_contains_importable_element(
-                ctx,
-                syms,
-                site,
-                site,
-                packge,
-                &name,
-                &mut processed,
-            ) {
-                let message = crate::resources::compiler_properties::errors::cant_resolve_location(
-                    crate::resources::diagnostic_contract::KindNameArg::placeholder("STATIC"),
-                    name.clone(),
-                    (),
-                    (),
-                    crate::resources::diagnostic_contract::DiagnosticArg::Text(
-                        symbol_text(ctx, site),
-                    ),
-                );
-                self.log
-                    .borrow_mut()
-                    .error_at(ctx.tree(imp).pos, crate::util::jc_diagnostic::Error::from(message));
-            }
+            } => (*static_import, *qualid),
+            _ => continue,
+        };
+        if !static_import {
+            continue;
+        }
+        let Some(qualid) = qualid else {
+            continue;
+        };
+        let TreeKind::FieldAccess {
+            selected: Some(selected),
+            name,
+            ..
+        } = &ctx.tree(qualid).kind
+        else {
+            continue;
+        };
+        let (selected, name) = (*selected, name.clone());
+        if name == self.names.asterisk {
+            continue;
+        }
+        let Some(origin) = ctx.tree(selected).ty else {
+            continue;
+        };
+        let Some(site) = ctx.typ(origin).tsym else {
+            continue;
+        };
+        if ctx.sym(site).kind != crate::code::kinds::Kind::TYP {
+            continue;
+        }
+        let mut processed: Vec<SymbolId> = Vec::new();
+        if !self.check_type_contains_importable_element(
+            ctx,
+            syms,
+            site,
+            site,
+            packge,
+            &name,
+            &mut processed,
+        ) {
+            let message = crate::resources::compiler_properties::errors::cant_resolve_location(
+                crate::resources::diagnostic_contract::KindNameArg::placeholder("STATIC"),
+                name.clone(),
+                (),
+                (),
+                crate::resources::diagnostic_contract::DiagnosticArg::Text(
+                    symbol_text(ctx, site),
+                ),
+            );
+            self.log
+                .borrow_mut()
+                .error_at(ctx.tree(imp).pos, crate::util::jc_diagnostic::Error::from(message));
+        }
         }
     }
 
@@ -8665,23 +8651,21 @@ impl Check {
             self.types.interfaces(ctx, syms_ref, ty)
         };
         let mut interface_list = interfaces;
-        while interface_list.non_empty() {
-            let interface_ty = *interface_list.head();
-            interface_list = interface_list.tail();
-            if let Some(interface_tsym) = ctx.typ(interface_ty).tsym
-                && interface_tsym != tsym
-                && self.check_type_contains_importable_element(
-                    ctx,
-                    syms,
-                    interface_tsym,
-                    origin,
-                    packge,
-                    name,
-                    processed,
-                )
-            {
-                return true;
-            }
+        for interface_ty in &interface_list {
+        if let Some(interface_tsym) = ctx.typ(interface_ty).tsym
+            && interface_tsym != tsym
+            && self.check_type_contains_importable_element(
+                ctx,
+                syms,
+                interface_tsym,
+                origin,
+                packge,
+                name,
+                processed,
+            )
+        {
+            return true;
+        }
         }
         let members = ctx.sym(tsym).members();
         let Some(members) = members else {
@@ -8715,70 +8699,68 @@ impl Check {
             _ => return,
         };
         let mut current = defs;
-        while current.non_empty() {
-            let imp = *current.head();
-            current = current.tail();
-            let (static_import, qualid) = match &ctx.tree(imp).kind {
-                TreeKind::Import {
-                    static_import,
-                    qualid,
-                    ..
-                } => (*static_import, *qualid),
-                _ => continue,
-            };
-            if static_import {
-                continue;
-            }
-            let Some(qualid) = qualid else {
-                continue;
-            };
-            let TreeKind::FieldAccess {
-                selected: Some(selected),
-                name,
+        for imp in &current {
+        let (static_import, qualid) = match &ctx.tree(imp).kind {
+            TreeKind::Import {
+                static_import,
+                qualid,
                 ..
-            } = &ctx.tree(qualid).kind
-            else {
-                continue;
-            };
-            if name != &self.names.asterisk {
-                continue;
-            }
-            let selected = *selected;
-            let target = ctx
-                .tree(selected)
-                .ty
-                .and_then(|ty| ctx.typ(ty).tsym);
-            let Some(tsym) = target else {
-                continue;
-            };
-            if ctx.sym(tsym).kind != crate::code::kinds::Kind::PCK {
-                continue;
-            }
-            let empty = ctx
-                .sym(tsym)
-                .members()
-                .map(|members| {
-                    ctx.scope_get_symbols(
-                        members,
-                        crate::code::scope::LookupKind::NON_RECURSIVE,
-                        &|_| true,
-                    )
-                    .is_empty()
-                })
-                .unwrap_or(true);
-            let observable = crate::code::source::Feature::IMPORT_ON_DEMAND_OBSERVABLE_PACKAGES
-                .allowed_in_source(self.source)
-                && symbol_exists_public(ctx, tsym);
-            if empty && !observable {
-                let message = crate::resources::compiler_properties::errors::doesnt_exist(
-                    crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_text(
-                        ctx, tsym,
-                    )),
-                );
-                self.log
-                    .borrow_mut()
-                    .error_at(ctx.tree(imp).pos, crate::util::jc_diagnostic::Error::from(message));
-            }
+            } => (*static_import, *qualid),
+            _ => continue,
+        };
+        if static_import {
+            continue;
+        }
+        let Some(qualid) = qualid else {
+            continue;
+        };
+        let TreeKind::FieldAccess {
+            selected: Some(selected),
+            name,
+            ..
+        } = &ctx.tree(qualid).kind
+        else {
+            continue;
+        };
+        if name != &self.names.asterisk {
+            continue;
+        }
+        let selected = *selected;
+        let target = ctx
+            .tree(selected)
+            .ty
+            .and_then(|ty| ctx.typ(ty).tsym);
+        let Some(tsym) = target else {
+            continue;
+        };
+        if ctx.sym(tsym).kind != crate::code::kinds::Kind::PCK {
+            continue;
+        }
+        let empty = ctx
+            .sym(tsym)
+            .members()
+            .map(|members| {
+                ctx.scope_get_symbols(
+                    members,
+                    crate::code::scope::LookupKind::NON_RECURSIVE,
+                    &|_| true,
+                )
+                .is_empty()
+            })
+            .unwrap_or(true);
+        let observable = crate::code::source::Feature::IMPORT_ON_DEMAND_OBSERVABLE_PACKAGES
+            .allowed_in_source(self.source)
+            && symbol_exists_public(ctx, tsym);
+        if empty && !observable {
+            let message = crate::resources::compiler_properties::errors::doesnt_exist(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_text(
+                    ctx, tsym,
+                )),
+            );
+            self.log
+                .borrow_mut()
+                .error_at(ctx.tree(imp).pos, crate::util::jc_diagnostic::Error::from(message));
+        }
         }
     }
 }
@@ -8848,33 +8830,31 @@ impl Check {
         let owner_ty = ctx.sym(owner).ty.expect("owner type");
         let closure = self.types.closure(ctx, syms, owner_ty);
         let mut sup_types = closure;
-        while sup_types.non_empty() {
-            let sup = *sup_types.head();
-            sup_types = sup_types.tail();
-            if sup == owner_ty {
-                continue;
+        for sup in &sup_types {
+        if sup == owner_ty {
+            continue;
+        }
+        let Some(sup_tsym) = ctx.typ(sup).tsym else {
+            continue;
+        };
+        self.complete_for_members(ctx, syms, sup_tsym);
+        let Some(members) = ctx.sym(sup_tsym).members() else {
+            continue;
+        };
+        let name = ctx.sym(s).name.clone();
+        let symbols = ctx.scope_get_symbols_by_name(
+            members,
+            &name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        for sym in symbols {
+            if !ctx.sym(sym).is_static(ctx)
+                && crate::code::symbol::overrides(ctx, syms, &self.types, s, sym, owner, true)
+            {
+                return true;
             }
-            let Some(sup_tsym) = ctx.typ(sup).tsym else {
-                continue;
-            };
-            self.complete_for_members(ctx, syms, sup_tsym);
-            let Some(members) = ctx.sym(sup_tsym).members() else {
-                continue;
-            };
-            let name = ctx.sym(s).name.clone();
-            let symbols = ctx.scope_get_symbols_by_name(
-                members,
-                &name,
-                crate::code::scope::LookupKind::NON_RECURSIVE,
-                &|_| true,
-            );
-            for sym in symbols {
-                if !ctx.sym(sym).is_static(ctx)
-                    && crate::code::symbol::overrides(ctx, syms, &self.types, s, sym, owner, true)
-                {
-                    return true;
-                }
-            }
+        }
         }
         false
     }
@@ -8935,18 +8915,16 @@ impl Check {
                 _ => List::nil(),
             };
             let mut current = components;
-            while current.non_empty() {
-                let rc = *current.head();
-                current = current.tail();
-                if let crate::code::symbol::SymbolKind::RecordComponent {
-                    accessor: Some(accessor),
-                    ..
-                } = ctx.sym(rc).kind_data
-                    && accessor == m
-                    && (ctx.sym(accessor).flags_field & flags::GENERATED_MEMBER as i64) == 0
-                {
-                    return;
-                }
+            for rc in &current {
+            if let crate::code::symbol::SymbolKind::RecordComponent {
+                accessor: Some(accessor),
+                ..
+            } = ctx.sym(rc).kind_data
+                && accessor == m
+                && (ctx.sym(accessor).flags_field & flags::GENERATED_MEMBER as i64) == 0
+            {
+                return;
+            }
             }
         }
         let origin_ty = ctx.sym(origin).ty.expect("origin type");
@@ -8967,10 +8945,8 @@ impl Check {
                 self.types.interfaces(ctx, syms, t)
             };
             let mut list = interfaces;
-            while list.non_empty() {
-                let t2 = *list.head();
-                list = list.tail();
-                self.check_override_at(ctx, syms, tree, t2, origin, m);
+            for t2 in &list {
+            self.check_override_at(ctx, syms, tree, t2, origin, m);
             }
             let supertype = {
                 let syms: &crate::code::symtab::Symtab = syms;
@@ -10176,10 +10152,8 @@ impl CycleChecker<'_> {
         if ctx.typ(c_ty).has_tag(crate::code::type_tag::TypeTag::CLASS) {
             if supertypes.non_empty() {
                 let mut current = supertypes;
-                while current.non_empty() {
-                    let supertree = *current.head();
-                    current = current.tail();
-                    crate::tree::jc_tree::accept(ctx, supertree, self);
+                for supertree in &current {
+                crate::tree::jc_tree::accept(ctx, supertree, self);
                 }
             } else {
                 let (supertype_field, interfaces_field) = match &ctx.typ(c_ty).kind {
@@ -10200,11 +10174,9 @@ impl CycleChecker<'_> {
                 let super_tsym = ctx.typ(supertype_field).tsym;
                 self.check_symbol(ctx, pos.unwrap_or(crate::util::position::NOPOS), super_tsym);
                 let mut current = interfaces_field;
-                while current.non_empty() {
-                    let intf = *current.head();
-                    current = current.tail();
-                    let intf_tsym = ctx.typ(intf).tsym;
-                    self.check_symbol(ctx, pos.unwrap_or(crate::util::position::NOPOS), intf_tsym);
+                for intf in &current {
+                let intf_tsym = ctx.typ(intf).tsym;
+                self.check_symbol(ctx, pos.unwrap_or(crate::util::position::NOPOS), intf_tsym);
                 }
             }
             if let Some(owner) = ctx.sym(c).owner
@@ -10234,10 +10206,8 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for CycleChecker<'_> {
             supertypes = supertypes.prepend(extending);
         }
         let mut current = implementing;
-        while current.non_empty() {
-            let intf = *current.head();
-            current = current.tail();
-            supertypes = supertypes.prepend(intf);
+        for intf in &current {
+        supertypes = supertypes.prepend(intf);
         }
         let Some(sym) = sym else {
             return;
@@ -10388,51 +10358,49 @@ impl Check {
             _ => String::new(),
         };
         let mut current = exports;
-        while current.non_empty() {
-            let directive = *current.head();
-            current = current.tail();
-            if let crate::code::directive::Directive::Exports {
-                packge: Some(exported_packge),
-                modules,
-                ..
-            } = ctx.directive(directive)
-            {
-                if *exported_packge != packge {
-                    continue;
-                }
-                let unqualified = modules.as_ref().map(|m| m.is_empty()).unwrap_or(true);
-                if !unqualified {
-                    return;
-                }
-                let log = Rc::clone(&self.log);
-                let lint = Rc::clone(&self.lint.borrow());
-                let c_display = c_display.clone();
-                let pkg_display = pkg_display.clone();
-                let mod_display = mod_display.clone();
-                self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
-                    if lint
-                        .is_enabled(crate::code::lint::LintCategory::MISSING_EXPLICIT_CTOR)
-                    {
-                        let info = crate::resources::compiler_properties::warnings::missing_explicit_ctor(
-                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                                c_display.clone(),
-                            ),
-                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                                pkg_display.clone(),
-                            ),
-                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                                mod_display.clone(),
-                            ),
-                        );
-                        log.borrow_mut().warning(
-                            Some(crate::code::lint::LintCategory::MISSING_EXPLICIT_CTOR),
-                            Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
-                            warning_from_info(info),
-                        );
-                    }
-                }));
+        for directive in &current {
+        if let crate::code::directive::Directive::Exports {
+            packge: Some(exported_packge),
+            modules,
+            ..
+        } = ctx.directive(directive)
+        {
+            if *exported_packge != packge {
+                continue;
+            }
+            let unqualified = modules.as_ref().map(|m| m.is_empty()).unwrap_or(true);
+            if !unqualified {
                 return;
             }
+            let log = Rc::clone(&self.log);
+            let lint = Rc::clone(&self.lint.borrow());
+            let c_display = c_display.clone();
+            let pkg_display = pkg_display.clone();
+            let mod_display = mod_display.clone();
+            self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+                if lint
+                    .is_enabled(crate::code::lint::LintCategory::MISSING_EXPLICIT_CTOR)
+                {
+                    let info = crate::resources::compiler_properties::warnings::missing_explicit_ctor(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                            c_display.clone(),
+                        ),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                            pkg_display.clone(),
+                        ),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                            mod_display.clone(),
+                        ),
+                    );
+                    log.borrow_mut().warning(
+                        Some(crate::code::lint::LintCategory::MISSING_EXPLICIT_CTOR),
+                        Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
+                        warning_from_info(info),
+                    );
+                }
+            }));
+            return;
+        }
         }
     }
 }
@@ -11595,10 +11563,8 @@ mod diagnostics_tests {
             }
         }
         let mut subs = diagnostic.get_subdiagnostics();
-        while subs.non_empty() {
-            let sub = subs.head().clone();
-            subs = subs.tail();
-            collect_diagnostic_codes(&sub, codes);
+        for sub in &subs {
+        collect_diagnostic_codes(&sub, codes);
         }
     }
 
@@ -11613,10 +11579,8 @@ mod diagnostics_tests {
             }
         }
         let mut subs = diagnostic.get_subdiagnostics();
-        while subs.non_empty() {
-            let sub = subs.head().clone();
-            subs = subs.tail();
-            collect_diagnostic_texts(&sub, texts);
+        for sub in &subs {
+        collect_diagnostic_texts(&sub, texts);
         }
     }
 

@@ -6665,15 +6665,13 @@ fn method_symbol_display_verbose(
     let varargs = (symbol.flags_field & crate::code::flags::VARARGS) != 0;
     let mut parts: Vec<String> = Vec::new();
     let mut current = params;
-    while current.non_empty() {
-        let param = *current.head();
-        current = current.tail();
-        let mut text = type_display_str(ctx, param);
-        if varargs && current.is_empty() && text.ends_with("[]") {
-            text.truncate(text.len() - 2);
-            text.push_str("...");
-        }
-        parts.push(text);
+    for param in &current {
+    let mut text = type_display_str(ctx, param);
+    if varargs && current.is_empty() && text.ends_with("[]") {
+        text.truncate(text.len() - 2);
+        text.push_str("...");
+    }
+    parts.push(text);
     }
     // Keep the printer's owner/type-variable prefix (e.g. T<G>.Ctor) and only
     // replace the parameter types with their qualified rendering.

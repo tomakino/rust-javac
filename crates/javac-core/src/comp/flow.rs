@@ -1654,28 +1654,26 @@ impl<'a> AliveAnalyzer<'a> {
                         self.flow.types.direct_supertypes(ctx, self.syms, sym_type)
                     };
                     let mut current = supers;
-                    while current.non_empty() {
-                        let sup = *current.head();
-                        current = current.tail();
-                        let Some(sup_tsym) = ctx.typ(sup).tsym else {
-                            continue;
-                        };
-                        if ctx.sym(sup_tsym).kind == Kind::TYP
-                            && ctx.sym(sup_tsym).is_abstract()
-                            && ctx.sym(sup_tsym).is_sealed()
-                        {
-                            let permitted = crate::code::symbol::Symbol::permitted_subs(ctx, sup_tsym);
-                            let mut has_all = true;
-                            for sub in permitted.iter() {
-                                if !covered.contains(&sub) {
-                                    has_all = false;
-                                    break;
-                                }
-                            }
-                            if has_all && covered.insert(sup_tsym) {
-                                todo.push(sup_tsym);
+                    for sup in &current {
+                    let Some(sup_tsym) = ctx.typ(sup).tsym else {
+                        continue;
+                    };
+                    if ctx.sym(sup_tsym).kind == Kind::TYP
+                        && ctx.sym(sup_tsym).is_abstract()
+                        && ctx.sym(sup_tsym).is_sealed()
+                    {
+                        let permitted = crate::code::symbol::Symbol::permitted_subs(ctx, sup_tsym);
+                        let mut has_all = true;
+                        for sub in permitted.iter() {
+                            if !covered.contains(&sub) {
+                                has_all = false;
+                                break;
                             }
                         }
+                        if has_all && covered.insert(sup_tsym) {
+                            todo.push(sup_tsym);
+                        }
+                    }
                     }
                 }
                 _ => {}
@@ -1711,12 +1709,10 @@ impl<'a> AliveAnalyzer<'a> {
                     if ctx.typ(seltype).is_intersection() {
                         let components = ctx.typ(seltype).get_components();
                         let mut current = components;
-                        while current.non_empty() {
-                            let component = *current.head();
-                            current = current.tail();
-                            if self.is_exhaustive(ctx, component, covered) {
-                                return true;
-                            }
+                        for component in &current {
+                        if self.is_exhaustive(ctx, component, covered) {
+                            return true;
+                        }
                         }
                     }
                     false
@@ -3216,28 +3212,26 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
         };
         self.scan(ctx, body);
         let mut exits = std::mem::take(&mut self.pending_exits);
-        while exits.non_empty() {
-            let exit = exits.head().clone();
-            exits = exits.tail();
-            match &exit {
-                PendingExit::Thrown { .. } => {
-                    self.pending_exits = self.pending_exits.clone().append(exit);
-                }
-                _ => {
-                    let exit_tree = match &exit {
-                        PendingExit::Plain { tree } => *tree,
-                        PendingExit::Assign { tree, .. } => *tree,
-                        PendingExit::Thrown { tree, .. } => *tree,
-                    };
-                    let has_return = ctx.tree(exit_tree).has_tag(Tag::RETURN);
-                    let has_error = self.flow.log.borrow().has_error_on(Some(Rc::new(
-                        crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(exit_tree).pos),
-                    ) as Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>));
-                    if !(has_return || has_error) {
-                        panic!("AssertionError: unexpected lambda pending exit");
-                    }
+        for exit in &exits {
+        match &exit {
+            PendingExit::Thrown { .. } => {
+                self.pending_exits = self.pending_exits.clone().append(exit);
+            }
+            _ => {
+                let exit_tree = match &exit {
+                    PendingExit::Plain { tree } => *tree,
+                    PendingExit::Assign { tree, .. } => *tree,
+                    PendingExit::Thrown { tree, .. } => *tree,
+                };
+                let has_return = ctx.tree(exit_tree).has_tag(Tag::RETURN);
+                let has_error = self.flow.log.borrow().has_error_on(Some(Rc::new(
+                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(exit_tree).pos),
+                ) as Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>));
+                if !(has_return || has_error) {
+                    panic!("AssertionError: unexpected lambda pending exit");
                 }
             }
+        }
         }
         self.error_uncaught(ctx);
         self.pending_exits = prev_pending;
@@ -3357,81 +3351,79 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                     List::of(resource_type)
                 };
                 let mut current = closeable_supertypes;
-                while current.non_empty() {
-                    let sup = *current.head();
-                    current = current.tail();
-                    let auto_closeable_tsym = {
-                        let syms = self.syms;
-                        ctx.typ(syms.auto_closeable_type)
-                            .tsym
-                            .expect("AutoCloseable symbol")
+                for sup in &current {
+                let auto_closeable_tsym = {
+                    let syms = self.syms;
+                    ctx.typ(syms.auto_closeable_type)
+                        .tsym
+                        .expect("AutoCloseable symbol")
+                };
+                let as_super = {
+                    let syms = self.syms;
+                    self.flow
+                        .types
+                        .as_super(ctx, &syms, sup, auto_closeable_tsym)
+                };
+                if as_super.is_none() {
+                    continue;
+                }
+                let site = self.flow.types.skip_type_vars_public(ctx, sup);
+                let close_method = {
+                    let attr_rc = self
+                        .flow
+                        .attr
+                        .as_ref()
+                        .expect("AssertionError: the Attr service is not installed on Flow");
+                    let mut attr = attr_rc.borrow_mut();
+                    let chk_rc = Rc::clone(&self.flow.chk);
+                    let chk = Rc::clone(&chk_rc);
+                    let infer = Rc::clone(&attr.infer);
+                    let env = {
+                        let env = self.flow.attr_env.borrow().clone();
+                        env.expect("AssertionError: attrEnv")
                     };
-                    let as_super = {
-                        let syms = self.syms;
-                        self.flow
-                            .types
-                            .as_super(ctx, &syms, sup, auto_closeable_tsym)
-                    };
-                    if as_super.is_none() {
-                        continue;
-                    }
-                    let site = self.flow.types.skip_type_vars_public(ctx, sup);
-                    let close_method = {
-                        let attr_rc = self
-                            .flow
-                            .attr
-                            .as_ref()
-                            .expect("AssertionError: the Attr service is not installed on Flow");
-                        let mut attr = attr_rc.borrow_mut();
-                        let chk_rc = Rc::clone(&self.flow.chk);
-                        let chk = Rc::clone(&chk_rc);
-                        let infer = Rc::clone(&attr.infer);
-                        let env = {
-                            let env = self.flow.attr_env.borrow().clone();
-                            env.expect("AssertionError: attrEnv")
-                        };
-                        let rs = self.flow.rs.borrow_mut();
-                        let syms = self.syms;
-                        let location = ctx.typ(site).tsym.expect("close site symbol");
-                        rs.resolve_qualified_method(
-                            ctx,
-                            &syms,
+                    let rs = self.flow.rs.borrow_mut();
+                    let syms = self.syms;
+                    let location = ctx.typ(site).tsym.expect("close site symbol");
+                    rs.resolve_qualified_method(
+                        ctx,
+                        &syms,
+                        &self.flow.types,
+                        &mut attr,
+                        &chk,
+                        &infer,
+                        Some(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(resource).pos))),
+                        &env,
+                        location,
+                        site,
+                        self.flow.names.close.clone(),
+                        List::nil(),
+                        Some(List::nil()),
+                    )
+                };
+                let member_type = {
+                    let syms = self.syms;
+                    self.flow
+                        .types
+                        .member_type(ctx, &syms, resource_type, close_method)
+                };
+                if matches!(
+                    ctx.sym(close_method).kind,
+                    crate::code::kinds::Kind::MTH
+                ) {
+                    // Java: mt.getThrownTypes()
+                    let mut thrown =
+                        crate::code::types::Types::get_thrown_types_public(
                             &self.flow.types,
-                            &mut attr,
-                            &chk,
-                            &infer,
-                            Some(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(resource).pos))),
-                            &env,
-                            location,
-                            site,
-                            self.flow.names.close.clone(),
-                            List::nil(),
-                            Some(List::nil()),
-                        )
-                    };
-                    let member_type = {
-                        let syms = self.syms;
-                        self.flow
-                            .types
-                            .member_type(ctx, &syms, resource_type, close_method)
-                    };
-                    if matches!(
-                        ctx.sym(close_method).kind,
-                        crate::code::kinds::Kind::MTH
-                    ) {
-                        // Java: mt.getThrownTypes()
-                        let mut thrown =
-                            crate::code::types::Types::get_thrown_types_public(
-                                &self.flow.types,
-                                ctx,
-                                member_type,
-                            );
-                        while thrown.non_empty() {
-                            let exc = *thrown.head();
-                            thrown = thrown.tail();
-                            self.mark_thrown(ctx, resource, exc);
-                        }
+                            ctx,
+                            member_type,
+                        );
+                    while thrown.non_empty() {
+                        let exc = *thrown.head();
+                        thrown = thrown.tail();
+                        self.mark_thrown(ctx, resource, exc);
                     }
+                }
                 }
             }
         }
