@@ -22,7 +22,7 @@
 // The ported methods keep the upstream bodies and error keys; where a dependency
 // is not ported the branch is marked REGISTERED and not executed (no substitute).
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
@@ -211,7 +211,7 @@ pub struct Check {
     /// Java: private final Resolve rs (Check.java:87) — installed by the wiring
     /// because the Resolve service is created by Attr after Check (registered
     /// adapter, same pattern as enter/type_annotations/preview).
-    pub resolve: Rc<RefCell<Option<Rc<crate::comp::resolve::Resolve>>>>,
+    pub resolve: OnceCell<Rc<crate::comp::resolve::Resolve>>,
     /// Java: private final JavaFileManager fileManager (Check.java:95) —
     /// installed by the wiring (service table cell).
     pub file_manager:
@@ -379,7 +379,7 @@ impl Check {
             unchecked_handler,
             sun_api_handler,
             preview: Rc::new(RefCell::new(None)),
-            resolve: Rc::new(RefCell::new(None)),
+            resolve: OnceCell::new(),
             file_manager: Rc::new(RefCell::new(None)),
             profile: Rc::new(RefCell::new(None)),
             source,
@@ -10612,7 +10612,10 @@ impl Check {
     /// # Panics
     ///   - none.
     pub fn set_resolve(&self, resolve: Rc<crate::comp::resolve::Resolve>) {
-        *self.resolve.borrow_mut() = Some(resolve);
+        self.resolve
+            .set(resolve)
+            .ok()
+            .expect("Check.resolve must be set exactly once");
     }
 
     /// Installs the file manager (Java: private final JavaFileManager
@@ -10875,8 +10878,7 @@ impl Check {
         }
         let resolve = Rc::clone(
             self.resolve
-                .borrow()
-                .as_ref()
+                .get()
                 .expect("AssertionError: resolve service not installed"),
         );
         if !resolve.is_accessible_class(ctx, syms, env, c, false) {

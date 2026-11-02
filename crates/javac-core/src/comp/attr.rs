@@ -36,7 +36,7 @@
 // - visitApply/visitSelect/visitExec/... the remaining Attr visitors: registered
 // for Attr B/C (the default visitTree keeps the upstream behavior:
 // the tree is not attributed by A yet -> explicit unimplemented).
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::rc::Rc;
 
 use crate::code::deferred_lint_handler::DeferredLintHandler;
@@ -163,7 +163,7 @@ pub struct Attr {
     pub infer: Rc<crate::comp::infer::Infer>,
     /// Java: final Resolve rs (cell: Resolve and Attr are mutually recursive
     /// services, adapter; installed by the wiring).
-    pub rs: Rc<RefCell<Option<Rc<crate::comp::resolve::Resolve>>>>,
+    pub rs: OnceCell<Rc<crate::comp::resolve::Resolve>>,
     /// Java: final ArgumentAttr argumentAttr (adapter cell, installed by the wiring).
     pub argument_attr: Rc<RefCell<Option<Rc<RefCell<crate::comp::argument_attr::ArgumentAttr>>>>>,
     /// Java: final DeferredAttr deferredAttr (adapter cell, installed by the wiring).
@@ -325,7 +325,7 @@ impl Attr {
                 crate::comp::check::CheckMode::NORMAL,
             ),
             clinits: RefCell::new(std::collections::HashMap::new()),
-            rs: Rc::new(RefCell::new(None)),
+            rs: OnceCell::new(),
             argument_attr: Rc::new(RefCell::new(None)),
             deferred_attr: Rc::new(RefCell::new(None)),
             match_bindings: crate::comp::match_bindings::MatchBindings::empty(),
@@ -1265,10 +1265,7 @@ impl Attr {
             let pt = pt.expect("method prototype");
             let argtypes = self.types.get_parameter_types_public(ctx, pt);
             let typeargtypes = self.types.get_type_arguments_public(ctx, syms, pt);
-            let rs_rc = self
-                .rs
-                .borrow()
-                .clone()
+            let rs_rc = self.rs.get().cloned()
                 .expect("AssertionError: rs service must be installed");
             let rs = &*rs_rc;
             let chk_rc = Rc::clone(&self.chk);
@@ -1303,10 +1300,7 @@ impl Attr {
                 sym = tree_sym;
             } else {
                 // Java: sym = rs.resolveIdent(tree.pos(), env, tree.name, pkind());
-                let rs_rc = self
-                    .rs
-                    .borrow()
-                    .clone()
+                let rs_rc = self.rs.get().cloned()
                     .expect("AssertionError: rs service must be installed");
                 let rs = &*rs_rc;
                 let pos = simple_diag_pos(ctx.tree(tree).pos);
@@ -1315,10 +1309,7 @@ impl Attr {
             }
         } else {
             // Java: sym = rs.resolveIdent(tree.pos(), env, tree.name, pkind());
-            let rs_rc = self
-                .rs
-                .borrow()
-                .clone()
+            let rs_rc = self.rs.get().cloned()
                 .expect("AssertionError: rs service must be installed");
             let rs = &*rs_rc;
             let pos = simple_diag_pos(ctx.tree(tree).pos);
@@ -1396,10 +1387,7 @@ impl Attr {
                 let encl1 = env1.encl_class.expect("env1 enclClass");
                 let encl1_sym = class_tree_symbol(ctx, encl1).expect("env1 enclClass sym");
                 let site1 = ctx.sym(encl1_sym).ty.expect("env1 enclClass type");
-                let rs_rc = self
-                    .rs
-                    .borrow()
-                    .clone()
+                let rs_rc = self.rs.get().cloned()
                     .expect("AssertionError: rs service must be installed");
                 let rs = &*rs_rc;
                 if rs.is_accessible_member(ctx, syms, &env, site1, sym, false) {
@@ -1685,10 +1673,7 @@ impl Attr {
                     Rc::clone(&result_info.check_context),
                     result_info.check_mode,
                 );
-                let rs_rc = self
-                    .rs
-                    .borrow()
-                    .clone()
+                let rs_rc = self.rs.get().cloned()
                     .expect("AssertionError: rs service must be installed");
                 let rs = &*rs_rc;
                 let infer_rc = Rc::clone(&self.infer);
@@ -1887,7 +1872,7 @@ impl Attr {
         let Ok(recover) = recover_rc.try_borrow() else {
             return;
         };
-        let rs_rc = self.rs.borrow().clone();
+        let rs_rc = self.rs.get().cloned();
         let Some(rs_rc) = rs_rc else {
             return;
         };
@@ -2868,10 +2853,7 @@ impl Attr {
                     {
                         *packge = Some(site);
                     }
-                    let rs_rc = self
-                        .rs
-                        .borrow()
-                        .clone()
+                    let rs_rc = self.rs.get().cloned()
                         .expect("AssertionError: rs service must be installed");
                     let rs = &*rs_rc;
                     return rs.find_ident_in_package(
@@ -2893,20 +2875,14 @@ impl Attr {
                     *sym = Some(site);
                 }
                 let site_type = ctx.sym(site).ty.expect("site type");
-                let rs_rc = self
-                    .rs
-                    .borrow()
-                    .clone()
+                let rs_rc = self.rs.get().cloned()
                     .expect("AssertionError: rs service must be installed");
                 let rs = &*rs_rc;
                 rs.find_member_type_pub(ctx, syms, env, site_type, &name, site, Some(self))
             }
             Tag::IDENT => {
                 let name = ident_name(ctx, tree);
-                let rs_rc = self
-                    .rs
-                    .borrow()
-                    .clone()
+                let rs_rc = self.rs.get().cloned()
                     .expect("AssertionError: rs service must be installed");
                 let rs = &*rs_rc;
                 rs.find_ident(
@@ -4808,10 +4784,7 @@ impl Attr {
     ) -> SymbolId {
         let encl_class = env.encl_class.expect("AssertionError: enclClass");
         let encl_sym = class_tree_symbol(ctx, encl_class).expect("AssertionError: enclClass sym");
-        let rs_rc = self
-            .rs
-            .borrow()
-            .clone()
+        let rs_rc = self.rs.get().cloned()
             .expect("AssertionError: rs service must be installed");
         let rs = &*rs_rc;
         let types_rc = Rc::clone(&self.types);
@@ -5170,10 +5143,7 @@ impl Attr {
                     } else if meth_name == self.names._super {
                         // qualifier omitted; check for existence of an appropriate
                         // implicit qualifier.
-                        let rs_rc = self
-                            .rs
-                            .borrow()
-                            .clone()
+                        let rs_rc = self.rs.get().cloned()
                             .expect("AssertionError: rs service must be installed");
                         let rs = &*rs_rc;
                         let types_rc = Rc::clone(&self.types);
@@ -5220,10 +5190,7 @@ impl Attr {
                 let select_super_prev = local_env.info.borrow().select_super;
                 local_env.info.borrow_mut().select_super = true;
                 local_env.info.borrow_mut().pending_resolution_phase = None;
-                let rs_rc = self
-                    .rs
-                    .borrow()
-                    .clone()
+                let rs_rc = self.rs.get().cloned()
                     .expect("AssertionError: rs service must be installed");
                 let rs = &*rs_rc;
                 let chk_rc = Rc::clone(&self.chk);
@@ -5519,7 +5486,7 @@ impl Attr {
         // that is invisible from the current module is reported with its
         // module-access reason (Resolve.symbolPackageVisible).
         if sym_exists {
-            let rs_rc = self.rs.borrow().clone();
+            let rs_rc = self.rs.get().cloned();
             if let Some(rs_rc) = rs_rc {
                 let diag = rs_rc.module_access_diagnostic(
                     ctx,
@@ -5666,20 +5633,14 @@ impl Attr {
                         || ctx.sym(sym).kind == crate::code::kinds::Kind::MTH)
                 {
                     let static_error = {
-                        let rs_rc = self
-                            .rs
-                            .borrow()
-                            .clone()
+                        let rs_rc = self.rs.get().cloned()
                             .expect("AssertionError: rs service must be installed");
                         let rs = &*rs_rc;
                         rs.new_static_error_pub(ctx, sym)
                     };
                     let pos = simple_diag_pos(ctx.tree(tree).pos);
                     let site_opt = Some(site);
-                    let rs_rc = self
-                        .rs
-                        .borrow()
-                        .clone()
+                    let rs_rc = self.rs.get().cloned()
                         .expect("AssertionError: rs service must be installed");
                     let rs = &*rs_rc;
                     let sym_name = ctx.sym(sym).name.clone();
@@ -5692,6 +5653,7 @@ impl Attr {
                         site_opt,
                         &sym_name,
                         true,
+                        Some(self),
                     );
                 }
             }
@@ -5738,10 +5700,7 @@ impl Attr {
             && (ctx.sym(sym).flags_field & (flags::STATIC as i64)) == 0
         {
             // Check that super-qualified symbols are not abstract (JLS)
-            let rs_rc = self
-                .rs
-                .borrow()
-                .clone()
+            let rs_rc = self.rs.get().cloned()
                 .expect("AssertionError: rs service must be installed");
             let rs = &*rs_rc;
             rs.check_non_abstract(ctx, simple_diag_pos(ctx.tree(tree).pos), sym);
@@ -5837,10 +5796,7 @@ impl Attr {
         match ctx.typ(site).get_tag() {
             TypeTag::PACKAGE => {
                 let site_tsym = ctx.typ(site).tsym.expect("package symbol");
-                let rs_rc = self
-                    .rs
-                    .borrow()
-                    .clone()
+                let rs_rc = self.rs.get().cloned()
                     .expect("AssertionError: rs service must be installed");
                 let rs = &*rs_rc;
                 let found = rs.find_ident_in_package(
@@ -5853,7 +5809,17 @@ impl Attr {
                     result_info.pkind,
                     Some(self),
                 );
-                rs.access_base(ctx, syms, found, pos, location, Some(site), &name, true)
+                rs.access_base(
+                    ctx,
+                    syms,
+                    found,
+                    pos,
+                    location,
+                    Some(site),
+                    &name,
+                    true,
+                    Some(self),
+                )
             }
             TypeTag::ARRAY | TypeTag::CLASS => {
                 let pt_is_method = result_info
@@ -5867,10 +5833,7 @@ impl Attr {
                     let pt = result_info.pt.expect("method prototype");
                     let argtypes = self.types.get_parameter_types_public(ctx, pt);
                     let typeargtypes = self.types.get_type_arguments_public(ctx, syms, pt);
-                    let rs_rc = self
-                        .rs
-                        .borrow()
-                        .clone()
+                    let rs_rc = self.rs.get().cloned()
                         .expect("AssertionError: rs service must be installed");
                     let rs = &*rs_rc;
                     let types_rc = Rc::clone(&self.types);
@@ -5894,10 +5857,7 @@ impl Attr {
                     )
                 } else if name == self.names._this || name == self.names._super {
                     let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
-                    let rs_rc = self
-                        .rs
-                        .borrow()
-                        .clone()
+                    let rs_rc = self.rs.get().cloned()
                         .expect("AssertionError: rs service must be installed");
                     let rs = &*rs_rc;
                     let types_rc = Rc::clone(&self.types);
@@ -5908,10 +5868,7 @@ impl Attr {
                     syms_guard.get_class_field(ctx, &types_rc, site)
                 } else {
                     let found = {
-                        let rs_rc = self
-                            .rs
-                            .borrow()
-                            .clone()
+                        let rs_rc = self.rs.get().cloned()
                             .expect("AssertionError: rs service must be installed");
                         let rs = &*rs_rc;
                         rs.find_ident_in_type(
@@ -5925,13 +5882,20 @@ impl Attr {
                             Some(self),
                         )
                     };
-                    let rs_rc = self
-                        .rs
-                        .borrow()
-                        .clone()
+                    let rs_rc = self.rs.get().cloned()
                         .expect("AssertionError: rs service must be installed");
                     let rs = &*rs_rc;
-                    rs.access_base(ctx, syms, found, pos, location, Some(site), &name, true)
+                    rs.access_base(
+                        ctx,
+                        syms,
+                        found,
+                        pos,
+                        location,
+                        Some(site),
+                        &name,
+                        true,
+                        Some(self),
+                    )
                 }
             }
             TypeTag::WILDCARD => panic!("AssertionError: wildcard select"),
@@ -5961,10 +5925,7 @@ impl Attr {
                     // Java: sym2 = rs.new AccessError(env, site, sym);
                     let env_snapshot = crate::comp::resolve::resolve_env_snapshot(ctx, env);
                     let access_error = {
-                        let rs_rc = self
-                            .rs
-                            .borrow()
-                            .clone()
+                        let rs_rc = self.rs.get().cloned()
                             .expect("AssertionError: rs service must be installed");
                         let rs = &*rs_rc;
                         let data = crate::code::symbol::ResolveErrorData::Access {
@@ -5982,13 +5943,20 @@ impl Attr {
                     };
                     sym = access_error;
                 }
-                let rs_rc = self
-                    .rs
-                    .borrow()
-                    .clone()
+                let rs_rc = self.rs.get().cloned()
                     .expect("AssertionError: rs service must be installed");
                 let rs = &*rs_rc;
-                rs.access_base(ctx, syms, sym, pos, location, Some(site), &name, true);
+                rs.access_base(
+                    ctx,
+                    syms,
+                    sym,
+                    pos,
+                    location,
+                    Some(site),
+                    &name,
+                    true,
+                    Some(self),
+                );
                 sym
             }
             TypeTag::ERROR => {
@@ -7742,10 +7710,7 @@ impl Attr {
             current
         };
         let close_sym = {
-            let rs_rc = self
-                .rs
-                .borrow()
-                .clone()
+            let rs_rc = self.rs.get().cloned()
                 .expect("AssertionError: rs service must be installed");
             let rs = &*rs_rc;
             let types_rc = Rc::clone(&self.types);
@@ -7953,10 +7918,7 @@ impl Attr {
                         }
                     }
                     let iter_sym = {
-                        let rs_rc = self
-                            .rs
-                            .borrow()
-                            .clone()
+                        let rs_rc = self.rs.get().cloned()
                             .expect("AssertionError: rs service must be installed");
                         let rs = &*rs_rc;
                         let types_rc = Rc::clone(&self.types);
@@ -8630,10 +8592,7 @@ impl Attr {
                     //     }
                     // (Attr.java:1733-1743). The Java mutable field is the ported
                     // Resolve.basic_log_resolve_helper Cell (Resolve.java:2610).
-                    let rs_rc = self
-                        .rs
-                        .borrow()
-                        .clone()
+                    let rs_rc = self.rs.get().cloned()
                         .expect("AssertionError: rs service must be installed");
                     let prev_resolve_helper = rs_rc.basic_log_resolve_helper.get();
                     rs_rc
@@ -9371,14 +9330,14 @@ impl Attr {
             let listener = Rc::new(AccessibleTypesListener {
                 env: Rc::clone(env),
                 pos,
-                rs: self.rs.borrow().clone(),
+                rs: self.rs.get().cloned(),
                 ts: ts.clone(),
             });
             inference_context.add_free_type_listener(ctx, syms, &self.types, ts.clone(), listener);
         } else {
             let current = ts.clone();
             for t in &current {
-            if let Some(rs_rc) = self.rs.borrow().clone() {
+            if let Some(rs_rc) = self.rs.get().cloned() {
                 let rs = &*rs_rc;
                 rs.check_accessible_type(ctx, syms, env, t);
             }
@@ -9799,7 +9758,7 @@ impl Attr {
             == crate::comp::deferred_attr::AttrMode::SPECULATIVE;
         // Java: preFlow(that); flow.analyzeLambda(env, that, make, isSpeculativeRound);
         {
-            let rs_rc = self.rs.borrow().clone();
+            let rs_rc = self.rs.get().cloned();
             let recover_rc = self.attr_recover.borrow().clone();
             let chk_rc = Rc::clone(&self.chk);
             if let (Some(rs_rc), Some(recover_rc)) = (rs_rc, recover_rc) {
@@ -10270,10 +10229,7 @@ impl Attr {
         );
         let argtypes = self.types.get_parameter_types_public(ctx, desc);
         let inference_context = Rc::clone(result_info.check_context.inference_context());
-        let rs_rc = self
-            .rs
-            .borrow()
-            .clone()
+        let rs_rc = self.rs.get().cloned()
             .expect("AssertionError: rs service must be installed");
         let method_check: Rc<RefCell<dyn crate::comp::resolve::MethodCheck>> = {
             let rs = &*rs_rc;
@@ -10433,10 +10389,7 @@ impl Attr {
                 enclosing_type.filter(|t| ctx.typ(*t).has_tag(TypeTag::CLASS))
             {
                 let _ = enclosing_type;
-                let rs_rc2 = self
-                    .rs
-                    .borrow()
-                    .clone()
+                let rs_rc2 = self.rs.get().cloned()
                     .expect("AssertionError: rs service must be installed");
                 // resolve_implicit_this only needs shared access to Resolve.
                 let rs = &*rs_rc2;
@@ -10510,10 +10463,7 @@ impl Attr {
                 } = &ctx.tree(that).kind
                 {
                     if *reference_kind == crate::tree::jc_tree::ReferenceKind::SUPER {
-                        let rs_rc2 = self
-                            .rs
-                            .borrow()
-                            .clone()
+                        let rs_rc2 = self.rs.get().cloned()
                             .expect("AssertionError: rs service must be installed");
                         let rs = &*rs_rc2;
                         rs.check_non_abstract(ctx, simple_diag_pos(ctx.tree(that).pos), that_sym);
@@ -10850,7 +10800,6 @@ pub fn wire_attr_services(
         cfolder,
         infer,
         lint,
-        rs_cell,
         operators_cell,
         recover_cell,
         deferred_cell,
@@ -10875,7 +10824,6 @@ pub fn wire_attr_services(
             Rc::clone(&a.cfolder),
             Rc::clone(&a.infer),
             lint,
-            Rc::clone(&a.rs),
             Rc::clone(&a.operators),
             Rc::clone(&a.attr_recover),
             Rc::clone(&a.deferred_attr),
@@ -10904,9 +10852,6 @@ pub fn wire_attr_services(
         Rc::clone(&options),
         finder.clone(),
     ));
-    // Java: Resolve holds the Context services; the deferred argument-type map
-    // (Resolve.java:2615-2636) needs the Attr re-entry (registered adapter cell).
-    *rs.attr_cell.borrow_mut() = Some(Rc::clone(&attr));
     // Java: Resolve.moduleFinder = ModuleFinder.instance(context) (Resolve.java:137);
     // the port wires it after Resolve construction (registered adapter).
     if let (Some(finder), Some(file_manager)) = (finder.as_ref(), file_manager) {
@@ -11015,7 +10960,10 @@ pub fn wire_attr_services(
     // install the services into the Attr cells
     {
         let a = attr.borrow();
-        *rs_cell.borrow_mut() = Some(rs);
+        a.rs
+            .set(rs)
+            .ok()
+            .expect("Attr.rs must be initialized exactly once");
         *operators_cell.borrow_mut() = Some(operators);
         *recover_cell.borrow_mut() = Some(recover);
         *argument.borrow().flow.borrow_mut() = Some(Rc::clone(&flow));
@@ -13074,10 +13022,7 @@ impl Attr {
                 .map(|encl_ty| ctx.typ(encl_ty).has_tag(TypeTag::CLASS))
                 .unwrap_or(false);
             if !is_interface && encl_has_class {
-                let rs_rc = self
-                    .rs
-                    .borrow()
-                    .clone()
+                let rs_rc = self.rs.get().cloned()
                     .expect("AssertionError: rs service");
                 let rs = &*rs_rc;
                 let types_rc = Rc::clone(&self.types);
@@ -13234,10 +13179,7 @@ impl Attr {
                 diamond_env.info.borrow_mut().select_super = cdef.is_some() || class_decl_removed;
                 diamond_env.info.borrow_mut().pending_resolution_phase = None;
                 let (constructor, constructor_base) = {
-                    let rs_rc = self
-                        .rs
-                        .borrow()
-                        .clone()
+                    let rs_rc = self.rs.get().cloned()
                         .expect("AssertionError: rs service");
                     let rs = &*rs_rc;
                     let chk_rc = Rc::clone(&self.chk);
@@ -13384,10 +13326,7 @@ impl Attr {
                     rs_env_info.pending_resolution_phase = None;
                 }
                 let constructor = {
-                    let rs_rc = self
-                        .rs
-                        .borrow()
-                        .clone()
+                    let rs_rc = self.rs.get().cloned()
                         .expect("AssertionError: rs service");
                     let rs = &*rs_rc;
                     let chk_rc = Rc::clone(&self.chk);
@@ -13682,10 +13621,7 @@ impl Attr {
                 crate::code::types::get_type_arguments_completed(ctx, syms, clazztype, None);
             let mut arguments_current = clazz_arguments;
             for argument in &arguments_current {
-            let rs_rc = self
-                .rs
-                .borrow()
-                .clone()
+            let rs_rc = self.rs.get().cloned()
                 .expect("AssertionError: rs service");
             let rs = &*rs_rc;
             let env_rc = self.env.clone().expect("env");
@@ -13774,10 +13710,7 @@ impl Attr {
             cdef_ty
         };
         let constructor = {
-            let rs_rc = self
-                .rs
-                .borrow()
-                .clone()
+            let rs_rc = self.rs.get().cloned()
                 .expect("AssertionError: rs service");
             let rs = &*rs_rc;
             let chk_rc = Rc::clone(&self.chk);
@@ -14038,7 +13971,13 @@ impl Attr {
             attr_recover: Rc::clone(&self.attr_recover),
             syms: Rc::clone(&self.syms),
             infer: Rc::clone(&self.infer),
-            rs: Rc::clone(&self.rs),
+            rs: {
+                let cell = OnceCell::new();
+                if let Some(rs) = self.rs.get() {
+                    let _ = cell.set(Rc::clone(rs));
+                }
+                cell
+            },
             argument_attr: Rc::clone(&self.argument_attr),
             deferred_attr: Rc::clone(&self.deferred_attr),
             match_bindings: self.match_bindings.clone(),
@@ -16378,7 +16317,7 @@ mod tests {
             None,
         );
         let a = attr.borrow();
-        assert!(a.rs.borrow().is_some(), "rs service");
+        assert!(a.rs.get().is_some(), "rs service");
         assert!(a.operators.borrow().is_some(), "operators service");
         assert!(a.attr_recover.borrow().is_some(), "attr_recover service");
         assert!(a.flow.borrow().is_some(), "flow service");

@@ -4022,6 +4022,7 @@ impl Lower {
                 let type_sym = {
                     let rs = &*self.rs;
                     let mut syms = self.syms.borrow_mut();
+                    let mut attr = self.attr.borrow_mut();
                     rs.access_base(
                         ctx,
                         &mut syms,
@@ -4031,6 +4032,7 @@ impl Lower {
                         Some(boxed_ty),
                         &self.names.TYPE,
                         true,
+                        Some(&mut *attr),
                     )
                 };
                 if ctx.sym(type_sym).kind == Kind::VAR {

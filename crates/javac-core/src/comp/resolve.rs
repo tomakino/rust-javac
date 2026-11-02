@@ -201,13 +201,8 @@ pub struct Resolve {
     /// (the resolution context is otherwise passed explicitly; registered adapter:
     /// the port stores the immutable step while a method check runs).
     pub current_resolution_step: std::cell::Cell<Option<MethodResolutionPhase>>,
-    /// The Attr service used by the deferred argument-type mapping in
-    /// accessInternal (Java: methodLogResolveHelper/DeferredAttr; the port wires
-    /// the Attr cell after construction — registered adapter).
-    pub attr_cell: Rc<RefCell<Option<Rc<RefCell<crate::comp::attr::Attr>>>>>, 
     /// Java: private final ModuleFinder moduleFinder (Resolve.java:105) — the
-    /// module finder service (wired after construction; registered adapter
-    /// cell like attr_cell).
+    /// module finder service, installed by the wiring after construction.
     pub module_finder: Rc<RefCell<Option<Rc<crate::code::module_finder::ModuleFinder>>>>, 
     /// Java: LogResolveHelper basicLogResolveHelper (Resolve.java:2610-2617) —
     /// the helper read by accessBase (Resolve.java:2586-2592). Attr temporarily
@@ -304,7 +299,6 @@ impl Resolve {
             verbose_resolution_mode,
             dump_method_reference_search_results,
             compact_method_diags,
-            attr_cell: Rc::new(RefCell::new(None)),
             module_finder: Rc::new(RefCell::new(None)),
             basic_log_resolve_helper: std::cell::Cell::new(LogResolveHelper::Basic),
         }
@@ -651,7 +645,7 @@ impl Resolve {
                     });
                     let name = ctx.sym(tsym).name.clone();
                     self.access_base(
-                        ctx, syms, error, pos, location, Some(t), &name, true,
+                        ctx, syms, error, pos, location, Some(t), &name, true, None,
                     );
                 }
             }
@@ -3575,33 +3569,16 @@ impl Resolve {
                         .current_resolution_step
                         .get()
                         .expect("AssertionError: currentResolutionContext is null");
-                    // The caller may already hold the mutable Attr borrow (the
-                    // attribution pass); otherwise the installed service cell is
-                    // used (Resolve.DeferredAttr is a Context service upstream).
-                    let mapped = if let Some(attr) = attr {
-                        attr.map_resolve_deferred_argtypes(
-                            ctx,
-                            syms,
-                            current_argtypes,
-                            Some(sym),
-                            step,
-                        )
-                    } else {
-                        let attr_rc = Rc::clone(
-                            self.attr_cell
-                                .borrow()
-                                .as_ref()
-                                .expect("AssertionError: Attr service must be installed"),
-                        );
-                        
-                        attr_rc.borrow_mut().map_resolve_deferred_argtypes(
-                            ctx,
-                            syms,
-                            current_argtypes,
-                            Some(sym),
-                            step,
-                        )
-                    };
+                    // The enclosing Attr is threaded in by the attribution
+                    // caller; the deferred argument mapping requires it.
+                    let attr = attr.expect("AssertionError: Attr service must be installed");
+                    let mapped = attr.map_resolve_deferred_argtypes(
+                        ctx,
+                        syms,
+                        current_argtypes,
+                        Some(sym),
+                        step,
+                    );
                     argtypes = Some(mapped);
                 }
             }
@@ -3710,6 +3687,7 @@ impl Resolve {
         site: Option<TypeId>,
         name: &crate::util::name::Name,
         qualified: bool,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         self.access_internal(
             ctx,
@@ -3722,7 +3700,7 @@ impl Resolve {
             qualified,
             None,
             None,
-            None,
+            attr,
             self.basic_log_resolve_helper.get(),
         )
     }
@@ -10145,11 +10123,11 @@ impl Resolve {
         env: &Rc<Env<AttrContext>>,
         name: crate::util::name::Name,
         kind: crate::code::kinds::KindSelector,
-        attr: Option<&mut crate::comp::attr::Attr>,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         // Java: return accessBase(findIdent(pos, env, name, kind), pos,
         // env.enclClass.sym.type, name, false);
-        let found = self.find_ident(ctx, syms, pos.clone(), env, &name, kind, attr);
+        let found = self.find_ident(ctx, syms, pos.clone(), env, &name, kind, attr.as_deref_mut());
         let encl_tree = env.encl_class.expect("resolving ident outside class");
         // Java: env.enclClass.sym.type (Resolve.java:2683).
         let encl_sym = match &ctx.tree(encl_tree).kind {
@@ -10174,7 +10152,7 @@ impl Resolve {
         if local_bypass {
             return found;
         }
-        self.access_base(ctx, syms, found, pos, location, site, &name, false)
+        self.access_base(ctx, syms, found, pos, location, site, &name, false, attr)
     }
 
 }
@@ -10229,7 +10207,7 @@ impl Resolve {
                                     .expect("enclClass sym");
                                 let encl_type = ctx.sym(encl_sym).ty;
                                 return self.access_base(
-                                    ctx, syms, sym, pos, None, encl_type, &name, true,
+                                    ctx, syms, sym, pos, None, encl_type, &name, true, None,
                                 );
                             }
                         }
@@ -10456,7 +10434,7 @@ impl Resolve {
             .expect("enclClass sym");
         let encl_type = ctx.sym(encl_sym).ty;
         let name = ctx.sym(sym).name.clone();
-        self.access_base(ctx, syms, sym, pos, None, encl_type, &name, true)
+        self.access_base(ctx, syms, sym, pos, None, encl_type, &name, true, None)
     }
 
     /// Java: Type resolveImplicitThis(DiagnosticPosition pos, Env<AttrContext> env,

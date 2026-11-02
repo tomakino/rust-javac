@@ -654,8 +654,8 @@ impl MiniCompiler {
         let resolve = attr
             .borrow()
             .rs
-            .borrow()
-            .clone()
+            .get()
+            .cloned()
             .expect("resolve service installed");
         util_context.put::<Resolve>(Rc::clone(&resolve));
         chk.set_resolve(Rc::clone(&resolve));
