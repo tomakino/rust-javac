@@ -2,6 +2,7 @@
 
 pub mod byte_codes;
 pub mod code;
+pub mod code_state;
 pub mod codegen;
 pub mod class_file;
 pub mod class_writer;
