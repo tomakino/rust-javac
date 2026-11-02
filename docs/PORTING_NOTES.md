@@ -91,49 +91,23 @@ Source comments reference the id; the full record stays here.
 
 ## PN-006 `Rc<RefCell<...>>` adaptation layer
 
-- Observed: `Rc<RefCell<` appears 530 times and `borrow_mut()` 2130 times in
-  `javac-core`.
-- Cause: a 1:1 port of Java's shared mutable object graph (log, warner,
-  scopes, inference contexts, lambda translation state).
-- Impact: runtime borrow panics, reduced readability, no `Send`/`Sync`.
-- Status: technical debt, explicitly an adaptation layer.
-- Plan: P2, batch by hotspot (`lambda_to_method` -> `codegen` ->
-  `argument_attr` -> `check` -> `attr`).
-- Verification: each batch runs L1/L2; `BorrowMutError` is a hard failure.
-
-### P2 progress
-
-- P2 has converged thirteen types so far: MemberEnter, Warner, TypeEnvs, Enter,
-  FileQueue, Todo, ModuleFinder, DeferredLintHandler, SpeculativeCache,
-  AnnotationTypeMetadata, Items, ArgumentTypeData and ClassWriter.
-  `Rc<RefCell<` dropped from 530 to 424 occurrences. The L2 gate
-  (Gson/Guava/OkHttp byte parity) passes.
-- The unsafe `with_reentrant_mut` helper (a second `&mut T` fabricated while an
-  outer `RefMut` was live) was removed; its only caller invokes a `&self`
-  method through a shared borrow.
-- `ClassWriter` converged through the three-step pattern: buffers, hooks and
-  flags made interiorly mutable; the `StackMapTableWriter` trait converted to
-  `&self`; then all 44 writer methods took `&self` and the type is shared as
-  `Rc<ClassWriter>`.
-- `Resolve` is the next low-risk target: it has no `&mut self` methods (all
-  state is already in `Cell`/`RefCell` fields), so `Rc<RefCell<Resolve>>` is
-  vestigial. The type appears in six field sites -- `flow.rs` (`rs`),
-  `lambda_to_method.rs` (`rs`), `lower.rs` (`rs`), `trans_patterns.rs`
-  (`rs`), `trans_types.rs` (`resolve`) and `mini_compiler.rs`
-  (`resolve`) -- plus `Resolve::instance`'s return type. `Attr.rs` stores it
-  as `Rc<RefCell<Option<Rc<RefCell<Resolve>>>>>` (the outer RefCell makes the
-  service installable), which becomes `Rc<RefCell<Option<Rc<Resolve>>>>`; the
-  two shapes must not be mixed in one bulk replacement.
-- Two integration shapes need interface-first work rather than bulk
-  replacement:
-  - `Warner` is now interiorly mutable and shared as `Rc<Warner>`; callers
-    that need the copy-back semantics use `Warner::copy_from`.
-  - `TypeEnter` is nested (`Enter.type_enter:
-    Rc<RefCell<Option<Rc<RefCell<TypeEnter>>>>>`, `self_ref:
-    RefCell<Weak<RefCell<TypeEnter>>>`) and its helper trait uses `&mut self`;
-    migrate the three storage sites and the trait before changing the type.
-- `PoolWriter` keeps `pool: WriteablePoolHelper` as a mutable field and mutates
-  several counters; internalize the helper first.
+- Observed: the starting count was 541 syntactic occurrences (479
+  `Rc<RefCell<` plus 62 `Rc<std::cell::RefCell<`). The current count is 225
+  (213 plus 12).
+- Cause: a direct port of Java's shared mutable object graph (Attr/Annotate
+  construction, phase services, code generation workspaces, and public
+  callback interfaces).
+- Status: the remaining occurrences are categorized as real sharing, state
+  machines, public API, trait-receiver constraints, local candidates, and
+  textual placeholders. The complete ledger, per-type rationale, and removal
+  prerequisites are in `docs/RUST_PURITY.md`.
+- Plan: only the local candidates are actionable without redesigning a
+  service, a phase workspace, or a public/trait contract. The service and
+  state-machine occurrences are retained deliberately; zero is not the
+  target.
+- Verification: each reduction batch runs the library tests and the Gson,
+  Guava, and OkHttp parity checks; annotation-affecting changes also run the
+  diagnostic example corpus.
 
 ## PN-007 Panic-based exception channel
 
