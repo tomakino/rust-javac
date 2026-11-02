@@ -12007,7 +12007,7 @@ mod tests {
         assert!(types.is_subtypes(&mut ctx, &syms, &ints, &ints));
         assert!(!types.is_subtypes(&mut ctx, &syms, &ints, &booleans));
         assert!(!types.is_subtypes(&mut ctx, &syms, &ints, &List::nil()));
-        let mut warn = crate::util::warner::Warner::new(None);
+        let warn = crate::util::warner::Warner::new(None);
         assert!(types.is_subtypes_unchecked(&mut ctx, &syms, &ints, &ints, &warn));
         assert!(!types.is_subtypes_unchecked(&mut ctx, &syms, &ints, &booleans, &warn));
         assert!(!types.is_subtypes_unchecked(&mut ctx, &syms, &List::nil(), &ints, &warn));

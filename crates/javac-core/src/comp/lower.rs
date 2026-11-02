@@ -1204,7 +1204,7 @@ impl Lower {
                 Some(proxy) => *proxy,
                 None => break,
             };
-            assert_ne!((ctx.sym(proxy).flags_field & crate::code::flags::FINAL as i64), 0, "AssertionError: proxy is not final");
+            assert_ne!(ctx.sym(proxy).flags_field & crate::code::flags::FINAL as i64, 0, "AssertionError: proxy is not final");
             sym = proxy;
             tree = self.make.ident_symbol(ctx, sym);
         }

@@ -10938,7 +10938,6 @@ mod tests {
             &types,
             List::of(tvar),
         );
-        drop(syms_guard);
         assert!(
             inference.free(&mut ctx, &*syms, &types, tvar),
             "the type variable is free in the context"
@@ -11812,7 +11811,7 @@ mod diagnostics_tests {
                 collect_diagnostic_codes(&nested, codes);
             }
         }
-        let mut subs = diagnostic.get_subdiagnostics();
+        let subs = diagnostic.get_subdiagnostics();
         for sub in &subs {
             collect_diagnostic_codes(&sub, codes);
         }
@@ -11831,7 +11830,7 @@ mod diagnostics_tests {
                 collect_diagnostic_texts(&nested, texts);
             }
         }
-        let mut subs = diagnostic.get_subdiagnostics();
+        let subs = diagnostic.get_subdiagnostics();
         for sub in &subs {
             collect_diagnostic_texts(&sub, texts);
         }

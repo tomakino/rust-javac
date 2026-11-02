@@ -2921,8 +2921,9 @@ impl AnnotateServices {
                   _syms: &Symtab,
                   _attr: &mut Attr| {
                 let compounds = services.from_annotations(ctx, &annotations);
-                assert!(
-                    annotations.length() == compounds.length(),
+                assert_eq!(
+                    annotations.length(),
+                    compounds.length(),
                     "AssertionError: annotations size mismatch"
                 );
                 Ok(())

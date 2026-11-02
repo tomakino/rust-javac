@@ -2932,7 +2932,7 @@ mod tests {
         let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let string_type = syms.string_type;
         types.undet_var_add_bound(&mut ctx, &syms, uv, InferenceBound::EQ, string_type, false);
-        let mut warn = Warner::new(None);
+        let warn = Warner::new(None);
         context
             .solve(&mut ctx, &syms, &types, &warn)
             .expect("solve should succeed");
@@ -2954,7 +2954,7 @@ mod tests {
             string_type,
             false,
         );
-        let mut warn = Warner::new(None);
+        let warn = Warner::new(None);
         context
             .solve(&mut ctx, &syms, &types, &warn)
             .expect("solve should succeed");
@@ -2975,7 +2975,7 @@ mod tests {
             string_type,
             false,
         );
-        let mut warn = Warner::new(None);
+        let warn = Warner::new(None);
         context
             .solve(&mut ctx, &syms, &types, &warn)
             .expect("solve should succeed");

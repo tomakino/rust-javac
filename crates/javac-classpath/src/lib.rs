@@ -22,7 +22,7 @@
 //!
 //! * this is a new adapter crate, not a 1:1 Java file; the class bytes read are
 //!   exactly the container bytes (the jimage/jmod readers are the ported ones).
-//! * caches: repeated reads are O(1) lookups ([std::collections::HashMap]);
+//! * caches: repeated reads are O(1) lookups ([HashMap]);
 //!   only class files that were actually read are held (no whole-image or
 //!   whole-file buffer), and missing classes are cached as None.
 //! * `ClassPath` is single-threaded (it uses RefCell for the lazy module state

@@ -6698,7 +6698,7 @@ mod tests {
         // AnnotationDeproxy.deproxyCompoundList/deproxyCompound/deproxy path:
         // classfile proxies become Attribute.Compound/Constant values (the
         // "attributes" half of the annotation end-to-end path).
-        let mut _context = Context::new();
+        let _context = Context::new();
         let names = Rc::new(Names::new(false));
         let source = Source::JDK17;
         let mut ctx = CompilerContext::new();

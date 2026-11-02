@@ -14361,7 +14361,6 @@ impl Attr {
         let pos = ctx.tree(arg).pos;
         let make = &*self.make;
         let tree = make.at(pos).unary(ctx, optag, arg);
-        drop(make);
         let operator = {
             let operators_rc = self.operators.borrow().clone();
             match operators_rc {
@@ -16547,7 +16546,7 @@ mod tests {
             TreeKind::CompilationUnit { defs, .. } => defs.clone(),
             _ => List::nil(),
         };
-        let mut current = defs;
+        let current = defs;
         for def in &current {
             if ctx.tree(def).has_tag(Tag::CLASSDEF) {
                 return def;
@@ -16577,7 +16576,7 @@ mod tests {
     /// ClassTree members in the same order).
     fn type_trees(ctx: &CompilerContext, class_tree: TreeId) -> Vec<TreeId> {
         let mut result = Vec::new();
-        let mut current = class_defs(ctx, class_tree);
+        let current = class_defs(ctx, class_tree);
         for def in &current {
             if ctx.tree(def).has_tag(Tag::VARDEF) {
                 result.push(var_decl_type(ctx, def));
@@ -16609,7 +16608,7 @@ mod tests {
                 if let Some(clazz) = clazz {
                     preset_type_idents(ctx, syms, names, clazz);
                 }
-                let mut current = arguments;
+                let current = arguments;
                 for argument in &current {
                     preset_type_idents(ctx, syms, names, argument);
                 }
@@ -16744,7 +16743,7 @@ mod tests {
             .sym(class_sym)
             .members()
             .expect("class members scope");
-        let mut current = class_defs(&harness.ctx, harness.class_tree);
+        let current = class_defs(&harness.ctx, harness.class_tree);
         for def in &current {
             if harness.ctx.tree(def).has_tag(Tag::VARDEF) {
                 let pos = harness.ctx.tree(def).pos;
@@ -16903,7 +16902,7 @@ class Sample {
     /// Locate the labelled/while/break trees of ATTR_B_SOURCE.
     fn attr_b_trees(harness: &AttrHarness) -> (TreeId, TreeId, TreeId) {
         let class_defs = first_class_defs(&harness.ctx, harness.class_tree);
-        let mut current = class_defs;
+        let current = class_defs;
         let mut method = None;
         for def in &current {
             if harness.ctx.tree(def).has_tag(Tag::METHODDEF) {

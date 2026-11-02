@@ -1471,7 +1471,7 @@ mod tests {
             Rc::new(std::cell::RefCell::new(FlagCompleter));
         ctx.sym_mut(id).completer = Some(completer);
         assert!(ctx.api_complete_symbol(&syms, id).is_ok());
-        assert_ne!((ctx.sym(id).flags_field & crate::code::flags::DEPRECATED as i64), 0, "apiComplete runs Symbol.complete() like Symbol.java:686-692");
+        assert_ne!(ctx.sym(id).flags_field & crate::code::flags::DEPRECATED as i64, 0, "apiComplete runs Symbol.complete() like Symbol.java:686-692");
         assert!(ctx.sym(id).completer.is_none());
         assert!(ctx.api_complete_symbol(&syms, id).is_ok());
     }
