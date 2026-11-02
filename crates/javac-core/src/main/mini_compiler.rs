@@ -1,15 +1,7 @@
-// Source: com/sun/tools/javac/main/JavaCompiler.java (minimal wiring subset)
-
 //! Minimal compiler wiring for the compilation pipeline.
 //!
-//! PORTING ADAPTER (registered): the 1:1 JavaCompiler.java port is deferred to
-//! the batch that ports Modules/TransPatterns/LambdaToMethod/
-//! JavacProcessingEnvironment/TaskEvent+TaskListener/MultiTaskListener/
-//! DeferredCompletionFailureHandler/JNIWriter. This file wires the same phase
-//! sequence (parse -> enter -> attribute -> flow -> transTypes -> lower ->
-//! generate -> class writer) over the ported services for sources that use no
-//! pattern matching, lambdas, modules or annotation processing; every phase
-//! call below is the upstream JavaCompiler call of that phase.
+//! 对应：com/sun/tools/javac/main/JavaCompiler.java（minimal wiring subset）
+//! 偏差/登记：见 docs/PORTING_MAP.md#mainmini-compiler
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};

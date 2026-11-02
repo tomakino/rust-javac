@@ -1,50 +1,8 @@
 #![allow(clippy::result_large_err, clippy::needless_pass_by_ref_mut)]
-// Origin: com/sun/tools/javac/comp/Infer.java @ 982d53c (jdk-17.0.19-ga)
-// com/sun/tools/javac/comp/InferenceContext.java @ 982d53c (jdk-17.0.19-ga)
-//
-// Registration mapping: the InferenceContext.java unit maps to the InferenceContext
-// type below (same upstream class, ported into one Rust module because it and
-// Infer are mutually dependent); Infer.java maps to the Infer/Incorporation*/
-// GraphSolver/InferenceStep types below.
-//
-// Ported in this file (Infer):
-// - InferenceContext: addVar/inferenceVars/undetVars/restvars/instvars/
-// boundedVars/filterVars/free/freeVarsIn/asUndetVar(s)/instTypes/asInstType(s)/
-// addFreeTypeListener/notifyChange/save/rollback/dupTo/min (ReachabilityVisitor)/
-// solve/solveAny/solveBasic/solveLegacy/cachedCapture (InferenceContext.java:
-// 76-606);
-// - Infer: allowGraphInference/fromTypeVarFun/incorporationEngine (graph+legacy)/
-// doIncorporation/doIncorporationOp/IncorporationBinaryOp/
-// getParameterizedSupers/asSuper/reportInstError/reportBoundError/
-// getBoundFragment/BoundFilter/instantiateAsUninferredVars (Infer.java:82-140,
-// 519-545, 616-630, 692-1290);
-// - the inference engine: GraphStrategy/LeafSolver/BestLeafSolver/InferenceStep/
-// LegacyInferenceSteps/GraphInferenceSteps/DependencyKind/GraphSolver/
-// InferenceGraph/Node (Infer.java:1299-1945); the Tarjan reduction is a
-// faithful re-implementation of GraphUtils.tarjan (GraphUtils.java:171-235)
-// over the graph's node indices, because the ported GraphUtils.tarjan takes
-// references into an immutable node collection while the inference graph
-// mutates its nodes (PORTING_RULES adapter adapter, registered);
-//
-// NOT PORTED IN THIS FILE (registered: dependency batches; no substitutes are
-// written, the upstream signatures depend on services that are not ported yet):
-// Ported in the Resolve B (this file; Registration rows in the registration):
-// - Infer.instantiateMethod (Infer.java:166-260) with the graph/legacy solver
-// paths, PartiallyInferredMethodType/check (287-360);
-// - generateReturnConstraints/needsEagerInstantiation/
-// generateReferenceToTargetConstraint/shouldPropagate/roots
-// (Infer.java:257-520) — Log.note(Notes.DeferredMethodInst) remains registered
-// (Log/Notes).
-// NOT PORTED (registered):
-// - Infer.instantiatePolymorphicSignatureInstance/ImplicitArgType (Infer.java:
-// 555-630): needs Attr tree tags and DeferredAttr.DeferredTypeMap wiring
-// (Attr);
-// - Infer.instantiateFunctionalInterface (Infer.java:633-690): needs
-// Types.findDescriptorType and Check.checkValidGenericType (FunctionDescriptor
-//);
-// - Infer.dumpGraphsIfNeeded (Infer.java:360-390): file dumping (Options);
-// - Infer.instance(Context)/Infer(Context) constructor: the port uses explicit
-// service construction (ADR 0001), registered.
+//! Infer：泛型推断与推断上下文。
+//!
+//! 对应：com/sun/tools/javac/comp/Infer.java、InferenceContext.java @ 982d53c
+//! 偏差/登记：见 docs/PORTING_MAP.md#compinfer
 
 use std::cell::RefCell;
 use std::rc::Rc;

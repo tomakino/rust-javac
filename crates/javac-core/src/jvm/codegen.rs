@@ -1,6 +1,7 @@
-// Source: com/sun/tools/javac/jvm/Gen.java
-
 //! This pass maps flat Java (without inner classes) to bytecodes.
+//!
+//! 对应：com/sun/tools/javac/jvm/Gen.java
+//! 偏差/登记：见 docs/PORTING_MAP.md#jvmcodegen
 
 use std::cell::RefCell;
 use std::collections::HashMap;
