@@ -338,8 +338,13 @@ fn type_compound_position_is_local(
 }
 
 fn target_type_is_local(target: crate::code::target_type::TargetType) -> bool {
-    use crate::code::target_type::TargetType::*;
-    matches!(target, LOCAL_VARIABLE | RESOURCE_VARIABLE | EXCEPTION_PARAMETER | NEW)
+    // Java: TypeAnnotationPosition.isLocal() delegates to TargetType.isLocal(),
+    // which marks every target that lives inside a method body (CAST, NEW,
+    // INSTANCEOF, the reference/type-argument forms, ...) as local. Listing
+    // only a subset left CAST annotations on bridge methods, adding a stray
+    // CAST entry to the bridge's code attribute
+    // (SymbolMetadata.java:144-160 filters them out for BRIDGE methods).
+    target.is_local()
 }
 
 fn remove_from_compound_list(
