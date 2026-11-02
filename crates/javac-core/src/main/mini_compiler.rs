@@ -159,7 +159,7 @@ pub struct MiniCompiler {
     /// The code generator.
     pub generator: Rc<RefCell<Gen>>,
     /// The class writer.
-    pub writer: Rc<RefCell<ClassWriter>>,
+    pub writer: Rc<ClassWriter>,
     /// The native-header writer.
     pub jni_writer: Rc<JNIWriter>,
     /// The constant pool writer.
@@ -759,7 +759,7 @@ impl MiniCompiler {
             &options,
         )));
         let method_codes = Rc::clone(&generator.borrow().method_codes);
-        let writer = Rc::new(RefCell::new(ClassWriter::new(
+        let writer = Rc::new(ClassWriter::new(
             Rc::clone(&log),
             Rc::clone(&names),
             Rc::clone(&syms),
@@ -771,7 +771,7 @@ impl MiniCompiler {
             Rc::clone(&preview),
             Rc::clone(&pool_writer),
             method_codes,
-        )));
+        ));
         let module_finder = Rc::new(ModuleFinder::new(
             Rc::clone(&names),
             Rc::clone(&finder),
@@ -832,7 +832,7 @@ impl MiniCompiler {
         )));
         // Java: Modules constructor installs the ClassWriter multi-module mode
         // (Modules.java:204-205).
-        writer.borrow_mut().multi_module_mode = modules.multi_module_mode;
+        writer.multi_module_mode.set(modules.multi_module_mode);
         // Java: Check constructor obtains Preview.instance(context)
         // (Check.java:99/143); the ported Preview is created above, so the
         // dependency is installed here (registered adapter).
@@ -1626,7 +1626,7 @@ impl MiniCompiler {
         if self.error_count() > 0 {
             return Err(self.error_message());
         }
-        let (name, bytes) = match self.writer.borrow_mut().write_class(&mut self.ctx, c) {
+        let (name, bytes) = match self.writer.write_class(&mut self.ctx, c) {
             Ok(result) => result,
             Err(crate::jvm::class_writer::ClassWriterError::InvalidSignature(type_)) => {
                 use crate::resources::diagnostic_contract::{DiagnosticArg, SymbolArg};

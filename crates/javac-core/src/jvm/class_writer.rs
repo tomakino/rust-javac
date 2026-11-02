@@ -107,7 +107,7 @@ pub struct ClassWriter {
     /// Whether the stack map is described.
     pub debug_stackmap: bool,
     /// Whether class files are written in module specific subdirectories.
-    pub multi_module_mode: bool,
+    pub multi_module_mode: std::cell::Cell<bool>,
     /// Dump the class modifiers (-XDdumpmodifiers=c).
     pub dump_class_modifiers: bool,
     /// Dump the field modifiers (-XDdumpmodifiers=f).
@@ -192,7 +192,7 @@ impl ClassWriter {
             emit_source_file,
             gen_crt,
             debug_stackmap,
-            multi_module_mode: false,
+            multi_module_mode: std::cell::Cell::new(false),
             dump_class_modifiers: dump_class,
             dump_field_modifiers: dump_field,
             dump_inner_class_modifiers: dump_inner,
@@ -203,7 +203,7 @@ impl ClassWriter {
 
     /// Add an extra attribute writer.
     pub fn add_extra_attributes(
-        &mut self,
+        &self,
         extra: ExtraAttributeHook,
     ) {
         self.extra_attribute_hooks.borrow_mut().push(extra);
@@ -250,7 +250,7 @@ impl ClassWriter {
 
     /// Write the header of an attribute and return the position past its length
     /// index.
-    pub fn write_attr(&mut self, ctx: &mut CompilerContext, attr_name: Name) -> i32 {
+    pub fn write_attr(&self, ctx: &mut CompilerContext, attr_name: Name) -> i32 {
         let index = self.pool_writer.borrow_mut().put_name(attr_name);
         self.databuf.borrow_mut().append_char(index);
         self.databuf.borrow_mut().append_int(0);
@@ -259,26 +259,26 @@ impl ClassWriter {
     }
 
     /// Fill in the length of an attribute.
-    pub fn end_attr(&mut self, index: i32) {
+    pub fn end_attr(&self, index: i32) {
         let length = self.databuf.borrow().length - index;
         ClassWriter::put_int(&mut *self.databuf.borrow_mut(), index - 4, length);
     }
 
     /// Leave space for an attribute count and return its index.
-    pub fn begin_attrs(&mut self) -> i32 {
+    pub fn begin_attrs(&self) -> i32 {
         self.databuf.borrow_mut().append_char(0);
         self.databuf.borrow().length
     }
 
     /// Fill in an attribute count.
-    pub fn end_attrs(&mut self, index: i32, count: i32) {
+    pub fn end_attrs(&self, index: i32, count: i32) {
         ClassWriter::put_char(&mut *self.databuf.borrow_mut(), index - 2, count);
     }
 
     /// Write the EnclosingMethod attribute if needed and return the number of
     /// attributes written.
     pub fn write_enclosing_method_attribute(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         c: SymbolId,
     ) -> i32 {
@@ -288,7 +288,7 @@ impl ClassWriter {
 
     /// Write the EnclosingMethod attribute with a specified name.
     pub fn write_enclosing_method_attribute_named(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         attribute_name: Name,
         c: SymbolId,
@@ -331,7 +331,7 @@ impl ClassWriter {
     }
 
     /// Write the flag attributes and return the number written.
-    pub fn write_flag_attrs(&mut self, ctx: &mut CompilerContext, flags_value: i64) -> i32 {
+    pub fn write_flag_attrs(&self, ctx: &mut CompilerContext, flags_value: i64) -> i32 {
         let mut acount = 0;
         if (flags_value & flags::DEPRECATED as i64) != 0 {
             let name = self.names.Deprecated.clone();
@@ -344,7 +344,7 @@ impl ClassWriter {
 
     /// Write the member attributes and return the number written.
     pub fn write_member_attrs(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         sym: SymbolId,
         is_record_component: bool,
@@ -411,7 +411,7 @@ fn original_enclosing_method(ctx: &CompilerContext, owner: SymbolId) -> Option<S
 impl ClassWriter {
     /// Write the MethodParameters attribute and return 1 when written.
     pub fn write_method_parameters_attr(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         m: SymbolId,
     ) -> i32 {
@@ -472,7 +472,7 @@ impl ClassWriter {
 
     /// Write the parameter annotations of a list of parameters.
     fn write_param_annotations(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         params: &[SymbolId],
         retention: RetentionPolicy,
@@ -496,7 +496,7 @@ impl ClassWriter {
 
     /// Write method parameter annotations.
     pub fn write_parameter_attrs(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         params: &[SymbolId],
     ) -> i32 {
@@ -547,7 +547,7 @@ impl ClassWriter {
 
     /// Write the Java annotation attributes and return the number written.
     pub fn write_java_annotations(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         attrs: List<AttributeId>,
     ) -> i32 {
@@ -590,7 +590,7 @@ impl ClassWriter {
 
     /// Write the type annotation attributes and return the number written.
     pub fn write_type_annotations(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         type_annos: List<AttributeId>,
         in_code: bool,
@@ -657,7 +657,7 @@ impl ClassWriter {
     }
 
     /// Write one attribute value including its leading marker character.
-    pub fn write_attribute(&mut self, ctx: &mut CompilerContext, attr: AttributeId) {
+    pub fn write_attribute(&self, ctx: &mut CompilerContext, attr: AttributeId) {
         let kind = ctx.attr(attr).kind.clone();
         match kind {
             AttributeKind::Constant { value } => {
@@ -738,7 +738,7 @@ impl ClassWriter {
     }
 
     /// Write a compound attribute excluding the '@' marker.
-    pub fn write_compound_attribute(&mut self, ctx: &mut CompilerContext, c: AttributeId) {
+    pub fn write_compound_attribute(&self, ctx: &mut CompilerContext, c: AttributeId) {
         let ty = ctx.attr(c).ty.expect("compound attribute type");
         let syms = Rc::clone(&self.syms);
         let index = {
@@ -764,7 +764,7 @@ impl ClassWriter {
     }
 
     /// Write a type annotation attribute.
-    pub fn write_type_annotation(&mut self, ctx: &mut CompilerContext, c: AttributeId) {
+    pub fn write_type_annotation(&self, ctx: &mut CompilerContext, c: AttributeId) {
         let position = ctx
             .attr(c)
             .get_position(ctx)
@@ -774,7 +774,7 @@ impl ClassWriter {
     }
 
     /// Write a type annotation position.
-    pub fn write_position(&mut self, p: TypeAnnotationPosition) {
+    pub fn write_position(&self, p: TypeAnnotationPosition) {
         self.databuf.borrow_mut().append_byte(p.type_.target_type_value());
         use TargetType::*;
         match p.type_ {
@@ -840,7 +840,7 @@ impl ClassWriter {
 
 impl ClassWriter {
     /// Write the Module attribute if needed and return the number written.
-    pub fn write_module_attribute(&mut self, ctx: &mut CompilerContext, c: SymbolId) -> i32 {
+    pub fn write_module_attribute(&self, ctx: &mut CompilerContext, c: SymbolId) -> i32 {
         let m = ctx.sym(c).owner.expect("module owner");
         let (
             version,
@@ -1060,7 +1060,7 @@ impl ClassWriter {
     }
 
     /// Write the InnerClasses attribute.
-    pub fn write_inner_classes(&mut self, ctx: &mut CompilerContext) {
+    pub fn write_inner_classes(&self, ctx: &mut CompilerContext) {
         let attr_name = self.names.InnerClasses.clone();
         let alen_idx = self.write_attr(ctx, attr_name);
         let inner_classes = self.pool_writer.borrow().inner_classes.clone();
@@ -1105,7 +1105,7 @@ impl ClassWriter {
     }
 
     /// Write the Record attribute and return 1.
-    pub fn write_record_attribute(&mut self, ctx: &mut CompilerContext, csym: SymbolId) -> i32 {
+    pub fn write_record_attribute(&self, ctx: &mut CompilerContext, csym: SymbolId) -> i32 {
         let attr_name = self.names.Record.clone();
         let alen_idx = self.write_attr(ctx, attr_name);
         let components = record_components(ctx, csym);
@@ -1131,7 +1131,7 @@ impl ClassWriter {
 
     /// Write the NestMembers attribute if needed and return the number written.
     pub fn write_nest_members_if_needed(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         csym: SymbolId,
     ) -> i32 {
@@ -1166,7 +1166,7 @@ impl ClassWriter {
 
     /// Write the NestHost attribute if needed and return the number written.
     pub fn write_nest_host_if_needed(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         csym: SymbolId,
     ) -> i32 {
@@ -1191,7 +1191,7 @@ impl ClassWriter {
     /// Write the PermittedSubclasses attribute if needed and return the number
     /// written.
     pub fn write_permitted_subclasses_if_needed(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         csym: SymbolId,
     ) -> i32 {
@@ -1219,7 +1219,7 @@ impl ClassWriter {
     }
 
     /// Write the BootstrapMethods attribute.
-    pub fn write_bootstrap_methods(&mut self, ctx: &mut CompilerContext) {
+    pub fn write_bootstrap_methods(&self, ctx: &mut CompilerContext) {
         let attr_name = self.names.BootstrapMethods.clone();
         let alen_idx = self.write_attr(ctx, attr_name);
         let bootstrap = self.pool_writer.borrow().bootstrap_methods.clone();
@@ -1254,7 +1254,7 @@ impl ClassWriter {
     }
 
     /// Write an extra attribute via the registered hooks and return the count.
-    pub fn write_extra_attributes(&mut self, ctx: &mut CompilerContext, sym: SymbolId) -> i32 {
+    pub fn write_extra_attributes(&self, ctx: &mut CompilerContext, sym: SymbolId) -> i32 {
         let mut count = 0;
         let hooks = std::mem::take(&mut *self.extra_attribute_hooks.borrow_mut());
         for mut hook in hooks {
@@ -1348,7 +1348,7 @@ fn adjust_flags(flags_value: i64) -> i32 {
 
 impl ClassWriter {
     /// Write a field symbol, entering all references into the constant pool.
-    pub fn write_field(&mut self, ctx: &mut CompilerContext, v: SymbolId) {
+    pub fn write_field(&self, ctx: &mut CompilerContext, v: SymbolId) {
         let field_flags = adjust_flags(ctx.sym(v).flags());
         self.databuf.borrow_mut().append_char(field_flags);
         if self.dump_field_modifiers {
@@ -1383,7 +1383,7 @@ impl ClassWriter {
     }
 
     /// Write a method symbol, entering all references into the constant pool.
-    pub fn write_method(&mut self, ctx: &mut CompilerContext, m: SymbolId) {
+    pub fn write_method(&self, ctx: &mut CompilerContext, m: SymbolId) {
         let method_flags = adjust_flags(ctx.sym(m).flags());
         self.databuf.borrow_mut().append_char(method_flags);
         if self.dump_method_modifiers {
@@ -1461,7 +1461,7 @@ impl ClassWriter {
     }
 
     /// Write the Code attribute of a method.
-    pub fn write_code(&mut self, ctx: &mut CompilerContext, code: &Rc<RefCell<Code>>) {
+    pub fn write_code(&self, ctx: &mut CompilerContext, code: &Rc<RefCell<Code>>) {
         let (max_stack, max_locals, cp, code_bytes, catch_info, line_info, var_debug_info, var_buffer, var_buffer_size, stack_map_buffer_size, stack_map, stack_map_buffer, stack_map_table_buffer, meth) = {
             let code = code.borrow();
             (
@@ -1633,7 +1633,7 @@ impl ClassWriter {
 
     /// Write the StackMap attribute of a method.
     fn write_stack_map(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         stack_map_format: StackMapFormat,
         stack_map_buffer: &[StackMapFrame],
@@ -1785,7 +1785,7 @@ impl ClassWriter {
     }
 
     /// Write the fields of a class.
-    pub fn write_fields(&mut self, ctx: &mut CompilerContext, s: crate::ids::ScopeId) {
+    pub fn write_fields(&self, ctx: &mut CompilerContext, s: crate::ids::ScopeId) {
     let scope_snapshot = ctx.scope(s).clone();
         let symbols = scope_snapshot.get_symbols(
             s,
@@ -1805,7 +1805,7 @@ impl ClassWriter {
     }
 
     /// Write the methods of a class.
-    pub fn write_methods(&mut self, ctx: &mut CompilerContext, s: crate::ids::ScopeId) {
+    pub fn write_methods(&self, ctx: &mut CompilerContext, s: crate::ids::ScopeId) {
         let scope_snapshot = ctx.scope(s).clone();
         let symbols = scope_snapshot.get_symbols(
             s,
@@ -1873,7 +1873,7 @@ impl ClassWriter {
     /// # Panics
     ///   - a class invariant is violated.
     pub fn write_class(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         c: SymbolId,
     ) -> Result<(String, Vec<u8>), ClassWriterError> {
@@ -1895,7 +1895,7 @@ impl ClassWriter {
 
     /// Write the class of c to the given output buffer.
     pub fn write_class_file(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         out: &mut Vec<u8>,
         c: SymbolId,
@@ -2142,7 +2142,7 @@ impl ClassWriter {
 
     /// Allow subclasses to write additional class attributes.
     pub fn write_extra_class_attributes(
-        &mut self,
+        &self,
         _ctx: &mut CompilerContext,
         _c: SymbolId,
     ) -> i32 {
