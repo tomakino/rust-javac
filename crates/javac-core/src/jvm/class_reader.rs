@@ -1260,15 +1260,15 @@ impl ClassReader {
                     self.reader_handle.clone(),
                 )));
             ctx.sym_mut(c)
-                .set_annotation_type_metadata(Rc::new(RefCell::new(AnnotationTypeMetadata::new(
+                .set_annotation_type_metadata(Rc::new(AnnotationTypeMetadata::new(
                     c,
                     Some(completer),
-                ))));
+                )));
         } else {
             ctx.sym_mut(c)
-                .set_annotation_type_metadata(Rc::new(RefCell::new(
+                .set_annotation_type_metadata(Rc::new(
                     AnnotationTypeMetadata::not_an_annotation_type(),
-                )));
+                ));
         }
 
         // Java: if (c == currentModule.module_info) {
@@ -5088,7 +5088,6 @@ impl AnnotationTypeCompleter for CompleterDeproxy {
             )?);
         }
         if let Some(metadata) = ctx.sym(sym).get_annotation_type_metadata().cloned() {
-            let mut metadata = metadata.borrow_mut();
             metadata.set_target(the_target);
             metadata.set_repeatable(the_repeatable);
         }

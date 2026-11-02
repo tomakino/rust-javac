@@ -9,7 +9,7 @@
 // port stores the SymbolId and Rc<RefCell<dyn AnnotationTypeCompleter>>
 // (arena identity + ADR 0001 explicit context).
 // - the AnnotationTypeMetadata object itself is shared through the ClassSymbol
-// (Rc<RefCell<AnnotationTypeMetadata>>, upstream single-object semantics); the
+// (Rc<AnnotationTypeMetadata>, upstream single-object semantics); the
 // getters are shared-object entry points that take the completer under a short
 // borrow (registered adapter).
 // - the Java NOT_AN_ANNOTATION_TYPE anonymous singleton maps to the
@@ -81,11 +81,11 @@ pub struct AnnotationTypeMetadata {
     /// Java: final ClassSymbol metaDataFor
     meta_data_for: Option<SymbolId>,
     /// Java: private Compound target
-    target: Option<AttributeId>,
+    target: RefCell<Option<AttributeId>>,
     /// Java: private Compound repeatable
-    repeatable: Option<AttributeId>,
+    repeatable: RefCell<Option<AttributeId>>,
     /// Java: private AnnotationTypeCompleter annotationTypeCompleter
-    annotation_type_completer: Option<Rc<RefCell<dyn AnnotationTypeCompleter>>>,
+    annotation_type_completer: RefCell<Option<Rc<RefCell<dyn AnnotationTypeCompleter>>>>,
     /// Java: NOT_AN_ANNOTATION_TYPE.isMetadataForAnnotationType() == false
     is_metadata_for_annotation_type: bool,
 }
@@ -105,9 +105,9 @@ impl AnnotationTypeMetadata {
     ) -> AnnotationTypeMetadata {
         AnnotationTypeMetadata {
             meta_data_for: Some(meta_data_for),
-            target: None,
-            repeatable: None,
-            annotation_type_completer,
+            target: RefCell::new(None),
+            repeatable: RefCell::new(None),
+            annotation_type_completer: RefCell::new(annotation_type_completer),
             is_metadata_for_annotation_type: true,
         }
     }
@@ -116,9 +116,9 @@ impl AnnotationTypeMetadata {
     pub fn not_an_annotation_type() -> AnnotationTypeMetadata {
         AnnotationTypeMetadata {
             meta_data_for: None,
-            target: None,
-            repeatable: None,
-            annotation_type_completer: None,
+            target: RefCell::new(None),
+            repeatable: RefCell::new(None),
+            annotation_type_completer: RefCell::new(None),
             is_metadata_for_annotation_type: false,
         }
     }
@@ -145,23 +145,23 @@ impl AnnotationTypeMetadata {
     ///
     /// Upstream: Annotate.java:1288-1302.
     fn complete_shared(
-        metadata: &Rc<RefCell<AnnotationTypeMetadata>>,
+        metadata: &Rc<AnnotationTypeMetadata>,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<(), CompletionFailure> {
-        let Some(meta_data_for) = metadata.borrow().meta_data_for else {
+        let Some(meta_data_for) = metadata.meta_data_for else {
             return Ok(());
         };
         while ctx.sym(meta_data_for).completer.is_some() {
             ctx.complete_symbol(syms, meta_data_for)?;
         }
         let completer = {
-            let mut metadata = metadata.borrow_mut();
-            if metadata.annotation_type_completer.is_none() {
+            let mut completer = metadata.annotation_type_completer.borrow_mut();
+            if completer.is_none() {
                 return Ok(());
             }
-            metadata.annotation_type_completer.take()
+            completer.take()
         };
         if let Some(completer) = completer {
             completer.borrow_mut().complete(ctx, syms, meta_data_for, attr)?;
@@ -183,13 +183,13 @@ impl AnnotationTypeMetadata {
     ///
     /// Upstream: Annotate.java:1304-1307.
     pub fn get_repeatable_shared(
-        metadata: &Rc<RefCell<AnnotationTypeMetadata>>,
+        metadata: &Rc<AnnotationTypeMetadata>,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<Option<AttributeId>, CompletionFailure> {
         Self::complete_shared(metadata, ctx, syms, attr)?;
-        Ok(metadata.borrow().repeatable)
+        Ok(*metadata.repeatable.borrow())
     }
 
     /// Java: public Compound getTarget() (Annotate.java:1314-1317).
@@ -206,13 +206,13 @@ impl AnnotationTypeMetadata {
     ///
     /// Upstream: Annotate.java:1314-1317.
     pub fn get_target_shared(
-        metadata: &Rc<RefCell<AnnotationTypeMetadata>>,
+        metadata: &Rc<AnnotationTypeMetadata>,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<Option<AttributeId>, CompletionFailure> {
         Self::complete_shared(metadata, ctx, syms, attr)?;
-        Ok(metadata.borrow().target)
+        Ok(*metadata.target.borrow())
     }
 
     /// Java: public Set<MethodSymbol> getAnnotationElements()
@@ -230,13 +230,13 @@ impl AnnotationTypeMetadata {
     ///
     /// Upstream: Annotate.java:1324-1335.
     pub fn get_annotation_elements_shared(
-        metadata: &Rc<RefCell<AnnotationTypeMetadata>>,
+        metadata: &Rc<AnnotationTypeMetadata>,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<Vec<SymbolId>, CompletionFailure> {
         Self::complete_shared(metadata, ctx, syms, attr)?;
-        let Some(meta_data_for) = metadata.borrow().meta_data_for else {
+        let Some(meta_data_for) = metadata.meta_data_for else {
             return Ok(Vec::new());
         };
         let members = match &ctx.sym(meta_data_for).kind_data {
@@ -275,7 +275,7 @@ impl AnnotationTypeMetadata {
     ///
     /// Upstream: Annotate.java:1337-1348.
     pub fn get_annotation_elements_with_default_shared(
-        metadata: &Rc<RefCell<AnnotationTypeMetadata>>,
+        metadata: &Rc<AnnotationTypeMetadata>,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: Option<&mut crate::comp::attr::Attr>,
@@ -306,9 +306,12 @@ impl AnnotationTypeMetadata {
     ///   - the upstream Assert.checkNull: the value must not already be set.
     ///
     /// Upstream: Annotate.java:1309-1312.
-    pub fn set_repeatable(&mut self, repeatable: Option<AttributeId>) {
-        assert!(self.repeatable.is_none(), "AssertionError: repeatable already set");
-        self.repeatable = repeatable;
+    pub fn set_repeatable(&self, repeatable: Option<AttributeId>) {
+        assert!(
+            self.repeatable.borrow().is_none(),
+            "AssertionError: repeatable already set"
+        );
+        *self.repeatable.borrow_mut() = repeatable;
     }
 
     /// Java: public void setTarget(Compound target) (Annotate.java:1319-1322).
@@ -323,9 +326,12 @@ impl AnnotationTypeMetadata {
     ///   - the upstream Assert.checkNull: the value must not already be set.
     ///
     /// Upstream: Annotate.java:1319-1322.
-    pub fn set_target(&mut self, target: Option<AttributeId>) {
-        assert!(self.target.is_none(), "AssertionError: target already set");
-        self.target = target;
+    pub fn set_target(&self, target: Option<AttributeId>) {
+        assert!(
+            self.target.borrow().is_none(),
+            "AssertionError: target already set"
+        );
+        *self.target.borrow_mut() = target;
     }
 
     /// Java: public boolean isMetadataForAnnotationType()
@@ -2568,7 +2574,6 @@ impl AnnotateServices {
         let target = visitor.target;
         let repeatable = visitor.repeatable;
         if let Some(metadata) = ctx.sym(sym).get_annotation_type_metadata().cloned() {
-            let mut metadata = metadata.borrow_mut();
             metadata.set_repeatable(repeatable);
             metadata.set_target(target);
         }

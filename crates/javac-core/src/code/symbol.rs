@@ -356,9 +356,9 @@ impl Symbol {
         } = &mut self.kind_data
         {
             self.metadata = None;
-            *annotation_type_metadata = std::rc::Rc::new(std::cell::RefCell::new(
+            *annotation_type_metadata = std::rc::Rc::new(
                 crate::comp::annotate::AnnotationTypeMetadata::not_an_annotation_type(),
-            ));
+            );
         }
     }
 
@@ -935,7 +935,7 @@ pub enum SymbolKind {
         /// (Symbol.java:1290; the not-an-annotation default). The object is
         /// shared through the ClassSymbol (upstream single-object semantics).
         annotation_type_metadata:
-            std::rc::Rc<std::cell::RefCell<crate::comp::annotate::AnnotationTypeMetadata>>,
+            std::rc::Rc<crate::comp::annotate::AnnotationTypeMetadata>,
     },
     /// Java: Symbol.BindingSymbol (Symbol.java:1861-1902) — a VarSymbol
     /// subclass introduced by a pattern match binding. The VarSymbol payload is
@@ -2156,7 +2156,7 @@ impl Symbol {
     /// (Symbol.java:867/1614; the base Symbol asserts, only ClassSymbol has it).
     pub fn get_annotation_type_metadata(
         &self,
-    ) -> Option<&std::rc::Rc<std::cell::RefCell<crate::comp::annotate::AnnotationTypeMetadata>>> {
+    ) -> Option<&std::rc::Rc<crate::comp::annotate::AnnotationTypeMetadata>> {
         match &self.kind_data {
             SymbolKind::ClassSymbol {
                 annotation_type_metadata,
@@ -2170,7 +2170,7 @@ impl Symbol {
     /// the upstream ClassSymbol constructor installs the metadata).
     pub fn set_annotation_type_metadata(
         &mut self,
-        metadata: std::rc::Rc<std::cell::RefCell<crate::comp::annotate::AnnotationTypeMetadata>>,
+        metadata: std::rc::Rc<crate::comp::annotate::AnnotationTypeMetadata>,
     ) {
         if let SymbolKind::ClassSymbol {
             annotation_type_metadata,
