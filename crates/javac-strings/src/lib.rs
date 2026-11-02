@@ -59,6 +59,19 @@ impl JavaString {
     /// Lossy UTF-8 view, for Rust-side logging/tests only.
     /// Unpaired surrogates are replaced with U+FFFD.
     pub fn to_string_lossy(&self) -> String {
+        // ASCII is encoded identically in UTF-16 and UTF-8 and contains no
+        // surrogate units, so the common case (identifiers, package names,
+        // ASCII diagnostic text) can skip the generic decoder and its
+        // validation pass. Non-ASCII input (CJK, emoji, ...) falls through to
+        // the generic path unchanged: the scan stops at the first non-ASCII
+        // unit.
+        if self.units.iter().all(|&unit| unit < 0x80) {
+            // SAFETY: every unit is in 0x00..=0x7F, so the mapped bytes are
+            // all valid single-byte UTF-8 sequences.
+            return unsafe {
+                String::from_utf8_unchecked(self.units.iter().map(|&unit| unit as u8).collect())
+            };
+        }
         String::from_utf16_lossy(self.units.as_slice())
     }
 }
