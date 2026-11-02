@@ -540,7 +540,7 @@ impl PoolWriter {
             PoolConstantRef::Dynamic(dynamic) => {
                 let tag = crate::code::symbol::symbol_pool_tag(ctx, dynamic);
                 self.pool.poolbuf.append_byte(tag);
-                let bsm_index = self.make_bootstrap_entry(ctx, dynamic);
+                let bsm_index = self.make_bootstrap_entry(ctx, syms, dynamic);
                 self.pool.poolbuf.append_char(bsm_index);
                 let name = ctx.sym(dynamic).name.clone();
                 let ty = ctx.sym(dynamic).ty.expect("dynamic symbol type");
@@ -553,7 +553,12 @@ impl PoolWriter {
     }
 
     /// Return the BootstrapMethods index of a dynamic symbol.
-    fn make_bootstrap_entry(&mut self, ctx: &mut CompilerContext, dynamic: SymbolId) -> i32 {
+    fn make_bootstrap_entry(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        dynamic: SymbolId,
+    ) -> i32 {
         let bsm = crate::code::symbol::dynamic_bootstrap_method(ctx, dynamic)
             .expect("dynamic symbol bootstrap method");
         let static_args = crate::code::symbol::dynamic_static_args(ctx, dynamic)
@@ -568,8 +573,24 @@ impl PoolWriter {
             bsm_key: method_handle_pool_key(&*ctx, bsm),
             static_arg_keys,
         };
+        let types = Rc::clone(&self.types);
         for (existing, index) in &self.bootstrap_methods {
-            if bsm_keys_equal(existing, &key) {
+            // Java: BootstrapMethods are deduplicated with the pool-key
+            // equality rules (PoolWriter.putBootstrapMethod), i.e. by
+            // structural type equality, not by TypeId identity. Comparing
+            // PoolKey values structurally keeps the table in the same order
+            // as javac when two lambdas share an erased factory type.
+            if !pool_keys_equal(ctx, syms, &types, &existing.bsm_key, &key.bsm_key)
+                || existing.static_arg_keys.len() != key.static_arg_keys.len()
+            {
+                continue;
+            }
+            let same_args = existing
+                .static_arg_keys
+                .iter()
+                .zip(key.static_arg_keys.iter())
+                .all(|(x, y)| pool_keys_equal(ctx, syms, &types, x, y));
+            if same_args {
                 return *index;
             }
         }
