@@ -8757,8 +8757,14 @@ impl LambdaToMethod {
         };
         let previous_pos = self.make.borrow().pos;
         // Java: every branch starts with make.at(expr), so the synthesized
-        // statement/block carries the body expression's position.
-        self.make.borrow_mut().at(ctx.tree(expr).pos);
+        // statement/block carries the body expression's position. That call
+        // takes a DiagnosticPosition, so TreeMaker.at uses
+        // expr.getStartPosition() (TreeInfo.getStartPos) and not the raw
+        // tree.pos: for a conditional expression this is the start of the
+        // condition, which is the line the synthesized return is attributed
+        // to.
+        let expr_start = crate::tree::tree_info::get_start_pos(ctx, expr);
+        self.make.borrow_mut().at(expr_start);
         let result = if is_target_void {
             let exec = {
                 let mut make = self.make.borrow_mut();
