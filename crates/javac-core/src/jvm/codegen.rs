@@ -149,7 +149,7 @@ pub struct Gen {
     /// The code buffer of the current method.
     pub code: Option<Rc<RefCell<Code>>>,
     /// The item factory of the current method.
-    pub items: Option<Rc<RefCell<Items>>>,
+    pub items: Option<Rc<Items>>,
     /// The code objects of the generated methods, indexed by symbol.
     pub method_codes: Rc<RefCell<HashMap<SymbolId, Rc<RefCell<Code>>>>>,
 
@@ -317,7 +317,7 @@ impl Gen {
     }
 
     /// Return the current item factory.
-    pub fn get_items(&self) -> Rc<RefCell<Items>> {
+    pub fn get_items(&self) -> Rc<Items> {
         Rc::clone(self.items.as_ref().expect("item factory"))
     }
 
@@ -331,10 +331,8 @@ impl Gen {
     /// Generate code to load an integer constant.
     fn load_int_const(&mut self, ctx: &mut CompilerContext, n: i32) {
         let items = self.get_items();
-        let item = items
-            .borrow()
-            .make_immediate_item(ctx, self.syms.borrow().int_type, ImmediateValue::Int(n));
-        items.borrow_mut().load(ctx, &item);
+        let item = items.make_immediate_item(ctx, self.syms.borrow().int_type, ImmediateValue::Int(n));
+        items.load(ctx, &item);
     }
 
     /// Return the opcode that loads a zero constant of the given type code.
@@ -375,12 +373,12 @@ impl Gen {
     fn emit_minus_one(&mut self, ctx: &mut CompilerContext, tc: i32) {
         if tc == LONG_CODE {
             let items = self.get_items();
-            let item = items.borrow().make_immediate_item(
+            let item = items.make_immediate_item(
                 ctx,
                 self.syms.borrow().long_type,
                 ImmediateValue::Long(-1),
             );
-            items.borrow_mut().load(ctx, &item);
+            items.load(ctx, &item);
         } else {
             self.get_code().borrow_mut().emitop0(ctx, ICONST_M1);
         }
@@ -531,7 +529,7 @@ impl Gen {
         let code = self.get_code();
         code.borrow_mut().new_local_symbol(ctx, sym);
         let items = self.get_items();
-        items.borrow_mut().make_local_item(ctx, sym)
+        items.make_local_item(ctx, sym)
     }
 
     /// Generate code to call a non-private method or constructor.
@@ -548,12 +546,12 @@ impl Gen {
         let msym = self.resolve_internal_method(ctx, pos, &env, site, name.clone(), argtypes);
         let items = self.get_items();
         if is_static {
-            let item = items.borrow_mut().make_static_item(ctx, msym);
-            items.borrow_mut().invoke(ctx, &item);
+            let item = items.make_static_item(ctx, msym);
+            items.invoke(ctx, &item);
         } else {
             let is_init = name == self.names.init;
-            let item = items.borrow_mut().make_member_item(ctx, msym, is_init);
-            items.borrow_mut().invoke(ctx, &item);
+            let item = items.make_member_item(ctx, msym, is_init);
+            items.invoke(ctx, &item);
         }
     }
 
@@ -760,31 +758,31 @@ impl Gen {
     /// Load an item through the item factory.
     fn item_load(&mut self, ctx: &mut CompilerContext, item: &Item) -> Item {
         let items = self.get_items();
-        items.borrow_mut().load(ctx, item)
+        items.load(ctx, item)
     }
 
     /// Store the top of stack into an item.
     fn item_store(&mut self, ctx: &mut CompilerContext, item: &Item) {
         let items = self.get_items();
-        items.borrow_mut().store(ctx, item);
+        items.store(ctx, item);
     }
 
     /// Duplicate an item.
     fn item_duplicate(&mut self, ctx: &mut CompilerContext, item: &Item) {
         let items = self.get_items();
-        items.borrow_mut().duplicate(ctx, item);
+        items.duplicate(ctx, item);
     }
 
     /// Drop an item.
     fn item_drop(&mut self, ctx: &mut CompilerContext, item: &Item) {
         let items = self.get_items();
-        items.borrow_mut().drop_item(ctx, item);
+        items.drop_item(ctx, item);
     }
 
     /// Invoke the method represented by an item.
     fn item_invoke(&mut self, ctx: &mut CompilerContext, item: &Item) -> Item {
         let items = self.get_items();
-        items.borrow_mut().invoke(ctx, item)
+        items.invoke(ctx, item)
     }
 
 
@@ -796,7 +794,7 @@ impl Gen {
         ty: TypeId,
     ) -> Item {
         let items = self.get_items();
-        items.borrow_mut().coerce_type(ctx, item, ty)
+        items.coerce_type(ctx, item, ty)
     }
 }
 
@@ -1277,49 +1275,47 @@ impl Gen {
             };
             let cond_item = self.gen_cond_crt(ctx, cond, CRT_FLOW_CONTROLLER);
             let items = self.get_items();
-            let cond_is_true = items.borrow().cond_is_true(&cond_item);
-            let cond_is_false = items.borrow().cond_is_false(&cond_item);
+            let cond_is_true = items.cond_is_true(&cond_item);
+            let cond_is_false = items.cond_is_false(&cond_item);
             if cond_is_true {
-                let jumps = items.borrow().cond_true_jumps(&cond_item);
+                let jumps = items.cond_true_jumps(&cond_item);
                 self.get_code().borrow_mut().resolve_pending_chain(ctx, jumps);
                 let mut result = self.gen_cond_crt(ctx, truepart, CRT_FLOW_TARGET);
                 if mark_branches {
-                    items.borrow().set_cond_tree(&mut result, truepart);
+                    items.set_cond_tree(&mut result, truepart);
                 }
                 return result;
             }
             if cond_is_false {
-                let jumps = items.borrow().cond_false_jumps(&cond_item);
+                let jumps = items.cond_false_jumps(&cond_item);
                 self.get_code().borrow_mut().resolve_pending_chain(ctx, jumps);
                 let mut result = self.gen_cond_crt(ctx, falsepart, CRT_FLOW_TARGET);
                 if mark_branches {
-                    items.borrow().set_cond_tree(&mut result, falsepart);
+                    items.set_cond_tree(&mut result, falsepart);
                 }
                 return result;
             }
-            let second_jumps = items.borrow_mut().jump_false(ctx, &cond_item);
-            let true_jumps = items.borrow().cond_true_jumps(&cond_item);
+            let second_jumps = items.jump_false(ctx, &cond_item);
+            let true_jumps = items.cond_true_jumps(&cond_item);
             self.get_code().borrow_mut().resolve_pending_chain(ctx, true_jumps);
             let mut first = self.gen_cond_crt(ctx, truepart, CRT_FLOW_TARGET);
             if mark_branches {
-                items.borrow().set_cond_tree(&mut first, truepart);
+                items.set_cond_tree(&mut first, truepart);
             }
-            let false_jumps = items.borrow_mut().jump_false(ctx, &first);
-            let first_true = items.borrow().cond_true_jumps(&first);
+            let false_jumps = items.jump_false(ctx, &first);
+            let first_true = items.cond_true_jumps(&first);
             self.get_code().borrow_mut().resolve_pending_chain(ctx, first_true);
             let true_jumps_chain = self.get_code().borrow_mut().branch(ctx, GOTO);
             self.get_code().borrow_mut().resolve_pending_chain(ctx, second_jumps);
             let second = self.gen_cond_crt(ctx, falsepart, CRT_FLOW_TARGET);
-            let second_opcode = items.borrow().cond_opcode(&second);
-            let second_true = items.borrow().cond_true_jumps(&second);
-            let second_false = items.borrow().cond_false_jumps(&second);
+            let second_opcode = items.cond_opcode(&second);
+            let second_true = items.cond_true_jumps(&second);
+            let second_false = items.cond_false_jumps(&second);
             let merged_true = Code::merge_chains(true_jumps_chain, second_true);
             let merged_false = Code::merge_chains(false_jumps, second_false);
-            let mut result = items
-                .borrow()
-                .make_cond_item(second_opcode, merged_true, merged_false);
+            let mut result = items.make_cond_item(second_opcode, merged_true, merged_false);
             if mark_branches {
-                items.borrow().set_cond_tree(&mut result, falsepart);
+                items.set_cond_tree(&mut result, falsepart);
             }
             return result;
         }
@@ -1335,9 +1331,9 @@ impl Gen {
             let true_chain = self.switch_expression_true_chain.take();
             let false_chain = self.switch_expression_false_chain.take();
             let items = self.get_items();
-            let mut result = items.borrow().make_cond_item(GOTO, true_chain, false_chain);
+            let mut result = items.make_cond_item(GOTO, true_chain, false_chain);
             if mark_branches {
-                items.borrow().set_cond_tree(&mut result, tree);
+                items.set_cond_tree(&mut result, tree);
             }
             self.in_cond_switch_expression = prev_in_cond;
             self.switch_expression_true_chain = prev_true;
@@ -1373,10 +1369,10 @@ impl Gen {
         }
         let boolean_type = self.syms.borrow().boolean_type;
         let mut result = self.gen_expr(ctx, tree, boolean_type);
-        result = self.get_items().borrow_mut().mk_cond(ctx, &result);
+        result = self.get_items().mk_cond(ctx, &result);
         if mark_branches {
             let items = self.get_items();
-            items.borrow().set_cond_tree(&mut result, tree);
+            items.set_cond_tree(&mut result, tree);
         }
         result
     }
@@ -1411,14 +1407,12 @@ impl Gen {
             match sym {
                 Some(sym) if self.is_constant_dynamic(ctx, sym) => {
                     let items = self.get_items();
-                    items.borrow_mut().make_dynamic_item(ctx, sym)
+                    items.make_dynamic_item(ctx, sym)
                 }
                 _ => {
                     let value = const_value.clone().expect("constant value");
                     let items = self.get_items();
-                    items
-                        .borrow()
-                        .make_immediate_item(
+                    items.make_immediate_item(
                             ctx,
                             tree_ty,
                             immediate_value_from_constant(&value),
@@ -1737,8 +1731,8 @@ impl Gen {
                 } else {
                     // Sometimes dead code seems alive; generate a small loop.
                     let startpc = self.get_code().borrow_mut().entry_point(ctx);
-                    let c = self.get_items().borrow_mut().make_cond_item_opcode(GOTO);
-                    let chain = self.get_items().borrow_mut().jump_true(ctx, &c);
+                    let c = self.get_items().make_cond_item_opcode(GOTO);
+                    let chain = self.get_items().jump_true(ctx, &c);
                     self.get_code().borrow_mut().resolve_chain(ctx, chain, startpc);
                 }
             }
@@ -1822,12 +1816,12 @@ impl Gen {
         self.method_codes
             .borrow_mut()
             .insert(meth, Rc::clone(&code));
-        self.items = Some(Rc::new(RefCell::new(Items::new(
+        self.items = Some(Rc::new(Items::new(
             Rc::clone(&self.pool_writer),
             Rc::clone(&code),
             Rc::clone(&self.syms),
             Rc::clone(&self.types),
-        ))));
+        )));
         if self.debug_code {
             let sym = symbol_display(ctx, meth);
             eprintln!("{} for body {:?}", sym, tree);
@@ -1936,8 +1930,8 @@ impl Gen {
                 let item = self.gen_expr(ctx, init, erased);
                 self.item_load(ctx, &item);
                 let items = self.get_items();
-                let local = items.borrow_mut().make_local_item(ctx, sym);
-                items.borrow_mut().store(ctx, &local);
+                let local = items.make_local_item(ctx, sym);
+                items.store(ctx, &local);
                 assert!(
                     self.get_code().borrow().is_statement_start(),
                     "AssertionError: variable definition not at statement start"
@@ -2033,10 +2027,10 @@ impl Gen {
                 let inner = tree_info::skip_parens(ctx, cond);
                 self.gen_cond_crt(ctx, inner, CRT_FLOW_CONTROLLER)
             } else {
-                self.get_items().borrow_mut().make_cond_item_opcode(GOTO)
+                self.get_items().make_cond_item_opcode(GOTO)
             };
-            let loop_done = self.get_items().borrow_mut().jump_false(ctx, &c);
-            let true_jumps = self.get_items().borrow().cond_true_jumps(&c);
+            let loop_done = self.get_items().jump_false(ctx, &c);
+            let true_jumps = self.get_items().cond_true_jumps(&c);
             self.get_code().borrow_mut().resolve_pending_chain(ctx, true_jumps);
             assert!(
                 self.get_code().borrow().is_statement_start(),
@@ -2064,15 +2058,15 @@ impl Gen {
                     let inner = tree_info::skip_parens(ctx, cond);
                     self.gen_cond_crt(ctx, inner, CRT_FLOW_CONTROLLER)
                 } else {
-                    self.get_items().borrow_mut().make_cond_item_opcode(GOTO)
+                    self.get_items().make_cond_item_opcode(GOTO)
                 };
-                let true_jumps = self.get_items().borrow_mut().jump_true(ctx, &c);
+                let true_jumps = self.get_items().jump_true(ctx, &c);
                 self.get_code().borrow_mut().resolve_chain(ctx, true_jumps, startpc);
                 assert!(
                     self.get_code().borrow().is_statement_start(),
                     "AssertionError: not at statement start"
                 );
-                let false_jumps = self.get_items().borrow().cond_false_jumps(&c);
+                let false_jumps = self.get_items().cond_false_jumps(&c);
                 self.get_code().borrow_mut().resolve_pending_chain(ctx, false_jumps);
             }
         }
@@ -2173,7 +2167,7 @@ impl Gen {
         self.in_cond_switch_expression = prev_in_cond;
         let pt = self.pt.expect("expected type");
         let items = self.get_items();
-        self.result = Some(items.borrow().make_stack_item(ctx, pt));
+        self.result = Some(items.make_stack_item(ctx, pt));
     }
 
     /// Generate code for a switch expression in a conditional context.
@@ -2213,9 +2207,7 @@ impl Gen {
                 let item = {
                     let code = self.get_code();
                     let reg = code.borrow_mut().new_local_symbol(ctx, sym);
-                    self.get_items()
-                        .borrow()
-                        .make_local_item_anonymous(ctx, ty, reg)
+                    self.get_items().make_local_item_anonymous(ctx, ty, reg)
                 };
                 stack_before.insert(0, item.clone());
                 self.item_store(ctx, &item);
@@ -2909,8 +2901,8 @@ impl Gen {
         let limit = self.get_code().borrow().nextreg;
         self.get_code().borrow_mut().new_local_symbol(ctx, param_sym);
         let items = self.get_items();
-        let local = items.borrow_mut().make_local_item(ctx, param_sym);
-        items.borrow_mut().store(ctx, &local);
+        let local = items.make_local_item(ctx, param_sym);
+        items.store(ctx, &local);
         let first_stat = tree_info::first_stat_pos(ctx, body);
         self.get_code().borrow_mut().stat_begin(first_stat);
         self.gen_stat_crt(ctx, body, CRT_BLOCK);
@@ -3074,14 +3066,14 @@ impl Gen {
         let inner = tree_info::skip_parens(ctx, cond);
         let c = self.gen_cond_crt(ctx, inner, CRT_FLOW_CONTROLLER);
         let items = self.get_items();
-        let else_chain = items.borrow_mut().jump_false(ctx, &c);
-        let cond_is_false = items.borrow().cond_is_false(&c);
+        let else_chain = items.jump_false(ctx, &c);
+        let cond_is_false = items.cond_is_false(&c);
         assert!(
             self.get_code().borrow().is_statement_start(),
             "AssertionError: not at statement start"
         );
         if !cond_is_false {
-            let true_jumps = items.borrow().cond_true_jumps(&c);
+            let true_jumps = items.cond_true_jumps(&c);
             self.get_code().borrow_mut().resolve_pending_chain(ctx, true_jumps);
             self.gen_stat_crt(ctx, thenpart, CRT_STATEMENT | CRT_FLOW_TARGET);
             then_exit = self.get_code().borrow_mut().branch(ctx, GOTO);
@@ -3160,8 +3152,8 @@ impl Gen {
             };
             let value = self.gen_cond_crt(ctx, value, CRT_FLOW_TARGET);
             let items = self.get_items();
-            let false_jumps = items.borrow_mut().jump_false(ctx, &value);
-            let true_jumps = items.borrow().cond_true_jumps(&value);
+            let false_jumps = items.jump_false(ctx, &value);
+            let true_jumps = items.cond_true_jumps(&value);
             self.get_code().borrow_mut().resolve_pending_chain(ctx, true_jumps);
             let local_env = self.unwind_break(ctx, target);
             self.reload_stack_before_switch_expr(ctx);
@@ -3351,10 +3343,10 @@ impl Gen {
         self.get_code().borrow_mut().stat_begin(ctx.tree(cond).pos);
         let c = self.gen_cond_crt(ctx, cond, CRT_FLOW_CONTROLLER);
         let items = self.get_items();
-        let else_chain = items.borrow_mut().jump_false(ctx, &c);
-        let cond_is_false = items.borrow().cond_is_false(&c);
+        let else_chain = items.jump_false(ctx, &c);
+        let cond_is_false = items.cond_is_false(&c);
         if std::env::var_os("DSH_DEBUG_COND").is_some() {
-            let ct = items.borrow().cond_is_true(&c);
+            let ct = items.cond_is_true(&c);
             if ct {
                 eprintln!(
                     "[GENCOND] file={} pos={} cond_tag={:?} cond_ty={} c={}",
@@ -3369,12 +3361,12 @@ impl Gen {
                         .ty
                         .map(|ty| crate::comp::attr::type_display_of(ctx, ty))
                         .unwrap_or_default(),
-                    items.borrow().describe(ctx, &c),
+                    items.describe(ctx, &c),
                 );
             }
         }
         if !cond_is_false {
-            let true_jumps = items.borrow().cond_true_jumps(&c);
+            let true_jumps = items.cond_true_jumps(&c);
             self.get_code().borrow_mut().resolve_pending_chain(ctx, true_jumps);
             let startpc = if self.gen_crt {
                 self.get_code().borrow_mut().cur_cp(ctx)
@@ -3428,7 +3420,7 @@ impl Gen {
         self.get_code().borrow_mut().resolve_pending_chain(ctx, then_exit);
         let pt = self.pt.expect("expected type");
         let items = self.get_items();
-        self.result = Some(items.borrow().make_stack_item(ctx, pt));
+        self.result = Some(items.make_stack_item(ctx, pt));
     }
 
     /// Set the type annotation positions of the generated code.
@@ -3515,9 +3507,9 @@ impl Gen {
         let params = ctx.typ(external).get_parameter_types(ctx);
         self.gen_args(ctx, args, params);
         let items = self.get_items();
-        let item = items.borrow_mut().make_member_item(ctx, constructor, true);
-        items.borrow_mut().invoke(ctx, &item);
-        self.result = Some(items.borrow().make_stack_item(ctx, tree_ty));
+        let item = items.make_member_item(ctx, constructor, true);
+        items.invoke(ctx, &item);
+        self.result = Some(items.make_stack_item(ctx, tree_ty));
     }
 
     /// Generate code for a new array creation.
@@ -3544,8 +3536,8 @@ impl Gen {
                 let item = self.gen_expr(ctx, head, elemtype);
                 self.item_load(ctx, &item);
                 let items = self.get_items();
-                let indexed = items.borrow().make_indexed_item(ctx, elemtype);
-                items.borrow_mut().store(ctx, &indexed);
+                let indexed = items.make_indexed_item(ctx, elemtype);
+                items.store(ctx, &indexed);
                 }
                 self.result = Some(arr);
             }
@@ -3597,7 +3589,7 @@ impl Gen {
             self.get_code().borrow_mut().emit_newarray(ctx, elemcode, ty);
         }
         let items = self.get_items();
-        items.borrow().make_stack_item(ctx, ty)
+        items.make_stack_item(ctx, ty)
     }
 
     /// Generate code for a parenthesized expression.
@@ -3632,7 +3624,7 @@ impl Gen {
                 .force_stack_top(ctx, &syms.borrow(), &types, lhs_ty);
         }
         let items = self.get_items();
-        self.result = Some(items.borrow().make_assign_item(l));
+        self.result = Some(items.make_assign_item(l));
     }
 
     /// Generate code for a compound assignment.
@@ -3687,7 +3679,7 @@ impl Gen {
                 };
                 let ival = if tag == Tag::MINUS_ASG { -ival } else { ival };
                 let items = self.get_items();
-                items.borrow_mut().incr(ctx, &l, ival);
+                items.incr(ctx, &l, ival);
                 self.result = Some(l.clone());
                 return;
             }
@@ -3705,7 +3697,7 @@ impl Gen {
             let _ = coerced;
         }
         let items = self.get_items();
-        self.result = Some(items.borrow().make_assign_item(l));
+        self.result = Some(items.make_assign_item(l));
     }
 
     /// Generate code for a unary expression.
@@ -3721,7 +3713,7 @@ impl Gen {
         if tag == Tag::NOT {
             let cond = self.gen_cond(ctx, arg, false);
             let items = self.get_items();
-            self.result = Some(items.borrow().negate(&cond));
+            self.result = Some(items.negate(&cond));
             return;
         }
         let op_ty = ctx.sym(operator).ty.expect("operator type");
@@ -3751,7 +3743,7 @@ impl Gen {
                 if is_local_item(&od) && (opcode == IADD || opcode == ISUB) {
                     let delta = if tag == Tag::PREINC { 1 } else { -1 };
                     let items = self.get_items();
-                    items.borrow_mut().incr(ctx, &od, delta);
+                    items.incr(ctx, &od, delta);
                     self.result = Some(od.clone());
                 } else {
                     let loaded = self.item_load(ctx, &od);
@@ -3768,7 +3760,7 @@ impl Gen {
                     // Java: Gen.visitUnary PREINC/PREDEC wraps the original
                     // item (od), not the loaded stack value, in an AssignItem.
                     let items = self.get_items();
-                    self.result = Some(items.borrow().make_assign_item(od.clone()));
+                    self.result = Some(items.make_assign_item(od.clone()));
                 }
             }
             Tag::POSTINC | Tag::POSTDEC => {
@@ -3777,12 +3769,12 @@ impl Gen {
                     let res = self.item_load(ctx, &od);
                     let delta = if tag == Tag::POSTINC { 1 } else { -1 };
                     let items = self.get_items();
-                    items.borrow_mut().incr(ctx, &od, delta);
+                    items.incr(ctx, &od, delta);
                     self.result = Some(res);
                 } else {
                     let res = self.item_load(ctx, &od);
                     let items = self.get_items();
-                    items.borrow_mut().stash(ctx, &od, od.typecode);
+                    items.stash(ctx, &od, od.typecode);
                     let one = Gen::one(od.typecode);
                     self.get_code().borrow_mut().emitop0(ctx, one);
                     self.get_code().borrow_mut().emitop0(ctx, opcode);
@@ -3794,7 +3786,7 @@ impl Gen {
                             .emitop0(ctx, INT2BYTE + od.typecode - BYTE_CODE);
                     }
                     let items = self.get_items();
-                    items.borrow_mut().store(ctx, &od);
+                    items.store(ctx, &od);
                     self.result = Some(res);
                 }
             }
@@ -3847,16 +3839,16 @@ impl Gen {
         } else if ctx.tree(tree).tag == Tag::AND {
             let lcond = self.gen_cond_crt(ctx, lhs, CRT_FLOW_CONTROLLER);
             let items = self.get_items();
-            if !items.borrow().cond_is_false(&lcond) {
-                let false_jumps = items.borrow_mut().jump_false(ctx, &lcond);
-                let true_jumps = items.borrow().cond_true_jumps(&lcond);
+            if !items.cond_is_false(&lcond) {
+                let false_jumps = items.jump_false(ctx, &lcond);
+                let true_jumps = items.cond_true_jumps(&lcond);
                 self.get_code().borrow_mut().resolve_pending_chain(ctx, true_jumps);
                 let rcond = self.gen_cond_crt(ctx, rhs, CRT_FLOW_TARGET);
-                let rcond_opcode = items.borrow().cond_opcode(&rcond);
-                let rcond_true = items.borrow().cond_true_jumps(&rcond);
-                let rcond_false = items.borrow().cond_false_jumps(&rcond);
+                let rcond_opcode = items.cond_opcode(&rcond);
+                let rcond_true = items.cond_true_jumps(&rcond);
+                let rcond_false = items.cond_false_jumps(&rcond);
                 let merged = Code::merge_chains(false_jumps, rcond_false);
-                self.result = Some(items.borrow().make_cond_item(
+                self.result = Some(items.make_cond_item(
                     rcond_opcode,
                     rcond_true,
                     merged,
@@ -3867,16 +3859,16 @@ impl Gen {
         } else if ctx.tree(tree).tag == Tag::OR {
             let lcond = self.gen_cond_crt(ctx, lhs, CRT_FLOW_CONTROLLER);
             let items = self.get_items();
-            if !items.borrow().cond_is_true(&lcond) {
-                let true_jumps = items.borrow_mut().jump_true(ctx, &lcond);
-                let false_jumps = items.borrow().cond_false_jumps(&lcond);
+            if !items.cond_is_true(&lcond) {
+                let true_jumps = items.jump_true(ctx, &lcond);
+                let false_jumps = items.cond_false_jumps(&lcond);
                 self.get_code().borrow_mut().resolve_pending_chain(ctx, false_jumps);
                 let rcond = self.gen_cond_crt(ctx, rhs, CRT_FLOW_TARGET);
-                let rcond_opcode = items.borrow().cond_opcode(&rcond);
-                let rcond_true = items.borrow().cond_true_jumps(&rcond);
-                let rcond_false = items.borrow().cond_false_jumps(&rcond);
+                let rcond_opcode = items.cond_opcode(&rcond);
+                let rcond_true = items.cond_true_jumps(&rcond);
+                let rcond_false = items.cond_false_jumps(&rcond);
                 let merged = Code::merge_chains(true_jumps, rcond_true);
-                self.result = Some(items.borrow().make_cond_item(
+                self.result = Some(items.make_cond_item(
                     rcond_opcode,
                     merged,
                     rcond_false,
@@ -3944,12 +3936,12 @@ impl Gen {
             || opcode == IF_ACMP_NONNULL
         {
             let items = self.get_items();
-            return items.borrow().make_cond_item_opcode(opcode);
+            return items.make_cond_item_opcode(opcode);
         }
         self.get_code().borrow_mut().emitop0(ctx, opcode);
         let restype = ctx.typ(op_erased).get_return_type(ctx).expect("operator return type");
         let items = self.get_items();
-        items.borrow().make_stack_item(ctx, restype)
+        items.make_stack_item(ctx, restype)
     }
 
     /// Generate code for a type cast.
@@ -4009,7 +4001,7 @@ impl Gen {
             .emitop2_type(ctx, INSTANCEOF, od, pattern_ty);
         let boolean_type = self.syms.borrow().boolean_type;
         let items = self.get_items();
-        self.result = Some(items.borrow().make_stack_item(ctx, boolean_type));
+        self.result = Some(items.make_stack_item(ctx, boolean_type));
     }
 
     /// Generate code for an array access.
@@ -4029,7 +4021,7 @@ impl Gen {
         self.item_load(ctx, &index_item);
         let tree_ty = ctx.tree(tree).ty.expect("array element type");
         let items = self.get_items();
-        self.result = Some(items.borrow().make_indexed_item(ctx, tree_ty));
+        self.result = Some(items.make_indexed_item(ctx, tree_ty));
     }
 
     /// Generate code for an identifier.
@@ -4042,16 +4034,16 @@ impl Gen {
         if name == names._this || name == names._super {
             let mut res = if name == names._this {
                 let items = self.get_items();
-                items.borrow().make_this_item()
+                items.make_this_item()
             } else {
                 let items = self.get_items();
-                items.borrow().make_super_item()
+                items.make_super_item()
             };
             if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH {
                 // Generate code to address the constructor.
                 self.item_load(ctx, &res);
                 let items = self.get_items();
-                res = items.borrow_mut().make_member_item(ctx, sym, true);
+                res = items.make_member_item(ctx, sym, true);
             }
             self.result = Some(res);
             return;
@@ -4061,7 +4053,7 @@ impl Gen {
                 self.set_type_annotation_positions(ctx, ctx.tree(tree).pos);
             }
             let items = self.get_items();
-            self.result = Some(items.borrow_mut().make_dynamic_item(ctx, sym));
+            self.result = Some(items.make_dynamic_item(ctx, sym));
             return;
         }
         let owner_kind = ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind);
@@ -4072,7 +4064,7 @@ impl Gen {
             )
         {
             let items = self.get_items();
-            self.result = Some(items.borrow_mut().make_local_item(ctx, sym));
+            self.result = Some(items.make_local_item(ctx, sym));
             return;
         }
         let flags = ctx.sym(sym).flags_field;
@@ -4092,17 +4084,17 @@ impl Gen {
                 sym
             };
             let items = self.get_items();
-            self.result = Some(items.borrow_mut().make_static_item(ctx, sym));
+            self.result = Some(items.make_static_item(ctx, sym));
         } else {
             let this_item = {
                 let items = self.get_items();
-                items.borrow().make_this_item()
+                items.make_this_item()
             };
             self.item_load(ctx, &this_item);
             let sym = self.binary_qualifier(ctx, sym, encl_class_ty);
             let nonvirtual = self.non_virtual_for_private_access(ctx, sym);
             let items = self.get_items();
-            self.result = Some(items.borrow_mut().make_member_item(ctx, sym, nonvirtual));
+            self.result = Some(items.make_member_item(ctx, sym, nonvirtual));
         }
     }
 
@@ -4133,7 +4125,7 @@ impl Gen {
                 .emit_ldc(ctx, LoadableConstantRef::Class(ty));
             let pt = self.pt.expect("expected type");
             let items = self.get_items();
-            self.result = Some(items.borrow().make_stack_item(ctx, pt));
+            self.result = Some(items.make_stack_item(ctx, pt));
             return;
         }
         let ssym = tree_info::symbol(ctx, selected);
@@ -4148,7 +4140,7 @@ impl Gen {
         let access_super = self.is_access_super(ctx, env.encl_method.expect("enclosing method"));
         let mut base = if select_super {
             let items = self.get_items();
-            items.borrow().make_super_item()
+            items.make_super_item()
         } else {
             let selected_ty = ctx.tree(selected).ty.expect("selected type");
             self.gen_expr(ctx, selected, selected_ty)
@@ -4174,7 +4166,7 @@ impl Gen {
             let sym_ty = ctx.sym(sym).ty.expect("constant type");
             let const_value = ctx.sym(sym).get_const_value().expect("constant value");
             let items = self.get_items();
-            self.result = Some(items.borrow().make_immediate_item(
+            self.result = Some(items.make_immediate_item(
                 ctx,
                 sym_ty,
                 immediate_value_from_constant(&const_value),
@@ -4183,7 +4175,7 @@ impl Gen {
         }
         if self.is_invoke_dynamic(ctx, sym) {
             let items = self.get_items();
-            self.result = Some(items.borrow_mut().make_dynamic_item(ctx, sym));
+            self.result = Some(items.make_dynamic_item(ctx, sym));
             return;
         }
         let selected_ty = ctx.tree(selected).ty.expect("selected type");
@@ -4200,20 +4192,20 @@ impl Gen {
             }
             self.item_drop(ctx, &base);
             let items = self.get_items();
-            self.result = Some(items.borrow_mut().make_static_item(ctx, sym));
+            self.result = Some(items.make_static_item(ctx, sym));
         } else {
             self.item_load(ctx, &base);
             if sym == self.syms.borrow().length_var {
                 self.get_code().borrow_mut().emitop0(ctx, ARRAYLENGTH);
                 let int_type = self.syms.borrow().int_type;
                 let items = self.get_items();
-                self.result = Some(items.borrow().make_stack_item(ctx, int_type));
+                self.result = Some(items.make_stack_item(ctx, int_type));
             } else {
                 let nonvirtual = self.non_virtual_for_private_access(ctx, sym)
                     || select_super
                     || access_super;
                 let items = self.get_items();
-                self.result = Some(items.borrow_mut().make_member_item(ctx, sym, nonvirtual));
+                self.result = Some(items.make_member_item(ctx, sym, nonvirtual));
             }
         }
     }
@@ -4237,11 +4229,11 @@ impl Gen {
         if typetag == TypeTag::BOT {
             self.get_code().borrow_mut().emitop0(ctx, ACONST_NULL);
             let items = self.get_items();
-            self.result = Some(items.borrow().make_stack_item(ctx, tree_ty));
+            self.result = Some(items.make_stack_item(ctx, tree_ty));
         } else {
             let value = value.expect("literal value");
             let items = self.get_items();
-            self.result = Some(items.borrow().make_immediate_item(
+            self.result = Some(items.make_immediate_item(
                 ctx,
                 tree_ty,
                 literal_value_to_immediate(&value),

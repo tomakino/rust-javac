@@ -224,12 +224,12 @@ impl StringConcat {
         // the builder.
         let lhs_ty = ctx.tree(lhs).ty.expect("lhs type");
         let l = generator.gen_expr(ctx, lhs, lhs_ty);
-        let width = generator.get_items().borrow().width(&l);
+        let width = generator.get_items().width(&l);
         if width > 0 {
             let code = generator.get_code();
             code.borrow_mut().emitop0(ctx, DUP_X1 + 3 * (width - 1));
         }
-        generator.get_items().borrow_mut().load(ctx, &l);
+        generator.get_items().load(ctx, &l);
         self.append_string(ctx, generator, lhs);
         // Append all other strings to the builder.
         let args = self.collect_all(ctx, rhs);
@@ -237,7 +237,7 @@ impl StringConcat {
         for t in &current {
         let ty = ctx.tree(t).ty.expect("argument type");
         let item = generator.gen_expr(ctx, t, ty);
-        generator.get_items().borrow_mut().load(ctx, &item);
+        generator.get_items().load(ctx, &item);
         self.append_string(ctx, generator, t);
         }
         self.builder_to_string(ctx, generator, pos);
@@ -255,13 +255,13 @@ impl StringConcat {
         for t in &current {
         let ty = ctx.tree(t).ty.expect("argument type");
         let item = generator.gen_expr(ctx, t, ty);
-        generator.get_items().borrow_mut().load(ctx, &item);
+        generator.get_items().load(ctx, &item);
         self.append_string(ctx, generator, t);
         }
         self.builder_to_string(ctx, generator, pos);
         let syms = Rc::clone(&self.syms);
         let items = generator.get_items();
-        items.borrow().make_stack_item(ctx, syms.borrow().string_type)
+        items.make_stack_item(ctx, syms.borrow().string_type)
     }
 
     /// Emit the creation of a new StringBuilder.
@@ -325,8 +325,8 @@ impl StringConcat {
             }
         };
         let items = generator.get_items();
-        let item = items.borrow_mut().make_member_item(ctx, method, false);
-        items.borrow_mut().invoke(ctx, &item);
+        let item = items.make_member_item(ctx, method, false);
+        items.invoke(ctx, &item);
     }
 
     /// Convert the top StringBuilder to a String.
@@ -352,8 +352,8 @@ impl StringConcat {
         let l = generator.gen_expr(ctx, lhs, lhs_ty);
         {
             let items = generator.get_items();
-            items.borrow_mut().duplicate(ctx, &l);
-            items.borrow_mut().load(ctx, &l);
+            items.duplicate(ctx, &l);
+            items.load(ctx, &l);
         }
         let tree_ty = ctx.tree(tree).ty.expect("assign type");
         self.emit_indy(ctx, generator, pos, args, false, tree_ty);
@@ -375,7 +375,7 @@ impl StringConcat {
         self.emit_indy(ctx, generator, pos, args, true, tree_ty);
         let syms = Rc::clone(&self.syms);
         let items = generator.get_items();
-        items.borrow().make_stack_item(ctx, syms.borrow().string_type)
+        items.make_stack_item(ctx, syms.borrow().string_type)
     }
 
     /// Emit the invokedynamic call for the collected arguments.
@@ -483,7 +483,7 @@ impl StringConcat {
                 }
                 if !first || generate_first_arg {
                     let item = generator.gen_expr(ctx, arg, arg_ty);
-                    generator.get_items().borrow_mut().load(ctx, &item);
+                    generator.get_items().load(ctx, &item);
                 }
                 if self.should_convert_to_string_eagerly(ctx, generator, arg_type) {
                     let value_of = self.names.valueOf.clone();
@@ -546,8 +546,8 @@ impl StringConcat {
             Vec::new(),
         );
         let items_rc = generator.get_items();
-        let item = items_rc.borrow_mut().make_dynamic_item(ctx, dyn_sym);
-        items_rc.borrow_mut().invoke(ctx, &item);
+        let item = items_rc.make_dynamic_item(ctx, dyn_sym);
+        items_rc.invoke(ctx, &item);
         self.make.borrow_mut().at(prev_pos);
     }
 
@@ -600,7 +600,7 @@ impl StringConcat {
                     let mut arg_type = arg_ty;
                     if !first || generate_first_arg {
                         let item = generator.gen_expr(ctx, arg, arg_ty);
-                        generator.get_items().borrow_mut().load(ctx, &item);
+                        generator.get_items().load(ctx, &item);
                     }
                     if self.should_convert_to_string_eagerly(ctx, generator, arg_type) {
                         let value_of = self.names.valueOf.clone();
@@ -686,8 +686,8 @@ impl StringConcat {
             all_static_args,
         );
         let items_rc = generator.get_items();
-        let item = items_rc.borrow_mut().make_dynamic_item(ctx, dyn_sym);
-        items_rc.borrow_mut().invoke(ctx, &item);
+        let item = items_rc.make_dynamic_item(ctx, dyn_sym);
+        items_rc.invoke(ctx, &item);
         self.make.borrow_mut().at(prev_pos);
     }
 }

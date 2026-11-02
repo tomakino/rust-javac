@@ -193,7 +193,7 @@ impl Items {
     }
 
     /// Make an item representing a dynamic call site.
-    pub fn make_dynamic_item(&mut self, ctx: &mut CompilerContext, member: SymbolId) -> Item {
+    pub fn make_dynamic_item(&self, ctx: &mut CompilerContext, member: SymbolId) -> Item {
         let ty = ctx.sym(member).ty.expect("member type");
         let types = Rc::clone(&self.types);
         let syms = Rc::clone(&self.syms);
@@ -210,7 +210,7 @@ impl Items {
     }
 
     /// Make an item representing a local variable.
-    pub fn make_local_item(&mut self, ctx: &mut CompilerContext, v: SymbolId) -> Item {
+    pub fn make_local_item(&self, ctx: &mut CompilerContext, v: SymbolId) -> Item {
         let ty = ctx.sym(v).ty.expect("variable type");
         let types = Rc::clone(&self.types);
         let syms = Rc::clone(&self.syms);
@@ -235,7 +235,7 @@ impl Items {
     }
 
     /// Make an item representing a static variable or method.
-    pub fn make_static_item(&mut self, ctx: &mut CompilerContext, member: SymbolId) -> Item {
+    pub fn make_static_item(&self, ctx: &mut CompilerContext, member: SymbolId) -> Item {
         let ty = ctx.sym(member).ty.expect("member type");
         let types = Rc::clone(&self.types);
         let syms = Rc::clone(&self.syms);
@@ -248,7 +248,7 @@ impl Items {
 
     /// Make an item representing an instance variable or method.
     pub fn make_member_item(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         member: SymbolId,
         nonvirtual: bool,
@@ -337,7 +337,7 @@ impl Items {
 
 impl Items {
     /// Generate code to load an item onto the stack and return the stack item.
-    pub fn load(&mut self, ctx: &mut CompilerContext, item: &Item) -> Item {
+    pub fn load(&self, ctx: &mut CompilerContext, item: &Item) -> Item {
         match &item.kind {
             ItemKind::Void => panic!("AssertionError: cannot load a void item"),
             ItemKind::Stack => item.clone(),
@@ -415,7 +415,7 @@ impl Items {
 
     /// Generate code to load an immediate item.
     fn load_immediate(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         item: &Item,
         value: &LoadableConstantRef,
@@ -470,7 +470,7 @@ impl Items {
     }
 
     /// Emit an ldc (or ldc2w) for a loadable constant.
-    fn ldc(&mut self, ctx: &mut CompilerContext, value: &LoadableConstantRef) {
+    fn ldc(&self, ctx: &mut CompilerContext, value: &LoadableConstantRef) {
         if is_long_or_double(value) {
             let syms = Rc::clone(&self.syms);
             let od = self.pool_writer.borrow_mut().put_constant(
@@ -487,7 +487,7 @@ impl Items {
     }
 
     /// Generate code to load a conditional item.
-    fn load_cond(&mut self, ctx: &mut CompilerContext, item: &Item) -> Item {
+    fn load_cond(&self, ctx: &mut CompilerContext, item: &Item) -> Item {
         let (opcode, true_jumps, _false_jumps, _tree) = cond_parts(item);
         let mut true_chain = None;
         let false_chain = self.jump_false(ctx, item);
@@ -511,7 +511,7 @@ impl Items {
     }
 
     /// Generate code to store the top of the stack into an item.
-    pub fn store(&mut self, ctx: &mut CompilerContext, item: &Item) {
+    pub fn store(&self, ctx: &mut CompilerContext, item: &Item) {
         match &item.kind {
             ItemKind::Indexed => {
                 self.code.borrow_mut().emitop0(ctx, IASTORE + item.typecode);
@@ -563,7 +563,7 @@ impl Items {
     }
 
     /// Generate code to invoke the method represented by an item.
-    pub fn invoke(&mut self, ctx: &mut CompilerContext, item: &Item) -> Item {
+    pub fn invoke(&self, ctx: &mut CompilerContext, item: &Item) -> Item {
         match &item.kind {
             ItemKind::Static { member } => {
                 let ty = ctx.sym(*member).ty.expect("member type");
@@ -623,7 +623,7 @@ impl Items {
     }
 
     /// Generate code to use an item twice.
-    pub fn duplicate(&mut self, ctx: &mut CompilerContext, item: &Item) {
+    pub fn duplicate(&self, ctx: &mut CompilerContext, item: &Item) {
         match &item.kind {
             ItemKind::Stack => {
                 let op = if Code::width(item.typecode) == 2 {
@@ -649,7 +649,7 @@ impl Items {
     }
 
     /// Generate code to drop an item.
-    pub fn drop_item(&mut self, ctx: &mut CompilerContext, item: &Item) {
+    pub fn drop_item(&self, ctx: &mut CompilerContext, item: &Item) {
         match &item.kind {
             ItemKind::Stack => {
                 let op = if Code::width(item.typecode) == 2 {
@@ -678,7 +678,7 @@ impl Items {
     }
 
     /// Generate code to stash a copy of the top of the stack under an item.
-    pub fn stash(&mut self, ctx: &mut CompilerContext, item: &Item, toscode: i32) {
+    pub fn stash(&self, ctx: &mut CompilerContext, item: &Item, toscode: i32) {
         match &item.kind {
             ItemKind::Stack => {
                 let op = (if Code::width(item.typecode) == 2 {
@@ -710,7 +710,7 @@ impl Items {
     }
 
     /// Generate code to turn an item into a testable condition.
-    pub fn mk_cond(&mut self, ctx: &mut CompilerContext, item: &Item) -> Item {
+    pub fn mk_cond(&self, ctx: &mut CompilerContext, item: &Item) -> Item {
         match &item.kind {
             ItemKind::Immediate { value } => {
                 let ival = immediate_int(value);
@@ -726,7 +726,7 @@ impl Items {
     }
 
     /// Generate code to coerce an item to the given type code.
-    pub fn coerce(&mut self, ctx: &mut CompilerContext, item: &Item, targetcode: i32) -> Item {
+    pub fn coerce(&self, ctx: &mut CompilerContext, item: &Item, targetcode: i32) -> Item {
         if item.typecode == targetcode {
             return item.clone();
         }
@@ -839,7 +839,7 @@ impl Items {
 
     /// Coerce an item to the given target type.
     pub fn coerce_type(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         item: &Item,
         targettype: TypeId,
@@ -862,7 +862,7 @@ impl Items {
     }
 
     /// Generate code to increment a local variable.
-    pub fn incr(&mut self, ctx: &mut CompilerContext, item: &Item, x: i32) {
+    pub fn incr(&self, ctx: &mut CompilerContext, item: &Item, x: i32) {
         let reg = match &item.kind {
             ItemKind::Local { reg, .. } => *reg,
             _ => panic!("AssertionError: local item expected"),
@@ -888,7 +888,7 @@ impl Items {
     }
 
     /// Generate code to branch when a conditional item is true.
-    pub fn jump_true(&mut self, ctx: &mut CompilerContext, item: &Item) -> Option<Box<Chain>> {
+    pub fn jump_true(&self, ctx: &mut CompilerContext, item: &Item) -> Option<Box<Chain>> {
         let (opcode, true_jumps, _, tree) = cond_parts(item);
         if tree.is_none() {
             let branch = self.code.borrow_mut().branch(ctx, opcode);
@@ -905,7 +905,7 @@ impl Items {
     }
 
     /// Generate code to branch when a conditional item is false.
-    pub fn jump_false(&mut self, ctx: &mut CompilerContext, item: &Item) -> Option<Box<Chain>> {
+    pub fn jump_false(&self, ctx: &mut CompilerContext, item: &Item) -> Option<Box<Chain>> {
         let (opcode, _, false_jumps, tree) = cond_parts(item);
         let negated = Code::negate(opcode);
         if tree.is_none() {
