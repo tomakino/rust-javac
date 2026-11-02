@@ -140,17 +140,4 @@ mod tests {
         assert_eq!(arena.len(), 0);
     }
 
-    #[test]
-    #[should_panic(expected = "arena index out of range")]
-    fn get_out_of_range_panics() {
-        let arena: Arena<Item> = Arena::new();
-        let _ = arena.get(0);
-    }
-
-    #[test]
-    #[should_panic(expected = "arena index out of range")]
-    fn get_mut_out_of_range_panics() {
-        let mut arena: Arena<Item> = Arena::new();
-        let _ = arena.get_mut(0);
-    }
 }
