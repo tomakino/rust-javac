@@ -44,6 +44,12 @@ pub struct CompilerContext {
     /// one JCNoType instance per compiler context so identity comparisons of
     /// enclosing types match the upstream singleton (registered adapter).
     no_type: Option<TypeId>,
+    /// Method-override resolution cache: (method, origin, check_result) → the
+    /// implementation found for that origin. Only successful lookups are
+    /// cached; a missing implementation is recomputed because it can depend on
+    /// a symbol that completes later.
+    pub implementation_cache:
+        std::collections::HashMap<(SymbolId, SymbolId, bool), SymbolId>,
 }
 
 impl CompilerContext {

@@ -2684,6 +2684,10 @@ pub fn implementation(
     origin: SymbolId,
     check_result: bool,
 ) -> Option<SymbolId> {
+    let key = (sym, origin, check_result);
+    if let Some(found) = ctx.implementation_cache.get(&key).copied() {
+        return Some(found);
+    }
     let result = types.implementation_filtered(
         ctx,
         syms,
@@ -2692,15 +2696,20 @@ pub fn implementation(
         check_result,
         crate::code::types::ImplementationFilterKind::Default,
     );
-    if result.is_some() {
-        return result;
+    if let Some(found) = result {
+        ctx.implementation_cache.insert(key, found);
+        return Some(found);
     }
     let origin_ty = ctx.sym(origin).ty.expect("origin type");
     let is_interface = (ctx.sym(origin).flags_field & flags::INTERFACE as i64) != 0;
     if types.is_derived_raw(ctx, syms, origin_ty) && !is_interface {
         let super_type = types.supertype(ctx, syms, origin_ty, None);
         let super_tsym = ctx.typ(super_type).tsym.expect("supertype symbol");
-        return implementation(ctx, syms, types, sym, super_tsym, check_result);
+        let found = implementation(ctx, syms, types, sym, super_tsym, check_result);
+        if let Some(found) = found {
+            ctx.implementation_cache.insert(key, found);
+        }
+        return found;
     }
     None
 }
