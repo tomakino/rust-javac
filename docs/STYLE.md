@@ -6,11 +6,11 @@ messages, and issue/PR descriptions.
 
 ## 1. Keep porting metadata out of the source
 
-Source files contain ordinary Rust documentation: what the module does, the
-key types and invariants, and non-obvious design decisions. They do **not**
+Source files contain conventional Rust documentation: what the module does,
+the key types and invariants, and non-obvious design decisions. They do **not**
 contain:
 
-- upstream file paths, class names, or commit hashes;
+- upstream source paths, method anchors, line numbers, or commit hashes;
 - porting status, "ported in this file" inventories, or NOT PORTED lists;
 - links to `docs/PORTING_MAP.md` or `docs/PORTING_NOTES.md`.
 
@@ -49,19 +49,7 @@ A comment must state something the code does not: an invariant, a
 non-obvious reason, a constraint, or the meaning of a magic value. Do not
 restate the next line of code.
 
-### 3.1 Upstream anchors (optional)
-
-Where a review benefits from knowing the exact upstream method, add one
-line above the item:
-
-```rust
-// Java: checkFlags(Check.java:2914)
-```
-
-Anchors stay inside the file, never in the module header. Keep the upstream
-name; do not translate it.
-
-### 3.2 Implementation rationale
+### 3.1 Implementation rationale
 
 Explain why the Rust code takes this shape:
 
@@ -70,7 +58,7 @@ Explain why the Rust code takes this shape:
 // borrow disjoint fields instead of sharing `Rc<RefCell<_>>`.
 ```
 
-### 3.3 Behavior deviations
+### 3.2 Behavior deviations
 
 When local behavior intentionally differs from javac, write one concise
 note next to the code and keep the full record in `docs/PORTING_NOTES.md`:
@@ -92,9 +80,7 @@ note next to the code and keep the full record in `docs/PORTING_NOTES.md`:
 ## 5. Naming
 
 - Types mirror the upstream class names (`Attr`, `Check`, `TreeInfo`).
-- Functions use snake_case; upstream names live in anchors.
-- Fields use snake_case; add `// Java: fieldName` only when the mapping is
-  not obvious.
+- Functions and fields use snake_case.
 
 ## 6. Errors and ownership
 
