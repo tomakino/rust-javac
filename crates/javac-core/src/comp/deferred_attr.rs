@@ -177,7 +177,7 @@ type DeferredFields = (
     Option<AttrMode>,
     Vec<SymbolId>,
     Rc<SpeculativeCache>,
-    Option<Rc<RefCell<crate::comp::argument_attr::ArgumentTypeData>>>,
+    Option<Rc<crate::comp::argument_attr::ArgumentTypeData>>,
 );
 
 fn deferred_fields(ctx: &CompilerContext, t: TypeId) -> DeferredFields {
@@ -222,7 +222,6 @@ pub fn deferred_type_speculative_type(
             .clone()
             .expect("AssertionError: argumentAttr service must be installed");
         let argument_attr = argument_attr.borrow();
-        let data = data.borrow();
         let selected = argument_attr.argument_type_speculative_type(ctx, &data, t, msym, phase);
         return selected;
     }
@@ -245,7 +244,6 @@ pub fn deferred_type_speculative_tree(
             .clone()
             .expect("AssertionError: argumentAttr service must be installed");
         let argument_attr = argument_attr.borrow();
-        let data = data.borrow();
         return argument_attr.argument_type_speculative_tree(ctx, &data, t, deferred_attr_context);
     }
     cache

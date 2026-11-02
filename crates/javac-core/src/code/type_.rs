@@ -847,11 +847,7 @@ pub enum TypeKindData {
         /// kind, the speculative tree and the ResultInfo-keyed speculative
         /// types. Porting rules registered: Java subclassing is expressed by this optional
         /// payload plus kind dispatch in argument_attr.rs.
-        argument: Option<
-            std::rc::Rc<
-                std::cell::RefCell<crate::comp::argument_attr::ArgumentTypeData>,
-            >,
-        >,
+        argument: Option<std::rc::Rc<crate::comp::argument_attr::ArgumentTypeData>>,
     },
     /// Java: ClassReader.ProxyType (ClassReader.java:3199-3227): a placeholder
     /// type for module-info annotation values (tag NONE); resolve decodes the

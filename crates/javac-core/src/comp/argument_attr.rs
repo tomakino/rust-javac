@@ -95,12 +95,14 @@ pub struct ArgumentTypeData {
     /// 717).
     pub speculative_types: Rc<RefCell<Vec<(u64, Rc<ResultInfo>, TypeId)>>>,
     /// Java: SwitchExpressionType.yieldExpressions (Optional<List<JCYield>>)
-    pub yield_expressions: Option<List<TreeId>>,
+    pub yield_expressions: RefCell<Option<List<TreeId>>>,
     /// Java: ExplicitLambdaType.argtypes (Optional<List<Type>>)
-    pub argtypes: Option<List<TypeId>>,
+    pub argtypes: RefCell<Option<List<TypeId>>>,
     /// Java: ExplicitLambdaType.returnExpressions (Optional<List<JCReturn>>)
-    pub return_expressions: Option<List<TreeId>>,
-}// ---------------------------------------------------------------------------
+    pub return_expressions: RefCell<Option<List<TreeId>>>,
+}
+
+// ---------------------------------------------------------------------------
 // ArgumentAttr (ArgumentAttr.java:96-790). Explicit ctx/syms/attr/
 // deferred parameters per ADR 0001; the tree visitor dispatch becomes an
 // ArgumentAttr::visit match (adapter, no visitor base class in the ported model).
@@ -136,7 +138,7 @@ pub struct ArgumentAttr {
     /// Port adapter (A3k): the cache is shared by the per-attribution session
     /// clones, so completions started from the canonical service observe the
     /// same entries (upstream has a single ArgumentAttr object).
-    pub argument_type_cache: Rc<RefCell<std::collections::HashMap<UniquePos, Rc<RefCell<ArgumentTypeData>>>>>,
+    pub argument_type_cache: Rc<RefCell<std::collections::HashMap<UniquePos, Rc<ArgumentTypeData>>>>,
     /// Java: final Flow flow (cell: the wiring installs it; Porting rules). Used by
     /// attribSpeculativeLambda's flow.analyzeLambda call.
     pub flow: Rc<RefCell<Option<Rc<crate::comp::flow::Flow>>>>,
@@ -216,7 +218,7 @@ impl std::hash::Hash for UniquePos {
 /// Upstream: ArgumentAttr.java:213-230.
 pub struct LocalCacheContext {
     /// Java: Map<UniquePos, ArgumentType<?>> prevCache
-    pub prev_cache: Option<std::collections::HashMap<UniquePos, Rc<RefCell<ArgumentTypeData>>>>,
+    pub prev_cache: Option<std::collections::HashMap<UniquePos, Rc<ArgumentTypeData>>>,
 }
 
 impl LocalCacheContext {
@@ -503,9 +505,9 @@ impl ArgumentAttr {
                 kind: ArgumentKind::Parens,
                 speculative_tree,
                 speculative_types: Rc::new(RefCell::new(Vec::new())),
-                yield_expressions: None,
-                argtypes: None,
-                return_expressions: None,
+                yield_expressions: RefCell::new(None),
+                argtypes: RefCell::new(None),
+                return_expressions: RefCell::new(None),
             }
         })
     }
@@ -524,9 +526,9 @@ impl ArgumentAttr {
                 kind: ArgumentKind::Conditional,
                 speculative_tree,
                 speculative_types: Rc::new(RefCell::new(Vec::new())),
-                yield_expressions: None,
-                argtypes: None,
-                return_expressions: None,
+                yield_expressions: RefCell::new(None),
+                argtypes: RefCell::new(None),
+                return_expressions: RefCell::new(None),
             }
         })
     }
@@ -546,9 +548,9 @@ impl ArgumentAttr {
                 kind: ArgumentKind::SwitchExpression,
                 speculative_tree,
                 speculative_types: Rc::new(RefCell::new(Vec::new())),
-                yield_expressions: None,
-                argtypes: None,
-                return_expressions: None,
+                yield_expressions: RefCell::new(None),
+                argtypes: RefCell::new(None),
+                return_expressions: RefCell::new(None),
             }
         })
     }
@@ -572,9 +574,9 @@ impl ArgumentAttr {
                     kind: ArgumentKind::ResolvedMethod,
                     speculative_tree,
                     speculative_types: Rc::new(RefCell::new(Vec::new())),
-                    yield_expressions: None,
-                    argtypes: None,
-                    return_expressions: None,
+                    yield_expressions: RefCell::new(None),
+                    argtypes: RefCell::new(None),
+                    return_expressions: RefCell::new(None),
                 }
             })
         } else {
@@ -606,9 +608,9 @@ impl ArgumentAttr {
                     kind: ArgumentKind::ResolvedConstructor,
                     speculative_tree,
                     speculative_types: Rc::new(RefCell::new(Vec::new())),
-                    yield_expressions: None,
-                    argtypes: None,
-                    return_expressions: None,
+                    yield_expressions: RefCell::new(None),
+                    argtypes: RefCell::new(None),
+                    return_expressions: RefCell::new(None),
                 }
             })
         } else {
@@ -811,7 +813,7 @@ impl ArgumentAttr {
         let deferred_type = self.new_argument_deferred(ctx, syms, attr, tree, &env, data.clone());
         self.argument_type_cache
             .borrow_mut()
-            .insert(pos, Rc::new(RefCell::new(data)));
+            .insert(pos, Rc::new(data));
         self.set_result(ctx, tree, deferred_type);
         Ok(Some(deferred_type))
     }
@@ -861,14 +863,14 @@ impl ArgumentAttr {
             kind: ArgumentKind::ExplicitLambda,
             speculative_tree: speculative_lambda,
             speculative_types: Rc::new(RefCell::new(Vec::new())),
-            yield_expressions: None,
-            argtypes: None,
-            return_expressions: None,
+            yield_expressions: RefCell::new(None),
+            argtypes: RefCell::new(None),
+            return_expressions: RefCell::new(None),
         };
         let deferred_type = self.new_argument_deferred(ctx, syms, attr, tree, &env, data.clone());
         self.argument_type_cache
             .borrow_mut()
-            .insert(pos, Rc::new(RefCell::new(data)));
+            .insert(pos, Rc::new(data));
         self.set_result(ctx, tree, deferred_type);
         Ok(Some(deferred_type))
     }
@@ -886,16 +888,15 @@ impl ArgumentAttr {
         let env = self.env.clone().expect("argument attr env");
         let cached_entry = self.argument_type_cache.borrow().get(&pos).cloned();
         if let Some(cached) = cached_entry {
-            let cached = cached.borrow();
+            let cached = &cached;
             let data = ArgumentTypeData {
                 kind: cached.kind,
                 speculative_tree: cached.speculative_tree,
                 speculative_types: Rc::clone(&cached.speculative_types),
-                yield_expressions: cached.yield_expressions.clone(),
-                argtypes: cached.argtypes.clone(),
-                return_expressions: cached.return_expressions.clone(),
+                yield_expressions: RefCell::new(cached.yield_expressions.borrow().clone()),
+                argtypes: RefCell::new(cached.argtypes.borrow().clone()),
+                return_expressions: RefCell::new(cached.return_expressions.borrow().clone()),
             };
-            drop(cached);
             let deferred_type = self.new_argument_deferred(ctx, syms, attr, tree, &env, data);
             self.set_result(ctx, tree, deferred_type);
             Ok(Some(deferred_type))
@@ -952,7 +953,7 @@ impl ArgumentAttr {
         if let crate::code::type_::TypeKindData::Deferred { argument, .. } =
             &mut ctx.typ_mut(deferred_type).kind
         {
-            *argument = Some(Rc::new(RefCell::new(data)));
+            *argument = Some(Rc::new(data));
         }
         deferred_type
     }
@@ -992,7 +993,7 @@ impl ArgumentAttr {
         syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         t: TypeId,
-        data: &Rc<RefCell<ArgumentTypeData>>,
+        data: &Rc<ArgumentTypeData>,
         result_info: &ResultInfo,
         deferred_attr_context: &crate::comp::deferred_attr::DeferredAttrContext,
     ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
@@ -1014,7 +1015,7 @@ impl ArgumentAttr {
             };
             let key = result_info.id;
             {
-                let data_ref = data.borrow();
+                let data_ref = &data;
                 let mut types = data_ref.speculative_types.borrow_mut();
                 if let Some(entry) = types.iter_mut().find(|(k, _, _)| *k == key) {
                     entry.2 = tt;
@@ -1030,7 +1031,7 @@ impl ArgumentAttr {
             };
             if !env.info.borrow().attribution_mode.is_speculative() {
                 let log = attr.log.borrow();
-                let pos = UniquePos::new(ctx, &log, data.borrow().speculative_tree);
+                let pos = UniquePos::new(ctx, &log, data.speculative_tree);
                 drop(log);
                 self.argument_type_cache.borrow_mut().remove(&pos);
             }
@@ -1154,12 +1155,12 @@ impl ArgumentAttr {
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
-        data: &Rc<RefCell<ArgumentTypeData>>,
+        data: &Rc<ArgumentTypeData>,
         result_info: &ResultInfo,
         _deferred_attr_context: &crate::comp::deferred_attr::DeferredAttrContext,
     ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
-        let kind = data.borrow().kind;
-        let speculative_tree = data.borrow().speculative_tree;
+        let kind = data.kind;
+        let speculative_tree = data.speculative_tree;
         let types_rc = Rc::clone(&attr.types);
         match kind {
             ArgumentKind::Parens => {
@@ -1239,8 +1240,8 @@ impl ArgumentAttr {
             ArgumentKind::ExplicitLambda => {
                 // Java: ExplicitLambdaType.overloadCheck (ArgumentAttr.java:645-675)
                 let argtypes = {
-                    let mut data_mut = data.borrow_mut();
-                    if data_mut.argtypes.is_none() {
+                    let mut argtypes = data.argtypes.borrow_mut();
+                    if argtypes.is_none() {
                         let params = match &ctx.tree(speculative_tree).kind {
                             crate::tree::jc_tree::TreeKind::Lambda { params, .. } => params.clone(),
                             _ => panic!("ClassCastException: JCLambda expected"),
@@ -1254,9 +1255,9 @@ impl ArgumentAttr {
                             }
                             current = current.tail();
                         }
-                        data_mut.argtypes = Some(result);
+                        *argtypes = Some(result);
                     }
-                    data_mut.argtypes.clone().expect("argtypes")
+                    argtypes.clone().expect("argtypes")
                 };
                 let target_info = attr.
                     get_target_info(ctx, syms, speculative_tree, result_info, Some(argtypes));
@@ -1483,7 +1484,7 @@ impl ArgumentAttr {
                 }
                 let local_info = Rc::new(local_info);
                 let key = local_info.id;
-                let data_ref = data.borrow();
+                let data_ref = &data;
                 data_ref.speculative_types.borrow_mut()
                     .push((key, local_info, t));
                 Ok(t)
@@ -1542,10 +1543,10 @@ impl ArgumentAttr {
     fn lambda_return_expressions(
         &mut self,
         ctx: &mut CompilerContext,
-        data: &Rc<RefCell<ArgumentTypeData>>,
+        data: &Rc<ArgumentTypeData>,
         speculative_lambda: TreeId,
     ) -> List<TreeId> {
-        if data.borrow().return_expressions.is_none() {
+        if data.return_expressions.borrow().is_none() {
             let body = match &ctx.tree(speculative_lambda).kind {
                 crate::tree::jc_tree::TreeKind::Lambda { body, .. } => {
                     body.expect("lambda body")
@@ -1558,19 +1559,22 @@ impl ArgumentAttr {
             for tree in collector.buf {
                 list = list.append(tree);
             }
-            data.borrow_mut().return_expressions = Some(list);
+            *data.return_expressions.borrow_mut() = Some(list);
         }
-        data.borrow().return_expressions.clone().expect("return expressions")
+        data.return_expressions
+            .borrow()
+            .clone()
+            .expect("return expressions")
     }
 
     /// Java: SwitchExpressionType.yieldExpressions() lazily populated list.
     fn switch_expression_yields(
         &mut self,
         ctx: &mut CompilerContext,
-        data: &Rc<RefCell<ArgumentTypeData>>,
+        data: &Rc<ArgumentTypeData>,
         speculative_switch: TreeId,
     ) -> List<TreeId> {
-        if data.borrow().yield_expressions.is_none() {
+        if data.yield_expressions.borrow().is_none() {
             let cases = match &ctx.tree(speculative_switch).kind {
                 crate::tree::jc_tree::TreeKind::SwitchExpression { cases, .. } => cases.clone(),
                 _ => panic!("ClassCastException: JCSwitchExpression expected"),
@@ -1592,9 +1596,12 @@ impl ArgumentAttr {
             for tree in collector.buf {
                 list = list.append(tree);
             }
-            data.borrow_mut().yield_expressions = Some(list);
+            *data.yield_expressions.borrow_mut() = Some(list);
         }
-        data.borrow().yield_expressions.clone().expect("yield expressions")
+        data.yield_expressions
+            .borrow()
+            .clone()
+            .expect("yield expressions")
     }
 }
 
