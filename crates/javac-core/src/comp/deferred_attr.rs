@@ -216,10 +216,7 @@ pub fn deferred_type_speculative_type(
 ) -> Option<TypeId> {
     let (_, _, _, _, cache, argument) = deferred_fields(ctx, t);
     if let Some(data) = argument {
-        let argument_attr = attr
-            .argument_attr
-            .borrow()
-            .clone()
+        let argument_attr = attr.argument_attr.get().cloned()
             .expect("AssertionError: argumentAttr service must be installed");
         let argument_attr = argument_attr.borrow();
         let selected = argument_attr.argument_type_speculative_type(ctx, &data, t, msym, phase);
@@ -238,10 +235,7 @@ pub fn deferred_type_speculative_tree(
 ) -> Option<TreeId> {
     let (_, _, _, _, cache, argument) = deferred_fields(ctx, t);
     if let Some(data) = argument {
-        let argument_attr = attr
-            .argument_attr
-            .borrow()
-            .clone()
+        let argument_attr = attr.argument_attr.get().cloned()
             .expect("AssertionError: argumentAttr service must be installed");
         let argument_attr = argument_attr.borrow();
         return argument_attr.argument_type_speculative_tree(ctx, &data, t, deferred_attr_context);
@@ -269,10 +263,7 @@ pub fn deferred_type_complete_base(
             let (tree, env, mode, _, cache, _) = deferred_fields(ctx, t);
             // Java: Assert.check(mode == null || mode == AttrMode.SPECULATIVE);
             debug_assert!(mode.is_none() || mode == Some(AttrMode::SPECULATIVE));
-            let deferred = attr
-                .deferred_attr
-                .borrow()
-                .clone()
+            let deferred = attr.deferred_attr.get().cloned()
                 .expect("AssertionError: deferredAttr service must be installed");
             let result_info_rc = Rc::new(result_info.clone());
             let speculative_tree = {
@@ -311,10 +302,7 @@ pub fn deferred_type_complete(
     let argument = deferred_fields(ctx, t).5;
     match argument {
         Some(data) => {
-            let argument_attr = attr
-                .argument_attr
-                .borrow()
-                .clone()
+            let argument_attr = attr.argument_attr.get().cloned()
                 .expect("AssertionError: argumentAttr service must be installed");
             // Port adapter (A3k): run the completion on a session clone; the
             // surrounding speculative attribution may re-enter Attr::attribTree
@@ -652,10 +640,7 @@ fn process_deferred_attr_node(
         AttrMode::SPECULATIVE => {
             if node.deferred_stuck_policy.is_stuck() {
                 // Java: new StructuralStuckChecker().check(dt, resultInfo, deferredAttrContext)
-                let svc_rc = attr
-                    .deferred_attr
-                    .borrow()
-                    .clone()
+                let svc_rc = attr.deferred_attr.get().cloned()
                     .expect("AssertionError: deferredAttr service must be installed");
                 // Java: DeferredAttr.StructuralStuckChecker holds the shared
                 // DeferredAttr instance (DeferredAttr.java:757-800). The port
@@ -2490,7 +2475,7 @@ impl DeferredAttrService {
         }
         let _local_cache_leave = LocalCacheLeave {
             cache: local_cache,
-            argument_attr: attr.argument_attr.borrow().clone(),
+            argument_attr: attr.argument_attr.get().cloned(),
         };
         // The immediate env of a deferred attribution can be a synthetic env
         // without a scope; walk the enclosing envs (upstream Env.outer is always
@@ -3119,20 +3104,14 @@ impl DeferredAttrService {
         let chk_rc = Rc::clone(&attr.chk);
         let chk = Rc::clone(&chk_rc);
         let diags = Rc::clone(&attr.diags);
-        let flow_rc = attr
-            .argument_attr
-            .borrow()
-            .clone()
+        let flow_rc = attr.argument_attr.get().cloned()
             .and_then(|argument_attr| argument_attr.borrow().flow.borrow().clone())
             .expect("flow service");
         // Java: DeferredAttr.java:876-885 wraps the speculative lambda
         // attribution in ArgumentAttr.withLocalCacheContext()/leave(), so the
         // Erroneous-parameter run does not pollute the argument cache used by
         // the real attribution of the same lambda body.
-        let argument_attr_rc = attr
-            .argument_attr
-            .borrow()
-            .clone()
+        let argument_attr_rc = attr.argument_attr.get().cloned()
             .expect("argument attr service");
         let argument_attr = argument_attr_rc.borrow();
         let mut local_cache = argument_attr.with_local_cache_context();

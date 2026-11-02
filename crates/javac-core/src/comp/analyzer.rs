@@ -364,8 +364,11 @@ impl Analyzer {
     ///
     /// # Arguments
     ///   - types/log/make/syms: the shared services;
-    ///   - attr/deferred_attr/argument_attr: the adapter service cells;
+    ///   - attr: the adapter cell for the mutually recursive Attr service;
     ///   - options/source: the -XDfind decoding inputs.
+    ///
+    /// The deferred/argument service cells start empty and are populated by
+    /// the wiring after those services are constructed.
     ///
     /// # Returns
     ///   - the analyzer service.
@@ -381,8 +384,6 @@ impl Analyzer {
         make: Rc<RefCell<TreeMaker>>,
         syms: Rc<RefCell<crate::code::symtab::Symtab>>,
         attr: Rc<RefCell<Option<Rc<RefCell<Attr>>>>>,
-        deferred_attr: Rc<RefCell<Option<Rc<RefCell<DeferredAttrService>>>>>,
-        argument_attr: Rc<RefCell<Option<Rc<RefCell<ArgumentAttr>>>>>,
         options: &Options,
         source: Source,
     ) -> Analyzer {
@@ -406,8 +407,8 @@ impl Analyzer {
             make,
             syms,
             attr,
-            deferred_attr,
-            argument_attr,
+            deferred_attr: Rc::new(RefCell::new(None)),
+            argument_attr: Rc::new(RefCell::new(None)),
             copier,
             allow_diamond_with_anonymous_class_creation: allow,
             analyzer_modes: modes,

@@ -165,10 +165,9 @@ pub struct Attr {
     /// services, adapter; installed by the wiring).
     pub rs: OnceCell<Rc<crate::comp::resolve::Resolve>>,
     /// Java: final ArgumentAttr argumentAttr (adapter cell, installed by the wiring).
-    pub argument_attr: Rc<RefCell<Option<Rc<RefCell<crate::comp::argument_attr::ArgumentAttr>>>>>,
+    pub argument_attr: OnceCell<Rc<RefCell<crate::comp::argument_attr::ArgumentAttr>>>,
     /// Java: final DeferredAttr deferredAttr (adapter cell, installed by the wiring).
-    pub deferred_attr:
-        Rc<RefCell<Option<Rc<RefCell<crate::comp::deferred_attr::DeferredAttrService>>>>>,
+    pub deferred_attr: OnceCell<Rc<RefCell<crate::comp::deferred_attr::DeferredAttrService>>>,
     /// Java: MatchBindings matchBindings (Attr.java:451) — the current flow
     /// bindings, rewritten by the pattern-matching visitors.
     pub match_bindings: crate::comp::match_bindings::MatchBindings,
@@ -326,8 +325,8 @@ impl Attr {
             ),
             clinits: RefCell::new(std::collections::HashMap::new()),
             rs: OnceCell::new(),
-            argument_attr: Rc::new(RefCell::new(None)),
-            deferred_attr: Rc::new(RefCell::new(None)),
+            argument_attr: OnceCell::new(),
+            deferred_attr: OnceCell::new(),
             match_bindings: crate::comp::match_bindings::MatchBindings::empty(),
             match_bindings_computer: crate::comp::match_bindings::MatchBindingsComputer::new(
                 mb_log, mb_diags,
@@ -421,10 +420,7 @@ impl Attr {
             let result = crate::code::symbol::catch_completion_failure(|| {
                 if needs_argument_attr {
                     // Java: result = argumentAttr.attribArg(tree, env); (Attr.java:674-676)
-                    let argument_attr = self
-                        .argument_attr
-                        .borrow()
-                        .clone()
+                    let argument_attr = self.argument_attr.get().cloned()
                         .expect("AssertionError: argumentAttr service must be installed");
                     // Port adapter: upstream ArgumentAttr is one Java object that
                     // is re-entered while a speculative argument attribution resolves
@@ -6388,10 +6384,7 @@ impl Attr {
                 };
                 let class_name = remove_class_params(ctx, clazz);
                 let speculative = {
-                    let deferred = self
-                        .deferred_attr
-                        .borrow()
-                        .clone()
+                    let deferred = self.deferred_attr.get().cloned()
                         .expect("deferred attr service");
                     let deferred = deferred.borrow();
                     let unknown_type = self.unknown_type_info.clone();
@@ -6432,10 +6425,7 @@ impl Attr {
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) -> TreeId {
-        let deferred = self
-            .deferred_attr
-            .borrow()
-            .clone()
+        let deferred = self.deferred_attr.get().cloned()
             .expect("deferred attr service");
         let deferred = deferred.borrow();
         let unknown = self.unknown_expr_info.clone();
@@ -9495,16 +9485,10 @@ impl Attr {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             // Java: deferredAttr.attribSpeculative(root, env, resultInfo, null,
             // AttributionMode.ATTRIB_TO_TREE, argumentAttr.withLocalCacheContext());
-            let deferred_rc = self
-                .deferred_attr
-                .borrow()
-                .clone()
+            let deferred_rc = self.deferred_attr.get().cloned()
                 .expect("AssertionError: deferredAttr service must be installed");
             let deferred = deferred_rc.borrow_mut();
-            let local_cache = self
-                .argument_attr
-                .borrow()
-                .clone()
+            let local_cache = self.argument_attr.get().cloned()
                 .map(|argument_attr| argument_attr.borrow().with_local_cache_context());
             let _ = deferred.attrib_speculative_with_diag(
                 ctx,
@@ -10802,8 +10786,6 @@ pub fn wire_attr_services(
         lint,
         operators_cell,
         recover_cell,
-        deferred_cell,
-        argument_cell,
         analyzer_cell,
         flow_cell,
         annotate_cell,
@@ -10826,8 +10808,6 @@ pub fn wire_attr_services(
             lint,
             Rc::clone(&a.operators),
             Rc::clone(&a.attr_recover),
-            Rc::clone(&a.deferred_attr),
-            Rc::clone(&a.argument_attr),
             Rc::clone(&a.analyzer),
             Rc::clone(&a.flow),
             Rc::clone(&a.annotate),
@@ -10904,11 +10884,11 @@ pub fn wire_attr_services(
         Rc::clone(&make),
         Rc::clone(&syms),
         Rc::clone(&attr_self_cell),
-        Rc::clone(&deferred_cell),
-        Rc::clone(&argument_cell),
         &options,
         source,
     )));
+    let deferred_cell = Rc::clone(&analyzer.borrow().deferred_attr);
+    let argument_cell = Rc::clone(&analyzer.borrow().argument_attr);
     // 6. Annotate (Annotate.java:100-130)
     let annotate = Rc::new(crate::comp::annotate::Annotate::new(
         ctx,
@@ -10979,8 +10959,17 @@ pub fn wire_attr_services(
             Ok(service) => service,
             Err(_) => panic!("AssertionError: fresh DeferredAttrService is shared"),
         };
-        *deferred_cell.borrow_mut() = Some(Rc::new(RefCell::new(deferred)));
-        *argument_cell.borrow_mut() = Some(argument);
+        let deferred_rc = Rc::new(RefCell::new(deferred));
+        *deferred_cell.borrow_mut() = Some(Rc::clone(&deferred_rc));
+        a.deferred_attr
+            .set(deferred_rc)
+            .ok()
+            .expect("Attr.deferred_attr must be initialized exactly once");
+        *argument_cell.borrow_mut() = Some(Rc::clone(&argument));
+        a.argument_attr
+            .set(argument)
+            .ok()
+            .expect("Attr.argument_attr must be initialized exactly once");
         drop(a);
     }
 }
@@ -13810,7 +13799,7 @@ impl Attr {
                 _ => return t,
             };
             let copied_tree = {
-                let service_rc = self.deferred_attr.borrow().clone();
+                let service_rc = self.deferred_attr.get().cloned();
                 match service_rc {
                     Some(service_rc) => {
                         let service = service_rc.borrow();
@@ -13978,8 +13967,20 @@ impl Attr {
                 }
                 cell
             },
-            argument_attr: Rc::clone(&self.argument_attr),
-            deferred_attr: Rc::clone(&self.deferred_attr),
+            argument_attr: {
+                let cell = OnceCell::new();
+                if let Some(argument_attr) = self.argument_attr.get() {
+                    let _ = cell.set(Rc::clone(argument_attr));
+                }
+                cell
+            },
+            deferred_attr: {
+                let cell = OnceCell::new();
+                if let Some(deferred_attr) = self.deferred_attr.get() {
+                    let _ = cell.set(Rc::clone(deferred_attr));
+                }
+                cell
+            },
             match_bindings: self.match_bindings.clone(),
             match_bindings_computer: crate::comp::match_bindings::MatchBindingsComputer::new(
                 Rc::clone(&self.log),
@@ -14141,13 +14142,13 @@ impl Attr {
             .as_ref()
             .filter(|env| env.info.borrow().attribution_mode.is_speculative())
             .and_then(|_| {
-                let argument_attr = self.argument_attr.borrow().clone();
+                let argument_attr = self.argument_attr.get().cloned();
                 argument_attr.map(|argument_attr| argument_attr.borrow().with_local_cache_context())
             });
         let result = self.visit_class_def_body(ctx, syms, tree);
         // Java: finally localCacheContext.ifPresent(LocalCacheContext::leave);
         if let Some(mut local_cache_context) = local_cache_context {
-            let argument_attr = self.argument_attr.borrow().clone();
+            let argument_attr = self.argument_attr.get().cloned();
             if let Some(argument_attr) = argument_attr {
                 local_cache_context.leave(&argument_attr.borrow());
             }
@@ -16323,8 +16324,8 @@ mod tests {
         assert!(a.flow.borrow().is_some(), "flow service");
         assert!(a.analyzer.borrow().is_some(), "analyzer service");
         assert!(a.annotate.borrow().is_some(), "annotate service");
-        assert!(a.deferred_attr.borrow().is_some(), "deferred_attr service");
-        assert!(a.argument_attr.borrow().is_some(), "argument_attr service");
+        assert!(a.deferred_attr.get().is_some(), "deferred_attr service");
+        assert!(a.argument_attr.get().is_some(), "argument_attr service");
         drop(a);
     }
 
