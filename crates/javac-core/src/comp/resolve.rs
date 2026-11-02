@@ -318,8 +318,8 @@ impl Resolve {
     /// instance must be registered by the compiler entry point).
     pub fn instance(
         context: &mut crate::util::context::Context,
-    ) -> Rc<RefCell<Resolve>> {
-        match context.get::<RefCell<Resolve>>() {
+    ) -> Rc<Resolve> {
+        match context.get::<Resolve>() {
             Some(instance) => instance,
             None => panic!("AssertionError: Resolve is not registered in the Context"),
         }

@@ -708,7 +708,7 @@ impl ArgumentAttr {
         local_env.info.borrow_mut().select_super = is_super;
         let expr_type = ctx.tree(expr_tree).ty.expect("qualifier type");
         let rs_rc = attr.rs.borrow().clone().expect("resolve service");
-        let rs = rs_rc.borrow();
+        let rs = &*rs_rc;
         let chk_rc = Rc::clone(&attr.chk);
         let chk = Rc::clone(&chk_rc);
         let types_rc = Rc::clone(&attr.types);
@@ -837,7 +837,7 @@ impl ArgumentAttr {
         let deferred = self.deferred.borrow().clone().expect("deferred attr service");
         let attr_recover_rc = attr.attr_recover.borrow().clone().expect("attr recover service");
         let rs_rc = attr.rs.borrow().clone().expect("resolve service");
-        let rs = rs_rc.borrow();
+        let rs = &*rs_rc;
         let chk_rc = Rc::clone(&attr.chk);
         let chk = Rc::clone(&chk_rc);
         let diags = Rc::clone(&attr.diags);

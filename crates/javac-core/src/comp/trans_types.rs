@@ -54,7 +54,7 @@ pub struct TransTypes {
     /// Java: private Attr attr
     pub attr: Rc<RefCell<Attr>>,
     /// Java: private final Resolve resolve
-    pub resolve: Rc<RefCell<Resolve>>,
+    pub resolve: Rc<Resolve>,
     /// Java: private final CompileStates compileStates
     pub compile_states: Rc<RefCell<crate::comp::compile_states::CompileStates>>,
     /// Adapter: the diagnostic factory (needed by Types.findDescriptorType adapter).
@@ -100,7 +100,7 @@ impl TransTypes {
         types: Rc<Types>,
         annotate: Rc<Annotate>,
         attr: Rc<RefCell<Attr>>,
-        resolve: Rc<RefCell<Resolve>>,
+        resolve: Rc<Resolve>,
         compile_states: Rc<RefCell<crate::comp::compile_states::CompileStates>>,
         diags: Rc<Factory>,
         chk: Rc<crate::comp::check::Check>,
@@ -279,7 +279,7 @@ impl TransTypes {
             .tsym
             .map(|_tsym| {
                 let env = self.env.clone().expect("env");
-                self.resolve.borrow().is_accessible_type(
+                self.resolve.is_accessible_type(
                     ctx,
                     &syms,
                     &env,
@@ -296,7 +296,7 @@ impl TransTypes {
             let env = self.env.clone().expect("env");
             {
                 let syms_borrow = self.syms.borrow_mut();
-                self.resolve.borrow().log_access_error_internal(
+                self.resolve.log_access_error_internal(
                     ctx,
                     &syms_borrow,
                     &env,

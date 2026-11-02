@@ -184,7 +184,7 @@ pub struct LambdaToMethod {
     pub lower: Rc<RefCell<Lower>>,
     pub names: Rc<Names>,
     pub syms: Rc<RefCell<Symtab>>,
-    pub rs: Rc<RefCell<Resolve>>,
+    pub rs: Rc<Resolve>,
     pub operators: Rc<Operators>,
     pub make: Rc<RefCell<TreeMaker>>,
     pub types: Rc<Types>,
@@ -240,7 +240,7 @@ impl LambdaToMethod {
         lower: Rc<RefCell<Lower>>,
         names: Rc<Names>,
         syms: Rc<RefCell<Symtab>>,
-        rs: Rc<RefCell<Resolve>>,
+        rs: Rc<Resolve>,
         operators: Rc<Operators>,
         make: Rc<RefCell<TreeMaker>>,
         types: Rc<Types>,
@@ -3284,7 +3284,7 @@ impl LambdaToMethod {
         let bsm = {
             let mut attr = attr_rc.borrow_mut();
             let mut syms = self.syms.borrow_mut();
-            self.rs.borrow_mut().resolve_internal_method(
+            self.rs.resolve_internal_method(
                 ctx,
                 &mut syms,
                 &self.types,
@@ -3516,7 +3516,7 @@ impl LambdaToMethod {
                 let chk = Rc::clone(&attr.chk);
                 let chk = chk;
                 let infer = Rc::clone(&attr.infer);
-                Some(self.rs.borrow_mut().resolve_constructor(
+                Some(self.rs.resolve_constructor(
                     ctx,
                     &mut self.syms.borrow_mut(),
                     &self.types,
@@ -3679,7 +3679,7 @@ impl LambdaToMethod {
         let chk = Rc::clone(&attr.chk);
         let chk = chk;
         let infer = Rc::clone(&attr.infer);
-        let equals_sym = self.rs.borrow_mut().resolve_qualified_method(
+        let equals_sym = self.rs.resolve_qualified_method(
             ctx,
             &mut self.syms.borrow_mut(),
             &self.types,
@@ -3755,7 +3755,7 @@ impl LambdaToMethod {
             let chk = Rc::clone(&attr.chk);
             let chk = chk;
             let infer = Rc::clone(&attr.infer);
-            self.rs.borrow_mut().resolve_qualified_method(
+            self.rs.resolve_qualified_method(
                 ctx,
                 &mut self.syms.borrow_mut(),
                 &self.types,

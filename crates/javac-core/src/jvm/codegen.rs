@@ -109,7 +109,7 @@ pub struct Gen {
     /// The check service.
     pub chk: Rc<Check>,
     /// The resolver.
-    pub rs: Rc<RefCell<crate::comp::resolve::Resolve>>,
+    pub rs: Rc<crate::comp::resolve::Resolve>,
     /// The tree factory.
     pub make: Rc<RefCell<TreeMaker>>,
     /// The name table.
@@ -211,7 +211,7 @@ impl Gen {
         log: Rc<RefCell<Log>>,
         syms: Rc<RefCell<Symtab>>,
         chk: Rc<Check>,
-        rs: Rc<RefCell<crate::comp::resolve::Resolve>>,
+        rs: Rc<crate::comp::resolve::Resolve>,
         make: Rc<RefCell<TreeMaker>>,
         names: Rc<Names>,
         target: Target,
@@ -574,7 +574,7 @@ impl Gen {
         let mut attr = self.attr.borrow_mut();
         let chk = Rc::clone(&self.chk);
         let syms_borrow = syms.borrow_mut();
-        self.rs.borrow_mut().resolve_internal_method(
+        self.rs.resolve_internal_method(
             ctx,
             &syms_borrow,
             &types,

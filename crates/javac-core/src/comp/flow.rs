@@ -502,7 +502,7 @@ pub struct Flow {
     pub syms: Rc<RefCell<Symtab>>,
     pub types: Rc<Types>,
     pub chk: Rc<Check>,
-    pub rs: Rc<RefCell<Resolve>>,
+    pub rs: Rc<Resolve>,
     pub diags: Rc<Factory>,
     pub lint: Rc<Lint>,
     pub attr_env: Rc<RefCell<Option<Rc<Env<AttrContext>>>>>,
@@ -523,7 +523,7 @@ impl Flow {
         syms: Rc<RefCell<Symtab>>,
         types: Rc<Types>,
         chk: Rc<Check>,
-        rs: Rc<RefCell<Resolve>>,
+        rs: Rc<Resolve>,
         diags: Rc<Factory>,
         lint: Rc<Lint>,
         source: crate::code::source::Source,
@@ -3381,7 +3381,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                         let env = self.flow.attr_env.borrow().clone();
                         env.expect("AssertionError: attrEnv")
                     };
-                    let rs = self.flow.rs.borrow_mut();
+                    let rs = &*self.flow.rs;
                     let syms = self.syms;
                     let location = ctx.typ(site).tsym.expect("close site symbol");
                     rs.resolve_qualified_method(
@@ -5725,7 +5725,7 @@ mod tests {
         ));
         crate::comp::check::attach_self(&check);
         let options = Options::instance(&mut jcontext);
-        let resolve = Rc::new(RefCell::new(Resolve::new(
+        let resolve = Rc::new(Resolve::new(
             &mut ctx,
             Rc::clone(&names),
             Rc::clone(&log),
@@ -5734,7 +5734,7 @@ mod tests {
             source,
             options,
             None,
-        )));
+        ));
         let flow = Flow::new(
             &mut ctx,
             Rc::clone(&names),
@@ -5842,7 +5842,7 @@ mod tests {
         ));
         crate::comp::check::attach_self(&check);
         let options = Options::instance(&mut jcontext);
-        let resolve = Rc::new(RefCell::new(Resolve::new(
+        let resolve = Rc::new(Resolve::new(
             &mut ctx,
             Rc::clone(&names),
             Rc::clone(&log),
@@ -5851,7 +5851,7 @@ mod tests {
             source,
             options,
             None,
-        )));
+        ));
         let flow = Flow::new(
             &mut ctx,
             Rc::clone(&names),

@@ -211,7 +211,7 @@ pub struct Check {
     /// Java: private final Resolve rs (Check.java:87) — installed by the wiring
     /// because the Resolve service is created by Attr after Check (registered
     /// adapter, same pattern as enter/type_annotations/preview).
-    pub resolve: Rc<RefCell<Option<Rc<RefCell<crate::comp::resolve::Resolve>>>>>,
+    pub resolve: Rc<RefCell<Option<Rc<crate::comp::resolve::Resolve>>>>,
     /// Java: private final JavaFileManager fileManager (Check.java:95) —
     /// installed by the wiring (service table cell).
     pub file_manager:
@@ -10611,7 +10611,7 @@ impl Check {
     ///
     /// # Panics
     ///   - none.
-    pub fn set_resolve(&self, resolve: Rc<RefCell<crate::comp::resolve::Resolve>>) {
+    pub fn set_resolve(&self, resolve: Rc<crate::comp::resolve::Resolve>) {
         *self.resolve.borrow_mut() = Some(resolve);
     }
 
@@ -10879,10 +10879,7 @@ impl Check {
                 .as_ref()
                 .expect("AssertionError: resolve service not installed"),
         );
-        if !resolve
-            .borrow_mut()
-            .is_accessible_class(ctx, syms, env, c, false)
-        {
+        if !resolve.is_accessible_class(ctx, syms, env, c, false) {
             return;
         }
         let env_sourcefile = env.toplevel.and_then(|toplevel| match &ctx.tree(toplevel).kind {

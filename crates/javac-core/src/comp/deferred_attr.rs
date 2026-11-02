@@ -2980,7 +2980,7 @@ impl DeferredAttrService {
         let expr_type = ctx.tree(expr_tree).ty.expect("qualifier type");
         let site = ctx.typ(expr_type).tsym.expect("qualifier type symbol");
         let rs_rc = attr.rs.borrow().clone().expect("resolve service");
-        let rs = rs_rc.borrow();
+        let rs = &*rs_rc;
         let chk_rc = Rc::clone(&attr.chk);
         let chk = Rc::clone(&chk_rc);
         let types_rc = Rc::clone(&attr.types);
@@ -3115,7 +3115,7 @@ impl DeferredAttrService {
             .clone()
             .expect("attr recover service");
         let rs_rc = attr.rs.borrow().clone().expect("resolve service");
-        let rs = rs_rc.borrow();
+        let rs = &*rs_rc;
         let chk_rc = Rc::clone(&attr.chk);
         let chk = Rc::clone(&chk_rc);
         let diags = Rc::clone(&attr.diags);

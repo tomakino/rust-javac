@@ -139,7 +139,7 @@ pub struct MiniCompiler {
     /// The module system.
     pub modules: Rc<Modules>,
     /// The resolver.
-    pub resolve: Rc<RefCell<Resolve>>,
+    pub resolve: Rc<Resolve>,
     /// The flow pass.
     pub flow: Rc<Flow>,
     /// The inference engine.
@@ -657,7 +657,7 @@ impl MiniCompiler {
             .borrow()
             .clone()
             .expect("resolve service installed");
-        util_context.put::<RefCell<Resolve>>(Rc::clone(&resolve));
+        util_context.put::<Resolve>(Rc::clone(&resolve));
         chk.set_resolve(Rc::clone(&resolve));
         let operators = Rc::clone(&attr.borrow().operators);
         let flow = attr

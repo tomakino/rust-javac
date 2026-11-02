@@ -468,7 +468,7 @@ pub struct AnnotateServices {
     pub deferred_lint_handler: Rc<DeferredLintHandler>,
     pub enter: Rc<Enter>,
     pub lint: Rc<Lint>,
-    pub resolve: Rc<std::cell::RefCell<Resolve>>,
+    pub resolve: Rc<Resolve>,
     pub make: Rc<std::cell::RefCell<TreeMaker>>,
     pub type_envs: Rc<TypeEnvs>,
     pub infer: Rc<crate::comp::infer::Infer>,
@@ -512,7 +512,7 @@ impl Annotate {
         deferred_lint_handler: Rc<DeferredLintHandler>,
         enter: Rc<Enter>,
         lint: Rc<Lint>,
-        resolve: Rc<std::cell::RefCell<Resolve>>,
+        resolve: Rc<Resolve>,
         make: Rc<std::cell::RefCell<TreeMaker>>,
         type_envs: Rc<TypeEnvs>,
         diags: Rc<crate::util::jc_diagnostic::Factory>,
@@ -1330,7 +1330,7 @@ impl AnnotateServices {
             _ => panic!("expected an identifier"),
         };
         let method = {
-            let resolve = self.resolve.borrow();
+            let resolve = &*self.resolve;
             let chk = Rc::clone(&self.chk);
             let infer = Rc::clone(&self.infer);
             let location = env
@@ -2835,7 +2835,7 @@ struct UnusedFileManager;
             &options,
             crate::code::preview::Preview::instance(&mut context),
         )));
-        let resolve = Rc::new(RefCell::new(crate::comp::resolve::Resolve::new(
+        let resolve = Rc::new(crate::comp::resolve::Resolve::new(
             &mut ctx,
             Rc::clone(&names),
             Rc::clone(&log),
@@ -2844,7 +2844,7 @@ struct UnusedFileManager;
             Source::JDK17,
             Rc::clone(&options),
             None,
-        )));
+        ));
         let cfolder = Rc::new(ConstFold::new());
         let annotate = Rc::new(Annotate::new(
             &mut ctx,

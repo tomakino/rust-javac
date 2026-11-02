@@ -38,7 +38,7 @@ use javac_source::tree::case_tree::CaseKind;
 pub struct TransPatterns {
     pub syms: Rc<RefCell<Symtab>>,
     pub attr: Rc<RefCell<Attr>>,
-    pub rs: Rc<RefCell<Resolve>>,
+    pub rs: Rc<Resolve>,
     pub types: Rc<Types>,
     pub operators: Rc<Operators>,
     pub names: Rc<Names>,
@@ -227,7 +227,7 @@ impl TransPatterns {
     pub fn new(
         syms: Rc<RefCell<Symtab>>,
         attr: Rc<RefCell<Attr>>,
-        rs: Rc<RefCell<Resolve>>,
+        rs: Rc<Resolve>,
         types: Rc<Types>,
         operators: Rc<Operators>,
         names: Rc<Names>,
@@ -912,7 +912,7 @@ impl TransPatterns {
             let syms = self.syms.borrow_mut();
             let diag_pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> =
                 Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos)));
-            let rs = self.rs.borrow_mut();
+            let rs = &*self.rs;
             rs.resolve_internal_method(
                 ctx,
                 &syms,

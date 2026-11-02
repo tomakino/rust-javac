@@ -54,7 +54,7 @@ pub struct Lower {
     /// The symbol table.
     pub syms: Rc<RefCell<Symtab>>,
     /// The resolver.
-    pub rs: Rc<RefCell<Resolve>>,
+    pub rs: Rc<Resolve>,
     /// The operator service (installed by the compiler wiring).
     pub operators: Rc<RefCell<Option<Rc<Operators>>>>,
     /// The check service.
@@ -166,7 +166,7 @@ impl Lower {
         names: Rc<Names>,
         log: Rc<RefCell<Log>>,
         syms: Rc<RefCell<Symtab>>,
-        rs: Rc<RefCell<Resolve>>,
+        rs: Rc<Resolve>,
         operators: Rc<RefCell<Option<Rc<Operators>>>>,
         chk: Rc<Check>,
         attr: Rc<RefCell<Attr>>,
@@ -365,7 +365,7 @@ impl Lower {
         let env = self.attr_env.clone().expect("attribution environment");
         let pos = self.make_pos.clone();
         let constructor = {
-            let rs = self.rs.borrow_mut();
+            let rs = &*self.rs;
             let mut syms = self.syms.borrow_mut();
             let mut attr = self.attr.borrow_mut();
             let chk = Rc::clone(&self.chk);
@@ -557,7 +557,7 @@ impl Lower {
         args: List<TypeId>,
     ) -> SymbolId {
         let env = self.attr_env.clone().expect("attribution environment");
-        let rs = self.rs.borrow_mut();
+        let rs = &*self.rs;
         let mut syms = self.syms.borrow_mut();
         let mut attr = self.attr.borrow_mut();
         let chk = Rc::clone(&self.chk);
@@ -4006,7 +4006,7 @@ impl Lower {
                     crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
                 );
                 let type_sym = {
-                    let rs = self.rs.borrow_mut();
+                    let rs = &*self.rs;
                     let mut syms = self.syms.borrow_mut();
                     rs.find_ident_in_type(
                         ctx,
@@ -4020,7 +4020,7 @@ impl Lower {
                     )
                 };
                 let type_sym = {
-                    let rs = self.rs.borrow_mut();
+                    let rs = &*self.rs;
                     let mut syms = self.syms.borrow_mut();
                     rs.access_base(
                         ctx,
