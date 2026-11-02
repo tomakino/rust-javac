@@ -85,15 +85,15 @@ pub const MAX_LOCAL_LENGTH_DIFF: i32 = 4;
 /// a trait so the frame hierarchy does not depend on the whole class writer.
 pub trait StackMapTableWriter {
     /// Append one byte to the class data buffer.
-    fn append_byte(&mut self, b: i32);
+    fn append_byte(&self, b: i32);
     /// Append one unsigned short to the class data buffer.
-    fn append_char(&mut self, c: i32);
+    fn append_char(&self, c: i32);
     /// Whether stack map debug output is enabled.
     fn debug_stackmap(&self) -> bool;
     /// Print stack map debug text.
-    fn debug_print(&mut self, text: &str);
+    fn debug_print(&self, text: &str);
     /// Write the verifier type encoding of a local/stack entry.
-    fn write_stack_map_type(&mut self, ctx: &mut CompilerContext, t: Option<TypeId>);
+    fn write_stack_map_type(&self, ctx: &mut CompilerContext, t: Option<TypeId>);
 }
 
 /// One compressed StackMapTable entry.
@@ -164,7 +164,7 @@ impl StackMapTableFrame {
     }
 
     /// Write this frame into the writer's data buffer.
-    pub fn write(&self, ctx: &mut CompilerContext, writer: &mut dyn StackMapTableWriter) {
+    pub fn write(&self, ctx: &mut CompilerContext, writer: &dyn StackMapTableWriter) {
         let frame_type = self.get_frame_type();
         writer.append_byte(frame_type);
         if writer.debug_stackmap() {

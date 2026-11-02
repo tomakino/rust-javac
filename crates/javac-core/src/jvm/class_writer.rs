@@ -1711,7 +1711,7 @@ impl ClassWriter {
     }
 
     /// Write one verifier type into the stack map.
-    fn write_stack_map_type(&mut self, ctx: &mut CompilerContext, t: Option<TypeId>) {
+    fn write_stack_map_type(&self, ctx: &mut CompilerContext, t: Option<TypeId>) {
         let Some(t) = t else {
             if self.debug_stackmap {
                 eprintln!("empty");
@@ -1828,11 +1828,11 @@ impl ClassWriter {
 }
 
 impl StackMapTableWriter for ClassWriter {
-    fn append_byte(&mut self, b: i32) {
+    fn append_byte(&self, b: i32) {
         self.databuf.borrow_mut().append_byte(b);
     }
 
-    fn append_char(&mut self, c: i32) {
+    fn append_char(&self, c: i32) {
         self.databuf.borrow_mut().append_char(c);
     }
 
@@ -1840,11 +1840,11 @@ impl StackMapTableWriter for ClassWriter {
         self.debug_stackmap
     }
 
-    fn debug_print(&mut self, text: &str) {
+    fn debug_print(&self, text: &str) {
         eprintln!("{}", text);
     }
 
-    fn write_stack_map_type(&mut self, ctx: &mut CompilerContext, t: Option<TypeId>) {
+    fn write_stack_map_type(&self, ctx: &mut CompilerContext, t: Option<TypeId>) {
         ClassWriter::write_stack_map_type(self, ctx, t);
     }
 }
