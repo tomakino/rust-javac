@@ -4859,6 +4859,7 @@ impl MethodResultInfo {
                     // the Attr boundary (catch_completion_failure) receives it.
                     crate::code::symbol::throw_completion_failure(failure)
                 }
+                crate::comp::deferred_attr::DeferredAttrFailure::Method(failure) => failure,
             });
         }
         let u_result = if found == self.pt {
@@ -5162,8 +5163,7 @@ impl Resolve {
                     use_varargs,
                     resolve_context,
                     warn,
-                )
-                .map_err(MethodCheckFailure::Inference);
+                );
         }
         let deferred_context = Rc::new(resolve_context.deferred_attr_context(
             m,
@@ -5206,6 +5206,7 @@ impl Resolve {
                     // the Attr boundary (catch_completion_failure) receives it.
                     crate::code::symbol::throw_completion_failure(failure)
                 }
+                crate::comp::deferred_attr::DeferredAttrFailure::Method(failure) => failure,
             })?;
         Ok(mt)
     }

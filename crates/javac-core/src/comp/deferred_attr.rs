@@ -306,7 +306,7 @@ pub fn deferred_type_complete(
     t: TypeId,
     result_info: &ResultInfo,
     deferred_attr_context: &DeferredAttrContext,
-) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
+) -> Result<TypeId, DeferredAttrFailure> {
     let argument = deferred_fields(ctx, t).5;
     match argument {
         Some(data) => {
@@ -330,7 +330,14 @@ pub fn deferred_type_complete(
                 deferred_attr_context,
             )
         }
-        None => deferred_type_complete_base(ctx, syms, attr, t, result_info, deferred_attr_context),
+        None => Ok(deferred_type_complete_base(
+            ctx,
+            syms,
+            attr,
+            t,
+            result_info,
+            deferred_attr_context,
+        )?),
     }
 }
 
@@ -340,6 +347,7 @@ pub fn deferred_type_complete(
 pub enum DeferredAttrFailure {
     Inference(InferenceException),
     Completion(crate::code::symbol::CompletionFailure),
+    Method(crate::comp::resolve::MethodCheckFailure),
 }
 
 impl From<InferenceException> for DeferredAttrFailure {
@@ -351,6 +359,12 @@ impl From<InferenceException> for DeferredAttrFailure {
 impl From<crate::code::symbol::CompletionFailure> for DeferredAttrFailure {
     fn from(value: crate::code::symbol::CompletionFailure) -> DeferredAttrFailure {
         DeferredAttrFailure::Completion(value)
+    }
+}
+
+impl From<crate::comp::resolve::MethodCheckFailure> for DeferredAttrFailure {
+    fn from(value: crate::comp::resolve::MethodCheckFailure) -> DeferredAttrFailure {
+        DeferredAttrFailure::Method(value)
     }
 }
 

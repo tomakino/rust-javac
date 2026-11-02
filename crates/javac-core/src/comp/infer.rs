@@ -1723,7 +1723,7 @@ impl Infer {
         use_varargs: bool,
         resolve_context: &mut crate::comp::resolve::MethodResolutionContext,
         warn: &Warner,
-    ) -> Result<TypeId, InferenceException> {
+    ) -> Result<TypeId, crate::comp::resolve::MethodCheckFailure> {
         let outcome = crate::comp::resolve::catch_inference_exception(|| {
             self.instantiate_method_inner(
                 ctx,
@@ -1757,7 +1757,9 @@ impl Infer {
                         .unwrap_or(crate::util::position::NOPOS);
                     result_info.check_context.report(ctx, pos, &diagnostic);
                 }
-                Err(exception)
+                Err(crate::comp::resolve::MethodCheckFailure::Inference(
+                    exception,
+                ))
             }
         }
     }
@@ -1780,7 +1782,7 @@ impl Infer {
         use_varargs: bool,
         resolve_context: &mut crate::comp::resolve::MethodResolutionContext,
         warn: &Warner,
-    ) -> Result<TypeId, InferenceException> {
+    ) -> Result<TypeId, crate::comp::resolve::MethodCheckFailure> {
         let _ = (allow_boxing, use_varargs);
         // Port adapter: upstream Infer.instantiateMethod passes the caller's
         // Warner through the deferred contexts and the min listeners
@@ -1847,17 +1849,11 @@ impl Infer {
                     &warn_shared,
                 )
                 .map_err(|failure| match failure {
-                    crate::comp::resolve::MethodCheckFailure::Inference(ex) => ex,
+                    crate::comp::resolve::MethodCheckFailure::Inference(ex) => {
+                        crate::comp::resolve::MethodCheckFailure::Inference(ex)
+                    }
                     crate::comp::resolve::MethodCheckFailure::Inapplicable(ex) => {
-                        // resolveContext.methodCheck.argumentsAcceptable(...)
-                        // throws InapplicableMethodException; Infer.instantiateMethod
-                        // catches only InferenceException, so the inapplicable
-                        // failure continues to the caller (Resolve.rawInstantiate
-                        // and then selectBest's catch). The ported throw/catch
-                        // channel for InapplicableMethodException is preserved.
-                        crate::comp::resolve::throw_inapplicable_method_exception(
-                            ex.get_diagnostic(),
-                        )
+                        crate::comp::resolve::MethodCheckFailure::Inapplicable(ex)
                     }
                 })?;
         }
@@ -1956,14 +1952,17 @@ impl Infer {
                     deferred_context
                         .complete(ctx, syms, types, attr, self)
                         .map_err(|failure| match failure {
-                            crate::comp::deferred_attr::DeferredAttrFailure::Inference(ex) => ex,
+                            crate::comp::deferred_attr::DeferredAttrFailure::Inference(ex) => {
+                                crate::comp::resolve::MethodCheckFailure::Inference(ex)
+                            }
                             // Java: DeferredAttrContext.complete throws CompletionFailure
-                            // (unchecked); catch_inference_exception only catches
-                            // InferenceException, so the ported panic channel keeps the
-                            // CompletionFailure for the Attr completion boundary.
+                            // (unchecked); the Attr completion boundary receives it.
                             crate::comp::deferred_attr::DeferredAttrFailure::Completion(
                                 failure,
                             ) => crate::code::symbol::throw_completion_failure(failure),
+                            crate::comp::deferred_attr::DeferredAttrFailure::Method(failure) => {
+                                failure
+                            }
                         })?;
                     // Java: instantiateMethod finally (Infer.java:241-246).
                     inference_context.notify_change(ctx, syms, types)?;
@@ -1975,14 +1974,15 @@ impl Infer {
         deferred_context
             .complete(ctx, syms, types, attr, self)
             .map_err(|failure| match failure {
-                crate::comp::deferred_attr::DeferredAttrFailure::Inference(ex) => ex,
+                crate::comp::deferred_attr::DeferredAttrFailure::Inference(ex) => {
+                    crate::comp::resolve::MethodCheckFailure::Inference(ex)
+                }
                 // Java: DeferredAttrContext.complete throws CompletionFailure
-                // (unchecked); catch_inference_exception only catches
-                // InferenceException, so the ported panic channel keeps the
-                // CompletionFailure for the Attr completion boundary.
+                // (unchecked); the Attr completion boundary receives it.
                 crate::comp::deferred_attr::DeferredAttrFailure::Completion(failure) => {
                     crate::code::symbol::throw_completion_failure(failure)
                 }
+                crate::comp::deferred_attr::DeferredAttrFailure::Method(failure) => failure,
             })?;
         // minimize as yet undetermined type variables
         if self.allow_graph_inference {

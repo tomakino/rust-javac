@@ -1005,7 +1005,7 @@ impl ArgumentAttr {
         data: &Rc<ArgumentTypeData>,
         result_info: &ResultInfo,
         deferred_attr_context: &crate::comp::deferred_attr::DeferredAttrContext,
-    ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
+    ) -> Result<TypeId, crate::comp::deferred_attr::DeferredAttrFailure> {
         if deferred_attr_context.mode == crate::comp::deferred_attr::AttrMode::SPECULATIVE {
             // Port adapter (A3k): use the caller's Symtab borrow; attr.syms is
             // already mutably borrowed by the enclosing attribution.
@@ -1044,14 +1044,14 @@ impl ArgumentAttr {
                 let _ = log;
                 self.argument_type_cache.borrow_mut().remove(&pos);
             }
-            crate::comp::deferred_attr::deferred_type_complete_base(
+            Ok(crate::comp::deferred_attr::deferred_type_complete_base(
                 ctx,
                 syms,
                 attr,
                 t,
                 result_info,
                 deferred_attr_context,
-            )
+            )?)
         }
     }
 
@@ -1168,7 +1168,7 @@ impl ArgumentAttr {
         data: &Rc<ArgumentTypeData>,
         result_info: &ResultInfo,
         _deferred_attr_context: &crate::comp::deferred_attr::DeferredAttrContext,
-    ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
+    ) -> Result<TypeId, crate::comp::deferred_attr::DeferredAttrFailure> {
         let kind = data.kind;
         let speculative_tree = data.speculative_tree;
         let types_rc = Rc::clone(&attr.types);
@@ -1369,7 +1369,11 @@ impl ArgumentAttr {
                     // The speculative diamond inference against this candidate's
                     // target already failed; the error type is not evidence that
                     // the candidate is applicable.
-                    crate::comp::resolve::throw_inapplicable_method_exception(None);
+                    return Err(crate::comp::deferred_attr::DeferredAttrFailure::Method(
+                        crate::comp::resolve::MethodCheckFailure::Inapplicable(
+                            crate::comp::resolve::InapplicableMethodException::new(None),
+                        ),
+                    ));
                 }
                 let local_info = match kind {
                     ArgumentKind::ResolvedMethod => {
@@ -1425,13 +1429,19 @@ impl ArgumentAttr {
                                 // diamond inference is inapplicable; Resolve
                                 // tries the next overload.
                                 ArgumentKind::ResolvedConstructor => {
-                                    crate::comp::resolve::throw_inapplicable_method_exception(
-                                        exception.get_diagnostic().as_ref(),
-                                    )
+                                    return Err(crate::comp::deferred_attr::DeferredAttrFailure::Method(
+                                        crate::comp::resolve::MethodCheckFailure::Inapplicable(
+                                            crate::comp::resolve::InapplicableMethodException::new(
+                                                exception.get_diagnostic(),
+                                            ),
+                                        ),
+                                    ))
                                 }
                                 // Method inference failures keep their
                                 // upstream meaning.
-                                _ => crate::comp::resolve::throw_inference_exception(exception),
+                                _ => return Err(crate::comp::deferred_attr::DeferredAttrFailure::Method(
+                                    crate::comp::resolve::MethodCheckFailure::Inference(exception),
+                                )),
                             },
                         }
                     }
@@ -1484,7 +1494,11 @@ impl ArgumentAttr {
                 if kind == ArgumentKind::ResolvedConstructor
                     && ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::ERROR)
                 {
-                    crate::comp::resolve::throw_inapplicable_method_exception(None);
+                    return Err(crate::comp::deferred_attr::DeferredAttrFailure::Method(
+                        crate::comp::resolve::MethodCheckFailure::Inapplicable(
+                            crate::comp::resolve::InapplicableMethodException::new(None),
+                        ),
+                    ));
                 }
                 if std::env::var_os("DSH_DEBUG_OVERLOAD").is_some()
                     && kind == ArgumentKind::ResolvedConstructor
