@@ -33,6 +33,10 @@ use crate::util::unshared_name_table::UnsharedNameTable;
 pub struct NameTableHandle {
     inner: RefCell<NameTableInner>,
     names: RefCell<Option<Weak<NamesStd>>>,
+    /// Decoded UTF-16 views, keyed by the name's table index. Names are
+    /// interned, so the same bytes are decoded repeatedly by symbol and
+    /// diagnostic code; this cache removes that repeated work.
+    java_strings: RefCell<std::collections::HashMap<i32, Rc<JavaString>>>,
 }
 
 enum NameTableInner {
@@ -48,6 +52,7 @@ impl NameTableHandle {
                 0x8000, 0x20000,
             ))),
             names: RefCell::new(None),
+            java_strings: RefCell::new(std::collections::HashMap::new()),
         })
     }
 
@@ -56,6 +61,7 @@ impl NameTableHandle {
         Rc::new(NameTableHandle {
             inner: RefCell::new(NameTableInner::Unshared(UnsharedNameTable::new(0x8000))),
             names: RefCell::new(None),
+            java_strings: RefCell::new(std::collections::HashMap::new()),
         })
     }
 
@@ -254,7 +260,17 @@ impl Name {
 
     /// Java: public String toString() { return Convert.utf2string(getByteArray(), getByteOffset(), getByteLength()); }
     pub fn to_java_string(&self) -> JavaString {
-        self.with_bytes(|bytes| convert::utf2string_range(bytes, 0, self.length))
+        if let Some(cached) = self.table.java_strings.borrow().get(&self.index) {
+            return (**cached).clone();
+        }
+        let decoded = Rc::new(
+            self.with_bytes(|bytes| convert::utf2string_range(bytes, 0, self.length)),
+        );
+        self.table
+            .java_strings
+            .borrow_mut()
+            .insert(self.index, Rc::clone(&decoded));
+        (*decoded).clone()
     }
 
     /// Java: public byte[] toUtf()
