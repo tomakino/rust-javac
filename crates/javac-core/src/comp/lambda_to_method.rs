@@ -3172,7 +3172,7 @@ fn capture_local_class_defs_static(
                             .get(&context_tree)
                             .map(|context| context.depth)
                             .expect("context depth");
-                        if captured_decl_ro(ctx, self.frame_stack, depth, sym).is_none() {
+                        if captured_decl_ro(ctx, self.frame_stack, depth, sym, &*self.syms, &self.types).is_none() {
                             break;
                         }
                         add_lambda_symbol_ro(
@@ -3211,7 +3211,7 @@ fn capture_local_class_defs_static(
                             .map(|context| context.depth)
                             .expect("context depth");
                         if !is_encl_this
-                            && captured_decl_ro(ctx, self.frame_stack, depth, sym).is_none()
+                            && captured_decl_ro(ctx, self.frame_stack, depth, sym, &*self.syms, &self.types).is_none()
                         {
                             break;
                         }
@@ -3277,6 +3277,8 @@ fn captured_decl_ro(
     frame_stack: &[Frame],
     depth: i32,
     sym: SymbolId,
+    syms: &crate::code::symtab::Symtab,
+    types: &crate::code::types::Types,
 ) -> Option<TreeId> {
     let mut current_depth = frame_stack.len() as i32 - 1;
     for frame in frame_stack {
@@ -3289,12 +3291,16 @@ fn captured_decl_ro(
                         continue;
                     }
                 };
+                // Java: clazz.isSubClass(sym, types) || sym.isMemberOf(clazz, types)
+                // (LambdaToMethod.capturedDecl, CLASSDEF case).
+                let is_sub = ctx.sym(sym).kind == Kind::TYP
+                    && symbol::is_sub_class(ctx, syms, types, class_sym, sym);
                 let is_member = ctx
                     .sym(sym)
                     .owner
                     .map(|owner| owner == class_sym)
                     .unwrap_or(false);
-                if is_member {
+                if is_sub || is_member {
                     return if current_depth > depth {
                         None
                     } else {
