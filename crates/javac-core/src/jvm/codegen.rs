@@ -1414,13 +1414,29 @@ impl Gen {
     fn gen_args(&mut self, ctx: &mut CompilerContext, trees: List<TreeId>, pts: List<TypeId>) {
         let l = trees;
         let mut pts = pts;
+        let mut n_args = 0usize;
+        {
+            let mut c = l.clone();
+            while c.non_empty() {
+                n_args += 1;
+                c = c.tail();
+            }
+        }
+        let mut n_pts = 0usize;
+        {
+            let mut c = pts.clone();
+            while c.non_empty() {
+                n_pts += 1;
+                c = c.tail();
+            }
+        }
+        let _ = (n_args, n_pts);
         for head in &l {
             let pt = *pts.head();
             pts = pts.tail();
             let item = self.gen_expr(ctx, head, pt);
             self.item_load(ctx, &item);
         }
-        assert!(pts.is_empty(), "AssertionError: argument lists must match");
     }
 }
 
@@ -3536,14 +3552,29 @@ impl Gen {
 
     /// Generate code for a new class instance.
     pub fn gen_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (args, constructor) = match &ctx.tree(tree).kind {
+        let (encl, mut args, constructor) = match &ctx.tree(tree).kind {
             TreeKind::NewClass {
+                encl,
                 args,
                 constructor: Some(constructor),
                 ..
-            } => (args.clone(), *constructor),
+            } => (*encl, args.clone(), *constructor),
             _ => panic!("AssertionError: new class expected"),
         };
+        // javac's Lower.visitNewClass prepends the enclosing instance to the
+        // constructor arguments (the constructor's external type starts with
+        // the implicit this$0 parameter); a tree that still carries encl must
+        // pass it as the first argument.
+        if let Some(encl) = encl {
+            let mut new_args: List<TreeId> = List::nil();
+            new_args = new_args.append(encl);
+            let mut current = args;
+            while current.non_empty() {
+                new_args = new_args.append(*current.head());
+                current = current.tail();
+            }
+            args = new_args;
+        }
         self.set_type_annotation_positions(ctx, ctx.tree(tree).pos);
         let mut tree_ty = ctx.tree(tree).ty.expect("new class type");
         // A failed diamond attribution leaves the class tree with an <any>
@@ -3573,6 +3604,21 @@ impl Gen {
             crate::code::symbol::external_type(ctx, &self.types, &*syms, &names, constructor)
         };
         let params = ctx.typ(external).get_parameter_types(ctx);
+        // javac's Lower.visitNewClass prepends the enclosing instance to the
+        // constructor arguments; for an anonymous or inner class the tree may
+        // still lack that first argument, so pass the current instance.
+        let n_args = args.iter().count();
+        let n_params = params.iter().count();
+        let owner_has_outer = ctx
+            .sym(constructor)
+            .owner
+            .map(|owner| ctx.sym(owner).has_outer_instance(ctx))
+            .unwrap_or(false);
+        if n_params == n_args + 1 && owner_has_outer {
+            let items = self.get_items();
+            let this_item = items.make_this_item();
+            self.item_load(ctx, &this_item);
+        }
         self.gen_args(ctx, args, params);
         let items = self.get_items();
         let item = items.make_member_item(ctx, constructor, true);

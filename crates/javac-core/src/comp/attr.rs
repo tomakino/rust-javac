@@ -1249,6 +1249,36 @@ impl Attr {
         let env = self.env.clone().expect("env");
         let name = ident_name(ctx, tree);
         let pt = self.pt();
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL")
+            && name.to_java_string().to_string_lossy() == "s"
+        {
+            let found = env.info.borrow().scope.map(|scope| {
+                ctx.scope_get_symbols_by_name(
+                    scope,
+                    &name,
+                    crate::code::scope::LookupKind::NON_RECURSIVE,
+                    &|_| true,
+                )
+                .len()
+            });
+            let (scope_id, scope_owner) = match env.info.borrow().scope {
+                Some(scope_id) => (
+                    Some(scope_id),
+                    ctx.scope(scope_id).owner.map(|owner| {
+                        ctx.sym(owner).name.to_java_string().to_string_lossy().to_string()
+                    }),
+                ),
+                None => (None, None),
+            };
+            eprintln!(
+                "[IDENT-S] env_pos={} scope={:?} owner={:?} found={:?} pre_sym={:?}",
+                ctx.tree(tree).pos,
+                scope_id.map(|id| id.index()),
+                scope_owner,
+                found,
+                ident_symbol(ctx, tree).map(|sym| ctx.sym(sym).kind),
+            );
+        }
         let sym: SymbolId;
         if pt
             .map(|pt| {
@@ -1296,6 +1326,7 @@ impl Attr {
                 .to_string_lossy()
                 .contains("<any?>");
             if ctx.sym(tree_sym).kind != Kind::VAR
+                && ctx.sym(tree_sym).kind != Kind::ERR
                 && tree_sym != syms.err_symbol
                 && !tree_sym_is_any
             {
