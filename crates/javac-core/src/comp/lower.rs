@@ -112,6 +112,8 @@ pub struct Lower {
     pub freevar_cache: HashMap<SymbolId, List<SymbolId>>,
     /// Enum switch helper maps, per enum symbol.
     enum_switch_map: HashMap<SymbolId, Rc<RefCell<EnumMapping>>>,
+    /// Java: the LinkedHashMap iteration order of enumSwitchMap (creation order).
+    enum_switch_order: Vec<SymbolId>,
     /// Per-symbol access numbering for synthesized access methods.
     pub access_nums: HashMap<SymbolId, i32>,
     /// Per-symbol access method cache, indexed by access code.
@@ -216,6 +218,7 @@ impl Lower {
             lambda_translation_map: None,
             freevar_cache: HashMap::new(),
             enum_switch_map: HashMap::new(),
+            enum_switch_order: Vec::new(),
             access_nums: HashMap::new(),
             access_syms: HashMap::new(),
             access_constrs: HashMap::new(),
@@ -740,6 +743,7 @@ impl Lower {
         }
         let map = Rc::new(RefCell::new(EnumMapping::new(self, ctx, pos, enum_class)));
         self.enum_switch_map.insert(enum_class, Rc::clone(&map));
+        self.enum_switch_order.push(enum_class);
         map
     }
 
@@ -2546,7 +2550,13 @@ impl Lower {
         for sym in accessed {
             self.make_accessible(ctx, sym);
         }
-        let maps: Vec<Rc<RefCell<EnumMapping>>> = self.enum_switch_map.values().cloned().collect();
+        // Java: enumSwitchMap is a LinkedHashMap; its iteration follows the
+        // creation order (the source order of the switches).
+        let maps: Vec<Rc<RefCell<EnumMapping>>> = self
+            .enum_switch_order
+            .iter()
+            .filter_map(|enum_class| self.enum_switch_map.get(enum_class).cloned())
+            .collect();
         for map in maps {
             let mut mapping = map.borrow_mut();
             mapping.translate(self, ctx);
@@ -2573,6 +2583,7 @@ impl Lower {
         self.access_constr_tags = Vec::new();
         self.accessed = Vec::new();
         self.enum_switch_map.clear();
+        self.enum_switch_order.clear();
         self.assertions_disabled_class_cache = None;
         result
     }
