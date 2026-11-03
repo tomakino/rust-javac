@@ -3204,9 +3204,17 @@ fn capture_local_class_defs_static(
                 // instance (this/super) of a symbol owned by a class; the
                 // lambda enclosing the local class must capture it so that the
                 // synthesized this$0 parameter can be filled.
+                // Java: captured only when the local class has an outer
+                // instance (visitClassDef: `if (tree.sym.hasOuterInstance())`);
+                // an anonymous class implementing an interface has none.
                 let is_encl_this = {
                     let n = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
-                    n == "this" || n == "super"
+                    (n == "this" || n == "super")
+                        && ctx
+                            .sym(sym)
+                            .owner
+                            .map(|owner| ctx.sym(owner).has_outer_instance(ctx))
+                            .unwrap_or(false)
                 };
                 let mut local_context = context_key_ro(self.frame_stack, self.context_map);
                 while let Some(context_tree) = local_context {
