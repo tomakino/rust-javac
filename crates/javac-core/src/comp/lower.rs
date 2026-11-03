@@ -4981,7 +4981,23 @@ impl Lower {
         // synthetic outer instance; boxArgs receives only the explicit
         // arguments. Some ported constructor symbols still include it, so drop
         // exactly one leading parameter when the counts differ by one.
-        if meth_name == self.names.init && argtypes.length() == args.length() + 1 {
+        // A variadic super(...)/this(...) call also has one more declared
+        // parameter than explicit arguments (the trailing array), so the
+        // extra-outer-instance adjustment must not touch it: boxArgs turns the
+        // whole tail into the array argument.
+        let trailing_is_array = if argtypes.is_empty() {
+            false
+        } else {
+            let mut cur = argtypes.clone();
+            while cur.tail().non_empty() {
+                cur = cur.tail();
+            }
+            ctx.typ(*cur.head()).has_tag(TypeTag::ARRAY)
+        };
+        if meth_name == self.names.init
+            && argtypes.length() == args.length() + 1
+            && !trailing_is_array
+        {
             argtypes = argtypes.tail();
         }
         let varargs_element = match &ctx.tree(tree).kind {
