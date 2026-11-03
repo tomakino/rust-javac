@@ -3,6 +3,8 @@
 //! Ported from: com/sun/tools/javac/Main.java @ 982d53c
 //! and com/sun/tools/javac/main/Main.java @ 982d53c (P6 scope).
 
+mod version;
+
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -627,8 +629,11 @@ fn compile(args: &[String]) -> Result<i32, String> {
 
     if let Some(option) = info_option(&expanded) {
         match option {
-            JavacOption::VERSION | JavacOption::FULLVERSION => {
-                println!("javac 17.0.19");
+            JavacOption::VERSION => {
+                println!("{}", version::VERSION_LINE);
+            }
+            JavacOption::FULLVERSION => {
+                println!("{}", version::FULL_VERSION_LINE);
             }
             JavacOption::HELP_LINT => {
                 let messages = JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
