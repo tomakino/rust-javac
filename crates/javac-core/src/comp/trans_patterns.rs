@@ -201,12 +201,25 @@ impl BindingContext {
         stats
     }
 
-    fn try_prepend(&mut self, _ctx: &mut CompilerContext, _binding: SymbolId, var: TreeId) -> bool {
+    fn try_prepend(&mut self, ctx: &mut CompilerContext, binding: SymbolId, var: TreeId) -> bool {
         if self.kind == BindingContextKind::Fence {
             if let Some(statements) = self.statements.as_ref() {
+                // Java: BindingDeclarationFenceBindingContext.tryPrepend
+                // (TransPatterns.java:611-631) records the hoisted declaration
+                // in this block and remembers the binding so later uses of the
+                // pattern variable resolve to it.
+                let var_sym = match &ctx.tree(var).kind {
+                    TreeKind::VariableDecl { sym: Some(sym), .. } => Some(*sym),
+                    _ => None,
+                };
                 statements.borrow_mut().push(var);
+                if let Some(var_sym) = var_sym {
+                    self.hoisted_var_map.push((binding, var_sym));
+                }
+                true
+            } else {
+                false
             }
-            true
         } else {
             false
         }
