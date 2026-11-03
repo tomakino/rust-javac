@@ -73,7 +73,6 @@ COMMANDS: dict[str, list[list[str]]] = {
 }
 
 KNOWN_FAILURES: dict[str, set[str]] = {
-    "check_repros.py": {"R30.java", "R54.java", "R55.java", "R56.java"},
     "check_examples.py": {
         "DeprecatedAnnotationHasNoEffect",
         "IllegalComboModifiers",
