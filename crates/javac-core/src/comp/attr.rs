@@ -3942,6 +3942,7 @@ impl Attr {
             }
             Err(crate::comp::resolve::MethodCheckFailure::Inapplicable(ex)) => {
                 let diag = ex.materialize(ctx, self.diags.as_ref());
+
                 let err_symbol = crate::code::symbol::symbol_new_resolve_error(
                     ctx,
                     Kind::ERR,
@@ -3992,7 +3993,12 @@ impl Attr {
                     Some(argtypes2),
                     typeargtypes.clone(),
                 );
-                if let Some(err_diag) = err_diag {
+                // Java: the deferred structural check already reported the
+                // compressed incompatible-types diagnostic for this call, so the
+                // full cant.apply.symbol must not be emitted a second time.
+                if let Some(err_diag) = err_diag
+                    && !self.log.compressed_output.get()
+                {
                     self.log.report(err_diag);
                 }
                 return types.create_error_type_original(ctx, Some(site), syms);
