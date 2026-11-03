@@ -1437,11 +1437,16 @@ impl ArgumentAttr {
                                         ),
                                     ))
                                 }
-                                // Method inference failures keep their
-                                // upstream meaning.
-                                _ => return Err(crate::comp::deferred_attr::DeferredAttrFailure::Method(
-                                    crate::comp::resolve::MethodCheckFailure::Inference(exception),
-                                )),
+                                // Java: PartiallyInferredMethodType.check reports the
+                                // inference failure through the check context (an
+                                // empty inference context records it instead of
+                                // throwing) and the check yields an error type; aborting
+                                // here would turn a recoverable inapplicability into an
+                                // internal error.
+                                _ => {
+                                    let _ = exception;
+                                    syms.err_type
+                                }
                             },
                         }
                     }
@@ -1482,13 +1487,14 @@ impl ArgumentAttr {
                         } else {
                             speculative_type
                         };
-                        local_info.check(
+                        let checked = local_info.check(
                             ctx,
                             syms,
                             &chk,
                             ctx.tree(speculative_tree).pos,
                             normalized,
-                        )
+                        );
+                        checked
                     }
                 };
                 if kind == ArgumentKind::ResolvedConstructor

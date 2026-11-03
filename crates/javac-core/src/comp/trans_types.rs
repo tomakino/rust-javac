@@ -381,10 +381,12 @@ impl TransTypes {
         while current_params.tail().non_empty() {
             let arg = *current_args.head();
             let param = *current_params.head();
-            translated = translated.append(
-                self.translate_with_pt(ctx, Some(arg), Some(param))
-                    .expect("arg"),
-            );
+            // Java: translate() leaves an erroneous argument tree in place; the
+            // ported translate_with_pt returns None for such trees.
+            let translated_arg = self
+                .translate_with_pt(ctx, Some(arg), Some(param))
+                .unwrap_or(arg);
+            translated = translated.append(translated_arg);
             current_args = current_args.tail();
             current_params = current_params.tail();
         }
@@ -394,10 +396,10 @@ impl TransTypes {
                 // Java: while (args.nonEmpty()) { translate(args.head, varargsElement); ... }
                 while current_args.non_empty() {
                     let arg = *current_args.head();
-                    translated = translated.append(
-                        self.translate_with_pt(ctx, Some(arg), Some(varargs_element))
-                            .expect("arg"),
-                    );
+                    let translated_arg = self
+                        .translate_with_pt(ctx, Some(arg), Some(varargs_element))
+                        .unwrap_or(arg);
+                    translated = translated.append(translated_arg);
                     current_args = current_args.tail();
                 }
             }
@@ -408,10 +410,10 @@ impl TransTypes {
                     "Incorrect number of arguments"
                 );
                 let arg = *current_args.head();
-                translated = translated.append(
-                    self.translate_with_pt(ctx, Some(arg), Some(parameter))
-                        .expect("arg"),
-                );
+                let translated_arg = self
+                    .translate_with_pt(ctx, Some(arg), Some(parameter))
+                    .unwrap_or(arg);
+                translated = translated.append(translated_arg);
             }
         }
         translated

@@ -9971,8 +9971,13 @@ impl Types {
                 ))
             }
             TypeTag::TYPEVAR => {
+                // Captured type variables are modelled by a separate kind; their
+                // upper/lower bounds are set by capture() and must be projected
+                // just like a plain TypeVar (returning None made upward() map a
+                // captured wildcard to Object).
                 let (bound, lower) = match &ctx.typ(t).kind {
-                    TypeKindData::TypeVar { bound, lower } => (*bound, *lower),
+                    TypeKindData::TypeVar { bound, lower }
+                    | TypeKindData::CapturedType { bound, lower, .. } => (*bound, *lower),
                     _ => (None, None),
                 };
                 if !self.list_contains_type(ctx, syms, vars, t) {
@@ -12248,22 +12253,17 @@ impl Types {
     /// # Panics
     ///   - none.
     pub fn base_type(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
-        // Java: ConstType.baseType() returns the plain primitive/String type.
+        // Java: Type.baseType() returns this; only ConstType overrides it to
+        // the underlying plain type. The class branch used to return the class
+        // symbol's declared type, which dropped the type arguments
+        // (ListBuffer<Type> became the declaration ListBuffer<T>).
         if ctx.typ(t).const_value().is_some() {
             return ctx.type_base_type(t);
         }
         match &ctx.typ(t).kind {
-            TypeKindData::ClassType { .. }
-            | TypeKindData::ErasedClassType { .. }
-            | TypeKindData::UnionClassType { .. }
-            | TypeKindData::IntersectionClassType { .. } => {
-                let tsym = ctx.typ(t).tsym.expect("class type symbol");
-                ctx.sym(tsym).ty.expect("class symbol type")
-            }
             TypeKindData::UndetVar {
                 inst: Some(inst), ..
             } => self.base_type(ctx, *inst),
-            TypeKindData::UndetVar { inst: None, .. } => t,
             _ => t,
         }
     }

@@ -81,6 +81,10 @@ pub struct TypeEnter {
     pub allow_deprecation_on_import: bool,
     /// Java: boolean completionEnabled = true
     pub completion_enabled: std::cell::Cell<bool>,
+    /// Set when the Attr-less completion entry found the shared Attr already
+    /// borrowed (the request was triggered from inside Attr.attrib); the
+    /// completer re-installs itself and retries once that borrow is released.
+    pub deferred_attr: std::cell::Cell<bool>,
     /// Java: private final ImportsPhase completeClass = new ImportsPhase()
     /// (expressed as phase state; registered adapter for Java inner classes).
     pub complete_class: Rc<Phase>,
@@ -358,6 +362,7 @@ impl TypeEnter {
             // source 9+ (the compiler default) must not warn on imports.
             allow_deprecation_on_import: false,
             completion_enabled: std::cell::Cell::new(true),
+            deferred_attr: std::cell::Cell::new(false),
             complete_class: imports_phase,
             hierarchy_phase,
             top_level_phase: RefCell::new(None),
@@ -538,10 +543,13 @@ impl TypeEnter {
         // while an Attr call is running. The Rust port makes that Attr
         // explicit instead: every Attr-inside caller completes through
         // CompilerContext::complete_symbol_with_attr and reaches
-        // complete_with_attr directly, so this Attr-less entry point is only
-        // invoked when no enclosing &mut Attr exists. The local RefMut is then
-        // the sole borrow of the shared Attr.
-        let mut attr = attr_rc.borrow_mut();
+        // complete_with_attr directly. When the Attr is nevertheless already
+        // borrowed here (the request came from inside Attr.attrib), defer the
+        // completion; the caller re-installs the completer and retries.
+        let Ok(mut attr) = attr_rc.try_borrow_mut() else {
+            self.deferred_attr.set(true);
+            return Ok(());
+        };
         self.complete_with_attr(ctx, syms, sym, &mut attr)
     }
 
@@ -713,7 +721,7 @@ impl TypeEnter {
         syms: &Symtab,
         sym: SymbolId,
         phase: &Rc<Phase>,
-    ) -> Result<(), CompletionFailure> {
+    ) -> Result<bool, CompletionFailure> {
         let attr_rc = self
             .attr
             .borrow()
@@ -721,9 +729,15 @@ impl TypeEnter {
             .expect("TypeEnter.attr must be injected");
         // Same contract as TypeEnter.complete: an Attr-inside completion is
         // routed through complete_symbol_with_attr and HierarchyCompleter's
-        // complete_with_attr override, so no enclosing &mut Attr exists here.
-        let mut attr = attr_rc.borrow_mut();
-        self.hierarchy_complete_with_attr(ctx, syms, sym, phase, &mut attr)
+        // complete_with_attr override. When that Attr is already borrowed on
+        // this stack (the completion was triggered from inside Attr.attrib),
+        // report the request as deferred; the completer re-registers itself
+        // and the next completion retries once the borrow is released.
+        let Ok(mut attr) = attr_rc.try_borrow_mut() else {
+            return Ok(true);
+        };
+        self.hierarchy_complete_with_attr(ctx, syms, sym, phase, &mut attr)?;
+        Ok(false)
     }
 
     // ------------------------------------------------------------------
@@ -4277,8 +4291,21 @@ impl crate::code::symbol::Completer for HierarchyCompleter {
         let Some(type_enter) = self.type_enter.upgrade() else {
             return Ok(());
         };
-        let type_enter = type_enter.borrow();
-        type_enter.hierarchy_complete_no_attr(ctx, syms, sym, &self.phase)
+        let deferred = {
+            let type_enter = type_enter.borrow();
+            type_enter.hierarchy_complete_no_attr(ctx, syms, sym, &self.phase)?
+        };
+        if deferred {
+            // The enclosing Attr is still borrowed on this stack. Re-register
+            // the completer so the next completion (outside that borrow)
+            // retries the hierarchy phase.
+            let completer = HierarchyCompleter {
+                type_enter: std::rc::Weak::clone(&self.type_enter),
+                phase: Rc::clone(&self.phase),
+            };
+            ctx.sym_mut(sym).completer = Some(Rc::new(RefCell::new(completer)));
+        }
+        Ok(())
     }
 
     fn complete_with_attr(

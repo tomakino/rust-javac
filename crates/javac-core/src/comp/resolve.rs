@@ -402,6 +402,21 @@ impl Resolve {
         t: TypeId,
         check_inner: bool,
     ) -> bool {
+        self.is_accessible_type_with_attr(ctx, syms, env, t, check_inner, None)
+    }
+
+    /// isAccessible(Env, Type, boolean) with the enclosing Attr of an
+    /// Attr-inside caller; the access check may complete the type's class and
+    /// must then reuse that Attr.
+    pub fn is_accessible_type_with_attr(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &Symtab,
+        env: &Rc<Env<AttrContext>>,
+        t: TypeId,
+        check_inner: bool,
+        attr: Option<&mut crate::comp::attr::Attr>,
+    ) -> bool {
         is_accessible_type_free(
             &self.types,
             self.allow_modules,
@@ -410,6 +425,7 @@ impl Resolve {
             env,
             t,
             check_inner,
+            attr,
         )
     }
 
@@ -424,6 +440,23 @@ impl Resolve {
         site: TypeId,
         sym: SymbolId,
         check_inner: bool,
+    ) -> bool {
+        self.is_accessible_member_with_attr(ctx, syms, env, site, sym, check_inner, None)
+    }
+
+    /// isAccessible(Env, Type, Symbol, boolean) with the enclosing Attr of an
+    /// Attr-inside caller; the site check may complete the class and must then
+    /// reuse that Attr.
+    #[allow(clippy::too_many_arguments)]
+    pub fn is_accessible_member_with_attr(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &Symtab,
+        env: &Rc<Env<AttrContext>>,
+        site: TypeId,
+        sym: SymbolId,
+        check_inner: bool,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> bool {
         let init_name = self.names.init.clone();
         let sym_name = ctx.sym(sym).name.clone();
@@ -477,7 +510,7 @@ impl Resolve {
                 .map(|owner_owner| toplevel_package == Some(owner_owner))
                 .unwrap_or(false);
             (owner_owner_matches || toplevel_package == sym_package)
-                && self.is_accessible_type(ctx, syms, env, site, check_inner)
+                && self.is_accessible_type_with_attr(ctx, syms, env, site, check_inner, attr.as_deref_mut())
                 && ctx
                     .typ(site)
                     .tsym
@@ -501,11 +534,11 @@ impl Resolve {
                 || toplevel_package == sym_package
                 || self.is_protected_accessible(ctx, syms, sym, encl_sym, site)
                 || (select_super && !sym_static && !sym_is_type))
-                && self.is_accessible_type(ctx, syms, env, site, check_inner)
+                && self.is_accessible_type_with_attr(ctx, syms, env, site, check_inner, attr.as_deref_mut())
                 && self.not_overridden_in(ctx, syms, site, sym)
         } else {
             // this case includes erroneous combinations as well
-            self.is_accessible_type(ctx, syms, env, site, check_inner)
+            self.is_accessible_type_with_attr(ctx, syms, env, site, check_inner, attr.as_deref_mut())
                 && self.not_overridden_in(ctx, syms, site, sym)
         }
     }
@@ -2113,7 +2146,15 @@ impl Resolve {
                 if ctx.sym(candidate).kind == Kind::VAR
                     && (ctx.sym(candidate).flags_field & flags::SYNTHETIC as i64) == 0
                 {
-                    return if self.is_accessible_member(ctx, syms, env, site, candidate, false) {
+                    return if self.is_accessible_member_with_attr(
+                        ctx,
+                        syms,
+                        env,
+                        site,
+                        candidate,
+                        false,
+                        attr.as_deref_mut(),
+                    ) {
                         candidate
                     } else {
                         self.new_access_error(ctx, syms, env, Some(site), candidate)
@@ -2352,7 +2393,15 @@ impl Resolve {
             );
             for candidate in candidates {
                 if ctx.sym(candidate).kind == Kind::TYP {
-                    return if self.is_accessible_member(ctx, syms, env, site, candidate, false) {
+                    return if self.is_accessible_member_with_attr(
+                        ctx,
+                        syms,
+                        env,
+                        site,
+                        candidate,
+                        false,
+                        attr.as_deref_mut(),
+                    ) {
                         candidate
                     } else {
                         self.new_access_error(ctx, syms, env, Some(site), candidate)
@@ -4926,6 +4975,72 @@ impl MethodResultInfo {
                 Rc::clone(&self.check_context),
             );
             result_info.method_diag = Some(self.method_diag);
+            let deferred_context =
+                Rc::clone(result_info.check_context.deferred_attr_context());
+            let varargs_candidate = deferred_context
+                .msym
+                .map(|m| (ctx.sym(m).flags_field & flags::VARARGS) != 0)
+                .unwrap_or(false);
+            // javac checks a deferred argument against a non-functional class
+            // formal eagerly (MethodResultInfo.check -> DeferredType.check ->
+            // overloadCheck); the port deferred it, so a candidate whose formal
+            // is a plain class (e.g. erasure(Type)) stayed applicable next to
+            // the List overload and produced an ambiguity. An argument that is a
+            // method invocation has a determinate result type and can be checked
+            // now; lambdas, conditionals and type-variable formals keep the
+            // deferred path.
+            let apply_shaped_argument = !deferred_context.phase.is_varargs_required()
+                && !ctx.typ(self.pt).has_tag(TypeTag::TYPEVAR)
+                && match &ctx.typ(found).kind {
+                    crate::code::type_::TypeKindData::Deferred { tree, .. } => {
+                        ctx.tree(*tree).tag == crate::tree::jc_tree::Tag::APPLY
+                    }
+                    _ => false,
+                };
+            let force_completion = (!deferred_context.phase.is_varargs_required()
+                && varargs_candidate
+                && ctx.typ(self.pt).has_tag(TypeTag::ARRAY))
+                || apply_shaped_argument;
+            if force_completion {
+                // An array formal against a deferred argument cannot be proven
+                // applicable at NORMAL: javac completes the check and reportMC
+                // throws for a non-empty inference context. Complete it here so
+                // a varargs candidate is not recorded as applicable (which made
+                // lub(List) vs lub(Type...) ambiguous).
+                let completed = crate::comp::deferred_attr::deferred_type_complete(
+                    ctx,
+                    syms,
+                    attr,
+                    found,
+                    &result_info,
+                    &deferred_context,
+                )
+                .map_err(|failure| match failure {
+                    crate::comp::deferred_attr::DeferredAttrFailure::Inference(ex) => {
+                        MethodCheckFailure::Inference(ex)
+                    }
+                    crate::comp::deferred_attr::DeferredAttrFailure::Completion(failure) => {
+                        crate::code::symbol::throw_completion_failure(failure)
+                    }
+                    crate::comp::deferred_attr::DeferredAttrFailure::Method(failure) => failure,
+                })?;
+                if !self.check_context.compatible(
+                    ctx,
+                    syms,
+                    types,
+                    completed,
+                    self.pt,
+                    warn,
+                ) {
+                    // The NORMAL-phase array mismatch is silent; javac reports the
+                    // failure from the VARARGS phase, which owns the "varargs
+                    // mismatch" diagnostic.
+                    return Err(MethodCheckFailure::Inapplicable(
+                        InapplicableMethodException::new(None),
+                    ));
+                }
+                return Ok(completed);
+            }
             return crate::comp::deferred_attr::deferred_type_check(
                 ctx,
                 syms,
@@ -4966,10 +5081,10 @@ impl MethodResultInfo {
                 Rc::as_ptr(&self.check_context) as *const ()
             );
         }
-        if !self
-            .check_context
-            .compatible(ctx, syms, types, captured_type, self.pt, warn)
-        {
+        let compatible =
+            self.check_context
+                .compatible(ctx, syms, types, captured_type, self.pt, warn);
+        if !compatible {
             // Java: checkContext.report(pos, diags.fragment(
             // Fragments.InconvertibleTypes(found, req))); MethodCheckContext
             // reports it as ARG_MISMATCH/VARARG_MISMATCH
@@ -6354,7 +6469,7 @@ fn varargs_accessible(
         Ok(())
     } else {
         let erasure = types.erasure(ctx, syms, t);
-        if is_accessible_type_free(types, allow_modules, ctx, syms, env, erasure, true) {
+        if is_accessible_type_free(types, allow_modules, ctx, syms, env, erasure, true, None) {
             return Ok(());
         }
         // Java: reportMC(env.tree, MethodCheckDiag.INACCESSIBLE_VARARGS,
@@ -8217,6 +8332,14 @@ impl Resolve {
                     resolve_context,
                 );
                 helper.debug(&*self, ctx, syms, pos.clone(), &*resolve_context, sym);
+                if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                    eprintln!(
+                        "[PHASE] {:?} sym={} kind={:?}",
+                        phase,
+                        ctx.sym(sym).name.to_java_string().to_string_lossy(),
+                        ctx.sym(sym).kind,
+                    );
+                }
                 best_so_far = phase.merge_results(ctx, best_so_far, sym);
                 env.info.borrow_mut().pending_resolution_phase = if prev_best == best_so_far {
                     prev_phase
@@ -11268,6 +11391,7 @@ fn is_accessible_class_free(
                     env,
                     enclosing,
                     check_inner,
+                    attr.as_deref_mut(),
                 )
         }
     }
@@ -11301,11 +11425,21 @@ fn is_accessible_type_free(
     env: &Rc<Env<AttrContext>>,
     t: TypeId,
     check_inner: bool,
+    mut attr: Option<&mut crate::comp::attr::Attr>,
 ) -> bool {
     if ctx.typ(t).has_tag(TypeTag::ARRAY) {
         let elemtype = types.elemtype(ctx, syms, t);
         let bound = types.cvar_upper_bound(ctx, elemtype);
-        return is_accessible_type_free(types, allow_modules, ctx, syms, env, bound, check_inner);
+        return is_accessible_type_free(
+            types,
+            allow_modules,
+            ctx,
+            syms,
+            env,
+            bound,
+            check_inner,
+            attr,
+        );
     }
     // Java: else if (t.isUnion())
     //     return ((UnionClassType)t).getAlternativeTypes().stream()
@@ -11345,7 +11479,7 @@ fn is_accessible_type_free(
         env,
         tsym,
         check_inner,
-        None,
+        attr,
     )
 }
 

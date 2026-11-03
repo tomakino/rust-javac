@@ -1455,7 +1455,14 @@ impl crate::code::symbol::Completer for TypeEnterCompleter {
             self.reinstall(ctx, sym);
             return Ok(());
         }
-        self.type_enter.borrow().complete(ctx, syms, sym)
+        let type_enter = self.type_enter.borrow();
+        let result = type_enter.complete(ctx, syms, sym);
+        let deferred = type_enter.deferred_attr.replace(false);
+        drop(type_enter);
+        if deferred {
+            self.reinstall(ctx, sym);
+        }
+        result
     }
 
     fn complete_with_attr(
