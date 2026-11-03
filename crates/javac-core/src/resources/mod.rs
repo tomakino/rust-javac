@@ -76,9 +76,9 @@ mod tests {
         assert_eq!(LAUNCHER_MESSAGES.len(), 15);
         assert_eq!(LAUNCHER_ZH_CN.len(), 15);
         assert_eq!(LAUNCHER_JA.len(), 15);
-        assert_eq!(JAVAC_MESSAGES.len(), 145);
-        assert_eq!(JAVAC_ZH_CN.len(), 145);
-        assert_eq!(JAVAC_JA.len(), 145);
+        assert_eq!(JAVAC_MESSAGES.len(), 146);
+        assert_eq!(JAVAC_ZH_CN.len(), 146);
+        assert_eq!(JAVAC_JA.len(), 146);
     }
 
     #[test]

@@ -79,6 +79,35 @@ fn main() {
     std::process::exit(code);
 }
 
+/// Return the name of an annotation-processing option that this compiler
+/// cannot honour, or None for every other argument.
+///
+/// The annotation processing framework (javax.annotation.processing) is not
+/// ported, so each of these options asks for something rust-javac has no code
+/// path for: discovering processors, loading them, or running them.
+fn unimplemented_annotation_processing_option(arg: &str) -> Option<&str> {
+    // -proc:none / -proc:only — the three-way switch over annotation processing.
+    if arg == "-proc:none" || arg == "-proc:only" {
+        return Some(arg);
+    }
+    // -processor / -processorpath, both attached and separate forms.
+    if arg == "-processor" || arg.starts_with("-processor:") {
+        return Some(arg);
+    }
+    if arg == "-processorpath" {
+        return Some(arg);
+    }
+    // --processor-module-path, both forms.
+    if arg == "--processor-module-path" {
+        return Some(arg);
+    }
+    // -Akey=value: processor-specific options.
+    if arg.starts_with("-A") && arg.len() > 2 {
+        return Some(arg);
+    }
+    None
+}
+
 fn info_option(args: &[String]) -> Option<JavacOption> {
     for arg in args {
         if let Some(option) = JavacOption::lookup(arg)
@@ -250,6 +279,10 @@ struct HelpEntry {
     descr_key: &'static str,
     adjacent: bool,
     choices: Vec<String>,
+    /// Extra javac.opt.* line printed under the description. Used for options
+    /// this compiler documents but refuses at parse time, so the reason is
+    /// stated without editing the upstream descriptions.
+    note_key: Option<&'static str>,
 }
 
 /// Java: Option.helpSynopsis (Option.java:1298-1320).
@@ -279,10 +312,14 @@ fn render_help_entry(entry: &HelpEntry, messages: &JavacMessages, supported: &st
         .map(|name| help_synopsis(entry, name, messages))
         .collect::<Vec<_>>()
         .join(", ");
-    let descr = messages.get_localized_string(
+    let mut descr = messages.get_localized_string(
         &format!("javac.{}", entry.descr_key),
         &[supported.to_string()],
     );
+    if let Some(note_key) = entry.note_key {
+        descr.push('\n');
+        descr.push_str(&messages.get_localized_string(&format!("javac.{note_key}"), &[supported.to_string()]));
+    }
     if synopses.len() < 28 && !descr.contains('\n') && 2 + 28 + 1 + descr.len() <= 80 {
         return vec![format!("  {synopses:<28} {descr}")];
     }
@@ -354,6 +391,7 @@ fn help_text(messages: &JavacMessages, extra: bool) -> String {
                 descr_key,
                 adjacent: matches!(option.get_arg_kind(), ArgKind::ADJACENT),
                 choices: option.choices().unwrap_or_default(),
+                note_key: None,
             })
         })
         .collect();
@@ -366,6 +404,52 @@ fn help_text(messages: &JavacMessages, extra: bool) -> String {
             descr_key: "opt.J",
             adjacent: true,
             choices: Vec::new(),
+            note_key: None,
+        });
+        // Annotation processing options: javac documents them in the standard
+        // table, so they stay visible here, but rust-javac refuses them at parse
+        // time. Each row carries an extra note line with the reason; the
+        // upstream descriptions themselves are left untouched.
+        const APT_NOTE: Option<&'static str> = Some("opt.unsupported.annotation.processing");
+        entries.push(HelpEntry {
+            names: vec!["-A"],
+            args_name_key: Some("opt.arg.key.equals.value"),
+            descr_key: "opt.A",
+            adjacent: true,
+            choices: Vec::new(),
+            note_key: APT_NOTE,
+        });
+        entries.push(HelpEntry {
+            names: vec!["-proc:"],
+            args_name_key: None,
+            descr_key: "opt.proc.none.only",
+            adjacent: true,
+            choices: vec!["none".to_string(), "only".to_string(), "full".to_string()],
+            note_key: APT_NOTE,
+        });
+        entries.push(HelpEntry {
+            names: vec!["-processor"],
+            args_name_key: Some("opt.arg.class.list"),
+            descr_key: "opt.processor",
+            adjacent: false,
+            choices: Vec::new(),
+            note_key: APT_NOTE,
+        });
+        entries.push(HelpEntry {
+            names: vec!["--processor-module-path"],
+            args_name_key: Some("opt.arg.path"),
+            descr_key: "opt.processormodulepath",
+            adjacent: false,
+            choices: Vec::new(),
+            note_key: APT_NOTE,
+        });
+        entries.push(HelpEntry {
+            names: vec!["--processor-path", "-processorpath"],
+            args_name_key: Some("opt.arg.path"),
+            descr_key: "opt.processorpath",
+            adjacent: false,
+            choices: Vec::new(),
+            note_key: APT_NOTE,
         });
     }
     entries.sort_by(|a, b| sort_key(a).cmp(&sort_key(b)));
@@ -716,6 +800,19 @@ fn compile(args: &[String]) -> Result<i32, String> {
             continue;
         }
         if arg.starts_with('-') {
+            if let Some(name) = unimplemented_annotation_processing_option(arg) {
+                // The annotation processing framework (javax.annotation.processing)
+                // is not ported: rust-javac cannot discover, load or run
+                // processors, so none of these options can have any effect.
+                // Refusing them up front keeps the diagnostic honest instead of
+                // silently ignoring a request the user really made.
+                eprintln!(
+                    "error: {name} is not supported: this compiler does not implement the \
+                     annotation processing framework (javax.annotation.processing), so \
+                     processors cannot be discovered, loaded or run"
+                );
+                return Ok(CMDERR);
+            }
             let option = match JavacOption::lookup(arg) {
                 Some(option) => option,
                 None => {
