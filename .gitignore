@@ -5,3 +5,14 @@ dist
 *.class
 
 .samply
+
+# The JUnit 5 corpus keeps only the sources that scripts/check_junit5.py
+# compiles; its test and fixture trees contain file names that exceed the
+# Windows path length limit.
+internal/test/real-projects/junit-framework-r5.10.2/**/src/test/
+internal/test/real-projects/junit-framework-r5.10.2/**/src/testFixtures/
+internal/test/real-projects/junit-framework-r5.10.2/**/src/integrationTest/
+internal/test/real-projects/junit-framework-r5.10.2/documentation/
+internal/test/real-projects/junit-framework-r5.10.2/.github/
+internal/test/real-projects/junit-framework-r5.10.2/gradle/
+internal/test/real-projects/junit-framework-r5.10.2/.mvn/
