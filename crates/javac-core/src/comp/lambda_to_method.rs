@@ -1447,7 +1447,14 @@ impl LambdaAnalyzerPreprocessor {
                 matches!(ctx.tree(tree).kind, TreeKind::NewClass { def: Some(_), .. })
             );
         }
-        if (in_referenced_class && is_local) || self.lambda_new_class_filter(ctx, tree) {
+        // Java: (inReferencedClass && isLocal || lambdaNewClassFilter(context, tree))
+        // && tree.def == null (LambdaToMethod.visitNewClass); an anonymous class
+        // carries its own definition and must not capture the enclosing instance.
+        let has_def = matches!(
+            &ctx.tree(tree).kind,
+            TreeKind::NewClass { def: Some(_), .. }
+        );
+        if ((in_referenced_class && is_local) || self.lambda_new_class_filter(ctx, tree)) && !has_def {
             let enclosing_ty = ctx.typ(class_ty).get_enclosing_type();
             let outer_instance_symbol = enclosing_ty.and_then(|encl| ctx.typ(encl).tsym);
             let mut local_context = self.context_key(ctx);
