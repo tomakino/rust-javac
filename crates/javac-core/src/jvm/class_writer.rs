@@ -1397,7 +1397,11 @@ impl ClassWriter {
 
     /// Write a method symbol, entering all references into the constant pool.
     pub fn write_method(&self, ctx: &mut CompilerContext, m: SymbolId) {
-        let method_flags = adjust_flags(ctx.sym(m).flags());
+        // Java: ClassWriter.writeMethod uses flags & MethodFlags & ~STRICTFP;
+        // since JDK 17 strictfp has no effect on methods, including the
+        // static initializer that inherits the class-level bit from Gen.
+        let method_flags =
+            adjust_flags(ctx.sym(m).flags()) & !crate::code::flags::STRICTFP;
         self.databuf.borrow_mut().append_char(method_flags);
         if self.dump_method_modifiers {
             eprintln!(
