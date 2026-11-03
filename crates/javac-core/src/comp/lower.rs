@@ -8118,21 +8118,28 @@ impl<'a> FreeVarCollector<'a> {
             return;
         }
         if let Some(owner) = ctx.sym(sym).owner {
-            if owner != self.owner {
-                match self.proxies.get(&sym) {
-                    Some(proxy) => sym = *proxy,
-                    None => return,
-                }
-            }
-            if ctx.sym(sym).owner == Some(self.owner) {
-                if ctx.sym(sym).get_const_value().is_none() {
-                    self.add_free_var(sym);
+            // Java: if (sym != null && sym.owner != owner) sym = proxies.get(sym);
+            // a symbol that has no proxy stays unresolved, which falls through
+            // to the outer-this capture below (BasicFreeVarCollector).
+            let resolved = if owner != self.owner {
+                self.proxies.get(&sym).copied()
+            } else {
+                Some(sym)
+            };
+            let is_owner_var = resolved
+                .map(|r| ctx.sym(r).owner == Some(self.owner))
+                .unwrap_or(false);
+            if is_owner_var {
+                let r = resolved.expect("owner variable");
+                if ctx.sym(r).get_const_value().is_none() {
+                    self.add_free_var(r);
                 }
             } else if let Some(head) = self.outer_this_stack.first().copied()
                 && head != original
             {
                 self.visit_symbol(ctx, head);
             }
+            let _ = &mut sym;
         }
     }
 }
