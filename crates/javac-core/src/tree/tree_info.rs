@@ -1085,9 +1085,15 @@ pub fn diagnostic_position_for(
     sym: SymbolId,
     tree: TreeId,
 ) -> i32 {
+    // Java: JCVariableDecl.pos() is the identifier token; the port stores that
+    // position in `decl_pos` and keeps `pos` at the modifiers for generation.
+    let position_of = |ctx: &CompilerContext, node: TreeId| match &ctx.tree(node).kind {
+        TreeKind::VariableDecl { decl_pos, .. } if *decl_pos != -1 => *decl_pos,
+        _ => ctx.tree(node).pos,
+    };
     match find_diagnostic_tree(ctx, sym, tree) {
-        Some(found) => ctx.tree(found).pos,
-        None => ctx.tree(tree).pos,
+        Some(found) => position_of(ctx, found),
+        None => position_of(ctx, tree),
     }
 }
 
@@ -1940,6 +1946,7 @@ mod tests {
                 init: None,
                 sym: None,
                 start_pos: NOPOS,
+                decl_pos: NOPOS,
                 declared_using_var: false,
             },
             1,
@@ -1973,6 +1980,7 @@ mod tests {
                 init: None,
                 sym: None,
                 start_pos: NOPOS,
+                decl_pos: NOPOS,
                 declared_using_var: false,
             },
             1,

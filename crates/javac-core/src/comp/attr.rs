@@ -15332,7 +15332,16 @@ impl Attr {
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
             let syms_borrow: &Symtab = syms;
-            chk.check_deprecated_annotation(ctx, syms_borrow, ctx.tree(tree).pos, v);
+            // Java: JCVariableDecl.pos() is the identifier token; `pos` stays at
+            // the modifiers for generation, so use the recorded declaration
+            // position here.
+            let decl_pos = match &ctx.tree(tree).kind {
+                crate::tree::jc_tree::TreeKind::VariableDecl { decl_pos, .. } if *decl_pos != -1 => {
+                    *decl_pos
+                }
+                _ => ctx.tree(tree).pos,
+            };
+            chk.check_deprecated_annotation(ctx, syms_borrow, decl_pos, v);
         }
         if let Some(init) = init
             && ((ctx.sym(v).flags_field & flags::FINAL as i64) == 0

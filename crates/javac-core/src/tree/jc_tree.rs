@@ -557,6 +557,10 @@ pub enum TreeKind {
         sym: Option<SymbolId>,
         /// declaration position
         start_pos: i32,
+        /// Java: JCVariableDecl.pos (the identifier token). The port keeps
+        /// `pos` at the modifiers so class generation is unchanged, and
+        /// records the identifier position here for diagnostics.
+        decl_pos: i32,
         /// Java: JCVariableDecl.declaredUsingVar (declared using 'var')
         declared_using_var: bool,
     },

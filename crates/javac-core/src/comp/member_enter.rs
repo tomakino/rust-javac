@@ -28,6 +28,15 @@ use std::rc::Rc;
 
 use crate::code::deferred_lint_handler::DeferredLintHandler;
 use crate::code::flags;
+
+/// Java: JCVariableDecl.pos() is the identifier token; the port stores it in
+/// `VariableDecl.decl_pos` and keeps `pos` at the modifiers for generation.
+fn variable_decl_pos(ctx: &crate::compiler_context::CompilerContext, tree: TreeId) -> i32 {
+    match &ctx.tree(tree).kind {
+        crate::tree::jc_tree::TreeKind::VariableDecl { decl_pos, .. } if *decl_pos != -1 => *decl_pos,
+        _ => ctx.tree(tree).pos,
+    }
+}
 use crate::code::kinds::Kind;
 use crate::code::symbol::{CompletionFailure, Symbol, SymbolKind};
 use crate::code::symtab::Symtab;
@@ -569,7 +578,7 @@ impl MemberEnter {
         ));
         let checked = self
             .chk
-            .check_flags(ctx, ctx.tree(tree).pos, mods_flags, v, tree);
+            .check_flags(ctx, variable_decl_pos(ctx, tree), mods_flags, v, tree);
         ctx.sym_mut(v).flags_field = checked;
         set_var_decl_symbol(ctx, tree, v);
         if var_decl_init(ctx, tree).is_some() {

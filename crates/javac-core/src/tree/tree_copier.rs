@@ -1615,6 +1615,7 @@ impl TreeCopier {
                 init,
                 sym: None,
                 start_pos: position::NOPOS,
+                decl_pos: position::NOPOS,
                 declared_using_var,
             },
         )
@@ -2045,6 +2046,7 @@ mod tests {
                 init: None,
                 sym: None,
                 start_pos: position::NOPOS,
+                decl_pos: position::NOPOS,
                 declared_using_var: false,
             },
             0,

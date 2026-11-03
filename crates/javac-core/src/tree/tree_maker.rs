@@ -684,6 +684,7 @@ impl TreeFactory for TreeMaker {
                 init,
                 sym: None,
                 start_pos: position::NOPOS,
+                decl_pos: position::NOPOS,
                 declared_using_var: false,
             },
         )
@@ -709,6 +710,7 @@ impl TreeFactory for TreeMaker {
                 init,
                 sym: None,
                 start_pos: position::NOPOS,
+                decl_pos: position::NOPOS,
                 declared_using_var,
             },
         )
@@ -735,6 +737,7 @@ impl TreeFactory for TreeMaker {
                 init: None,
                 sym: None,
                 start_pos: position::NOPOS,
+                decl_pos: position::NOPOS,
                 declared_using_var: false,
             },
         )

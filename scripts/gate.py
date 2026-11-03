@@ -72,13 +72,7 @@ COMMANDS: dict[str, list[list[str]]] = {
     ],
 }
 
-KNOWN_FAILURES: dict[str, set[str]] = {
-    "check_examples.py": {
-        "DeprecatedAnnotationHasNoEffect",
-        "IllegalComboModifiers",
-        "VarNotIntializedInDefaultConstructor",
-    },
-}
+KNOWN_FAILURES: dict[str, set[str]] = {}
 
 
 def diff_files() -> list[str]:

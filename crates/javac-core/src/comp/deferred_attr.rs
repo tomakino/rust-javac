@@ -3140,6 +3140,7 @@ impl DeferredAttrService {
                     init: None,
                     sym: None,
                     start_pos: 0,
+                    decl_pos: ctx.tree(vd).pos,
                     declared_using_var: false,
                 },
             });

@@ -4148,9 +4148,11 @@ impl JavacParser {
         } else {
             ctx.tree(mods).pos
         };
+        let name_pos = self.token.pos;
         let name = self.ident(ctx);
-        vdefs = self
-            .variable_declarators_rest(ctx, pos, mods, type_, name, false, None, vdefs, local_decl);
+        vdefs = self.variable_declarators_rest(
+            ctx, pos, mods, type_, name, false, None, vdefs, local_decl, name_pos,
+        );
         vdefs
     }
 
@@ -4167,6 +4169,7 @@ impl JavacParser {
         dc: Option<Rc<dyn Comment>>,
         mut vdefs: Vec<TreeId>,
         local_decl: bool,
+        name_pos: i32,
     ) -> Vec<TreeId> {
         let head = self.variable_declarator_rest(
             ctx,
@@ -4178,6 +4181,7 @@ impl JavacParser {
             dc.clone(),
             local_decl,
             false,
+            name_pos,
         );
         vdefs.push(head);
         while self.token.kind == TokenKind::COMMA {
@@ -4186,6 +4190,7 @@ impl JavacParser {
             self.store_end(last, end);
             self.next_token();
             let pos = self.token.pos;
+            let name_pos = self.token.pos;
             let name = self.ident(ctx);
             let def = self.variable_declarator_rest(
                 ctx,
@@ -4197,6 +4202,7 @@ impl JavacParser {
                 dc.clone(),
                 local_decl,
                 true,
+                name_pos,
             );
             vdefs.push(def);
         }
@@ -4218,6 +4224,7 @@ impl JavacParser {
         dc: Option<Rc<dyn Comment>>,
         local_decl: bool,
         compound: bool,
+        name_pos: i32,
     ) -> TreeId {
         let mut declared_using_var = false;
         let type_ = self.brackets_opt_simple(ctx, type_);
@@ -4287,10 +4294,13 @@ impl JavacParser {
             self.to_p(__to_p_tree)
         };
         if let TreeKind::VariableDecl {
-            start_pos: field, ..
+            start_pos: field,
+            decl_pos: name_pos_field,
+            ..
         } = &mut ctx.tree_mut(def).kind
         {
             *field = start_pos;
+            *name_pos_field = name_pos;
         }
         self.attach(def, dc);
         def
@@ -5399,14 +5409,14 @@ impl JavacParser {
             let t = self.parse_type_impl(ctx, true);
             let pos = self.token.pos;
             let name = self.ident(ctx);
-            return self.variable_declarator_rest(ctx, pos, mods, t, name, true, None, true, false);
+            return self.variable_declarator_rest(ctx, pos, mods, t, name, true, None, true, false, pos);
         }
         let t = self.term_with_mode(ctx, EXPR | TYPE);
         if (self.last_mode & TYPE) != 0 && Self::is_lax_identifier(self.token.kind) {
             let mods = self.F.at(start_pos).modifiers(ctx, Flags::FINAL);
             let pos = self.token.pos;
             let name = self.ident(ctx);
-            return self.variable_declarator_rest(ctx, pos, mods, t, name, true, None, true, false);
+            return self.variable_declarator_rest(ctx, pos, mods, t, name, true, None, true, false, pos);
         }
         let check_pos = self.token.pos;
         self.check_source_level(
@@ -5848,6 +5858,7 @@ impl JavacParser {
                         dc,
                         Vec::new(),
                         false,
+                        pos,
                     );
                     self.accept(ctx, TokenKind::SEMI);
                     if let Some(last) = defs.last() {
@@ -5875,6 +5886,7 @@ impl JavacParser {
                         dc,
                         Vec::new(),
                         false,
+                        pos,
                     );
                     self.accept(ctx, TokenKind::SEMI);
                     let err = self.syntax_error_list(
@@ -6139,6 +6151,7 @@ impl JavacParser {
         } else {
             self.token.pos
         };
+        let name_pos = self.token.pos;
         let name: Name;
         if lambda_parameter && self.token.kind == TokenKind::UNDERSCORE {
             let key = JCDiagnosticError::from(errors::underscore_as_identifier_in_lambda());
@@ -6235,6 +6248,9 @@ impl JavacParser {
             None,
             declared_using_var,
         );
+        if let TreeKind::VariableDecl { decl_pos, .. } = &mut ctx.tree_mut(vd).kind {
+            *decl_pos = name_pos;
+        }
         self.to_p(vd)
     }
 
