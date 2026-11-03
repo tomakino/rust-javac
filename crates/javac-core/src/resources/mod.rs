@@ -5,6 +5,7 @@ pub mod compiler_accessors;
 pub mod compiler_metadata;
 pub mod compiler_properties;
 pub mod diagnostic_contract;
+pub mod locales;
 pub mod message_table;
 
 /// Backward-compatible alias for the English javac message bundle.
@@ -71,7 +72,7 @@ mod tests {
     fn message_tables_match_recorded_snapshot() {
         assert_eq!(COMPILER_MESSAGES.len(), 936);
         assert_eq!(COMPILER_ZH_CN.len(), 937);
-        assert_eq!(COMPILER_JA.len(), 913);
+        assert_eq!(COMPILER_JA.len(), 937);
         assert_eq!(LAUNCHER_MESSAGES.len(), 15);
         assert_eq!(LAUNCHER_ZH_CN.len(), 15);
         assert_eq!(LAUNCHER_JA.len(), 15);

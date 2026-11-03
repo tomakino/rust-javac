@@ -44,8 +44,9 @@ use std::sync::Mutex;
 
 use crate::api::messages::Messages;
 use crate::resources::bundles::{
-    COMPILER_JA, COMPILER_ZH_CN, JAVAC_JA, JAVAC_ZH_CN, LAUNCHER_JA, LAUNCHER_ZH_CN,
+    COMPILER_VARIANTS, JAVAC_VARIANTS, LAUNCHER_VARIANTS, LIKELY_SUBTAGS,
 };
+use crate::resources::locales::SUPPORTED_LOCALES;
 use crate::resources::compiler_properties::COMPILER_MESSAGES;
 use crate::resources::{JAVAC_MESSAGES, LAUNCHER_MESSAGES};
 use crate::util::context::Context;
@@ -75,15 +76,6 @@ impl ResourceBundle {
         ResourceBundle { tables }
     }
 }
-
-// Per-bundle locale variants (agent-lead approved layout: one generated file per
-// (bundle, locale), selected by ResourceBundle locale matching).
-static COMPILER_VARIANTS: &[(&str, ResourceBundleTable)] =
-    &[("zh_CN", &COMPILER_ZH_CN), ("ja", &COMPILER_JA)];
-static LAUNCHER_VARIANTS: &[(&str, ResourceBundleTable)] =
-    &[("zh_CN", &LAUNCHER_ZH_CN), ("ja", &LAUNCHER_JA)];
-static JAVAC_VARIANTS: &[(&str, ResourceBundleTable)] =
-    &[("zh_CN", &JAVAC_ZH_CN), ("ja", &JAVAC_JA)];
 
 /// Minimal mapping of java.util.Locale (adapter; registered in porting adapter
 /// section 9): the locale tag, e.g. "en", "zh_CN", "en_US".
@@ -182,16 +174,54 @@ pub fn set_default_locale(locale: Locale) {
     }
 }
 
-/// Normalizes a language tag to the supported locale names (en / ja / zh_CN;
-/// other languages keep only their language part).
-fn normalize_locale_tag(tag: &str) -> String {
-    let language = tag.split(['_', '-']).next().unwrap_or("");
-    match (language, tag) {
-        ("en", _) => "en".to_string(),
-        ("ja", _) => "ja".to_string(),
-        ("zh", "zh_CN") => "zh_CN".to_string(),
-        _ => language.to_string(),
+/// Candidate locale tags in preference order: the BCP 47 likely-subtags form
+/// first, then the ResourceBundle truncation chain.
+fn locale_candidates(tag: &str) -> Vec<String> {
+    let normalized = tag.replace('-', "_");
+    // CLDR likely-subtags data supplies the region/script a bare tag implies.
+    let resolved = LIKELY_SUBTAGS
+        .get(&normalized)
+        .map(str::to_string)
+        .unwrap_or(normalized);
+    let mut candidates: Vec<String> = Vec::new();
+    // BCP 47 language[_script][_region]: try the full tag, then the script,
+    // then the region, then the bare language (Java ResourceBundle order).
+    let parts: Vec<&str> = resolved.split('_').collect();
+    let language = parts.first().copied().unwrap_or("");
+    let mut script: Option<&str> = None;
+    let mut region: Option<&str> = None;
+    for part in parts.iter().skip(1) {
+        if part.len() == 4 && part.chars().all(|c| c.is_ascii_alphabetic()) {
+            script = Some(*part);
+        } else if part.len() == 2
+            || (part.len() == 3 && part.chars().all(|c| c.is_ascii_digit()))
+        {
+            region = Some(*part);
+        }
     }
+    if let (Some(script), Some(region)) = (script, region) {
+        candidates.push(format!("{language}_{script}_{region}"));
+    }
+    if let Some(script) = script {
+        candidates.push(format!("{language}_{script}"));
+    }
+    if let Some(region) = region {
+        candidates.push(format!("{language}_{region}"));
+    }
+    candidates.push(language.to_string());
+    candidates
+}
+
+/// Normalizes a language tag to an installed locale table name (en / ja /
+/// zh_CN / zh_Hant); other languages keep only their language part.
+fn normalize_locale_tag(tag: &str) -> String {
+    for candidate in locale_candidates(tag) {
+        if SUPPORTED_LOCALES.iter().any(|locale| *locale == candidate) {
+            return candidate;
+        }
+    }
+    let normalized = tag.replace('-', "_");
+    normalized.split('_').next().unwrap_or("").to_string()
 }
 
 /// The Windows user interface language (the JVM's user.language source).
@@ -206,6 +236,7 @@ fn windows_ui_language_tag() -> Option<String> {
         0x0804 => "zh_CN",
         0x0404 => "zh_TW",
         0x0C04 => "zh_HK",
+        0x1404 => "zh_MO",
         0x1004 => "zh_SG",
         0x0409 => "en_US",
         0x0809 => "en_GB",
@@ -282,14 +313,12 @@ fn lookup_bundle(bundle_name: &str, locale: &Locale) -> Option<ResourceBundle> {
         _ => return None,
     };
     let mut tables = Vec::new();
-    let mut candidate = locale.get_tag();
-    loop {
-        if let Some((_, table)) = variants.iter().find(|(variant, _)| *variant == candidate) {
+    for candidate in locale_candidates(locale.get_tag()) {
+        if let Some((_, table)) = variants
+            .iter()
+            .find(|(variant, _)| *variant == candidate.as_str())
+        {
             tables.push(*table);
-        }
-        match candidate.rfind('_') {
-            Some(position) => candidate = &candidate[..position],
-            None => break,
         }
     }
     tables.push(base);
@@ -469,6 +498,7 @@ fn get_localized_string_in(bundles: &[ResourceBundle], key: &str, args: &[String
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::resources::locales::{COMPILER_JA, COMPILER_ZH_CN, COMPILER_ZH_HANT, JAVAC_JA};
 
     static CUSTOM_TABLE: crate::resources::message_table::MessageTable =
         crate::resources::message_table::MessageTable::new("custom.key=custom {0}\n");
@@ -494,6 +524,16 @@ mod tests {
         key: &str,
     ) -> &'static str {
         table.get(key).unwrap_or_else(|| panic!("missing {key}"))
+    }
+
+    #[test]
+    fn zh_tw_locale_is_normalized() {
+        assert_eq!(normalize_locale_tag("zh_TW"), "zh_Hant");
+        assert_eq!(normalize_locale_tag("zh-TW"), "zh_Hant");
+        assert_eq!(normalize_locale_tag("zh_HK"), "zh_Hant");
+        assert_eq!(normalize_locale_tag("zh_MO"), "zh_Hant");
+        assert_eq!(normalize_locale_tag("zh_CN"), "zh_CN");
+        assert_eq!(normalize_locale_tag("zh"), "zh_CN");
     }
 
     #[test]
@@ -617,30 +657,21 @@ mod tests {
     }
 
     #[test]
-    fn missing_translation_key_falls_back_to_english() {
-        // The zh_CN bundle is fully covered (the local patch fills the 24 keys
-        // missing upstream), so use the ja bundle to exercise the fallback.
-        let zh_keys: std::collections::BTreeSet<&str> =
-            COMPILER_ZH_CN.iter().map(|(key, _)| key).collect();
-        assert!(
-            COMPILER_MESSAGES
-                .iter()
-                .all(|(key, _)| zh_keys.contains(key)),
-            "zh_CN bundle must cover every base key after the patch"
-        );
-        let ja_keys: std::collections::BTreeSet<&str> =
-            COMPILER_JA.iter().map(|(key, _)| key).collect();
-        let missing = COMPILER_MESSAGES
-            .iter()
-            .map(|(key, _)| key)
-            .find(|key| !ja_keys.contains(key))
-            .expect("a key without a ja translation");
-        let mut messages = JavacMessages::new(DEFAULT_BUNDLE_NAME);
-        messages.set_current_locale(Some(Locale::new("ja")));
-        assert_eq!(
-            messages.get_localized_string(missing, &[]),
-            JavacMessages::get_default_localized_string(missing, &[])
-        );
+    fn translation_bundles_cover_every_base_key() {
+        // The local patches fill the keys the upstream ja bundle was missing,
+        // so every translation must now cover the whole base bundle.
+        for (name, table) in [
+            ("zh_CN", &COMPILER_ZH_CN),
+            ("zh_Hant", &COMPILER_ZH_HANT),
+            ("ja", &COMPILER_JA),
+        ] {
+            let keys: std::collections::BTreeSet<&str> =
+                table.iter().map(|(key, _)| key).collect();
+            assert!(
+                COMPILER_MESSAGES.iter().all(|(key, _)| keys.contains(key)),
+                "{name} bundle must cover every base key"
+            );
+        }
     }
 
     #[test]
@@ -658,11 +689,11 @@ mod tests {
             messages.get_localized_string("compiler.err.abstract.meth.cant.have.body", &[]),
             "abstractメソッドが本体を持つことはできません"
         );
-        // No zh table: the base English text is used.
+        // zh_TW has its own table (the port extends the official bundles).
         messages.set_current_locale(Some(Locale::new("zh_TW")));
         assert_eq!(
             messages.get_localized_string("compiler.err.abstract.meth.cant.have.body", &[]),
-            "abstract methods cannot have a body"
+            "抽象方法不能有主體"
         );
     }
 
