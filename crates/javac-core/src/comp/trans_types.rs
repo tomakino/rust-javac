@@ -1625,7 +1625,10 @@ impl TreeVisitor for TransTypes {
         let mut varargs_element = varargs_element;
         if varargs_element.is_none()
             && (ctx.sym(meth_sym).flags_field & flags::VARARGS) != 0
-            && args.length() > argtypes.length()
+            // A mismatch in either direction can only be a varargs call: fewer
+            // explicit arguments than parameters (empty varargs tail) or more
+            // (several tail elements).
+            && args.length() != argtypes.length()
             && !argtypes.is_empty()
             && ctx
                 .typ(argtypes.last().expect("last parameter"))

@@ -4385,15 +4385,6 @@ impl Lower {
             result = result.append(boxed_args);
         } else {
             // Java: if (args.length() != 1) throw new AssertionError(args);
-            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") && args.length() != 1 {
-                eprintln!(
-                    "[BOXARGS-ASSERT] params={} args={} varargs={} param_tag={:?}",
-                    parameters.length() + 1,
-                    args.length(),
-                    varargs_element.is_some(),
-                    ctx.typ(parameter).get_tag(),
-                );
-            }
             assert_eq!(args.length(), 1, "AssertionError: boxArgs trailing argument count");
             let arg = *args.head();
             let translated = self
