@@ -851,11 +851,22 @@ fn compile(args: &[String]) -> Result<i32, String> {
     }
     // javac: without -d the class file is written next to its source file
     // (JavacFileManager.java:911-923); CLASS_OUTPUT stays unset.
+    // Java: StandardJavaFileManager.getLocationAsPaths(CLASS_OUTPUT) yields an
+    // absolute path, and Arguments.validate reports that path in diagnostics.
     let out_dir = helper
         .options
         .iter()
         .find(|(name, _)| name == "-d")
-        .map(|(_, value)| PathBuf::from(value));
+        .map(|(_, value)| {
+            let path = PathBuf::from(value);
+            if path.is_absolute() {
+                path
+            } else {
+                std::env::current_dir()
+                    .map(|cwd| cwd.join(&path))
+                    .unwrap_or(path)
+            }
+        });
     for (name, value) in &helper.options {
         if name == "--target" && javac_core::jvm::target::Target::lookup(value).is_none() {
             let messages = JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
