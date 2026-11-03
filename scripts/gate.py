@@ -78,17 +78,6 @@ KNOWN_FAILURES: dict[str, set[str]] = {
         "DeprecatedAnnotationHasNoEffect",
         "IllegalComboModifiers",
         "VarNotIntializedInDefaultConstructor",
-        "IllegalSignature",
-        "HasBeenDeprecatedModule",
-        "HasBeenDeprecatedRemovalModule",
-        "MultiModuleOutputCannotBeExplodedModule",
-        "NotDefAccessDoesNotReadFromUnnamed",
-        "NotDefAccessDoesNotReadUnnamed",
-        "NotDefAccessNotExportedFromUnnamed",
-        "NotDefAccessNotExportedToModuleFromUnnamed",
-        "PackageClashFromRequiresInUnnamed",
-        "PackageEmptyOrNotFoundWarning",
-        "WarnModuleNotFound",
     },
 }
 
