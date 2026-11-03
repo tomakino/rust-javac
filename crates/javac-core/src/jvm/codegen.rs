@@ -444,6 +444,19 @@ impl Gen {
         if owner == Some(object_tsym) {
             return sym;
         }
+        // A static interface method is never inherited (JLS 8.4.8): the JVM
+        // resolves it against the interface that declares it, so the binary
+        // qualifier stays that interface even when the source-level qualifier
+        // is an implementing class (a class nested in the interface can call
+        // the method by its simple name through the enclosing scope).
+        if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH
+            && (flags & crate::code::flags::STATIC as i64) != 0
+            && let Some(owner_sym) = owner
+            && ctx.sym(owner_sym).kind == crate::code::kinds::Kind::TYP
+            && ctx.sym(owner_sym).is_interface()
+        {
+            return sym;
+        }
         clone_symbol_with_owner(ctx, sym, site_tsym)
     }
 
