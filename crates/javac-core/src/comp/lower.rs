@@ -5347,19 +5347,13 @@ impl Lower {
         // while NewClass.args holds only the explicit arguments. Lower adds the
         // synthetics after boxing (upstream Lower.visitNewClass), so boxArgs
         // must receive exactly the user-visible parameter prefix.
+        // Java: Lower.visitNewClass boxes the explicit arguments against the
+        // constructor's erasure parameter types. The synthetic outer instance
+        // and the captured free variables are added afterwards, so the
+        // parameter list must not be truncated to the explicit argument count
+        // (that drops an unexpanded varargs parameter).
         let has_outer = ctx.sym(constructor_owner).has_outer_instance(ctx);
-        let is_local = Symbol::is_directly_or_indirectly_local(ctx, constructor_owner);
-        if !is_enum && (has_outer || is_local) {
-            // Constructor symbols inconsistently expose synthetic parameters:
-            // some carry the enclosing instance, others do not. Drop only the
-            // leading synthetic count (formals - explicit args); when counts
-            // match there is nothing to drop.
-            let mut extra = arg_types.length().saturating_sub(args.length());
-            while extra > 0 && arg_types.non_empty() {
-                arg_types = arg_types.tail();
-                extra -= 1;
-            }
-        }
+        let mut arg_types = arg_types;
         let mut args = self.box_args(ctx, arg_types, args, varargs_element);
         let mut encl = encl;
         let mut def = def;
@@ -5386,8 +5380,9 @@ impl Lower {
                 *slot = Some(access_constructor);
             }
         }
-        let c = crate::code::symbol::symbol_encl_class(ctx, constructor_owner)
-            .expect("constructor class");
+        // Java: ClassSymbol c = (ClassSymbol)tree.constructor.owner; the owner
+        // of a constructor is the class itself (anonymous classes included).
+        let c = constructor_owner;
         if ctx.sym(c).has_outer_instance(ctx) {
             let this_arg = if let Some(encl) = encl {
                 let translated = self

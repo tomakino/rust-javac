@@ -406,7 +406,13 @@ impl Code {
     }
 
     /// Push a value and update the maximum stack size.
+    ///
+    /// Java: Code.push (Code.java) ignores the void type, so a void-returning
+    /// invocation leaves the operand stack unchanged.
     fn push(&mut self, ctx: &mut CompilerContext, t: TypeId) {
+        if ctx.typ(t).has_tag(TypeTag::VOID) {
+            return;
+        }
         let syms_rc = Rc::clone(&self.syms);
         let syms = &*syms_rc;
         self.state.push(ctx, &syms, t);

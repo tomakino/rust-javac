@@ -3074,7 +3074,12 @@ impl TypeEnter {
                 {
                     if ctx.sym(*constructor).kind != Kind::ERR {
                         enclosing_constructor = Some(*constructor);
-                        encl = encl_tree.and_then(|tree| ctx.tree(tree).ty);
+                        // Java: enclosingType is the qualifier type; a tree whose
+                        // type is still noType (attribution not finished) must
+                        // not introduce a synthetic outer-instance parameter.
+                        encl = encl_tree.and_then(|tree| ctx.tree(tree).ty).filter(|ty| {
+                            !ctx.typ(*ty).has_tag(crate::code::type_tag::TypeTag::NONE)
+                        });
                         helper = Some(Box::new(AnonClassConstructorHelper::new(
                             sym,
                             *constructor,
