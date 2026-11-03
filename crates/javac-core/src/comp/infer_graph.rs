@@ -48,8 +48,8 @@ pub fn graph_inference_steps() -> Vec<Vec<InferenceStep>> {
         vec![
             InferenceStep::EQ,
             InferenceStep::LOWER,
-            InferenceStep::UPPER,
             InferenceStep::THROWS,
+            InferenceStep::UPPER,
             InferenceStep::CAPTURED,
         ],
     ]
