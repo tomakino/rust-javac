@@ -3186,6 +3186,40 @@ fn capture_local_class_defs_static(
                         .get(&context_tree)
                         .and_then(|context| context.prev_context);
                 }
+            } else if ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::TYP) {
+                // Java: BasicFreeVarCollector.visitIdent records the enclosing
+                // instance (this/super) of a symbol owned by a class; the
+                // lambda enclosing the local class must capture it so that the
+                // synthesized this$0 parameter can be filled.
+                let mut local_context = context_key_ro(self.frame_stack, self.context_map);
+                while let Some(context_tree) = local_context {
+                    if ctx.tree(context_tree).has_tag(Tag::LAMBDA) {
+                        let depth = self
+                            .context_map
+                            .borrow()
+                            .get(&context_tree)
+                            .map(|context| context.depth)
+                            .expect("context depth");
+                        if captured_decl_ro(ctx, self.frame_stack, depth, sym).is_none() {
+                            break;
+                        }
+                        add_lambda_symbol_ro(
+                            ctx,
+                            self.context_map,
+                            self.names,
+                            self.syms,
+                            self.types,
+                            context_tree,
+                            sym,
+                            LambdaSymbolKind::CAPTURED_THIS,
+                        );
+                    }
+                    local_context = self
+                        .context_map
+                        .borrow()
+                        .get(&context_tree)
+                        .and_then(|context| context.prev_context);
+                }
             }
         }
     }
