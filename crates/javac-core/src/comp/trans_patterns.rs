@@ -2215,10 +2215,26 @@ impl TreeVisitor for TransPatterns {
                 let make = &*self.make;
                 make.literal_object(ctx, crate::tree::jc_tree::LiteralValue::Boolean(true))
             };
+            // Java: make.LetExpr(bindingContext.bindingVars(...).append(exec), ...)
+            // (TransPatterns.translatePattern): the hoisted var declarations
+            // must precede the assignment so the binding slot exists.
             let nested = {
+                let make_rc = Rc::clone(&self.make);
+                let binding_decls = {
+                    let syms = &*self.syms;
+                    self.binding_context
+                        .binding_vars(ctx, syms, &make_rc, pos)
+                };
+                let defs = if binding_decls.is_empty() {
+                    List::of(exec)
+                } else {
+                    let mut list = binding_decls;
+                    list = list.append(exec);
+                    list
+                };
                 let make = &*self.make;
                 make.at(pos);
-                make.let_expr(ctx, List::of(exec), literal_true)
+                make.let_expr(ctx, defs, literal_true)
             };
             if let TreeKind::LetExpr {
                 needs_cond: slot, ..
