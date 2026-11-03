@@ -301,6 +301,10 @@ def main() -> int:
     env["TMP"] = str(tmp_root)
     env["TEMP"] = str(tmp_root)
     env["TMPDIR"] = str(tmp_root)
+    # Keep the per-example directories inside the repository as well: on some
+    # Windows hosts a freshly built compiler cannot create files under the
+    # user's %TEMP% (access denied), while writing under target/tmp works.
+    tempfile.tempdir = str(tmp_root)
 
     entries = sorted(examples_dir.iterdir(), key=lambda item: item.name)
     total = 0
