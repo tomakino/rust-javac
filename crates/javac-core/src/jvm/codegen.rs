@@ -3604,21 +3604,6 @@ impl Gen {
             crate::code::symbol::external_type(ctx, &self.types, &*syms, &names, constructor)
         };
         let params = ctx.typ(external).get_parameter_types(ctx);
-        // javac's Lower.visitNewClass prepends the enclosing instance to the
-        // constructor arguments; for an anonymous or inner class the tree may
-        // still lack that first argument, so pass the current instance.
-        let n_args = args.iter().count();
-        let n_params = params.iter().count();
-        let owner_has_outer = ctx
-            .sym(constructor)
-            .owner
-            .map(|owner| ctx.sym(owner).has_outer_instance(ctx))
-            .unwrap_or(false);
-        if n_params == n_args + 1 && owner_has_outer {
-            let items = self.get_items();
-            let this_item = items.make_this_item();
-            self.item_load(ctx, &this_item);
-        }
         self.gen_args(ctx, args, params);
         let items = self.get_items();
         let item = items.make_member_item(ctx, constructor, true);
