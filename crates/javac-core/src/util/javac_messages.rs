@@ -160,8 +160,7 @@ fn detect_environment_locale() -> Locale {
             return Locale::new(normalize_locale_tag(&tag));
         }
     }
-    #[cfg(windows)]
-    if let Some(tag) = windows_ui_language_tag() {
+    if let Some(tag) = sys_locale::get_locale() {
         return Locale::new(normalize_locale_tag(&tag));
     }
     Locale::new("en")
@@ -186,29 +185,30 @@ fn locale_candidates(tag: &str) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
     // BCP 47 language[_script][_region]: try the full tag, then the script,
     // then the region, then the bare language (Java ResourceBundle order).
-    let parts: Vec<&str> = resolved.split('_').collect();
-    let language = parts.first().copied().unwrap_or("");
-    let mut script: Option<&str> = None;
-    let mut region: Option<&str> = None;
-    for part in parts.iter().skip(1) {
-        if part.len() == 4 && part.chars().all(|c| c.is_ascii_alphabetic()) {
-            script = Some(*part);
-        } else if part.len() == 2
-            || (part.len() == 3 && part.chars().all(|c| c.is_ascii_digit()))
-        {
-            region = Some(*part);
-        }
-    }
-    if let (Some(script), Some(region)) = (script, region) {
+    let langid: Option<unic_langid::LanguageIdentifier> =
+        resolved.replace('_', "-").parse().ok();
+    let (language, script, region) = match &langid {
+        Some(id) => (
+            id.language.to_string(),
+            id.script.map(|script| script.to_string()),
+            id.region.map(|region| region.to_string()),
+        ),
+        None => (
+            resolved.split('_').next().unwrap_or("").to_string(),
+            None,
+            None,
+        ),
+    };
+    if let (Some(script), Some(region)) = (&script, &region) {
         candidates.push(format!("{language}_{script}_{region}"));
     }
-    if let Some(script) = script {
+    if let Some(script) = &script {
         candidates.push(format!("{language}_{script}"));
     }
-    if let Some(region) = region {
+    if let Some(region) = &region {
         candidates.push(format!("{language}_{region}"));
     }
-    candidates.push(language.to_string());
+    candidates.push(language);
     candidates
 }
 
@@ -224,48 +224,6 @@ fn normalize_locale_tag(tag: &str) -> String {
     normalized.split('_').next().unwrap_or("").to_string()
 }
 
-/// The Windows user interface language (the JVM's user.language source).
-#[cfg(windows)]
-fn windows_ui_language_tag() -> Option<String> {
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn GetUserDefaultUILanguage() -> u16;
-    }
-    let langid = unsafe { GetUserDefaultUILanguage() };
-    let tag = match langid {
-        0x0804 => "zh_CN",
-        0x0404 => "zh_TW",
-        0x0C04 => "zh_HK",
-        0x1404 => "zh_MO",
-        0x1004 => "zh_SG",
-        0x0409 => "en_US",
-        0x0809 => "en_GB",
-        0x0C09 => "en_AU",
-        0x1009 => "en_CA",
-        0x0411 => "ja_JP",
-        0x0412 => "ko_KR",
-        0x0407 => "de_DE",
-        0x040C => "fr_FR",
-        0x0410 => "it_IT",
-        0x0C0A => "es_ES",
-        0x0416 => "pt_BR",
-        0x0419 => "ru_RU",
-        _ => match langid & 0x3ff {
-            0x04 => "zh",
-            0x09 => "en",
-            0x11 => "ja",
-            0x12 => "ko",
-            0x07 => "de",
-            0x0c => "fr",
-            0x10 => "it",
-            0x0a => "es",
-            0x16 => "pt",
-            0x19 => "ru",
-            _ => return None,
-        },
-    };
-    Some(tag.to_string())
-}
 
 impl Default for Locale {
     fn default() -> Locale {

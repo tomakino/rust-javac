@@ -36,6 +36,8 @@ javac-zip = { path = "crates/javac-zip" }
 javac-classpath = { path = "crates/javac-classpath" }
 javac-charset = { path = "crates/javac-charset" }
 javac-fs = { path = "crates/javac-fs" }
+sys-locale = "0.3"
+unic-langid = "0.9"
 
 # The compiler is a tight, allocation-heavy tree walk; at opt-level 0 the
 # debug build spends more than half its time in non-inlined accessors and
