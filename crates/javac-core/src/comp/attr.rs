@@ -4127,10 +4127,15 @@ impl Attr {
         // call to a varargs method with fewer explicit arguments than formal
         // parameters can only be a varargs call, even when the recorded
         // resolution round is missing (speculative/deferred attribution).
-        if !last_varargs && (ctx.sym(sym).flags_field & crate::code::flags::VARARGS as i64) != 0 {
+        // Java: argtrees is null when type-checking a method reference
+        // (Check.checkMethod comment at Check.java:1021); only a real call
+        // with fewer arguments than formals forces the varargs round.
+        if let Some(argtrees) = argtrees
+            && !last_varargs
+            && (ctx.sym(sym).flags_field & crate::code::flags::VARARGS as i64) != 0
+        {
             let formals = types.get_parameter_types_public(ctx, owntype);
-            let n_args = argtrees.map(|args| args.length()).unwrap_or(0);
-            if n_args < formals.length() {
+            if argtrees.length() < formals.length() {
                 last_varargs = true;
             }
         }
