@@ -159,7 +159,13 @@ def main() -> int:
             for line in j_err.splitlines()[-5:]:
                 print("  " + line)
         if r_err:
-            errors = [line for line in r_err.splitlines() if "error:" in line or line.strip().startswith("^")]
+            # Keep only lines that carry a diagnostic; the "^^^" caret lines are
+            # source excerpts and say nothing on their own.
+            errors = [
+                line
+                for line in r_err.splitlines()
+                if "error:" in line or "错误:" in line
+            ]
             if errors:
                 print("rust errors:")
                 for line in errors[:10]:
