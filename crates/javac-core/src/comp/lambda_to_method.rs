@@ -1864,6 +1864,12 @@ impl LambdaAnalyzerPreprocessor {
                     // superclass still counts as a member of this class --
                     // an implicit `this.field` access must capture `this`.
                     let syms = &*self.syms;
+                    // Java: clazz.isSubClass(sym, types) || sym.isMemberOf(clazz, types)
+                    // (LambdaToMethod.capturedDecl, CLASSDEF case): a class
+                    // symbol captured from inside a lambda resolves to its own
+                    // class declaration frame, which is what makes the lambda
+                    // capture the enclosing instance of a class created in it.
+                    let is_sub = symbol::is_sub_class(ctx, syms, &self.types, class_sym, sym);
                     let is_member = symbol::symbol_is_member_of(
                         ctx,
                         &self.types,
@@ -1872,7 +1878,7 @@ impl LambdaAnalyzerPreprocessor {
                         class_sym,
                     );
                     let _ = syms;
-                    if is_member {
+                    if is_sub || is_member {
                         return if current_depth > depth {
                             None
                         } else {
