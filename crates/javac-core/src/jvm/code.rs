@@ -1148,10 +1148,15 @@ impl Code {
                 self.push(ctx, double);
             }
             ALOAD => {
-                let t = ctx
+                // Java: Gen.visitIdent loads the erased type of the variable;
+                // a pattern binding can still carry an inference variable here,
+                // and pushing that raw type would not relate to the switch type.
+                let raw = ctx
                     .sym(self.lvar[od as usize].as_ref().expect("local var").sym)
                     .ty
                     .expect("local type");
+                let syms_rc = Rc::clone(&self.syms);
+                let t = self.types.erasure(ctx, &syms_rc, raw);
                 self.push(ctx, t);
             }
             LSTORE | DSTORE => {
@@ -1986,7 +1991,7 @@ impl Code {
 
 impl Code {
     /// Add a new local variable.
-    fn add_local_var(&mut self, ctx: &mut CompilerContext, v: SymbolId) {
+    pub fn add_local_var(&mut self, ctx: &mut CompilerContext, v: SymbolId) {
         let adr = Code::var_adr(ctx, v);
         if self.lvar.len() < (adr + 1) as usize {
             self.lvar.resize((adr + 1) as usize, None);
@@ -2279,6 +2284,21 @@ impl Code {
 
     /// Create a new local variable for a symbol and add it.
     pub fn new_local_symbol(&mut self, ctx: &mut CompilerContext, v: SymbolId) -> i32 {
+        // Java: Gen.visitVarDef calls code.newLocal(sym), which only registers
+        // the symbol at the address it already has (Code.java:newLocal). A
+        // binding that TransPatterns hoists into two places must therefore keep
+        // its first register instead of moving to a fresh one.
+        if let Some(adr) = ctx.sym(v).local_adr() {
+            if adr >= 0 && (adr as usize) < self.lvar.len() {
+                // Reuse the address only when this very symbol already owns the
+                // slot. A freshly created VarSymbol carries adr 0 by default,
+                // and that register belongs to "this" in an instance method.
+                let owns = self.lvar[adr as usize].as_ref().map(|lv| lv.sym) == Some(v);
+                if owns {
+                    return adr;
+                }
+            }
+        }
         let syms_rc = Rc::clone(&self.syms);
         let syms = &*syms_rc;
         let ty = ctx.sym(v).ty.expect("variable type");

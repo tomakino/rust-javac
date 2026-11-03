@@ -86,7 +86,18 @@ impl CompilerContext {
     /// cloning. Reading kind.bound directly would return the None captured at
     /// clone time, so every caller must go through here.
     pub fn upper_bound_of(&self, id: TypeId) -> Option<TypeId> {
-        self.typ(self.type_no_metadata_id(id)).get_upper_bound()
+        let base = self.type_no_metadata_id(id);
+        // Java: Type.UndetVar.getUpperBound() — the instantiation when there is
+        // one, otherwise the original type variable's bound. UndetVar is a
+        // DelegatedType, so erasure must not treat it as its own upper bound.
+        if let crate::code::type_::TypeKindData::UndetVar { qtype, inst, .. } = &self.typ(base).kind
+        {
+            return match inst {
+                Some(inst) => Some(*inst),
+                None => self.upper_bound_of(*qtype),
+            };
+        }
+        self.typ(base).get_upper_bound()
     }
 
     /// Lower bound of a type variable, resolved through its un-annotated base.

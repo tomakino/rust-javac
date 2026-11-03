@@ -1166,9 +1166,14 @@ impl Gen {
             if is_switch && ctx.tree(tree).has_tag(Tag::VARDEF) {
                 // Variables declared in a switch can be used even when the
                 // declaration is unreachable.
+                //
+                // Java: code.newLocal(sym) — the variable already has an
+                // address, so only register it in lvar; allocating a fresh
+                // register here would move the symbol and leave the old slot
+                // behind.
                 if let TreeKind::VariableDecl { sym: Some(sym), .. } = &ctx.tree(tree).kind {
                     let sym = *sym;
-                    self.get_code().borrow_mut().new_local_symbol(ctx, sym);
+                    self.get_code().borrow_mut().add_local_var(ctx, sym);
                 }
             }
         }

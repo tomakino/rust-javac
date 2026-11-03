@@ -1216,6 +1216,14 @@ impl Types {
                 let upper = ctx.upper_bound_of(t).expect("type variable upper bound");
                 self.erasure_recurse(ctx, syms, upper, recurse)
             }
+            TypeKindData::UndetVar { .. } => {
+                // Java: UndetVar is a DelegatedType; erasure dispatches through
+                // the upper bound of the original type variable.
+                let upper = ctx
+                    .upper_bound_of(t)
+                    .expect("inference variable upper bound");
+                self.erasure_recurse(ctx, syms, upper, recurse)
+            }
             TypeKindData::ForAll { qtype, .. } => {
                 // Java: SimpleVisitor.visitForAll -> visit(t.qtype).
                 let qtype = qtype.expect("for-all qtype");

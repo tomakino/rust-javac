@@ -148,7 +148,7 @@ impl BindingContext {
                 ));
                 let raw = ctx.sym(var_symbol).get_raw_attributes();
                 ctx.sym_mut(res).set_type_attributes(raw);
-                self.hoisted_var_map.push((var_symbol, res));
+                self.hoisted_put(var_symbol, res);
                 Some(res)
             }
         }
@@ -201,6 +201,19 @@ impl BindingContext {
         stats
     }
 
+    /// Record a hoisted variable, replacing any entry with the same key.
+    ///
+    /// Java: hoistedVarMap.put(key, value) — a LinkedHashMap, so a second
+    /// put for the same binding overwrites instead of appending a duplicate
+    /// entry (TransPatterns.java:627, :776).
+    fn hoisted_put(&mut self, key: SymbolId, value: SymbolId) {
+        if let Some(entry) = self.hoisted_var_map.iter_mut().find(|(k, _)| *k == key) {
+            entry.1 = value;
+        } else {
+            self.hoisted_var_map.push((key, value));
+        }
+    }
+
     fn try_prepend(&mut self, ctx: &mut CompilerContext, binding: SymbolId, var: TreeId) -> bool {
         if self.kind == BindingContextKind::Fence {
             if let Some(statements) = self.statements.as_ref() {
@@ -214,7 +227,7 @@ impl BindingContext {
                 };
                 statements.borrow_mut().push(var);
                 if let Some(var_sym) = var_sym {
-                    self.hoisted_var_map.push((binding, var_sym));
+                    self.hoisted_put(binding, var_sym);
                 }
                 true
             } else {
