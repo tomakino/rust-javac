@@ -6197,7 +6197,9 @@ impl Lower {
             } => (*var, *expr, *body),
             _ => panic!("expected an enhanced for loop"),
         };
-        let expr_pos = ctx.tree(expr).pos;
+        // Java: Lower.visitIterableForeachLoop uses make_at(tree.expr.pos());
+        // javac's expression position is the start of the chained select.
+        let expr_pos = tree_info::get_start_pos(ctx, expr);
         self.make.at(expr_pos);
         let current_method_sym = self.current_method_sym.expect("current method symbol");
         let expr_ty = ctx.tree(expr).ty.expect("loop expression type");
