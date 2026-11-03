@@ -2030,6 +2030,12 @@ impl Completer for SourceCompleter {
             Ok(())
         };
         ctx.sym_mut(sym).flags_field &= !(flags::UNATTRIBUTED as i64);
+        // Flush the loggers collected for this module declaration before the
+        // previous position state is restored; javac reports them while the
+        // module is being completed.
+        let flush_pos: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
+            Rc::new(SimpleDiagnosticPosition::new(ctx.tree(decl).pos));
+        modules.deferred_lint_handler.flush(&flush_pos);
         modules.deferred_lint_handler.set_pos_state(prev_lint);
         AbstractLog::use_source(&*modules.log, prev_source);
         result
@@ -2904,6 +2910,9 @@ impl Modules {
             .set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(decl).pos)));
         let mut visitor = UsesProvidesVisitor::new(self, attr, ctx, syms, msym, env.clone());
         visitor.visit_module_def(decl);
+        let flush_pos: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
+            Rc::new(SimpleDiagnosticPosition::new(ctx.tree(decl).pos));
+        self.deferred_lint_handler.flush(&flush_pos);
         self.deferred_lint_handler.set_pos_state(prev_lint);
         AbstractLog::use_source(&*self.log, prev_source);
         Ok(())
