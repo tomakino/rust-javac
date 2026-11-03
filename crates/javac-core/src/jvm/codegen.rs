@@ -1105,7 +1105,10 @@ impl Gen {
             _ => NOPOS,
         };
         if endpos == NOPOS {
-            let last = ctx.tree(new_stats_list.last().expect("last statement")).pos;
+            // Java: md.body.endpos = TreeInfo.endPos(md.body.stats.last())
+            // (Gen.java:578-579).
+            let last_tree = new_stats_list.last().expect("last statement");
+            let last = tree_info::end_pos(ctx, last_tree);
             if let TreeKind::Block { endpos, stats, .. } = &mut ctx.tree_mut(body).kind {
                 *stats = new_stats_list;
                 *endpos = last;
