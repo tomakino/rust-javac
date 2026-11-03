@@ -71,14 +71,14 @@ mod tests {
     #[test]
     fn message_tables_match_recorded_snapshot() {
         assert_eq!(COMPILER_MESSAGES.len(), 936);
-        assert_eq!(COMPILER_ZH_CN.len(), 937);
-        assert_eq!(COMPILER_JA.len(), 937);
+        assert_eq!(COMPILER_ZH_CN.len(), 936);
+        assert_eq!(COMPILER_JA.len(), 936);
         assert_eq!(LAUNCHER_MESSAGES.len(), 15);
         assert_eq!(LAUNCHER_ZH_CN.len(), 15);
         assert_eq!(LAUNCHER_JA.len(), 15);
         assert_eq!(JAVAC_MESSAGES.len(), 145);
-        assert_eq!(JAVAC_ZH_CN.len(), 143);
-        assert_eq!(JAVAC_JA.len(), 143);
+        assert_eq!(JAVAC_ZH_CN.len(), 145);
+        assert_eq!(JAVAC_JA.len(), 145);
     }
 
     #[test]
@@ -99,21 +99,21 @@ mod tests {
         }
         assert_eq!(
             extras(&COMPILER_MESSAGES, &COMPILER_ZH_CN),
-            vec!["compiler.err.switch.null.not.allowed"]
+            Vec::<&str>::new()
         );
         assert_eq!(
             extras(&COMPILER_MESSAGES, &COMPILER_JA),
-            vec!["compiler.err.switch.null.not.allowed"]
+            Vec::<&str>::new()
         );
         assert!(extras(&LAUNCHER_MESSAGES, &LAUNCHER_ZH_CN).is_empty());
         assert!(extras(&LAUNCHER_MESSAGES, &LAUNCHER_JA).is_empty());
         assert_eq!(
             extras(&JAVAC_MESSAGES, &JAVAC_ZH_CN),
-            vec!["javac.opt.doclint.format"]
+            Vec::<&str>::new()
         );
         assert_eq!(
             extras(&JAVAC_MESSAGES, &JAVAC_JA),
-            vec!["javac.opt.doclint.format"]
+            Vec::<&str>::new()
         );
     }
 
@@ -124,7 +124,7 @@ mod tests {
         }
         assert_eq!(
             value(&COMPILER_ZH_CN, "compiler.err.abstract.meth.cant.have.body"),
-            "抽象方法不能有主体"
+            "抽象方法不能有方法体"
         );
         assert_eq!(
             value(&COMPILER_JA, "compiler.err.abstract.meth.cant.have.body"),

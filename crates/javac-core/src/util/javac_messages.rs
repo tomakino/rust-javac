@@ -575,7 +575,7 @@ mod tests {
         messages.set_current_locale(Some(Locale::new("zh_CN")));
         assert_eq!(
             messages.get_localized_string("compiler.err.abstract.meth.cant.have.body", &[]),
-            "抽象方法不能有主体"
+            "抽象方法不能有方法体"
         );
         // Translated templates keep the '' quote escaping and {n} placeholders.
         let template = table_value(&COMPILER_ZH_CN, "compiler.err.already.defined");
@@ -639,7 +639,7 @@ mod tests {
         messages.set_current_locale(Some(Locale::new("zh_CN_extra")));
         assert_eq!(
             messages.get_localized_string("compiler.err.abstract.meth.cant.have.body", &[]),
-            "抽象方法不能有主体"
+            "抽象方法不能有方法体"
         );
         // language-country -> language (ja_JP falls back to the ja table).
         messages.set_current_locale(Some(Locale::new("ja_JP")));
