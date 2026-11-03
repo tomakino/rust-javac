@@ -415,7 +415,9 @@ impl Lower {
         rhs: TreeId,
     ) -> TreeId {
         let lhs_type = ctx.tree(lhs).ty.expect("attributed left operand");
-        let rhs_type = ctx.tree(rhs).ty.expect("attributed right operand");
+        // The right operand is often a freshly synthesized literal (the 1 of a
+        // boxed increment); it has no attributed type yet, and its type is int.
+        let rhs_type = ctx.tree(rhs).ty.unwrap_or_else(|| self.syms.int_type);
         let pos = ctx.tree(lhs).pos;
         let operators = self.operators();
         let operator = {
@@ -444,7 +446,9 @@ impl Lower {
         rhs: TreeId,
     ) -> TreeId {
         let lhs_type = ctx.tree(lhs).ty.expect("attributed left operand");
-        let rhs_type = ctx.tree(rhs).ty.expect("attributed right operand");
+        // The right operand is often a freshly synthesized literal (the 1 of a
+        // boxed increment); it has no attributed type yet, and its type is int.
+        let rhs_type = ctx.tree(rhs).ty.unwrap_or_else(|| self.syms.int_type);
         let pos = ctx.tree(lhs).pos;
         let binary_tag = optag.no_assign_op();
         let operators = self.operators();
@@ -3170,7 +3174,12 @@ impl Lower {
     /// reference value is unboxed through the primitive-value accessor. When both
     /// sides agree the tree is returned unchanged.
     fn box_if_needed(&mut self, ctx: &mut CompilerContext, tree: TreeId, ty: TypeId) -> TreeId {
-        let tree_ty = ctx.tree(tree).ty.expect("tree type");
+        // A synthesized tree (for example the 1 of a boxed increment) has no
+        // attributed type; there is nothing to box or unbox.
+        let tree_ty = match ctx.tree(tree).ty {
+            Some(tree_ty) => tree_ty,
+            None => return tree,
+        };
         let have_primitive = ctx.typ(tree_ty).is_primitive();
         let want_primitive = ctx.typ(ty).is_primitive();
         if have_primitive == want_primitive {
@@ -5348,10 +5357,8 @@ impl Lower {
         // synthetics after boxing (upstream Lower.visitNewClass), so boxArgs
         // must receive exactly the user-visible parameter prefix.
         // Java: Lower.visitNewClass boxes the explicit arguments against the
-        // constructor's erasure parameter types. The synthetic outer instance
-        // and the captured free variables are added afterwards, so the
-        // parameter list must not be truncated to the explicit argument count
-        // (that drops an unexpanded varargs parameter).
+        // constructor's erasure parameter types; the synthetic outer instance
+        // and the captured free variables are added afterwards.
         let has_outer = ctx.sym(constructor_owner).has_outer_instance(ctx);
         let mut arg_types = arg_types;
         let mut args = self.box_args(ctx, arg_types, args, varargs_element);
@@ -5637,7 +5644,9 @@ impl Lower {
             dependency_found: false,
         };
         dep_scanner.scan(ctx, Some(rhs));
-        let rhs_ty = ctx.tree(rhs).ty.expect("right hand side type");
+        // A synthesized right operand (the 1 of a boxed increment) carries no
+        // type yet; its value is an int.
+        let rhs_ty = ctx.tree(rhs).ty.unwrap_or_else(|| self.syms.int_type);
         if boxing_req || dep_scanner.dependency_found {
             let tree_ty = ctx.tree(tree).ty.expect("assignop type");
             let mut builder = BoxedAssignopBuilder {

@@ -1358,7 +1358,12 @@ impl Gen {
     /// Generate code for an expression, short-circuiting constant expressions.
     pub fn gen_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId, pt: TypeId) -> Item {
         let prev_pt = self.pt;
-        let tree_ty = ctx.tree(tree).ty.expect("expression type");
+        // A synthesized expression (the 1 of a boxed increment) has no
+        // attributed type; the expected type is the only available one.
+        let tree_ty = match ctx.tree(tree).ty {
+            Some(tree_ty) => tree_ty,
+            None => pt,
+        };
         let const_value = ctx.typ(tree_ty).const_value().cloned();
         if crate::util::debug_flags::debug_enabled("DSH_DEBUG_COND")
             && const_value.is_some()
@@ -3990,7 +3995,12 @@ impl Gen {
         let op_erased = self.types.erasure(ctx, &*syms, op_ty);
         let params = ctx.typ(op_erased).get_parameter_types(ctx);
         let mut opcode = operator_opcode(ctx, operator);
-        let rhs_ty = ctx.tree(rhs).ty.expect("rhs type");
+        // Java: genExpr(rhs, ...) may see a synthesized operand without a type
+        // (the 1 of a boxed increment); use the operator's second parameter.
+        let rhs_ty = match ctx.tree(rhs).ty {
+            Some(rhs_ty) => rhs_ty,
+            None => *params.tail().head(),
+        };
         if (IF_ICMPEQ..=IF_ICMPLE).contains(&opcode)
             && let Some(crate::util::constants::ConstantValue::Integer(number)) =
                 ctx.typ(rhs_ty).const_value()
@@ -4149,6 +4159,11 @@ impl Gen {
                 owner_kind,
                 Some(crate::code::kinds::Kind::MTH) | Some(crate::code::kinds::Kind::VAR)
             )
+            // A captured-variable owner (method or variable) does not by itself
+            // make the symbol a local: a field whose owner is the synthetic
+            // constructor (this$0) has no local slot (address -1) and must be
+            // accessed through the enclosing instance.
+            && matches!(ctx.sym(sym).local_adr(), Some(reg) if reg >= 0)
         {
             let items = self.get_items();
             self.result = Some(items.make_local_item(ctx, sym));
@@ -4234,6 +4249,15 @@ impl Gen {
             let selected_ty = ctx.tree(selected).ty.expect("selected type");
             self.gen_expr(ctx, selected, selected_ty)
         };
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") && ctx.tree(tree).pos == 24214 {
+            eprintln!(
+                "[SELECT2] pos=24214 after_base selected_pos={} selected_tag={:?} base={:?} stack={}",
+                ctx.tree(selected).pos,
+                ctx.tree(selected).tag,
+                base.kind,
+                self.get_code().borrow().state.stacksize,
+            );
+        }
         let is_const_var = ctx.sym(sym).kind == crate::code::kinds::Kind::VAR
             && ctx.sym(sym).get_const_value().is_some();
         if is_const_var {
@@ -4285,6 +4309,32 @@ impl Gen {
             let items = self.get_items();
             self.result = Some(items.make_static_item(ctx, sym));
         } else {
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                let ssym_name = ssym.map(|ssym| {
+                    let owner = ctx
+                        .sym(ssym)
+                        .owner
+                        .map(|o| ctx.sym(o).name.to_java_string().to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    format!(
+                        "{}.{}",
+                        owner,
+                        ctx.sym(ssym).name.to_java_string().to_string_lossy()
+                    )
+                });
+                let sym_info = format!(
+                    "{}",
+                    ctx.sym(sym).name.to_java_string().to_string_lossy()
+                );
+                eprintln!(
+                    "[SELECT2] pos={} name={} ssym={:?} base={:?} stack={}",
+                    ctx.tree(tree).pos,
+                    sym_info,
+                    ssym_name,
+                    base.kind,
+                    self.get_code().borrow().state.stacksize,
+                );
+            }
             self.item_load(ctx, &base);
             if sym == self.syms.length_var {
                 self.get_code().borrow_mut().emitop0(ctx, ARRAYLENGTH);
@@ -4315,7 +4365,10 @@ impl Gen {
             TreeKind::Literal { typetag, value } => (*typetag, value.clone()),
             _ => panic!("AssertionError: literal expected"),
         };
-        let tree_ty = ctx.tree(tree).ty.expect("literal type");
+        let tree_ty = match ctx.tree(tree).ty {
+            Some(tree_ty) => tree_ty,
+            None => self.pt.unwrap_or_else(|| self.syms.int_type),
+        };
         if typetag == TypeTag::BOT {
             self.get_code().borrow_mut().emitop0(ctx, ACONST_NULL);
             let items = self.get_items();
