@@ -4122,7 +4122,18 @@ impl Attr {
         if result_info.pt == Some(infer.any_poly) {
             return owntype;
         }
-        let last_varargs = env.info.borrow().last_resolve_varargs();
+        let mut last_varargs = env.info.borrow().last_resolve_varargs();
+        // Java: the varargs round of method resolution sets useVarargs. A
+        // call to a varargs method with fewer explicit arguments than formal
+        // parameters can only be a varargs call, even when the recorded
+        // resolution round is missing (speculative/deferred attribution).
+        if !last_varargs && (ctx.sym(sym).flags_field & crate::code::flags::VARARGS as i64) != 0 {
+            let formals = types.get_parameter_types_public(ctx, owntype);
+            let n_args = argtrees.map(|args| args.length()).unwrap_or(0);
+            if n_args < formals.length() {
+                last_varargs = true;
+            }
+        }
         chk_rc.check_method(
             ctx,
             syms,

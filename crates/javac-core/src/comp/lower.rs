@@ -4385,6 +4385,15 @@ impl Lower {
             result = result.append(boxed_args);
         } else {
             // Java: if (args.length() != 1) throw new AssertionError(args);
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") && args.length() != 1 {
+                eprintln!(
+                    "[BOXARGS-ASSERT] params={} args={} varargs={} param_tag={:?}",
+                    parameters.length() + 1,
+                    args.length(),
+                    varargs_element.is_some(),
+                    ctx.typ(parameter).get_tag(),
+                );
+            }
             assert_eq!(args.length(), 1, "AssertionError: boxArgs trailing argument count");
             let arg = *args.head();
             let translated = self
@@ -4965,6 +4974,13 @@ impl Lower {
         let enum_sym = self.syms.enum_sym;
         if meth_name == self.names.init && ctx.sym(meth_sym).owner == Some(enum_sym) {
             argtypes = argtypes.tail().tail();
+        }
+        // Java: the constructor symbol's MethodType does not carry the
+        // synthetic outer instance; boxArgs receives only the explicit
+        // arguments. Some ported constructor symbols still include it, so drop
+        // exactly one leading parameter when the counts differ by one.
+        if meth_name == self.names.init && argtypes.length() == args.length() + 1 {
+            argtypes = argtypes.tail();
         }
         let varargs_element = match &ctx.tree(tree).kind {
             TreeKind::MethodInvocation {
