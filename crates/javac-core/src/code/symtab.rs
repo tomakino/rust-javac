@@ -1282,6 +1282,13 @@ impl Symtab {
                 model_type_provider: None,
             },
         ));
+        // Java: ErrorType's constructor sets c.type = this, c.kind = ERROR and
+        // gives the class an error scope (Type.java:2318-2330; the same wiring
+        // as Symtab.java:453-454).
+        ctx.sym_mut(err_symbol).ty = Some(err_type);
+        ctx.sym_mut(err_symbol).kind = crate::code::kinds::Kind::ERR;
+        let err_symbol_scope = new_error_scope(ctx, err_symbol);
+        set_members(ctx, err_symbol, err_symbol_scope);
         let unknown_symbol = new_class_symbol_with_type(
             ctx,
             (flags::PUBLIC | flags::STATIC) as i64 | flags::ACYCLIC as i64,
