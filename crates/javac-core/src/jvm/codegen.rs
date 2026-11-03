@@ -4001,11 +4001,15 @@ impl Gen {
             Some(rhs_ty) => rhs_ty,
             None => *params.tail().head(),
         };
-        if (IF_ICMPEQ..=IF_ICMPLE).contains(&opcode)
-            && let Some(crate::util::constants::ConstantValue::Integer(number)) =
-                ctx.typ(rhs_ty).const_value()
-            && *number == 0
-        {
+        // Java: rhs.type.constValue() instanceof Number && intValue() == 0
+        // (Gen.completeBinop, Gen.java:2192-2195); the port represents a
+        // boolean constant as ConstantValue::Boolean instead of Integer.
+        let rhs_is_zero = match ctx.typ(rhs_ty).const_value() {
+            Some(crate::util::constants::ConstantValue::Integer(number)) => *number == 0,
+            Some(crate::util::constants::ConstantValue::Boolean(false)) => true,
+            _ => false,
+        };
+        if (IF_ICMPEQ..=IF_ICMPLE).contains(&opcode) && rhs_is_zero {
             opcode += IFEQ - IF_ICMPEQ;
         } else if (IF_ACMPEQ..=IF_ACMPNE).contains(&opcode) && tree_info::is_null(ctx, rhs) {
             opcode += IF_ACMP_NULL - IF_ACMPEQ;
