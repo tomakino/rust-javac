@@ -490,7 +490,15 @@ impl LambdaToMethod {
                 .collect();
             eprintln!("[L2M-NOCTX] lambda_pos={pos} contexts={keys:?}");
         }
-        let context_tree = match self.context {
+        // Java: LambdaToMethod.visitLambda switches the context to the one
+        // registered for the visited tree (translateContextMap.get(tree)). A
+        // nested lambda is reached through the translated body of its
+        // enclosing lambda, where the context still names the enclosing one,
+        // so the tree itself must win over the current context.
+        let context_tree = if self.context_map.borrow().contains_key(&tree) {
+            tree
+        } else {
+            match self.context {
             Some(context_tree) => context_tree,
             None => {
                 // A speculative/translated copy of a lambda has a fresh tree id
@@ -512,6 +520,7 @@ impl LambdaToMethod {
                         )
                 });
                 found.unwrap_or_else(|| panic!("current translation context"))
+            }
             }
         };
         let (mut sym, owner, self_sym, method_reference_receiver, prev_context, synthetic_params) = {
