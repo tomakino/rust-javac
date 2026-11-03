@@ -3191,6 +3191,10 @@ fn capture_local_class_defs_static(
                 // instance (this/super) of a symbol owned by a class; the
                 // lambda enclosing the local class must capture it so that the
                 // synthesized this$0 parameter can be filled.
+                let is_encl_this = {
+                    let n = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
+                    n == "this" || n == "super"
+                };
                 let mut local_context = context_key_ro(self.frame_stack, self.context_map);
                 while let Some(context_tree) = local_context {
                     if ctx.tree(context_tree).has_tag(Tag::LAMBDA) {
@@ -3200,7 +3204,9 @@ fn capture_local_class_defs_static(
                             .get(&context_tree)
                             .map(|context| context.depth)
                             .expect("context depth");
-                        if captured_decl_ro(ctx, self.frame_stack, depth, sym).is_none() {
+                        if !is_encl_this
+                            && captured_decl_ro(ctx, self.frame_stack, depth, sym).is_none()
+                        {
                             break;
                         }
                         add_lambda_symbol_ro(
