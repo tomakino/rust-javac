@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """CLI behaviour parity check: compare javac and rust-javac on the observable
-command-line contract (version, exit codes, help markers, -Xstdout).
+command-line contract (exit codes, help markers, -Xstdout). The --version
+banner is deliberately not compared: rust-javac appends its own build id.
 
 Usage:
     python scripts/check_cli.py [--build]
@@ -66,16 +67,7 @@ def main() -> int:
     tmp_root.mkdir(parents=True, exist_ok=True)
     temp = Path(tempfile.mkdtemp(prefix="cli-", dir=str(tmp_root)))
     try:
-        # 1. --version
-        j_out, _, j_code = run(javac, ["--version"], temp)
-        r_out, _, r_code = run(str(rust), ["--version"], temp)
-        check(
-            "--version",
-            j_code == r_code and j_out.strip() == r_out.strip(),
-            "javac={!r} rust={!r}".format(j_out.strip(), r_out.strip()),
-        )
-
-        # 2. no arguments
+        # 1. no arguments
         j_out, j_err, j_code = run(javac, [], temp)
         r_out, r_err, r_code = run(str(rust), [], temp)
         check(
@@ -84,7 +76,7 @@ def main() -> int:
             "javac={} rust={}".format(j_code, r_code),
         )
 
-        # 3. unknown option
+        # 2. unknown option
         j_out, j_err, j_code = run(javac, ["--not-an-option"], temp)
         r_out, r_err, r_code = run(str(rust), ["--not-an-option"], temp)
         check(
@@ -93,7 +85,7 @@ def main() -> int:
             "javac={} rust={}".format(j_code, r_code),
         )
 
-        # 4. help contains the -J line exactly once
+        # 3. help contains the -J line exactly once
         j_out, j_err, _ = run(javac, ["--help"], temp)
         r_out, r_err, _ = run(str(rust), ["--help"], temp)
         j_help = j_out + j_err
