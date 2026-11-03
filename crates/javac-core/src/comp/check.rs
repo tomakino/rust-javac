@@ -3162,6 +3162,28 @@ impl Check {
             // the listener closure can carry the mutable Check/Attr pair
             // (registered Porting rules; no substitute result is produced: the branch
             // returns mtype like the upstream code before the listener fires).
+            //
+            // The deferred check has exactly one lasting side effect, the
+            // varargs element recorded on the tree (Check.java:1055), and the
+            // varargs round is already known here. Install it now: a member
+            // reference whose target type mentions a type variable keeps its
+            // method type free, and without the element LambdaToMethod would
+            // call the varargs method directly instead of wrapping it.
+            if use_varargs
+                && let Some(env_tree) = env.tree
+                && ctx.tree(env_tree).tag == crate::tree::jc_tree::Tag::REFERENCE
+            {
+                let declared = ctx.sym(sym).ty.expect("checked method type");
+                let formals = self.types.get_parameter_types_public(ctx, declared);
+                if formals.non_empty() {
+                    let elemtype = self.types.elemtype(ctx, syms, last_of(&formals));
+                    crate::tree::tree_info::set_varargs_element(
+                        ctx,
+                        env_tree,
+                        Some(elemtype),
+                    );
+                }
+            }
             return mtype;
         }
         let owntype = mtype;
