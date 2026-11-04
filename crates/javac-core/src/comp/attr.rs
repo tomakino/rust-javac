@@ -757,6 +757,7 @@ impl Attr {
                 clazz_sym_type,
                 Some(self),
             );
+            let is_diamond_apply = actuals.is_empty();
             if actuals.is_empty() {
                 // diamond
                 actuals = formals.clone();
@@ -823,6 +824,9 @@ impl Attr {
                     Some(clazz_tsym),
                     class_type,
                 ));
+                if is_diamond_apply {
+                    ctx.typ_mut(owntype).diamond = true;
+                }
             } else {
                 // A wrong number of type arguments is reported below.
                 // Errors.WrongNumberTypeArgs(Integer.toString(formals.length())));
