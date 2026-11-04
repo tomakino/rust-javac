@@ -13902,8 +13902,8 @@ impl Attr {
     fn deferred_copier(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
         use crate::code::type_::TypeKindData;
         if ctx.typ(t).has_tag(TypeTag::DEFERRED) {
-            let (tree, env) = match &ctx.typ(t).kind {
-                TypeKindData::Deferred { tree, env, .. } => (*tree, Rc::clone(env)),
+            let (tree, env, orig_ty) = match &ctx.typ(t).kind {
+                TypeKindData::Deferred { tree, env, ty, .. } => (*tree, Rc::clone(env), *ty),
                 _ => return t,
             };
             let copied_tree = {
@@ -13921,6 +13921,7 @@ impl Attr {
                 None,
                 TypeKindData::Deferred {
                     tree: copied_tree,
+                    ty: orig_ty,
                     env,
                     mode: None,
                     not_pertinent: Vec::new(),

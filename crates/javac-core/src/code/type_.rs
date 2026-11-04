@@ -837,6 +837,10 @@ pub enum TypeKindData {
     Deferred {
         /// Java: JCExpression tree
         tree: TreeId,
+        /// Java: Type type — the type recorded when this DeferredType was
+        /// created (DeferredAttr.DeferredType.type) and refreshed once the
+        /// speculative attribution completes.
+        ty: Option<TypeId>,
         /// Java: Env<AttrContext> env
         env: std::rc::Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         /// Java: AttrMode mode

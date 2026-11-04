@@ -161,6 +161,7 @@ pub fn deferred_type_new(
         None,
         TypeKindData::Deferred {
             tree,
+            ty: ctx.tree(tree).ty,
             env: copied_env,
             mode: None,
             not_pertinent: Vec::new(),
@@ -188,6 +189,7 @@ fn deferred_fields(ctx: &CompilerContext, t: TypeId) -> DeferredFields {
             not_pertinent,
             speculative_cache,
             argument,
+            ..
         } => (
             *tree,
             Rc::clone(env),
@@ -197,6 +199,22 @@ fn deferred_fields(ctx: &CompilerContext, t: TypeId) -> DeferredFields {
             argument.clone(),
         ),
         _ => panic!("ClassCastException: not a DeferredType"),
+    }
+}
+
+/// Java: DeferredType.type — the type recorded when the DeferredType was
+/// created and refreshed after a speculative attribution completes.
+pub fn deferred_type_ty(ctx: &CompilerContext, t: TypeId) -> Option<TypeId> {
+    match &ctx.typ(t).kind {
+        TypeKindData::Deferred { ty, .. } => *ty,
+        _ => None,
+    }
+}
+
+/// Records (or refreshes) the DeferredType.type field.
+pub fn set_deferred_type_ty(ctx: &mut CompilerContext, t: TypeId, ty: Option<TypeId>) {
+    if let TypeKindData::Deferred { ty: slot, .. } = &mut ctx.typ_mut(t).kind {
+        *slot = ty;
     }
 }
 
@@ -937,6 +955,7 @@ fn check_with_policy(
     } else {
         let result =
             deferred_type_complete(ctx, syms, attr, t, result_info, deferred_attr_context)?;
+        set_deferred_type_ty(ctx, t, Some(result));
         if let TypeKindData::Deferred { mode: slot, .. } = &mut ctx.typ_mut(t).kind {
             *slot = Some(deferred_attr_context.mode);
         }
@@ -1281,7 +1300,10 @@ impl DeferredTypeMap {
     ) -> Option<TypeId> {
         let (tree, _, _, _, _, _) = deferred_fields(ctx, t);
         match self.deferred_attr_context.mode {
-            AttrMode::CHECK => ctx.tree(tree).ty,
+            // Java: DeferredType.type is authoritative; the underlying tree
+            // type is only a fallback for instances created before the first
+            // attribution (DeferredAttr.java:240-243, 600-620).
+            AttrMode::CHECK => deferred_type_ty(ctx, t).or_else(|| ctx.tree(tree).ty),
             AttrMode::SPECULATIVE => deferred_type_speculative_type(
                 ctx,
                 attr,
