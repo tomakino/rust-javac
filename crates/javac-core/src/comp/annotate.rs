@@ -1348,7 +1348,21 @@ impl AnnotateServices {
             Some(at) => at,
             None => attr.attrib_type(ctx, syms, annotation_type_tree, env),
         };
-        let checked = {
+        // Java: at = (Type) chk.checkType(a.annotationType.pos(), at, expected);
+        // (Annotate.java:519-521) — javac runs this after TypeEnter, when an
+        // annotation type already implements java.lang.annotation.Annotation
+        // (TypeEnter.java:726-728). The port flushes annotations before
+        // TypeEnter, so the synthesized supertype is not installed yet; an
+        // annotation type is accepted as-is and the non-annotation case still
+        // goes through checkType for the regular diagnostic.
+        let at_is_annotation = ctx
+            .typ(at)
+            .tsym
+            .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::ANNOTATION as i64) != 0)
+            .unwrap_or(false);
+        let checked = if at_is_annotation {
+            at
+        } else {
             let chk = Rc::clone(&self.chk);
             chk.check_type_basic(ctx, syms, ctx.tree(annotation_type_tree).pos, at, expected)
         };
