@@ -60,7 +60,8 @@ COMMANDS: dict[str, list[list[str]]] = {
         [sys.executable, "scripts/check_okhttp.py"],
     ],
     "L3": [
-        ["cargo", "test", "-p", "javac-core", "--lib"],
+        # Every crate's unit tests plus the rust-javac integration tests.
+        ["cargo", "test", "--workspace", "--no-fail-fast"],
         [sys.executable, "scripts/check_feature_matrix.py"],
         [sys.executable, "scripts/check_cli.py"],
         [sys.executable, "scripts/check_repros.py"],
@@ -68,6 +69,9 @@ COMMANDS: dict[str, list[list[str]]] = {
         [sys.executable, "scripts/check_jdkcompiler.py"],
         [sys.executable, "scripts/check_guava.py"],
         [sys.executable, "scripts/check_okhttp.py"],
+        [sys.executable, "scripts/check_commons_lang3.py"],
+        [sys.executable, "scripts/check_junit5.py"],
+        [sys.executable, "scripts/check_java_base.py"],
         [sys.executable, "scripts/check_examples.py"],
     ],
 }
@@ -123,6 +127,11 @@ def main() -> int:
     parser.add_argument("--run", action="store_true", help="execute the selected commands")
     parser.add_argument("--files", nargs="*", default=None, help="explicit file list")
     parser.add_argument("--level", choices=list(ORDER), default=None, help="force a level")
+    parser.add_argument(
+        "--keep-going",
+        action="store_true",
+        help="run every command even after a failure and report all failures",
+    )
     args = parser.parse_args()
 
     files = args.files if args.files is not None else diff_files()
@@ -147,6 +156,7 @@ def main() -> int:
     if not args.run:
         return 0
 
+    failures: list[tuple[int, str]] = []
     for cmd in commands:
         print(f"\n>>> {' '.join(cmd)}", flush=True)
         result = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
@@ -160,7 +170,14 @@ def main() -> int:
             continue
         print(result.stderr, end="", file=sys.stderr)
         print(f"FAILED ({result.returncode}): {' '.join(cmd)}", file=sys.stderr)
-        return result.returncode
+        if not args.keep_going:
+            return result.returncode
+        failures.append((result.returncode, " ".join(cmd)))
+    if failures:
+        print(f"\n{len(failures)} command(s) failed:", file=sys.stderr)
+        for code, text in failures:
+            print(f"  FAILED ({code}): {text}", file=sys.stderr)
+        return failures[0][0]
     print("\nall gates passed")
     return 0
 
