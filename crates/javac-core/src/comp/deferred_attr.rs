@@ -1403,8 +1403,12 @@ impl DeferredTypeMap {
             info
         };
         let _ = deferred_type_check(ctx, dctx.syms, dctx.types, dctx.attr, dt, &recovery_info);
-        // Java: return super.visit(dt);
-        let owntype = self.type_of_no_recovery(ctx, dctx.attr, dt);
+        // Java: return super.visit(dt) — DeferredTypeMap.visitDeferredType
+        // returns the DeferredType's own (now checked) type; the speculative
+        // cache is not populated on this path, so consulting it would lose the
+        // recovery result (e.g. the error type produced by checkNonVoid).
+        let owntype = deferred_type_ty(ctx, dt)
+            .or_else(|| self.type_of_no_recovery(ctx, dctx.attr, dt));
         if owntype
             .map(|ty| ty == crate::code::symtab::no_type_id(ctx))
             .unwrap_or(true)
