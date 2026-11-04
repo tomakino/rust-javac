@@ -770,8 +770,25 @@ impl Lower {
             let fvs = collector.fvs.clone();
             if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
                 let nm = ctx.sym(c).name.to_java_string().to_string_lossy().to_string();
-                if nm == "PairBox" {
-                    eprintln!("[FV] class={} empty={}", nm, fvs.is_empty());
+                if nm == "MatchSink" {
+                    let names: Vec<String> = fvs
+                        .iter()
+                        .map(|v| {
+                            let vn = ctx
+                                .sym(v)
+                                .name
+                                .to_java_string()
+                                .to_string_lossy()
+                                .to_string();
+                            let vo = ctx
+                                .sym(v)
+                                .owner
+                                .map(|o| ctx.sym(o).name.to_java_string().to_string_lossy().to_string())
+                                .unwrap_or_default();
+                            format!("{}({})", vn, vo)
+                        })
+                        .collect();
+                    eprintln!("[FV] class=MatchSink fvs={:?}", names);
                 }
             }
             self.freevar_cache.insert(c, fvs.clone());

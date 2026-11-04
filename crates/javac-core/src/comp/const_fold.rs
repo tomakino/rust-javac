@@ -450,10 +450,11 @@ impl ConstFold {
             byte_codes::STRING_ADD => {
                 let ls = ConstFold::string_value(ctx, left, &l);
                 let rs = ConstFold::string_value(ctx, right, &r);
-                Some((
-                    syms.string_type,
-                    ConstantValue::String(JavaString::from(format!("{ls}{rs}").as_str())),
-                ))
+                // Concatenate as UTF-16 units. Rendering through Display would
+                // go through to_string_lossy and replace unpaired surrogates
+                // (GB18030's mapping tables contain values such as �) with
+                // U+FFFD, corrupting the constant.
+                Some((syms.string_type, ConstantValue::String(ls.concat(&rs))))
             }
             _ => None,
         };
@@ -494,9 +495,13 @@ impl ConstFold {
                 }
             }
             (TypeTag::CHAR, ConstantValue::Integer(v)) => {
-                let ch = String::from_utf16_lossy(&[*v as u16]);
-                JavaString::from(ch.as_str())
+                // Keep the raw UTF-16 unit: a char may be an unpaired surrogate.
+                JavaString::from_units(vec![*v as u16])
             }
+            // Java: String.valueOf(Object) on a String returns it unchanged.
+            // Going through display() would run to_string_lossy and replace
+            // unpaired surrogates (GB18030's tables contain �) with U+FFFD.
+            (_, ConstantValue::String(s)) => s.clone(),
             _ => JavaString::from(value.display().as_str()),
         }
     }

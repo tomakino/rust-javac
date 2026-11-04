@@ -3111,6 +3111,15 @@ fn add_lambda_symbol_ro(
         }
     };
     let sym_name = ctx.sym(sym).name.clone();
+    if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+        let nm = sym_name.to_java_string().to_string_lossy().to_string();
+        let on = ctx
+            .sym(sym)
+            .owner
+            .map(|o| ctx.sym(o).name.to_java_string().to_string_lossy().to_string())
+            .unwrap_or_default();
+        eprintln!("[ASYM] sym={} owner={} kind={:?}", nm, on, skind);
+    }
     let translated = match skind {
         LambdaSymbolKind::CAPTURED_THIS => sym,
         LambdaSymbolKind::CAPTURED_VAR => {
@@ -3343,20 +3352,19 @@ fn capture_local_class_defs_static(
                             .map(|owner| ctx.sym(owner).has_outer_instance(ctx))
                             .unwrap_or(false)
                 };
+                // Java: CaptureVisitor.visitSymbol handles VARs only
+                // (LambdaToMethod.java:1480-1494); this branch is the port's
+                // extension for enclosing instances. It must stay restricted to
+                // this/super exactly like the downstream check: a plain type
+                // member (e.g. BooleanTerminalSink, owned by MatchOps) is not an
+                // outer instance and capturing it would turn it into an extra
+                // this$0 argument of the synthetic lambda.
+                if !is_encl_this {
+                    return;
+                }
                 let mut local_context = context_key_ro(self.frame_stack, self.context_map);
                 while let Some(context_tree) = local_context {
                     if ctx.tree(context_tree).has_tag(Tag::LAMBDA) {
-                        let depth = self
-                            .context_map
-                            .borrow()
-                            .get(&context_tree)
-                            .map(|context| context.depth)
-                            .expect("context depth");
-                        if !is_encl_this
-                            && captured_decl_ro(ctx, self.frame_stack, depth, sym, &*self.syms, &self.types).is_none()
-                        {
-                            break;
-                        }
                         add_lambda_symbol_ro(
                             ctx,
                             self.context_map,
