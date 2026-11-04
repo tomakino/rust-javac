@@ -10740,6 +10740,18 @@ impl crate::comp::infer::FreeTypeListener for CheckAfterInferenceListener {
         inference_context: &crate::comp::infer::InferenceContext,
     ) -> Result<(), crate::comp::infer::InferenceException> {
         let instantiated_found = inference_context.as_inst_type(ctx, syms, types, self.found);
+        // The instantiated type of an expression is never a constant type: the
+        // constant value of an expression is carried by the expression's own
+        // literal subtree, and Type.constType only exists for the leaves. An
+        // inference variable can be solved from a constant branch type (the
+        // "<root>" literal of a conditional), and installing that constant
+        // type as the tree's type would make Gen.genExpr emit just the
+        // constant instead of evaluating the expression.
+        let instantiated_found = if ctx.typ(instantiated_found).const_value().is_some() {
+            types.base_type(ctx, instantiated_found)
+        } else {
+            instantiated_found
+        };
         let instantiated_pt = self
             .result_info
             .pt
