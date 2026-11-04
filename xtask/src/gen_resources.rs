@@ -1155,7 +1155,7 @@ mod tests {
         let metadata = generate_metadata(&entries);
         assert!(metadata.contains("pub static COMPILER_KEYS"));
         let reexport = generate_reexport();
-        assert!(reexport.contains("pub use super::compiler_en::COMPILER_EN as COMPILER_MESSAGES;"));
+        assert!(reexport.contains("pub use super::bundles::COMPILER_EN as COMPILER_MESSAGES;"));
     }
 
     #[test]
