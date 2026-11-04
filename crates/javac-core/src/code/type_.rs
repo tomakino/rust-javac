@@ -1056,6 +1056,11 @@ impl Type {
     /// Java: public List<Type> getTypeArguments() (ClassType: typarams_field;
     /// ForAll: tvars; other types: List.nil()).
     pub fn get_type_arguments(&self) -> List<TypeId> {
+        if self.diamond {
+            // Java: DiamondType.getTypeArguments() returns null (Type.java:1290-1310);
+            // the ported list model represents that as the empty list.
+            return List::nil();
+        }
         match &self.kind {
             TypeKindData::ClassType { typarams_field, .. }
             | TypeKindData::ErasedClassType { typarams_field, .. }
