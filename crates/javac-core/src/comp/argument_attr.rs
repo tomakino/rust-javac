@@ -1022,6 +1022,31 @@ impl ArgumentAttr {
             } else {
                 self.overload_check(ctx, syms, attr, data, result_info, deferred_attr_context)?
             };
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON")
+                && ctx.typ(tt).has_tag(crate::code::type_tag::TypeTag::ERROR)
+            {
+                let dctx = result_info.check_context.deferred_attr_context();
+                let sp = data.speculative_tree;
+                eprintln!(
+                    "[AC2] STORE ERROR k={:?} pos={} tag={:?} msym={:?} phase={:?} pt={:?}",
+                    data.kind,
+                    ctx.tree(sp).pos,
+                    ctx.tree(sp).tag,
+                    dctx.msym,
+                    dctx.phase,
+                    result_info.pt.map(|p| ctx.typ(p).get_tag())
+                );
+            }
+            // Java: a failed compatibility check inside overloadCheck throws
+            // InapplicableMethodException (Resolve.java:1040-1042), so complete()
+            // never records the speculative type. The port's report() only
+            // records the failure, leaving checkType to return an error type;
+            // caching that error type would surface it later through
+            // ImplicitArgType as a real argument type of the synthetic
+            // signature-polymorphic method (and codegen then fails on it).
+            if ctx.typ(tt).has_tag(crate::code::type_tag::TypeTag::ERROR) {
+                return Ok(tt);
+            }
             let key = result_info.id;
             {
                 let data_ref = &data;
@@ -1097,14 +1122,45 @@ impl ArgumentAttr {
                 _ => return None,
             };
             let entry = cache.get(msym, phase)?;
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON")
+                && ctx
+                    .tree(entry.speculative_tree)
+                    .ty
+                    .map(|ty| ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::ERROR))
+                    .unwrap_or(false)
+            {
+                eprintln!(
+                    "[AST2] spec_tree pos={} tag={:?} phase={:?}",
+                    ctx.tree(entry.speculative_tree).pos,
+                    ctx.tree(entry.speculative_tree).tag,
+                    phase
+                );
+            }
             return ctx.tree(entry.speculative_tree).ty;
         }
         let speculative_types = data.speculative_types.borrow();
-        for (_key, result_info, ty) in speculative_types.iter() {
+        for (i, (_key, result_info, ty)) in speculative_types.iter().enumerate() {
             let deferred_attr_context = result_info.check_context.deferred_attr_context();
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+                eprintln!(
+                    "[AST3] i={} req_phase={:?} req_msym={:?} ent_phase={:?} ent_msym={:?} ty={:?}",
+                    i,
+                    phase,
+                    msym,
+                    deferred_attr_context.phase,
+                    deferred_attr_context.msym,
+                    ctx.typ(*ty).get_tag()
+                );
+            }
             if deferred_attr_context.phase == phase && deferred_attr_context.msym == msym {
                 return Some(*ty);
             }
+        }
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+            eprintln!(
+                "[AST3] MISS entries={} -> noType",
+                speculative_types.len()
+            );
         }
         Some(crate::code::symtab::no_type_id(ctx))
     }
@@ -1487,6 +1543,19 @@ impl ArgumentAttr {
                         } else {
                             speculative_type
                         };
+                        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON")
+                            && ctx.tree(speculative_tree).pos == 8906
+                        {
+                            let f = crate::comp::attr::type_display_of(ctx, normalized);
+                            let p = local_info
+                                .pt
+                                .map(|p| crate::comp::attr::type_display_of(ctx, p))
+                                .unwrap_or_default();
+                            eprintln!(
+                                "[OC] pos={} found={} pt={}",
+                                ctx.tree(speculative_tree).pos, f, p
+                            );
+                        }
                         let checked = local_info.check(
                             ctx,
                             syms,

@@ -4632,6 +4632,16 @@ pub fn abstract_method_check_arguments_acceptable(
         } else {
             None
         };
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON")
+            && ctx.typ(*argtypes.head()).has_tag(TypeTag::DEFERRED)
+        {
+            eprintln!(
+                "[AA2] actual={:?} formal={:?} pos={:?}",
+                ctx.typ(*argtypes.head()).get_tag(),
+                ctx.typ(*formals.head()).get_tag(),
+                pos.map(|t| ctx.tree(t).pos)
+            );
+        }
         this.check_arg(
             ctx,
             syms,
@@ -4807,6 +4817,28 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         req: TypeId,
         warn: &crate::util::warner::Warner,
     ) -> bool {
+        // A noType formal comes from the synthetic method of a
+        // signature-polymorphic call (ImplicitArgType maps an unresolved
+        // deferred argument to Type.noType). It carries no constraint, so any
+        // argument is acceptable; javac's MethodCheckContext reaches the same
+        // answer through DeferredType.check.
+        if ctx.typ(req).has_tag(TypeTag::NONE) {
+            return true;
+        }
+        // javac interns captured variables, so the same capture of "?" yields
+        // one Type and U(found) == pt holds by identity. The port creates a
+        // fresh TypeId per capture, so a deferred argument re-captured during
+        // its own check produces a different instance for the same capture and
+        // the upper bound (Object) would replace it. Compare the bounds.
+        if matches!(&ctx.typ(found).kind, crate::code::type_::TypeKindData::CapturedType { .. })
+            && matches!(&ctx.typ(req).kind, crate::code::type_::TypeKindData::CapturedType { .. })
+        {
+            let fb = types.cvar_upper_bound_of(ctx, found);
+            let rb = types.cvar_upper_bound_of(ctx, req);
+            if fb == rb || types.is_same_type(ctx, syms, fb, rb) {
+                return true;
+            }
+        }
         let mut found = found;
         let mut req = req;
         // Occurs-check guard: Bar<T> <: T must not add the self-referential
@@ -4897,6 +4929,15 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         // Java: throw new InapplicableMethodException(details) (Resolve.java:1040-1042).
         // Port: record the failure for the Result-style channel instead of a
         // panic; catch_inapplicable_method_exception turns it into an Err.
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+            let depth = INAPPLICABLE_FAILURES.with(|stack| stack.borrow().len());
+            eprintln!(
+                "[RPT] depth={} pos={} impl={}",
+                depth,
+                _pos,
+                std::any::type_name_of_val(self)
+            );
+        }
         INAPPLICABLE_FAILURES.with(|stack| stack.borrow_mut().push(Some(details.clone())));
     }
 
@@ -7276,7 +7317,20 @@ impl LookupHelper for BasicLookupHelper {
                         self.typeargtypes.clone(),
                         Some(attr),
                     )
-                } else if (ctx.sym(sym).flags_field & flags::SIGNATURE_POLYMORPHIC) != 0 {
+                } else if {
+                    if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+                        let nm = crate::comp::resolve::symbol_display_name(ctx, sym);
+                        if nm.starts_with("invokeBasic") || nm.starts_with("invoke") {
+                            eprintln!(
+                                "[SPB] name={} flags_sig={} kind={:?}",
+                                nm,
+                                (ctx.sym(sym).flags_field & flags::SIGNATURE_POLYMORPHIC) != 0,
+                                ctx.sym(sym).kind
+                            );
+                        }
+                    }
+                    (ctx.sym(sym).flags_field & flags::SIGNATURE_POLYMORPHIC) != 0
+                } {
                     // Java: env.info.pendingResolutionPhase = BASIC;
                     // findPolymorphicSignatureInstance(env, sym, argtypes)
                     env.info.borrow_mut().pending_resolution_phase =
@@ -7296,6 +7350,7 @@ impl LookupHelper for BasicLookupHelper {
                         env,
                         sym,
                         self.argtypes.clone(),
+                        resolve_context.step.unwrap_or(MethodResolutionPhase::BOX),
                     )
                 } else {
                     sym
@@ -8868,7 +8923,19 @@ impl Resolve {
         env: &Rc<Env<AttrContext>>,
         sp_method: SymbolId,
         argtypes: List<TypeId>,
+        phase: MethodResolutionPhase,
     ) -> SymbolId {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+            let mut parts: Vec<String> = Vec::new();
+            for t in argtypes.iter() {
+                parts.push(format!("{}:{:?}", crate::comp::attr::type_display_of(ctx, t), ctx.typ(t).get_tag()));
+            }
+            eprintln!(
+                "[FPS] sp={} args=[{}]",
+                crate::comp::resolve::symbol_display_name(ctx, sp_method),
+                parts.join(",")
+            );
+        }
         let mtype = infer.instantiate_polymorphic_signature_instance(
             ctx,
             syms,
@@ -8879,6 +8946,7 @@ impl Resolve {
             env,
             Some(sp_method),
             argtypes,
+            phase,
         );
         self.find_polymorphic_signature_instance_with_type(ctx, syms, types, sp_method, mtype)
     }
@@ -8925,6 +8993,29 @@ impl Resolve {
                     existing = Some(sym);
                     break;
                 }
+            }
+        }
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+            let nm = crate::comp::resolve::symbol_display_name(ctx, sp_method);
+            if nm.starts_with("invokeBasic") || nm.starts_with("invokeExact") {
+                let count = ctx
+                    .scope_get_symbols_by_name_full(
+                        scope,
+                        &sp_name,
+                        crate::code::scope::LookupKind::NON_RECURSIVE,
+                        &|_| true,
+                        &self.types,
+                        syms,
+                        None,
+                    )
+                    .len();
+                eprintln!(
+                    "[FPS2] sp={} existing={:?} candidates={} mtype={}",
+                    nm,
+                    existing,
+                    count,
+                    crate::comp::attr::type_display_of(ctx, mtype)
+                );
             }
         }
         if let Some(sym) = existing {

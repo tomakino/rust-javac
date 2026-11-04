@@ -1423,7 +1423,22 @@ impl Gen {
             self.result.take().expect("generated item")
         };
         self.pt = prev_pt;
-        result = self.item_coerce_type(ctx, &result, pt);
+        // Java's Gen.genExpr only installs pt as the expected type and leaves
+        // the produced item alone; a noType pt (signature-polymorphic synthetic
+        // parameter) is not a coercible target. Items.coerce only implements
+        // the primitive conversions (I2L and friends), so a value that crosses
+        // the primitive/reference boundary (int -> Integer, Object -> int) must
+        // not be coerced here -- the visitor that performs boxing/unboxing owns
+        // that conversion and emitting a primitive opcode for it corrupts the
+        // operand stack.
+        if !ctx.typ(pt).has_tag(crate::code::type_tag::TypeTag::NONE) {
+            let target_code = crate::jvm::code::Code::typecode(ctx, pt);
+            let item_is_ref = result.typecode == crate::jvm::byte_codes::OBJECT_CODE;
+            let target_is_ref = target_code == crate::jvm::byte_codes::OBJECT_CODE;
+            if item_is_ref == target_is_ref {
+                result = self.item_coerce_type(ctx, &result, pt);
+            }
+        }
         result
     }
 
@@ -1460,6 +1475,13 @@ impl Gen {
         for head in &l {
             let pt = *pts.head();
             pts = pts.tail();
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+                let p = crate::comp::attr::type_display_of(ctx, pt);
+                let t = ctx.tree(head).ty.map(|ty| crate::comp::attr::type_display_of(ctx, ty)).unwrap_or_default();
+                if !ctx.typ(pt).has_tag(crate::code::type_tag::TypeTag::NONE) {
+                    eprintln!("[GA] pos={} tag={:?} pt_tag={:?} tree_ty={} pt={}", ctx.tree(head).pos, ctx.tree(head).tag, ctx.typ(pt).get_tag(), t, p);
+                }
+            }
             let item = self.gen_expr(ctx, head, pt);
             self.item_load(ctx, &item);
         }
@@ -1709,10 +1731,11 @@ impl Gen {
                     })
                     .unwrap_or_default();
                 eprintln!(
-                    "[STACK] method={} class={} body_pos={} file={}",
+                    "[STACK] method={} class={} body_pos={} size={} file={}",
                     ctx.sym(meth).name.to_java_string().to_string_lossy(),
                     cls,
                     ctx.tree(body).pos,
+                    self.get_code().borrow().state.stacksize,
                     self.log
                         .current_source_file()
                         .map(|f| f.get_name())
@@ -3370,9 +3393,21 @@ impl Gen {
             self.get_code().borrow_mut().pending_stat_pos = tmp_pos;
             self.item_load(ctx, &item);
             let tc = Code::typecode(ctx, pt);
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+                eprintln!(
+                    "[RET] pos={} pt_tag={:?} tc={} before={}",
+                    ctx.tree(tree).pos,
+                    ctx.typ(pt).get_tag(),
+                    tc,
+                    self.get_code().borrow().state.stacksize
+                );
+            }
             self.get_code()
                 .borrow_mut()
                 .emitop0(ctx, IRETURN + Code::truncate(tc));
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+                eprintln!("[RET] after={}", self.get_code().borrow().state.stacksize);
+            }
         } else {
             target_env = self.unwind(ctx, encl_method, &env);
             self.get_code().borrow_mut().pending_stat_pos = tmp_pos;

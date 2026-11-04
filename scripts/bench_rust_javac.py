@@ -73,7 +73,7 @@ def main() -> int:
 
     rust = resolve_tool("rust-javac", "JAVAC_HOME_RUST")
     if not rust:
-        rust = str(root / "target" / "debug" / ("rust-javac.exe" if os.name == "nt" else "rust-javac"))
+        rust = str(root / "target" / "debug" / ("ravac.exe" if os.name == "nt" else "ravac"))
     if not Path(rust).is_file():
         print("rust-javac not found: {} (run with --build)".format(rust), file=sys.stderr)
         return 2

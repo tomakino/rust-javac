@@ -3274,6 +3274,15 @@ impl Lower {
     /// Unbox an object expression to the given primitive type.
     fn unbox(&mut self, ctx: &mut CompilerContext, tree: TreeId, primitive: TypeId) -> TreeId {
         let tree_ty = ctx.tree(tree).ty.expect("tree type");
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+            eprintln!(
+                "[UNBOX] pos={} tag={:?} tree_ty={} prim={}",
+                ctx.tree(tree).pos,
+                ctx.tree(tree).tag,
+                crate::comp::attr::type_display_of(ctx, tree_ty),
+                crate::comp::attr::type_display_of(ctx, primitive)
+            );
+        }
         let mut unboxed = {
             let syms = &*self.syms;
             self.types.unboxed_type_ro(ctx, &syms, tree_ty)

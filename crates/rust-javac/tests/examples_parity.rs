@@ -39,7 +39,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 fn rust_cli() -> &'static str {
-    env!("CARGO_BIN_EXE_rust-javac")
+    env!("CARGO_BIN_EXE_ravac")
 }
 
 fn repo_root() -> PathBuf {

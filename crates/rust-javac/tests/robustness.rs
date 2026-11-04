@@ -20,7 +20,7 @@ fn malformed_inputs_do_not_panic() {
     for (name, src) in cases {
         let path = dir.join(name);
         std::fs::write(&path, src).unwrap();
-        let output = Command::new(env!("CARGO_BIN_EXE_rust-javac"))
+        let output = Command::new(env!("CARGO_BIN_EXE_ravac"))
             .arg("-d")
             .arg(dir.join("out"))
             .arg(&path)

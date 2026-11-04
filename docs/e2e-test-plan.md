@@ -2,7 +2,7 @@
 
 ## 1. Goals and scope
 
-**E2E definition**: from the command-line entry point (`rust-javac.exe`) to the
+**E2E definition**: from the command-line entry point (`ravac.exe`) to the
 final artifacts (`.class` files, diagnostic text, exit codes), compared item by
 item with the official `javac`; internal functions are out of scope (that is the
 job of the `--lib` unit tests).

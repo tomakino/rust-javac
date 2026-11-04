@@ -617,7 +617,10 @@ impl Items {
         {
             return self.make_coerced_immediate(ctx, item, value, targetcode);
         }
-        self.load(ctx, item);
+        // Java: item.load() returns the loaded item; its typecode is what the
+        // conversion sequence must use (an unloaded stack item reports NOTYPE).
+        let loaded = self.load(ctx, item);
+        let item = &loaded;
         let typecode1 = Code::truncate(item.typecode);
         let targetcode1 = Code::truncate(targetcode);
         if typecode1 != targetcode1 {

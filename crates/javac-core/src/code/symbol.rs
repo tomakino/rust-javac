@@ -3139,6 +3139,25 @@ pub fn external_type(
     // symbol's cached erasure_field (Symbol.java:347-357). Enum and anonymous
     // constructors rewrite erasure_field with their synthetic parameters
     // (Lower.java:2626-2631, 2699-2704) while keeping the source type.
+    if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+        let ef = ctx.sym(sym).erasure_field.is_some();
+        let disp = |ctx: &mut CompilerContext, t: Option<TypeId>| -> String {
+            match t {
+                Some(t) => {
+                    let mut v: Vec<String> = Vec::new();
+                    for p in ctx.typ(t).get_parameter_types(ctx).iter() {
+                        v.push(format!("{}:{:?}", crate::comp::attr::type_display_of(ctx, p), ctx.typ(p).get_tag()));
+                    }
+                    v.join(",")
+                }
+                None => String::new(),
+            }
+        };
+        let t_disp = disp(ctx, ctx.sym(sym).ty);
+        let e_disp = disp(ctx, ctx.sym(sym).erasure_field);
+        let nm = crate::comp::resolve::symbol_display_name(ctx, sym);
+        eprintln!("[EXT] sym={:?} name={} ef={} ty=[{}] efp=[{}]", sym, nm, ef, t_disp, e_disp);
+    }
     let erased = types.symbol_erasure(ctx, syms, sym);
     let is_init = ctx.sym(sym).name == names.init;
     let owner_has_outer = ctx

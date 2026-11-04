@@ -4920,7 +4920,16 @@ impl Attr {
             } else {
                 self.unknown_expr_info.clone()
             };
+            let info_pt = info.pt;
             let argtype = self.attrib_tree_use(ctx, syms, arg, env, info);
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+                let disp = crate::comp::attr::type_display_of(ctx, argtype);
+                let tag = ctx.tree(arg).tag;
+                let pt_any = info_pt
+                    .map(|p| ctx.typ(p).has_tag(crate::code::type_tag::TypeTag::NONE))
+                    .unwrap_or(false);
+                eprintln!("[AA] tag={:?} ty={} pt_any={}", tag, disp, pt_any);
+            }
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
             let argtype = chk.check_non_void(ctx, syms, ctx.tree(arg).pos, argtype);
@@ -5401,6 +5410,17 @@ impl Attr {
                 .check_context
                 .inference_context()
                 .cached_capture(ctx, syms, &self.types, tree, restype, true);
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+                let rs = crate::comp::attr::type_display_of(ctx, restype);
+                let sym_tag = msym.map(|m| ctx.typ(ctx.sym(m).ty.unwrap_or(restype)).get_tag());
+                eprintln!(
+                    "[AP] pos={} restype={} msym={:?} sym_tag={:?}",
+                    ctx.tree(tree).pos,
+                    rs,
+                    msym,
+                    sym_tag
+                );
+            }
             let result_info2 = self.result_info.clone().expect("resultInfo");
             self.result =
                 Some(self.check(ctx, syms, tree, captured, KindSelector::VAL, &result_info2));
@@ -10835,8 +10855,15 @@ fn check_after_inference(
         );
         owntype = types.create_error_type_original(ctx, Some(found), syms);
     } else if allow_poly && inference_context.free(ctx, syms, types, found) {
-        // delay the check if there are inference variables in the found type
-        owntype = if should_check {
+        // delay the check if there are inference variables in the found type.
+        // An anyPoly (NONE) target carries no constraint: keeping it would
+        // turn the argument into "<any>" and later fail every compatibility
+        // test, so keep the found type instead.
+        let pt_is_any = result_info
+            .pt
+            .map(|p| ctx.typ(p).has_tag(TypeTag::NONE))
+            .unwrap_or(false);
+        owntype = if should_check && !pt_is_any {
             result_info
                 .pt
                 .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx))

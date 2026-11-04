@@ -281,7 +281,7 @@ def main() -> int:
     examples_dir = root / "internal" / "test" / "diag-corpus" / "examples"
     expected_dir = root / "internal" / "test" / "diag-corpus" / "expected"
     suffix = ".exe" if os.name == "nt" else ""
-    exe = root / "target" / "debug" / ("rust-javac" + suffix)
+    exe = root / "target" / "debug" / ("ravac" + suffix)
 
     if args.build:
         code = subprocess.call(["cargo", "build", "-p", "rust-javac"], cwd=str(root))

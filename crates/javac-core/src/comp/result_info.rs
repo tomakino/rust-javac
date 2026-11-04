@@ -143,7 +143,26 @@ impl ResultInfo {
         // rejected although its upper bound satisfies the formal.
         let found = match self.method_diag {
             Some(_) => {
-                let u_result = if found == pt {
+                // Java: U(found) is found == pt ? found : cvarUpperBound(found)
+                // (Resolve.java:1095-1098). javac compares object identity, which
+                // works because a captured variable is a single interned Type.
+                // The port creates a fresh TypeId per capture, so identity fails
+                // for the same logical capture and the upper bound (Object)
+                // replaces it; compare types instead.
+                let same_type = found == pt || chk.types.is_same_type(ctx, syms, found, pt);
+                // A deferred argument re-captures the same wildcard, producing a
+                // different TypeId for the same logical capture. Taking the
+                // upper bound there would replace the capture with Object and
+                // fail the subsequent compatibility test against the formal
+                // capture, so keep the found capture in that case too.
+                let both_captured = matches!(
+                    &ctx.typ(found).kind,
+                    crate::code::type_::TypeKindData::CapturedType { .. }
+                ) && matches!(
+                    &ctx.typ(pt).kind,
+                    crate::code::type_::TypeKindData::CapturedType { .. }
+                );
+                let u_result = if same_type || both_captured {
                     found
                 } else {
                     chk.types.cvar_upper_bound_of(ctx, found)
@@ -152,7 +171,23 @@ impl ResultInfo {
             }
             None => found,
         };
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") && self.method_diag.is_some() {
+            let f = crate::comp::attr::type_display_of(ctx, found);
+            let p = crate::comp::attr::type_display_of(ctx, pt);
+            eprintln!(
+                "[RIC] found={} pt={} ctx={}",
+                f,
+                p,
+                std::any::type_name_of_val(&*self.check_context)
+            );
+        }
         let result = chk.check_type(ctx, syms, pos, found, pt, Rc::clone(&self.check_context));
+        if self.method_diag.is_some()
+            && crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON")
+        {
+            let r = crate::comp::attr::type_display_of(ctx, result);
+            eprintln!("[RIC] -> {}", r);
+        }
         if self.check_non_void {
             // Java: RecoveryInfo overrides check() to wrap the result with
             // chk.checkNonVoid (Attr.java:598-620); adapter flag-based expression.

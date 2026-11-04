@@ -46,7 +46,7 @@ def main() -> int:
     args = parser.parse_args()
 
     suffix = ".exe" if os.name == "nt" else ""
-    rust = root / "target" / "debug" / ("rust-javac" + suffix)
+    rust = root / "target" / "debug" / ("ravac" + suffix)
     home = os.environ.get("JAVA_HOME")
     javac = str(Path(home) / "bin" / ("javac" + suffix)) if home else ""
     if not javac or not Path(javac).is_file():

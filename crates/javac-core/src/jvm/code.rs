@@ -319,6 +319,19 @@ impl Code {
             self.resolve_pending(ctx);
         }
         if self.pending_stat_pos != NOPOS {
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON")
+                && (105..=130).contains(&self.cp)
+            {
+                let line = self
+                    .line_map
+                    .as_ref()
+                    .map(|m| m.get_line_number(self.pending_stat_pos))
+                    .unwrap_or(-1);
+                eprintln!(
+                    "[LN] cp={} pos={} line={}",
+                    self.cp, self.pending_stat_pos, line
+                );
+            }
             self.mark_stat_begin(ctx);
         }
         self.fixed_pc = true;
@@ -379,6 +392,19 @@ impl Code {
         }
         if self.alive {
             if self.pending_stat_pos != NOPOS {
+                if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON")
+                    && (105..=130).contains(&self.cp)
+                {
+                    let line = self
+                        .line_map
+                        .as_ref()
+                        .map(|m| m.get_line_number(self.pending_stat_pos))
+                        .unwrap_or(-1);
+                    eprintln!(
+                        "[LN2] cp={} pos={} line={} op={}",
+                        self.cp, self.pending_stat_pos, line, op
+                    );
+                }
                 self.mark_stat_begin(ctx);
             }
             if self.pending_stack_map {
@@ -1539,6 +1565,9 @@ impl Code {
     /// Mark the beginning of a statement.
     pub fn stat_begin(&mut self, pos: i32) {
         if pos != NOPOS {
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") && pos == 14068 {
+                eprintln!("[SB] pos=14068\n{}", std::backtrace::Backtrace::force_capture());
+            }
             self.pending_stat_pos = pos;
         }
     }

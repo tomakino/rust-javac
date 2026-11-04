@@ -51,7 +51,7 @@ def main() -> int:
     projects = root / "internal" / "test" / "real-projects"
     lang_root = projects / "commons-lang3-3.17.0-src"
     suffix = ".exe" if os.name == "nt" else ""
-    rust = root / "target" / "debug" / ("rust-javac" + suffix)
+    rust = root / "target" / "debug" / ("ravac" + suffix)
     javac = resolve_tool("javac", "JAVA_HOME")
 
     if args.build:

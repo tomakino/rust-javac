@@ -142,7 +142,7 @@ def main() -> int:
     args = parser.parse_args()
 
     suffix = ".exe" if os.name == "nt" else ""
-    rust = root / "target" / "debug" / ("rust-javac" + suffix)
+    rust = root / "target" / "debug" / ("ravac" + suffix)
     javac = resolve_tool("javac", "JAVA_HOME")
     java = resolve_tool("java", "JAVA_HOME")
     corpus = root / CORPUS

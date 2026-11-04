@@ -98,7 +98,7 @@ def main():
     junit_root = projects / "junit-framework-r5.10.2"
     deps_root = projects / "junit5-deps"
     suffix = ".exe" if os.name == "nt" else ""
-    rust = root / "target" / "debug" / ("rust-javac" + suffix)
+    rust = root / "target" / "debug" / ("ravac" + suffix)
     javac = resolve_tool("javac", "JAVA_HOME")
 
     if args.build:

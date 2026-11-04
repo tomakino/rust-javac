@@ -10,7 +10,7 @@ Requires JDK 17 (`JAVA_HOME` pointing at the JDK root) and Rust 1.99:
 
 ```bash
 cargo build -p rust-javac
-target/debug/rust-javac -d out Hello.java
+target/debug/ravac -d out Hello.java
 ```
 
 The common options match javac 17, including `-d`, `-cp`/`-classpath`,

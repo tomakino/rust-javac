@@ -8,7 +8,7 @@ timings reflect the state at the time of writing; current numbers are in
 
 ### Symptom
 
-Running `target\debug\rust-javac.exe -d out Hello.java` from the repository
+Running `target\debug\ravac.exe -d out Hello.java` from the repository
 root took about 45 seconds. Copying the binary to a clean temporary directory
 and running it there reduced the same compilation to 0.7-1.7 seconds.
 

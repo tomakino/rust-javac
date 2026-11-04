@@ -41,7 +41,7 @@ def main():
     args = parser.parse_args()
 
     src_dir = Path(args.dir)
-    rust = root / "target" / "debug" / ("rust-javac.exe" if os.name == "nt" else "rust-javac")
+    rust = root / "target" / "debug" / ("ravac.exe" if os.name == "nt" else "ravac")
     javac = resolve_tool("javac", "JAVA_HOME")
     if not javac:
         print("javac not found", file=sys.stderr)

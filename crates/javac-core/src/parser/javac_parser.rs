@@ -5072,7 +5072,7 @@ impl JavacParser {
                     kind = CaseKind::RULE;
                 } else {
                     let value = self.parse_expression(ctx);
-                    let value_pos = ctx.tree(value).pos;
+                    let value_pos = crate::tree::tree_info::get_start_pos(ctx, value);
                     let yielded = {
                         let x = self.F.at(value_pos).yield_(ctx, Some(value));
                         self.to(x)

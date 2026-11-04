@@ -243,6 +243,20 @@ pub fn deferred_type_speculative_type(
         return selected;
     }
     let entry = cache.get(msym, phase)?;
+    if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON")
+        && ctx
+            .tree(entry.speculative_tree)
+            .ty
+            .map(|ty| ctx.typ(ty).has_tag(TypeTag::ERROR))
+            .unwrap_or(false)
+    {
+        eprintln!(
+            "[DST] cache hit ERROR: spec_pos={} spec_tag={:?} dt_pos={}",
+            ctx.tree(entry.speculative_tree).pos,
+            ctx.tree(entry.speculative_tree).tag,
+            ctx.tree(deferred_fields(ctx, t).0).pos
+        );
+    }
     ctx.tree(entry.speculative_tree).ty
 }
 
@@ -1030,10 +1044,13 @@ impl DeferredTypeMap {
     /// Java: new Infer.ImplicitArgType(Symbol msym, MethodResolutionPhase phase)
     /// — the mapping behavior is fixed (adapter flag).
     pub fn new_implicit_arg(
-        _msym: Option<SymbolId>,
-        _phase: MethodResolutionPhase,
+        msym: Option<SymbolId>,
+        phase: MethodResolutionPhase,
     ) -> DeferredTypeMap {
-        let mut map = DeferredTypeMap::new(AttrMode::SPECULATIVE, None, MethodResolutionPhase::BOX);
+        // Java: ImplicitArgType(spMethod, resolveContext.step) keeps both so that
+        // DeferredType.speculativeType(msym, phase) hits the speculative cache
+        // (Infer.java:581, 593-596; DeferredAttr.java:1020-1021).
+        let mut map = DeferredTypeMap::new(AttrMode::SPECULATIVE, msym, phase);
         map.implicit_arg = true;
         map
     }
@@ -1071,6 +1088,21 @@ impl DeferredTypeMap {
             } else {
                 t
             };
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON")
+                && ctx.typ(mapped).has_tag(TypeTag::ERROR)
+            {
+                let tree = deferred_fields(ctx, t).0;
+                let no_ty = crate::code::symtab::no_type_id(ctx);
+                eprintln!(
+                    "[IAE] mode={:?} tree_pos={} mapped_id={:?} no_id={:?} no_tag={:?} mapped_tag={:?}",
+                    self.deferred_attr_context.mode,
+                    ctx.tree(tree).pos,
+                    mapped,
+                    no_ty,
+                    ctx.typ(no_ty).get_tag(),
+                    ctx.typ(mapped).get_tag()
+                );
+            }
             return self.implicit_arg_value(ctx, dctx, mapped);
         }
         if !ctx.typ(t).has_tag(TypeTag::DEFERRED) {
@@ -1299,7 +1331,7 @@ impl DeferredTypeMap {
         t: TypeId,
     ) -> Option<TypeId> {
         let (tree, _, _, _, _, _) = deferred_fields(ctx, t);
-        match self.deferred_attr_context.mode {
+        let result = match self.deferred_attr_context.mode {
             // Java: DeferredType.type is authoritative; the underlying tree
             // type is only a fallback for instances created before the first
             // attribution (DeferredAttr.java:240-243, 600-620).
@@ -1311,7 +1343,20 @@ impl DeferredTypeMap {
                 self.deferred_attr_context.msym,
                 self.deferred_attr_context.phase,
             ),
+        };
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON")
+            && result
+                .map(|ty| ctx.typ(ty).has_tag(TypeTag::ERROR))
+                .unwrap_or(false)
+        {
+            eprintln!(
+                "[TOR] ERROR mode={:?} t_pos={} implicit={}",
+                self.deferred_attr_context.mode,
+                ctx.tree(tree).pos,
+                self.implicit_arg
+            );
         }
+        result
     }
 
     /// Java: private Type recover(DeferredType dt, Type pt)
@@ -1418,6 +1463,14 @@ impl RecoveryDeferredTypeMap {
         t: TypeId,
         pt: &Option<TypeId>,
     ) -> TypeId {
+        // Java dispatches visitMethodType virtually (RecoveryDeferredTypeMap
+        // overrides it, DeferredAttr.java:1092). The port composes instead of
+        // inheriting, so the override must be selected here explicitly --
+        // otherwise DeferredTypeMap.visitStructural sends method types to the
+        // empty base implementation and msym.type is never repaired.
+        if ctx.typ(t).has_tag(TypeTag::METHOD) {
+            return self.visit_method_type(ctx, dctx, t, pt);
+        }
         self.base.visit(ctx, dctx, t, pt)
     }
 
@@ -1487,7 +1540,7 @@ impl RecoveryDeferredTypeMap {
                             return t;
                         }
                         let tsym = ctx.typ(t).tsym;
-                        return ctx.alloc_type(crate::code::type_::Type::new(
+                        let new_type = ctx.alloc_type(crate::code::type_::Type::new(
                             TypeTag::METHOD,
                             tsym,
                             TypeKindData::MethodType {
@@ -1497,6 +1550,14 @@ impl RecoveryDeferredTypeMap {
                                 recvtype: None,
                             },
                         ));
+                        // Java: deferredAttrContext.msym.type = mtype
+                        // (DeferredAttr.java:1060). The recovered parameter
+                        // types must be published on the symbol, otherwise the
+                        // signature-polymorphic synthetic method keeps its
+                        // ImplicitArgType noType placeholders and codegen
+                        // cannot emit the call.
+                        ctx.sym_mut(msym).ty = Some(new_type);
+                        return new_type;
                     }
                 }
             }

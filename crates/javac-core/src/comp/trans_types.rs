@@ -318,6 +318,13 @@ impl TransTypes {
 
     /// Java: JCExpression coerce(JCExpression tree, Type target) (TransTypes.java).
     fn coerce_tree(&mut self, ctx: &mut CompilerContext, tree: TreeId, target: TypeId) -> TreeId {
+        // A noType target can appear when a signature-polymorphic argument is
+        // mapped through ImplicitArgType without a cached speculative type.
+        // It imposes no constraint: keep the expression's own type instead of
+        // building a cast to a type the class file cannot encode.
+        if ctx.typ(target).has_tag(TypeTag::NONE) {
+            return tree;
+        }
         let base_target = {
             let syms = &*self.syms;
             self.types.base_type_of(ctx, &syms, target)
@@ -1592,7 +1599,14 @@ impl TreeVisitor for TransTypes {
             .translate_with_pt(ctx, meth, None)
             .expect("method expression");
         let meth_sym = tree_info::symbol(ctx, meth).expect("method symbol");
-        let mt = self.symbol_erasure(ctx, meth_sym);
+        // Java: TreeInfo.symbol(tree.meth) is the declared method symbol; the
+        // signature-polymorphic synthetic method only lives inside the method
+        // check. Using the synthetic type here would feed the ImplicitArgType
+        // noType placeholders into translateArgs.
+        let base_meth_sym = crate::code::symbol::base_symbol(ctx, meth_sym);
+        let mt = self.symbol_erasure(ctx, base_meth_sym);
+
+
         let use_instantiated_pt_args = {
             let syms = &*self.syms;
             self.allow_graph_inference
@@ -1602,7 +1616,21 @@ impl TreeVisitor for TransTypes {
                     crate::code::symbol::base_symbol(ctx, meth_sym),
                 )
         };
-        let mut argtypes = if use_instantiated_pt_args {
+        // Java: useInstantiatedPtArgs is false for a signature-polymorphic call,
+        // but argtypes still come from mt = meth.erasure(types) where meth is the
+        // *synthetic* method (TreeInfo.symbol(tree.meth)); its parameter list is
+        // the actual argument types. mt here is the declared method's erasure
+        // (Object[] for invokeExact), so translateArgs inserted a spurious
+        // (Object[]) cast in front of every argument.
+        let is_sig_poly_call = {
+            let syms = &*self.syms;
+            self.types.is_signature_polymorphic(
+                ctx,
+                &syms,
+                crate::code::symbol::base_symbol(ctx, meth_sym),
+            )
+        };
+        let mut argtypes = if use_instantiated_pt_args || is_sig_poly_call {
             let meth_ty = ctx.tree(meth).ty.expect("method expression type");
             self.types.get_parameter_types_public(ctx, meth_ty)
         } else {
@@ -1682,13 +1710,35 @@ impl TreeVisitor for TransTypes {
                 // lowering after errors; the port keeps lowering, so leave
                 // the erroneous tree attributed instead of panicking.
                 let _ = (file, pos, method_name, arg_display, argtype_display);
+                // Publishing the untranslated tree is essential: the caller
+                // (translate/translateWithPt) uses the result to replace the
+                // node, and a missing result makes it drop the expression
+                // entirely (a "return expr;" would become a bare "return").
+                self.result = Some(tree);
                 return;
             }
         }
         let args = self.translate_args(ctx, args, argtypes, varargs_element);
         let tree_ty = ctx.tree(tree).ty.expect("call type");
         let erased = self.erasure(ctx, tree_ty);
-        let mt_return = self.types.get_return_type_public(ctx, mt);
+        // Java: visitApply uses mt = meth.erasure(types) where meth is
+        // TreeInfo.symbol(tree.meth). For a signature-polymorphic call that is
+        // the synthetic method, whose return type is fixed by the assignment or
+        // cast context (e.g. long for "(long) mh.invokeBasic(...)"); mt above is
+        // the *declared* method's erasure (Object for invokeBasic), so its
+        // return type would make retype insert a cast back to Object and leave
+        // the operand stack unbalanced in codegen.
+        let mt_return = if {
+            let syms = &*self.syms;
+            self.types
+                .is_signature_polymorphic(ctx, &syms, base_meth_sym)
+        } {
+            let meth_ty = ctx.tree(meth).ty.expect("method expression type");
+            let erased_meth_ty = self.erasure(ctx, meth_ty);
+            self.types.get_return_type_public(ctx, erased_meth_ty)
+        } else {
+            self.types.get_return_type_public(ctx, mt)
+        };
         if let TreeKind::MethodInvocation {
             meth: m,
             args: a,

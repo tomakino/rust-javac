@@ -70,7 +70,7 @@ def main() -> int:
     gson_root = projects / "gson-gson-parent-2.10.1" / "gson" / "src" / "main" / "java"
     generated = projects / "gson-crosscheck" / "generated"
     suffix = ".exe" if os.name == "nt" else ""
-    rust = root / "target" / "debug" / ("rust-javac" + suffix)
+    rust = root / "target" / "debug" / ("ravac" + suffix)
     javac = resolve_tool("javac", "JAVA_HOME")
 
     if args.build:

@@ -473,6 +473,49 @@ impl AttrRecover {
         } else {
             crate::code::symtab::no_type_id(ctx)
         };
+        // Publish the recovered parameter types on the symbol. javac does this
+        // through RecoveryDeferredTypeMap.visitMethodType (DeferredAttr.java:1060),
+        // but that path is a no-op when the recovered arguments are already
+        // unchanged (the map returns its input). The synthetic
+        // signature-polymorphic method was built by instantiate() during
+        // selectSym, before this recovery ran, so it still carries the
+        // ImplicitArgType noType placeholders; codegen cannot emit the call
+        // until they are replaced.
+        if ctx.typ(pt).has_tag(crate::code::type_tag::TypeTag::METHOD) {
+            if let Some(cur) = ctx.sym(sym).ty {
+                if ctx.typ(cur).has_tag(crate::code::type_tag::TypeTag::METHOD) {
+                    let new_args = ctx.typ(pt).get_parameter_types(ctx);
+                    let cur_args = ctx.typ(cur).get_parameter_types(ctx);
+                    let same = cur_args.length() == new_args.length()
+                        && cur_args.iter().zip(new_args.iter()).all(|(a, b)| a == b);
+                    // Only the synthetic signature-polymorphic method carries
+                    // ImplicitArgType noType placeholders; leave every real
+                    // method signature untouched.
+                    let has_no_type = cur_args
+                        .iter()
+                        .any(|t| ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::NONE));
+                    if !same && has_no_type {
+                        let (restype, thrown, tsym) = match &ctx.typ(cur).kind {
+                            crate::code::type_::TypeKindData::MethodType {
+                                restype, thrown, ..
+                            } => (*restype, thrown.clone(), ctx.typ(cur).tsym),
+                            _ => (None, List::nil(), None),
+                        };
+                        let new_type = ctx.alloc_type(crate::code::type_::Type::new(
+                            crate::code::type_tag::TypeTag::METHOD,
+                            tsym,
+                            crate::code::type_::TypeKindData::MethodType {
+                                argtypes: new_args,
+                                restype,
+                                thrown,
+                                recvtype: None,
+                            },
+                        ));
+                        ctx.sym_mut(sym).ty = Some(new_type);
+                    }
+                }
+            }
+        }
         let owntype =
             attr.check_id_internal(ctx, syms, tree, site, sym, Some(pt), env, result_info);
         let mut map2 = RecoveryDeferredTypeMap::new(AttrMode::CHECK, Some(sym), phase);

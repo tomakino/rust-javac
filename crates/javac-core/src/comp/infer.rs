@@ -2753,6 +2753,7 @@ impl Infer {
         env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         sp_method: Option<SymbolId>,
         argtypes: List<TypeId>,
+        resolve_step: crate::comp::resolve::MethodResolutionPhase,
     ) -> TypeId {
         let sp_type = match sp_method {
             None => syms.object_type,
@@ -2813,7 +2814,18 @@ impl Infer {
                 _ => sp_type,
             },
         };
-        let phase = crate::comp::resolve::MethodResolutionPhase::BOX;
+        // Java: new ImplicitArgType(spMethod, resolveContext.step). The entry this
+        // lookup must hit is recorded by the RecoveryDeferredTypeMap used by
+        // basicMethodInvocationRecovery, whose phase is
+        // env.info.pendingResolutionPhase (BASIC for a signature-polymorphic
+        // access, Resolve.java:2748). Keying on the context step (VARARITY)
+        // always missed that entry.
+        let _ = resolve_step;
+        let phase = env
+            .info
+            .borrow()
+            .pending_resolution_phase
+            .unwrap_or(crate::comp::resolve::MethodResolutionPhase::BOX);
         let mut implicit_map =
             crate::comp::deferred_attr::DeferredTypeMap::new_implicit_arg(sp_method, phase);
         let mut dctx = crate::comp::deferred_attr::DeferredMapCtx {
@@ -2823,7 +2835,53 @@ impl Infer {
             chk,
             diags,
         };
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+            let next_tag = env.next.as_ref().and_then(|n| n.tree).map(|t| ctx.tree(t).tag);
+            let cur_tag = env.tree.map(|t| ctx.tree(t).tag);
+            eprintln!(
+                "[IRT] restype={} next={:?} cur={:?}",
+                crate::comp::attr::type_display_of(ctx, restype),
+                next_tag,
+                cur_tag
+            );
+        }
         let paramtypes = implicit_map.map(ctx, &mut dctx, &argtypes, &None);
+        // Java: ImplicitArgType maps a deferred argument to Type.noType when its
+        // speculative type is absent (Infer.java:600-620); an error type must not
+        // reach the synthetic method signature -- findPolymorphicSignatureInstance
+        // caches synthetic methods by type, so an error type would be reused for
+        // every later signature-polymorphic call at the same site and codegen
+        // would then fail on it.
+        let mut normalized: List<TypeId> = List::nil();
+        for p in paramtypes.iter() {
+            if ctx.typ(p).has_tag(crate::code::type_tag::TypeTag::ERROR) {
+                normalized = normalized.append(crate::code::symtab::no_type_id(ctx));
+            } else {
+                normalized = normalized.append(p);
+            }
+        }
+        let paramtypes = normalized;
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+            let mut a: Vec<String> = Vec::new();
+            for t in argtypes.iter() {
+                a.push(format!("{}:{:?}", crate::comp::attr::type_display_of(ctx, t), ctx.typ(t).get_tag()));
+            }
+            let mut b: Vec<String> = Vec::new();
+            for t in paramtypes.iter() {
+                b.push(format!("{}:{:?}", crate::comp::attr::type_display_of(ctx, t), ctx.typ(t).get_tag()));
+            }
+            let sp_nm = sp_method
+                .map(|m| crate::comp::resolve::symbol_display_name(ctx, m))
+                .unwrap_or_default();
+            eprintln!(
+                "[IAT] sp={} id={:?} phase={:?} in=[{}] out=[{}]",
+                sp_nm,
+                sp_method,
+                phase,
+                a.join(","),
+                b.join(",")
+            );
+        }
         let ex_type = match sp_method {
             Some(sp_method) => {
                 let method_type = ctx

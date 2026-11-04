@@ -52,7 +52,7 @@ def main() -> int:
     guava_root = projects / "guava-33.4.0-jre" / "guava" / "src"
     deps = projects / "guava-deps"
     suffix = ".exe" if os.name == "nt" else ""
-    rust = root / "target" / "debug" / ("rust-javac" + suffix)
+    rust = root / "target" / "debug" / ("ravac" + suffix)
     javac = resolve_tool("javac", "JAVA_HOME")
 
     if args.build:

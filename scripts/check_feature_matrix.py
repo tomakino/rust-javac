@@ -90,7 +90,7 @@ def main() -> int:
 
     matrix_root = root / "internal" / "test" / "feature-matrix"
     suffix = ".exe" if os.name == "nt" else ""
-    rust = root / "target" / "debug" / ("rust-javac" + suffix)
+    rust = root / "target" / "debug" / ("ravac" + suffix)
     javac = resolve_tool("javac", "JAVA_HOME")
 
     if args.build:

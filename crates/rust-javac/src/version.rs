@@ -4,7 +4,7 @@
 /// provenance (implementation, Cargo version, build date, author), so
 /// version-sniffing scripts still see `javac 17.0.19`.
 pub const VERSION_LINE: &str = concat!(
-    "javac 17.0.19 (rust-javac ",
+    "javac 17.0.19 (ravac ",
     env!("CARGO_PKG_VERSION"),
     ", built ",
     env!("BUILD_DATE"),
@@ -13,7 +13,7 @@ pub const VERSION_LINE: &str = concat!(
 
 /// The `-fullversion` output.
 pub const FULL_VERSION_LINE: &str = concat!(
-    "javac full version \"17.0.19\" (rust-javac ",
+    "javac full version \"17.0.19\" (ravac ",
     env!("CARGO_PKG_VERSION"),
     ", built ",
     env!("BUILD_DATE"),
