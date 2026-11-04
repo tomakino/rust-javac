@@ -155,6 +155,10 @@ pub struct Type {
     /// un-annotated instance this type was derived from, so typeNoMetadata()
     /// can return the original identity instead of a fresh copy.
     pub base: Option<TypeId>,
+    /// Java: ClassType.DiamondType marker (Type.java:1290-1310). A diamond
+    /// class type keeps getTypeArguments() == null so that the anonymous class
+    /// body can still constrain the type parameters (Attr.java:2919).
+    pub diamond: bool,
 }
 
 impl Type {
@@ -168,6 +172,7 @@ impl Type {
             const_value: None,
             metadata: None,
             base: None,
+            diamond: false,
         }
     }
 
@@ -225,6 +230,7 @@ impl Type {
             const_value: None,
             metadata: None,
             base: None,
+            diamond: false,
         }
     }
 
