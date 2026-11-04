@@ -4140,14 +4140,11 @@ impl JavacParser {
         mut vdefs: Vec<TreeId>,
         local_decl: bool,
     ) -> Vec<TreeId> {
-        // Java: the declaration position is the first modifier/annotation for a
-        // field (so field initializers get the annotation line) and the name
-        // token for a local declaration.
-        let pos = if local_decl {
-            self.token.pos
-        } else {
-            ctx.tree(mods).pos
-        };
+        // Java: variableDeclarators passes token.pos (the declarator name) to
+        // variableDeclaratorsRest (JavacParser.java:2706), so the JCVariableDecl
+        // position is the name, not the first modifier or annotation.
+        let _ = mods;
+        let pos = self.token.pos;
         let name_pos = self.token.pos;
         let name = self.ident(ctx);
         vdefs = self.variable_declarators_rest(
@@ -5838,7 +5835,10 @@ impl JavacParser {
                     // (JavacParser.memberDecl reuses token.pos); an instance
                     // field starts at its first modifier/annotation when there is
                     // one, otherwise at the name token.
-                    let field_pos = if (mods_flags & Flags::STATIC) != 0 {
+                    // Java: an interface field is implicitly static, but the
+                    // flag is not part of mods yet, so memberDecl uses the
+                    // declarator name token for it exactly like a static field.
+                    let field_pos = if is_interface || (mods_flags & Flags::STATIC) != 0 {
                         pos
                     } else {
                         let mods_pos = ctx.tree(mods).pos;
