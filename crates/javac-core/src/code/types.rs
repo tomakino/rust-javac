@@ -12467,7 +12467,15 @@ impl Types {
                 };
                 crate::util::java_string::JavaString::from_units(vec![unit])
             }
-            _ => crate::util::java_string::JavaString::from(constant.display().as_str()),
+            // Java: Type.stringValue() default arm is od.toString(); for a
+            // String constant that is the string itself. Rendering through
+            // Display goes through to_string_lossy and would replace unpaired
+            // surrogates (GB18030's mapping tables contain them) with U+FFFD,
+            // corrupting the constant.
+            _ => match constant {
+                crate::util::constants::ConstantValue::String(s) => s.clone(),
+                other => crate::util::java_string::JavaString::from(other.display().as_str()),
+            },
         }
     }
 }
