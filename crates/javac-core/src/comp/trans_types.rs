@@ -1655,16 +1655,30 @@ impl TreeVisitor for TransTypes {
         // already an array, even if the arity matches the formal parameter
         // count: ofNamed(DirectMethodHandleDesc, String, ClassDesc,
         // ConstantDesc...) called with four arguments packs the fourth one.
-        let last_arg_is_array = {
+        let (last_arg_is_array, last_arg_ty) = {
             let mut rest = args.clone();
             let mut last = None;
             while rest.non_empty() {
                 last = Some(*rest.head());
                 rest = rest.tail();
             }
-            last.and_then(|arg| ctx.tree(arg).ty)
-                .map(|ty| ctx.typ(ty).has_tag(TypeTag::ARRAY))
-                .unwrap_or(false)
+            let ty = last.and_then(|arg| ctx.tree(arg).ty);
+            (
+                ty.map(|ty| ctx.typ(ty).has_tag(TypeTag::ARRAY))
+                    .unwrap_or(false),
+                ty,
+            )
+        };
+        // A trailing argument that is directly assignable to the trailing array
+        // parameter is a plain (non-varargs) call: javac then leaves
+        // varargsElement unset. Without this check `f("x", null)` would be
+        // packed into a fresh array.
+        let last_arg_fits_formal = match (last_arg_ty, argtypes.last()) {
+            (Some(actual), Some(formal)) => {
+                let syms_guard = &*self.syms;
+                self.types.is_convertible(ctx, syms_guard, actual, formal)
+            }
+            _ => false,
         };
         if varargs_element.is_none()
             && (ctx.sym(meth_sym).flags_field & flags::VARARGS) != 0
@@ -1672,7 +1686,8 @@ impl TreeVisitor for TransTypes {
             // explicit arguments than parameters (empty varargs tail) or more
             // (several tail elements). Equal arity with a non-array trailing
             // argument is also a varargs call (the trailing argument is packed).
-            && (args.length() != argtypes.length() || !last_arg_is_array)
+            && (args.length() != argtypes.length()
+                || (!last_arg_is_array && !last_arg_fits_formal))
             && !argtypes.is_empty()
             && ctx
                 .typ(argtypes.last().expect("last parameter"))

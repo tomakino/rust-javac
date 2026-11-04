@@ -651,7 +651,7 @@ mod tests {
         messages.set_current_locale(Some(Locale::new("zh_TW")));
         assert_eq!(
             messages.get_localized_string("compiler.err.abstract.meth.cant.have.body", &[]),
-            "抽象方法不能有主體"
+            "抽象方法不能有方法主體"
         );
     }
 
