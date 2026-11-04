@@ -188,12 +188,7 @@ impl State {
 
     /// Return a deep copy of this state.
     pub fn dup(&self) -> State {
-        let mut defined = Bits::new();
-        let mut bit = self.defined.next_bit(0);
-        while bit >= 0 {
-            defined.incl(bit);
-            bit = self.defined.next_bit(bit + 1);
-        }
+        let defined = self.defined.copy_preserving_len();
         State {
             defined,
             stack: self.stack.clone(),

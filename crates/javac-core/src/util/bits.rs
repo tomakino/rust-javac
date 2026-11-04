@@ -224,6 +224,19 @@ impl Bits {
         tmp
     }
 
+    /// Copy this set preserving the raw bits array length.
+    ///
+    /// Java: State.dup() does new Bits(defined), whose protected constructor
+    /// chains to this(someBits.dup().bits, state). A set that is empty only
+    /// because every bit was excluded still keeps its int[] length, and that
+    /// length decides the result of a later andSet against an empty set: a
+    /// zero-length xs leaves the receiver untouched, while a same-length
+    /// all-zero xs clears it.
+    pub fn copy_preserving_len(&self) -> Bits {
+        let init_state = BitsState::get_state(&self.bits, false);
+        Bits::with_array(self.bits.clone(), init_state)
+    }
+
     /// Java: protected int[] dupBits()
     fn dup_bits(&self) -> BitsArray {
         if self.current_state != BitsState::NORMAL {
