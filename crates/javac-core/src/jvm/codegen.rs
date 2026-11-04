@@ -4028,6 +4028,11 @@ impl Gen {
         let rhs_is_zero = match ctx.typ(rhs_ty).const_value() {
             Some(crate::util::constants::ConstantValue::Integer(number)) => *number == 0,
             Some(crate::util::constants::ConstantValue::Boolean(false)) => true,
+            // A char constant is an integer constant for the comparison
+            // opcodes; javac folds the char literal to an int value before
+            // Gen.completeBinop sees it (Gen.java:2192-2195 checks the
+            // rhs constant's intValue).
+            Some(crate::util::constants::ConstantValue::Character(code)) => *code == 0,
             _ => false,
         };
         if (IF_ICMPEQ..=IF_ICMPLE).contains(&opcode) && rhs_is_zero {
