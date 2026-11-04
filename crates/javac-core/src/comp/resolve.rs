@@ -2116,7 +2116,16 @@ impl Resolve {
         mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         // while (c.type.hasTag(TYPEVAR)) c = c.type.getUpperBound().tsym;
+        let mut bound_steps = 0usize;
         loop {
+            bound_steps += 1;
+            if bound_steps > 1000 {
+                let nm = crate::comp::resolve::symbol_display_name(ctx, c);
+                eprintln!("[FLOOP] steps={} c={:?} name={}", bound_steps, c, nm);
+                if bound_steps > 1200 {
+                    panic!("type variable upper bound cycle");
+                }
+            }
             let c_ty = ctx.sym(c).ty.expect("type symbol type");
             if !ctx.typ(c_ty).has_tag(TypeTag::TYPEVAR) {
                 break;
@@ -5869,6 +5878,7 @@ impl Resolve {
                 if m1 == m2 {
                     return m1;
                 }
+
                 let m1_signature_more_specific = self.signature_more_specific(
                     ctx,
                     syms,
@@ -6043,6 +6053,16 @@ impl Resolve {
         // currentResolutionContext.methodCheck =
         //     prevResolutionContext.methodCheck.mostSpecificCheck(actuals);
         resolution_context.step = self.current_resolution_step.get();
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+            let n1 = ctx.sym(m1).name.to_java_string().to_string_lossy().to_string();
+            if n1 == "getLocalizedObject" {
+                eprintln!(
+                    "[SMC] mc_none={} step={:?}",
+                    self.current_method_check.borrow().is_none(),
+                    self.current_resolution_step.get()
+                );
+            }
+        }
         resolution_context.method_check =
             self.current_method_check
                 .borrow()
@@ -6074,6 +6094,27 @@ impl Resolve {
             max_length as usize,
             use_varargs,
         );
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+            let n1 = ctx.sym(m1).name.to_java_string().to_string_lossy().to_string();
+            if n1 == "getLocalizedObject" {
+                let disp = |ctx: &mut crate::compiler_context::CompilerContext, l: &List<TypeId>| -> String {
+                    l.iter()
+                        .map(|t| crate::comp::attr::type_display_of(ctx, t))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                };
+                let raw = disp(ctx, &m1_params);
+                let adj = disp(ctx, &adjusted);
+                eprintln!(
+                    "[ADJ] m1varargs={} useVarargs={} maxLen={} raw=[{}] adj=[{}]",
+                    (ctx.sym(m1).flags_field & flags::VARARGS) != 0,
+                    use_varargs,
+                    max_length,
+                    raw,
+                    adj
+                );
+            }
+        }
         let _ = (&attr, &chk, &infer, &env);
         let instantiated = self.instantiate(
             ctx,
@@ -6093,7 +6134,25 @@ impl Resolve {
             &mut resolution_context,
             note_warner,
         );
-        instantiated.is_some() && !note_warner.has_lint(crate::code::lint::LintCategory::UNCHECKED)
+        let ok = instantiated.is_some()
+            && !note_warner.has_lint(crate::code::lint::LintCategory::UNCHECKED);
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+            let n1 = ctx.sym(m1).name.to_java_string().to_string_lossy().to_string();
+            let n2 = ctx.sym(m2).name.to_java_string().to_string_lossy().to_string();
+            if n1 == n2 && max_length > 1 {
+                eprintln!(
+                    "[SMS] m1={} v1={} m2={} v2={} useVarargs={} maxLen={} -> {}",
+                    n1,
+                    (ctx.sym(m1).flags_field & flags::VARARGS) != 0,
+                    n2,
+                    (ctx.sym(m2).flags_field & flags::VARARGS) != 0,
+                    use_varargs,
+                    max_length,
+                    ok
+                );
+            }
+        }
+        ok
     }
 
     /// Java: MostSpecificCheckContext.functionalInterfaceMostSpecific
@@ -6588,6 +6647,20 @@ impl MethodCheck for MostSpecificCheck {
             formals1.length() as usize,
             deferred_attr_context.phase.is_varargs_required(),
         );
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+            let nm = deferred_attr_context
+                .msym
+                .map(|m| ctx.sym(m).name.to_java_string().to_string_lossy().to_string())
+                .unwrap_or_default();
+            if nm == "getLocalizedObject" {
+                eprintln!(
+                    "[MSA] name={} f1_len={} f2_after={}",
+                    nm,
+                    formals1.length(),
+                    formals2.length()
+                );
+            }
+        }
         let mut actuals = self.actuals.clone();
         let mut formals1 = formals1;
         let mut formals2 = formals2;
@@ -6624,7 +6697,7 @@ impl MethodCheck for MostSpecificCheck {
                 chk,
             );
             if more_specific != Some(true) {
-                mresult.check(
+                let sub = mresult.check(
                     ctx,
                     syms,
                     types,
@@ -6634,7 +6707,17 @@ impl MethodCheck for MostSpecificCheck {
                     None,
                     *formals1.head(),
                     warn,
-                )?;
+                );
+                if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") && sub.is_err() {
+                    let d1 = crate::comp::attr::type_display_of(ctx, *formals1.head());
+                    let d2 = crate::comp::attr::type_display_of(ctx, *formals2.head());
+                    let nm = deferred_attr_context
+                        .msym
+                        .map(|m| ctx.sym(m).name.to_java_string().to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    eprintln!("[MSF] m={} f1={} f2={}", nm, d1, d2);
+                }
+                sub?;
             }
             formals1 = formals1.tail();
             formals2 = formals2.tail();
@@ -6675,8 +6758,12 @@ pub fn adjust_args(
             items.push(*current.head());
             current = current.tail();
         }
+        // Java: args.reverse().tail.prepend(varargsElem).reverse() — .tail on the
+        // reversed list drops its FIRST element (the original last, the
+        // varargs array itself), not its last. Popping the end removed the
+        // leading receiver parameter instead.
         items.reverse();
-        items.pop();
+        items.remove(0);
         items.insert(0, varargs_elem);
         items.reverse();
         while items.len() < length {

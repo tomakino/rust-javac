@@ -768,6 +768,12 @@ impl Lower {
             let mut collector = FreeVarCollector::new(self, c, owner);
             collector.scan(ctx, Some(class_tree));
             let fvs = collector.fvs.clone();
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                let nm = ctx.sym(c).name.to_java_string().to_string_lossy().to_string();
+                if nm == "PairBox" {
+                    eprintln!("[FV] class={} empty={}", nm, fvs.is_empty());
+                }
+            }
             self.freevar_cache.insert(c, fvs.clone());
             Some(fvs)
         } else if let Some(copy_owner) = self.owner_to_copy_free_vars_from(ctx, c) {
@@ -988,6 +994,19 @@ impl Lower {
         } else {
             self.access_class(ctx, sym, prot_access, tree)
         };
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+            let nm = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
+            if nm == "log" {
+                let ao = ctx.sym(acc_owner).name.to_java_string().to_string_lossy().to_string();
+                let so = ctx
+                    .sym(sym)
+                    .owner
+                    .map(|o| ctx.sym(o).name.to_java_string().to_string_lossy().to_string())
+                    .unwrap_or_default();
+                eprintln!("[ASX] log acc_owner={} sym_owner={} prot={} refsuper={}",
+                    ao, so, prot_access, ref_super);
+            }
+        }
         let vsym = if ctx.sym(sym).owner == Some(acc_owner) {
             sym
         } else {
@@ -1005,6 +1024,22 @@ impl Lower {
                     vsym,
                     vec![None; crate::code::symbol::AccessCode::number_of_access_codes() as usize],
                 );
+                if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                    let nm = ctx.sym(vsym).name.to_java_string().to_string_lossy().to_string();
+                    if nm == "log" {
+                        let on = ctx
+                            .sym(vsym)
+                            .owner
+                            .map(|o| ctx.sym(o).name.to_java_string().to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let ok = ctx
+                            .sym(vsym)
+                            .owner
+                            .map(|o| ctx.sym(o).kind == crate::code::kinds::Kind::TYP)
+                            .unwrap_or(false);
+                        eprintln!("[AS] push log owner={} is_typ={}", on, ok);
+                    }
+                }
                 self.accessed.push(vsym);
                 anum
             }
@@ -1186,6 +1221,18 @@ impl Lower {
         let mut sym = sym;
         let mut tree = tree;
         let current_class = self.current_class.expect("current class");
+        // Java: access() looks lambdaTranslationMap up inside the loop that walks
+        // owners (Lower.java:1120). That loop is guarded by
+        // "sym.owner.enclClass() != currentClass", which is already false for a
+        // variable of the enclosing method when the access happens inside a
+        // synthetic lambda method of that same class — the case this rewrite
+        // exists for. Consult the map first so a captured variable is emitted
+        // with the lambda parameter's register instead of the original one.
+        if let Some(translation) = &self.lambda_translation_map
+            && let Some(translated) = translation.get(&sym).copied()
+        {
+            return self.make.ident_symbol(ctx, translated);
+        }
         loop {
             if ctx.sym(sym).kind != Kind::VAR {
                 break;
@@ -1196,6 +1243,18 @@ impl Lower {
             }
             let owner_encl =
                 crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                let nm = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
+                if nm.contains("merger") || nm.contains("Supplier") {
+                    let cur = crate::comp::resolve::symbol_display_name(ctx, current_class);
+                    let oe = crate::comp::resolve::symbol_display_name(ctx, owner_encl);
+                    eprintln!(
+                        "[ACC] sym={} owner_encl={} current_class={} matched={} has_map={}",
+                        nm, oe, cur, Some(owner_encl) == Some(current_class),
+                        self.lambda_translation_map.as_ref().map(|m| m.contains_key(&sym)).unwrap_or(false)
+                    );
+                }
+            }
             if Some(owner_encl) == Some(current_class) {
                 break;
             }
@@ -2015,7 +2074,16 @@ impl Lower {
         for v in &current {
             self.make.at(pos);
             let ident = self.make.ident_symbol(ctx, v);
+            let vnm = ctx.sym(v).name.to_java_string().to_string_lossy().to_string();
             let loaded = self.access(ctx, v, ident, None, false);
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") && vnm.contains("merger") {
+                eprintln!(
+                    "[LFV] v={} loaded_tag={:?} adr={:?}",
+                    vnm,
+                    ctx.tree(loaded).tag,
+                    ctx.sym(v).local_adr()
+                );
+            }
             args = args.prepend(loaded);
         }
         args
@@ -2262,8 +2330,45 @@ impl Lower {
     /// Add all required access methods for a private symbol to its enclosing
     /// class.
     fn make_accessible(&mut self, ctx: &mut CompilerContext, sym: SymbolId) {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+            let nm = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
+            if nm == "log" {
+                let on = ctx
+                    .sym(sym)
+                    .owner
+                    .map(|o| ctx.sym(o).name.to_java_string().to_string_lossy().to_string())
+                    .unwrap_or_default();
+                eprintln!("[MA] log owner={}", on);
+            }
+        }
         let owner = ctx.sym(sym).owner.expect("symbol owner");
-        let encl = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+        let encl = match crate::code::symbol::symbol_encl_class(ctx, owner) {
+            Some(e) => e,
+            None => {
+                let sn = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
+                let on = ctx.sym(owner).name.to_java_string().to_string_lossy().to_string();
+                let file = self
+                    .log
+                    .current_source_file()
+                    .map(|f| f.get_name())
+                    .unwrap_or_default();
+                let flat = ctx
+                    .sym(sym)
+                    .owner
+                    .and_then(|o| ctx.sym(o).ty)
+                    .map(|t| format!("{:?}", ctx.typ(t).tag))
+                    .unwrap_or_default();
+                panic!(
+                    "enclosing class: sym={} kind={:?} owner={} owner_kind={:?} file={} ownerty={}",
+                    sn,
+                    ctx.sym(sym).kind,
+                    on,
+                    ctx.sym(owner).kind,
+                    file,
+                    flat
+                );
+            }
+        };
         let cdef = self.class_def(ctx, encl).expect("class definition");
         let cdef_pos = ctx.tree(cdef).pos;
         let is_init = ctx.sym(sym).name == self.names.init;
@@ -2761,6 +2866,11 @@ impl Lower {
             TreeKind::MethodDecl { params, .. } => params.clone(),
             _ => panic!("expected a method declaration"),
         };
+        // Java: makeTranslationMap(JCMethodDecl tree) (Lower.java:2756-2765):
+        //   if (p != p.baseSymbol()) translationMap.put(p.baseSymbol(), p);
+        // The base symbol is what LambdaToMethod records for a captured
+        // parameter (see add_symbol_to_context), so the map rewrites the
+        // enclosing method's variable to the lambda parameter.
         let mut translation_map: HashMap<SymbolId, SymbolId> = HashMap::new();
         let current = params;
         for vd in &current {
@@ -5409,9 +5519,42 @@ impl Lower {
         let mut def = def;
         if Symbol::is_directly_or_indirectly_local(ctx, constructor_owner) {
             let pos = ctx.tree(tree).pos;
+            // Java: tree.args = tree.args.appendList(
+            //     loadFreevars(tree.pos(), freevars(c))) (Lower.java:2789).
+            // freevars(c) yields the ORIGINAL variables: the lambda
+            // translation reuses those symbols as the synthetic method's
+            // parameters, so Gen's init_code rebinds them to the low registers
+            // and the loads resolve to aload_0, aload_1, ... The constructor's
+            // captured_locals are the proxies (val$*) and keep the enclosing
+            // method's slots, which are out of range inside the lambda.
             let freevars = self
                 .freevars(ctx, constructor_owner)
                 .unwrap_or_else(List::nil);
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                let cn = ctx
+                    .sym(constructor_owner)
+                    .name
+                    .to_java_string()
+                    .to_string_lossy()
+                    .to_string();
+                if cn == "PairBox" {
+                    let names: Vec<String> = freevars
+                        .iter()
+                        .map(|v| {
+                            let nm = ctx
+                                .sym(v)
+                                .name
+                                .to_java_string()
+                                .to_string_lossy()
+                                .to_string();
+                            format!("{}/{:?}", nm, ctx.sym(v).local_adr())
+                        })
+                        .collect();
+                    let m = ctx.sym(self.current_method_sym.unwrap_or(constructor));
+                    let mn = m.name.to_java_string().to_string_lossy().to_string();
+                    eprintln!("[LFVC] cur={} freevars={:?}", mn, names);
+                }
+            }
             let loaded = self.load_freevars(ctx, pos, freevars);
             args = args.append_list(&loaded);
         }
@@ -8156,6 +8299,28 @@ impl<'a> FreeVarCollector<'a> {
             let is_owner_var = resolved
                 .map(|r| ctx.sym(r).owner == Some(self.owner))
                 .unwrap_or(false);
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                let cn = ctx.sym(self.clazz).name.to_java_string().to_string_lossy().to_string();
+                if cn == "PairBox" {
+                    let nm = ctx.sym(original).name.to_java_string().to_string_lossy().to_string();
+                    let on = ctx
+                        .sym(owner)
+                        .name
+                        .to_java_string()
+                        .to_string_lossy()
+                        .to_string();
+                    let sn = ctx
+                        .sym(self.owner)
+                        .name
+                        .to_java_string()
+                        .to_string_lossy()
+                        .to_string();
+                    eprintln!(
+                        "[VS] sym={} is_owner_var={} owner={} self_owner={}",
+                        nm, is_owner_var, on, sn
+                    );
+                }
+            }
             if is_owner_var {
                 let r = resolved.expect("owner variable");
                 if ctx.sym(r).get_const_value().is_none() {
@@ -8265,6 +8430,23 @@ impl<'a> TreeScannerVisitor for FreeVarCollector<'a> {
             TreeKind::Ident { sym, .. } => *sym,
             _ => panic!("expected an identifier"),
         };
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+            let cn = ctx
+                .sym(self.clazz)
+                .name
+                .to_java_string()
+                .to_string_lossy()
+                .to_string();
+            if cn == "PairBox" {
+                let nm = ctx
+                    .sym(sym.unwrap_or(self.clazz))
+                    .name
+                    .to_java_string()
+                    .to_string_lossy()
+                    .to_string();
+                eprintln!("[FVI] ident={} sym_present={}", nm, sym.is_some());
+            }
+        }
         if let Some(sym) = sym {
             self.visit_symbol(ctx, sym);
         }

@@ -404,6 +404,23 @@ impl Attr {
         env: &Rc<Env<AttrContext>>,
         result_info: ResultInfo,
     ) -> Result<TypeId, CompletionFailure> {
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+            let mut depth = 0usize;
+            let mut cursor = Some(Rc::clone(env));
+            while let Some(cur) = cursor {
+                depth += 1;
+                cursor = cur.next.clone();
+                if depth > 100000 {
+                    break;
+                }
+            }
+            eprintln!(
+                "[AT] depth={} pos={} tag={:?}",
+                depth,
+                ctx.tree(tree).pos,
+                ctx.tree(tree).tag
+            );
+        }
         let prev_env = self.env.clone();
         let prev_result_info = self.result_info.clone();
         let needs_argument_attr = result_info.needs_argument_attr(ctx, tree);
@@ -549,6 +566,35 @@ impl Attr {
         syms: &Symtab,
         tree: TreeId,
     ) -> Result<TypeId, CompletionFailure> {
+        thread_local! {
+            static VISIT_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+            static VISIT_SEQ: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+        }
+        struct DepthGuard(usize);
+        impl Drop for DepthGuard {
+            fn drop(&mut self) {
+                VISIT_DEPTH.with(|c| c.set(self.0));
+            }
+        }
+        let _guard = DepthGuard(VISIT_DEPTH.with(|c| {
+            let v = c.get();
+            c.set(v + 1);
+            v
+        }));
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") {
+            let n = VISIT_SEQ.with(|c| {
+                let v = c.get() + 1;
+                c.set(v);
+                v
+            });
+            eprintln!(
+                "[V] n={} d={} pos={} tag={:?}",
+                n,
+                _guard.0,
+                ctx.tree(tree).pos,
+                ctx.tree(tree).tag
+            );
+        }
         // Java: the operator visitors are dispatched by JCTree.accept on the
         // concrete JCUnary/JCBinary/JCAssignOp classes; the port dispatches on
         // the TreeKind variant first (the operator tag is the node's tag).
@@ -1284,6 +1330,9 @@ impl Attr {
             );
         }
         let sym: SymbolId;
+        if ctx.tree(tree).pos == 127 {
+            // eprintln!("[VI] start");
+        }
         if pt
             .map(|pt| {
                 let tag = ctx.typ(pt).get_tag();
@@ -1359,6 +1408,9 @@ impl Attr {
             sym = rs.resolve_ident(ctx, syms, pos, &env, name.clone(), self.pkind(), Some(self));
         }
         set_ident_symbol(ctx, tree, sym);
+        if ctx.tree(tree).pos == 127 {
+            // eprintln!("[VI] symbol-set");
+        }
         let sym_kind = ctx.sym(sym).kind;
         let kind_selector = sym_kind.to_selector();
         let mut sym_env = Rc::clone(&env);
@@ -1453,6 +1505,9 @@ impl Attr {
             .and_then(|encl_sym| ctx.sym(encl_sym).ty)
             .expect("env1 enclClass type");
         let result_info = self.result_info.clone().expect("resultInfo");
+        if ctx.tree(tree).pos == 127 {
+            // eprintln!("[VI] before-check-id");
+        }
         Ok(self.check_id(ctx, syms, tree, site, sym, &env, &result_info))
     }
     /// Java: Type checkId(JCTree tree, Type site, Symbol sym,
@@ -1549,13 +1604,22 @@ impl Attr {
         let owntype: TypeId;
         match ctx.sym(sym).kind {
             Kind::TYP => {
+                if ctx.tree(tree).pos == 127 {
+                    // eprintln!("[CII] typ-enter");
+                }
                 let mut own = ctx.sym(sym).ty.expect("type symbol type");
                 if ctx.typ(own).has_tag(TypeTag::CLASS) {
                     // Java: chk.checkForBadAuxiliaryClassAccess(tree.pos(), env,
                     // (ClassSymbol)sym); (Attr.java:4540-4541)
                     let pos = ctx.tree(tree).pos;
+                    if ctx.tree(tree).pos == 127 {
+                        // eprintln!("[CII] before-bad-aux");
+                    }
                     self.chk
                         .check_for_bad_auxiliary_class_access(ctx, syms, pos, env, sym);
+                    if ctx.tree(tree).pos == 127 {
+                        // eprintln!("[CII] after-bad-aux");
+                    }
                     let own_outer = ctx.typ(own).get_enclosing_type();
                     let sym_type = ctx.sym(sym).ty.expect("symbol type");
                     // Java: owntype.tsym.type.getTypeArguments() lazily completes
@@ -1564,6 +1628,9 @@ impl Attr {
                     // accessor would miss the erasure below.
                     let sym_type_args =
                         crate::code::types::get_type_arguments_completed(ctx, syms, sym_type, None);
+                    if ctx.tree(tree).pos == 127 {
+                        // eprintln!("[CII] type-args-empty={}", sym_type_args.is_empty());
+                    }
                     if !sym_type_args.is_empty() {
                         own = self.types.erasure(ctx, syms, own);
                     } else if let Some(own_outer) = own_outer.filter(|own_outer| {
@@ -1751,6 +1818,9 @@ impl Attr {
             }
             other => panic!("AssertionError: unexpected kind: {:?} in tree", other),
         }
+        if ctx.tree(tree).pos == 127 {
+            // eprintln!("[CII] after-kind");
+        }
         // Java: emit the deprecation/sun-api/profile/preview warnings for the
         // referenced symbol (Attr.java:4630-4639).
         if ctx.sym(sym).name != self.names.init || ctx.tree(tree).has_tag(Tag::REFERENCE) {
@@ -1764,14 +1834,21 @@ impl Attr {
             self.chk.check_profile(ctx, pos, sym);
             self.chk.check_preview(ctx, pos, scope_owner, sym);
         }
-        self.check(
+        if ctx.tree(tree).pos == 127 {
+            // eprintln!("[CII] before-check");
+        }
+        let out = self.check(
             ctx,
             syms,
             tree,
             owntype,
             ctx.sym(sym).kind.to_selector(),
             result_info,
-        )
+        );
+        if ctx.tree(tree).pos == 127 {
+            // eprintln!("[CII] after-check");
+        }
+        out
     }
     /// Java: public void visitParens(JCParens tree) (Attr.java:3922-3928)
     fn visit_parens(
@@ -4760,11 +4837,20 @@ impl Attr {
             } else {
                 true
             };
+            // Java: Attr.checkInit guards the diagnostic with !allowConstant(tree);
+            // a static final field with a compile-time constant value may be
+            // referenced before its declaration (TimeUnit.NANOSECONDS(nanoScale)
+            // reads the NANO_SCALE constant declared below the enum constants).
+            let is_final = (ctx.sym(v).flags_field & crate::code::flags::FINAL as i64) != 0;
+            let has_const = ctx.symbol_get_const_value(syms, v, self).is_some();
+            let is_constant_ref = is_final && has_const;
+
             if (encl_var == Some(v) || v_pos > tree_pos)
                 && owner_is_class
                 && v_owner == scope_owner_encl
                 && same_staticness
                 && assign_lhs_ok
+                && !is_constant_ref
             {
                 let is_self_ref = encl_var == Some(v);
                 if !only_warning || self.is_static_enum_field(ctx, v) {
@@ -5482,10 +5568,13 @@ impl Attr {
         let env = self.env.clone().expect("env");
         let no_type = self.no_type(ctx);
         let qualifier_info = ResultInfo::new(skind, Some(no_type), Rc::clone(&self.basic_handler));
+        // eprintln!("[VS] enter pos={} skind={:?}", ctx.tree(tree).pos, skind);
         let mut site = self.attrib_tree_use(ctx, syms, selected, &env, qualifier_info);
+        // eprintln!("[VS] qualified pos={} site={:?}", ctx.tree(tree).pos, ctx.typ(site).get_tag());
         if !self.pkind().contains(KindSelector::TYP_PCK) {
             site = self.types.capture(ctx, syms, site);
         }
+        // eprintln!("[VS] captured pos={} site={:?}", ctx.tree(tree).pos, ctx.typ(site).get_tag());
         // don't allow T.class T[].class, etc
         if skind == KindSelector::TYP {
             let mut elt = site;
@@ -5562,7 +5651,9 @@ impl Attr {
         // Determine the symbol represented by the selection.
         env.info.borrow_mut().pending_resolution_phase = None;
         let result_info = self.result_info.clone().expect("resultInfo");
+        // eprintln!("[VSO] before-select pos={}", ctx.tree(tree).pos);
         let mut sym = self.select_sym(ctx, syms, tree, sitesym, site, &env, &result_info);
+        // eprintln!("[VSO] after-select pos={} kind={:?}", ctx.tree(tree).pos, ctx.sym(sym).kind);
         if ctx.sym(sym).kind == Kind::VAR
             && ctx.sym(sym).name != self.names._super
             && env.info.borrow().default_super_call_site.is_some()
@@ -5834,11 +5925,34 @@ impl Attr {
             TreeKind::FieldAccess { name, .. } => *name == self.names._super,
             _ => false,
         };
+        if select_is_super && crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+            let qs = match &ctx.tree(tree).kind {
+                TreeKind::FieldAccess { selected: Some(sel), .. } => ctx
+                    .tree(*sel)
+                    .ty
+                    .map(|t| format!("{:?}", ctx.typ(t).tag))
+                    .unwrap_or_else(|| "noty".to_string()),
+                _ => "nosel".to_string(),
+            };
+            eprintln!(
+                "[SUP] pos={} site_tag={:?} qual_tag={}",
+                ctx.tree(tree).pos,
+                ctx.typ(site).tag,
+                qs
+            );
+        }
         let result = if select_is_super {
+            // Java: visitSelect ends with tree.type = result (Attr.java), so a
+            // super-qualified selection must record its type on the tree. The
+            // lowering phase reads ((JCFieldAccess) tree).selected.type.tsym
+            // for "I.super.m()" and would otherwise see no type at all.
             site
         } else {
             self.check_id(ctx, syms, tree, site, sym, &env, &result_info)
         };
+        if ctx.tree(tree).ty.is_none() {
+            ctx.tree_mut(tree).ty = Some(result);
+        }
         self.result = Some(result);
         Ok(result)
     }
@@ -7052,6 +7166,7 @@ impl Attr {
             self.unknown_expr_info.clone()
         };
         let exprtype = self.attrib_tree_use(ctx, syms, expr, &local_env, cast_info);
+        // eprintln!("[TC] before-castable pos={}", ctx.tree(tree).pos);
         let mut owntype = if is_poly {
             clazztype
         } else {
@@ -7059,6 +7174,7 @@ impl Attr {
             let chk = Rc::clone(&chk_rc);
             chk.check_castable(ctx, syms, ctx.tree(expr).pos, exprtype, clazztype)
         };
+        // eprintln!("[TC] after-castable pos={}", ctx.tree(tree).pos);
         let expr_const = ctx.typ(exprtype).const_value().cloned();
         if expr_const.is_some() {
             owntype = self.cfolder.coerce(ctx, syms, exprtype, owntype);

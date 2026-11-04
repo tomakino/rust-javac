@@ -818,17 +818,35 @@ impl Code {
                 self.push(ctx, t);
             }
             ALOAD_2 => {
-                let t = ctx
-                    .sym(self.lvar[2].as_ref().expect("local 2").sym)
-                    .ty
-                    .expect("local type");
+                let Some(local) = self.lvar[2].as_ref() else {
+                    let method = ctx.sym(self.meth);
+                    let owner = method
+                        .owner
+                        .map(|o| crate::comp::resolve::symbol_display_name(ctx, o))
+                        .unwrap_or_default();
+                    let mname = method.name.to_java_string().to_string_lossy().to_string();
+                    panic!(
+                        "ALOAD_2 without local 2 in {}::{} nextreg={} lvar_len={}",
+                        owner, mname, self.nextreg, self.lvar.len()
+                    );
+                };
+                let t = ctx.sym(local.sym).ty.expect("local type");
                 self.push(ctx, t);
             }
             ALOAD_3 => {
-                let t = ctx
-                    .sym(self.lvar[3].as_ref().expect("local 3").sym)
-                    .ty
-                    .expect("local type");
+                let Some(local) = self.lvar[3].as_ref() else {
+                    let method = ctx.sym(self.meth);
+                    let owner = method
+                        .owner
+                        .map(|owner| crate::comp::resolve::symbol_display_name(ctx, owner))
+                        .unwrap_or_default();
+                    let mname = method.name.to_java_string().to_string_lossy().to_string();
+                    panic!(
+                        "ALOAD_3 without local 3 in {}::{} nextreg={} lvar_len={}",
+                        owner, mname, self.nextreg, self.lvar.len()
+                    );
+                };
+                let t = ctx.sym(local.sym).ty.expect("local type");
                 self.push(ctx, t);
             }
             IALOAD | BALOAD | CALOAD | SALOAD => {
@@ -1177,10 +1195,19 @@ impl Code {
                 // Java: Gen.visitIdent loads the erased type of the variable;
                 // a pattern binding can still carry an inference variable here,
                 // and pushing that raw type would not relate to the switch type.
-                let raw = ctx
-                    .sym(self.lvar[od as usize].as_ref().expect("local var").sym)
-                    .ty
-                    .expect("local type");
+                let Some(local) = self.lvar[od as usize].as_ref() else {
+                    let method = ctx.sym(self.meth);
+                    let owner = method
+                        .owner
+                        .map(|o| crate::comp::resolve::symbol_display_name(ctx, o))
+                        .unwrap_or_default();
+                    let mname = method.name.to_java_string().to_string_lossy().to_string();
+                    panic!(
+                        "ALOAD od={} without local in {}::{} nextreg={} lvar_len={}",
+                        od, owner, mname, self.nextreg, self.lvar.len()
+                    );
+                };
+                let raw = ctx.sym(local.sym).ty.expect("local type");
                 let syms_rc = Rc::clone(&self.syms);
                 let t = self.types.erasure(ctx, &syms_rc, raw);
                 self.push(ctx, t);
@@ -2323,6 +2350,14 @@ impl Code {
                 // slot. A freshly created VarSymbol carries adr 0 by default,
                 // and that register belongs to "this" in an instance method.
                 let owns = self.lvar[adr as usize].as_ref().map(|lv| lv.sym) == Some(v);
+                if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                    let m = ctx.sym(self.meth);
+                    let mname = m.name.to_java_string().to_string_lossy().to_string();
+                    if mname == "<init>" {
+                        let nm = ctx.sym(v).name.to_java_string().to_string_lossy().to_string();
+                        eprintln!("[NLS] sym={} adr={} owns={} nextreg={}", nm, adr, owns, self.nextreg);
+                    }
+                }
                 if owns {
                     return adr;
                 }

@@ -568,6 +568,9 @@ impl Symbol {
                 }
                 ElementKind::LOCAL_VARIABLE
             }
+            // Java: BindingSymbol extends VarSymbol, so getKind() reports
+            // BINDING_VARIABLE through the VariableElement override.
+            SymbolKind::BindingSymbol { .. } => ElementKind::BINDING_VARIABLE,
             SymbolKind::RecordComponent { .. } => ElementKind::RECORD_COMPONENT,
             SymbolKind::MethodSymbol { .. }
             | SymbolKind::MethodHandleSymbol { .. }
@@ -2560,6 +2563,20 @@ pub fn overrides_full(
         if types.as_super(ctx, syms, owner_ty, other_owner).is_some() {
             let mt = types.member_type(ctx, syms, owner_ty, sym);
             let ot = types.member_type(ctx, syms, owner_ty, other);
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                let n1 = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
+                if n1 == "next" {
+                    let rt = types.get_return_type_public(ctx, mt);
+                    let ro = types.get_return_type_public(ctx, ot);
+                    eprintln!(
+                        "[OVR] name={} rt={} ro={} rts={}",
+                        n1,
+                        crate::comp::attr::type_display_of(ctx, rt),
+                        crate::comp::attr::type_display_of(ctx, ro),
+                        types.return_type_substitutable(ctx, syms, mt, ot)
+                    );
+                }
+            }
             if types.is_sub_signature(ctx, syms, mt, ot) {
                 if !check_result {
                     return true;

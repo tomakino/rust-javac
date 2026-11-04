@@ -913,6 +913,29 @@ impl CompilerContext {
         syms: &crate::code::symtab::Symtab,
         symbol: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        thread_local! {
+            static CCS_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+        }
+        struct CcsGuard(usize);
+        impl Drop for CcsGuard {
+            fn drop(&mut self) {
+                CCS_DEPTH.with(|c| c.set(self.0));
+            }
+        }
+        let _ccs_guard = CcsGuard(CCS_DEPTH.with(|c| {
+            let v = c.get();
+            c.set(v + 1);
+            v
+        }));
+        if _ccs_guard.0 >= 20 {
+            let nm = self
+                .sym(symbol)
+                .name
+                .to_java_string()
+                .to_string_lossy()
+                .to_string();
+            eprintln!("[CCSD] depth={} name={}", _ccs_guard.0, nm);
+        }
         let orig_completer = self.sym(symbol).completer.clone();
         match self.complete_symbol(syms, symbol) {
             Ok(()) => Ok(()),

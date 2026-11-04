@@ -53,10 +53,10 @@ use crate::util::position::NOPOS;
 /// An abstract finalizer generator for a code generation context.
 pub trait GenFinalizer {
     /// Generate the cleanup code when unwinding.
-    fn generate(&mut self, ctx: &mut CompilerContext, codegen: &mut Gen);
+    fn generate(&self, ctx: &mut CompilerContext, codegen: &mut Gen);
 
     /// Generate the cleanup code at last.
-    fn generate_last(&mut self, ctx: &mut CompilerContext, codegen: &mut Gen);
+    fn generate_last(&self, ctx: &mut CompilerContext, codegen: &mut Gen);
 
     /// Whether this finalizer has nontrivial cleanup to perform.
     fn has_finalizer(&self) -> bool {
@@ -76,6 +76,11 @@ pub struct GenContext {
     pub cont: Option<Box<Chain>>,
     /// The finalizer of the current environment.
     pub finalize: Option<Rc<RefCell<dyn GenFinalizer>>>,
+    /// Whether the finalizer has a finally block. Upstream reads this through
+    /// GenFinalizer.hasFinalizer(), but hasFinally() can run while the
+    /// finalizer is mutably borrowed (it is invoked from generate/generateLast
+    /// which take &mut self), so the flag is mirrored here as a plain bool.
+    pub has_finalizer: bool,
     /// Whether this is a switch statement.
     pub is_switch: bool,
     /// The gaps in the finalizer range.
@@ -617,7 +622,10 @@ impl Gen {
         if self.get_code().borrow().is_alive() {
             let finalizer = env.info.borrow().finalize.clone();
             if let Some(finalizer) = finalizer {
-                finalizer.borrow_mut().generate(ctx, self);
+                // Java: genFinalizer calls env.info.finalize.gen() on a plain
+                // object, so a return inside the finally block may re-enter it.
+                // The shared borrow keeps that re-entry legal.
+                finalizer.borrow().generate(ctx, self);
             }
         }
     }
@@ -679,13 +687,8 @@ impl Gen {
         while env1.tree != Some(target) {
             let tree = env1.tree.expect("generation environment tree");
             let is_try = ctx.tree(tree).has_tag(Tag::TRY);
-            if is_try {
-                let finalizer = env1.info.borrow().finalize.clone();
-                if let Some(finalizer) = finalizer
-                    && finalizer.borrow().has_finalizer()
-                {
-                    return true;
-                }
+            if is_try && env1.info.borrow().has_finalizer {
+                return true;
             }
             env1 = env1.next.clone().expect("finally environment");
         }
@@ -1819,6 +1822,18 @@ impl Gen {
         env: &Rc<Env<GenContext>>,
         fatcode: bool,
     ) -> i32 {
+        fn owner_is_pairbox(ctx: &CompilerContext, m: &crate::code::symbol::Symbol) -> bool {
+            m.owner
+                .map(|o| {
+                    ctx.sym(o)
+                        .name
+                        .to_java_string()
+                        .to_string_lossy()
+                        .to_string()
+                        == "PairBox"
+                })
+                .unwrap_or(false)
+        }
         let meth = match &ctx.tree(tree).kind {
             TreeKind::MethodDecl { sym: Some(sym), .. } => *sym,
             _ => panic!("AssertionError: method declaration expected"),
@@ -1890,6 +1905,56 @@ impl Gen {
             TreeKind::MethodDecl { params, .. } => params.clone(),
             _ => List::nil(),
         };
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+            let m = ctx.sym(meth);
+            let mname = m.name.to_java_string().to_string_lossy().to_string();
+            let owner = m
+                .owner
+                .map(|o| crate::comp::resolve::symbol_display_name(ctx, o))
+                .unwrap_or_default();
+            if mname.starts_with("lambda$") || mname == "<init>" {
+                let (cl, ep) = match &m.kind_data {
+                    crate::code::symbol::SymbolKind::MethodSymbol {
+                        captured_locals,
+                        extra_params,
+                        ..
+                    } => (captured_locals.length(), extra_params.length()),
+                    _ => (-1, -1),
+                };
+                if mname.starts_with("lambda$") {
+                    let names: Vec<String> = params
+                        .iter()
+                        .map(|p| match &ctx.tree(p).kind {
+                            TreeKind::VariableDecl { sym: Some(s), .. } => ctx
+                                .sym(*s)
+                                .name
+                                .to_java_string()
+                                .to_string_lossy()
+                                .to_string(),
+                            _ => "?".to_string(),
+                        })
+                        .collect();
+                    eprintln!(
+                        "[IC] {}::{} params={} captured={} extra={} names={:?}",
+                        owner,
+                        mname,
+                        params.length(),
+                        cl,
+                        ep,
+                        names
+                    );
+                } else {
+                    eprintln!(
+                        "[IC] {}::{} params={} captured={} extra={}",
+                        owner,
+                        mname,
+                        params.length(),
+                        cl,
+                        ep
+                    );
+                }
+            }
+        }
         let l = params;
         let mut registered_symbols: Vec<SymbolId> = Vec::new();
         for head in &l {
@@ -1901,6 +1966,17 @@ impl Gen {
             self.check_dimension(ctx, ctx.tree(head).pos, param_ty);
             let reg = code.borrow_mut().new_local_symbol(ctx, param_sym);
             code.borrow_mut().set_defined_at(ctx, reg);
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                let m = ctx.sym(meth);
+                let mname = m.name.to_java_string().to_string_lossy().to_string();
+                if (mname == "<init>" && owner_is_pairbox(ctx, m)) || mname.starts_with("lambda$") {
+                    let nm = ctx.sym(param_sym).name.to_java_string().to_string_lossy().to_string();
+                    eprintln!(
+                        "[PIC] m={} param={} reg={} nextreg={}",
+                        mname, nm, reg, code.borrow().nextreg
+                    );
+                }
+            }
             registered_symbols.push(param_sym);
         }
         // Synthetic lambda methods keep their captured parameters in
@@ -2607,7 +2683,7 @@ struct SyncFinalizer {
 }
 
 impl GenFinalizer for SyncFinalizer {
-    fn generate(&mut self, ctx: &mut CompilerContext, codegen: &mut Gen) {
+    fn generate(&self, ctx: &mut CompilerContext, codegen: &mut Gen) {
         self.generate_last(ctx, codegen);
         let gaps_len = self.sync_env.info.borrow().gaps.len();
         assert!(gaps_len.is_multiple_of(2), "AssertionError: finalizer gaps");
@@ -2615,7 +2691,7 @@ impl GenFinalizer for SyncFinalizer {
         self.sync_env.info.borrow_mut().gaps.push(cp);
     }
 
-    fn generate_last(&mut self, ctx: &mut CompilerContext, codegen: &mut Gen) {
+    fn generate_last(&self, ctx: &mut CompilerContext, codegen: &mut Gen) {
         if codegen.get_code().borrow().is_alive() {
             let lock_var = self.lock_var.clone();
             codegen.item_load(ctx, &lock_var);
@@ -2643,7 +2719,7 @@ struct TryFinalizer {
 }
 
 impl GenFinalizer for TryFinalizer {
-    fn generate(&mut self, ctx: &mut CompilerContext, codegen: &mut Gen) {
+    fn generate(&self, ctx: &mut CompilerContext, codegen: &mut Gen) {
         let gaps_len = self.try_env.info.borrow().gaps.len();
         assert!(gaps_len.is_multiple_of(2), "AssertionError: finalizer gaps");
         let cp = codegen.get_code().borrow_mut().cur_cp(ctx);
@@ -2651,15 +2727,21 @@ impl GenFinalizer for TryFinalizer {
         self.generate_last(ctx, codegen);
     }
 
-    fn generate_last(&mut self, ctx: &mut CompilerContext, codegen: &mut Gen) {
+    fn generate_last(&self, ctx: &mut CompilerContext, codegen: &mut Gen) {
         let finalizer = match &ctx.tree(self.tree).kind {
             TreeKind::Try { finalizer, .. } => *finalizer,
             _ => None,
         };
         if let Some(finalizer) = finalizer {
-            let old_env = Rc::clone(&self.old_env);
+            // Java: genStat(tree.finalizer, oldEnv, CRT_BLOCK) (Gen.java:1489-1492).
+            // The finally block is generated in the environment ENCLOSING the try.
+            // Generating it inside tryEnv would make a return (or break/continue)
+            // in the finally block unwind through the very finalizer being
+            // generated, re-entering it and tripping the even-gaps assertion.
+            let prev_env = codegen.env.clone();
+            codegen.env = Some(Rc::clone(&self.old_env));
             codegen.gen_stat_crt(ctx, finalizer, CRT_BLOCK);
-            let _ = old_env;
+            codegen.env = prev_env;
         }
     }
 
@@ -2672,6 +2754,7 @@ impl GenFinalizer for TryFinalizer {
             // For body-only finally, remove the GenFinalizer after the try body
             // so that the finally is not generated to catch bodies.
             self.try_env.info.borrow_mut().finalize = None;
+            self.try_env.info.borrow_mut().has_finalizer = false;
         }
     }
 }
@@ -2761,6 +2844,7 @@ impl Gen {
             body_only_finalize,
         }));
         try_env.info.borrow_mut().finalize = Some(finalizer);
+        try_env.info.borrow_mut().has_finalizer = has_finalizer;
         try_env.info.borrow_mut().gaps = Vec::new();
         let (body, catchers) = match &ctx.tree(tree).kind {
             TreeKind::Try {
@@ -4217,6 +4301,20 @@ impl Gen {
             let items = self.get_items();
             self.result = Some(items.make_dynamic_item(ctx, sym));
             return;
+        }
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+            let nm = name.to_java_string().to_string_lossy().to_string();
+            if nm.starts_with("val$s") {
+                let mn = self
+                    .code
+                    .as_ref()
+                    .map(|c| {
+                        let m = ctx.sym(c.borrow().meth);
+                        m.name.to_java_string().to_string_lossy().to_string()
+                    })
+                    .unwrap_or_default();
+                eprintln!("[GI] cur={} sym={} adr={:?}", mn, nm, ctx.sym(sym).local_adr());
+            }
         }
         let owner_kind = ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind);
         if ctx.sym(sym).kind == crate::code::kinds::Kind::VAR

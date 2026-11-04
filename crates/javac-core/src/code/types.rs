@@ -1532,6 +1532,20 @@ impl Types {
             // implementation lazily completes the class symbol.
             let actuals = allparams_of_completed(ctx, syms, class_bound_type, attr.as_deref_mut());
             let formals = allparams_of_completed(ctx, syms, tsym_type, attr.as_deref_mut());
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                let dt = crate::comp::attr::type_display_of(ctx, t);
+                if dt == "ListIterator" || dt == "Iterator" {
+                    let dst = crate::comp::attr::type_display_of(ctx, supertype);
+                    eprintln!(
+                        "[ST] t={} erased={} raw={} sup={} formals_empty={}",
+                        dt,
+                        has_erased_supertypes(ctx, t),
+                        is_raw_type(ctx, t),
+                        dst,
+                        formals.is_empty()
+                    );
+                }
+            }
             let result = if has_erased_supertypes(ctx, t) {
                 self.erasure_recursive(ctx, syms, supertype)
             } else if formals.non_empty() {
@@ -1642,6 +1656,20 @@ impl Types {
             let interfaces = class_symbol_get_interfaces(ctx, tsym);
             let result = if t == tsym_type {
                 interfaces
+            } else if has_erased_supertypes(ctx, t) {
+                // Java: if (t.hasErasedSupertypes()) t.interfaces_field =
+                // erasureRecursive(interfaces) (Types.java:2616-2617). A raw
+                // type keeps its declared supertypes raw: substituting with an
+                // empty actuals list leaves Iterator<E> instead of Iterator.
+                let mut erased: List<TypeId> = List::nil();
+                for i in interfaces.iter() {
+                    erased = erased.prepend(self.erasure_recursive(ctx, syms, i));
+                }
+                let mut out: List<TypeId> = List::nil();
+                for i in erased.iter() {
+                    out = out.prepend(i);
+                }
+                out
             } else {
                 let actuals = allparams_of(ctx, t);
                 let formals = allparams_of(ctx, tsym_type);
@@ -2090,7 +2118,8 @@ impl Types {
     ) -> bool {
         let current = ts.clone();
         for t in &current {
-            if self.type_contains(ctx, _syms, t, elem) {
+            let r = self.type_contains(ctx, _syms, t, elem);
+            if r {
                 return true;
             }
         }
@@ -2325,6 +2354,14 @@ impl Types {
                 let mut t = t;
                 loop {
                     if let Some(s) = self.as_super(ctx, syms, t, sym) {
+                        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                            let n1 = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
+                            if n1 == "Iterator" {
+                                let dt = crate::comp::attr::type_display_of(ctx, t);
+                                let ds = crate::comp::attr::type_display_of(ctx, s);
+                                eprintln!("[AOS] t={} -> {}", dt, ds);
+                            }
+                        }
                         return Some(s);
                     }
                     match enclosing_of(ctx, t) {
@@ -2459,6 +2496,19 @@ impl Types {
                         // yield the wrong parameter list.
                         let owner_params = allparams_of_completed(ctx, syms, owner_type, None);
                         let base_params = allparams_of_completed(ctx, syms, base, None);
+                        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                            let nm = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
+                            if nm == "next" {
+                                let db = crate::comp::attr::type_display_of(ctx, base);
+                                eprintln!(
+                                    "[MTV] owner_params_empty={} base={} base_params_empty={} raw={}",
+                                    owner_params.is_empty(),
+                                    db,
+                                    base_params.is_empty(),
+                                    is_raw_type(ctx, base)
+                                );
+                            }
+                        }
                         if owner_params.non_empty() {
                             return if base_params.is_empty() {
                                 // then base is a raw type
@@ -3322,9 +3372,13 @@ impl Types {
         }
         let tsym = ctx.typ(t).tsym.expect("class type symbol");
         let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
+        // eprintln!("[IU] a");
         let mut parms = allparams_of(ctx, tsym_type);
+        // eprintln!("[IU] b");
         let mut args = allparams_of(ctx, t);
+        // eprintln!("[IU] c");
         while parms.non_empty() {
+            // eprintln!("[IU] loop");
             let bound = *parms.head();
             let unb = new_wildcard_type(
                 ctx,
@@ -3333,9 +3387,12 @@ impl Types {
                 Some(syms.bound_class),
                 Some(bound),
             );
+            // eprintln!("[IU] before-contains");
             if !self.contains_type(ctx, syms, *args.head(), unb) {
+                // eprintln!("[IU] contains-false");
                 return false;
             }
+            // eprintln!("[IU] contains-true");
             parms = parms.tail();
             args = args.tail();
         }
@@ -3931,7 +3988,9 @@ impl Types {
         // Java: if (warn != warnStack.head) { push; checkUnsafeVarargsConversion;
         // result = isCastable.visit(t,s); pop; } else visit(t,s)
         let result = self.is_castable_visit(ctx, syms, t, s, warn);
+        // eprintln!("[ICW] visit-result={}", result);
         if result && ctx.typ(t).has_tag(TypeTag::CLASS) && ctx.typ(s).has_tag(TypeTag::CLASS) {
+            // eprintln!("[ICW] sealed-check");
             let tsym = ctx.typ(t).tsym.expect("class type symbol");
             let ssym = ctx.typ(s).tsym.expect("class type symbol");
             if symbol_is_sealed(ctx, tsym) || symbol_is_sealed(ctx, ssym) {
@@ -3954,6 +4013,15 @@ impl Types {
         s: TypeId,
         warn: &crate::util::warner::Warner,
     ) -> bool {
+        {
+            static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let c = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if c >= 0 {
+                let dt = crate::comp::attr::type_display_of(ctx, t);
+                let ds = crate::comp::attr::type_display_of(ctx, s);
+                // eprintln!("[ICV] n={} t={} s={}", c, dt, ds);
+            }
+        }
         match &ctx.typ(t).kind {
             TypeKindData::JCPrimitiveType
             | TypeKindData::JCVoidType
@@ -4043,6 +4111,7 @@ impl Types {
             | TypeKindData::UnionClassType { .. }
             | TypeKindData::IntersectionClassType { .. } => {
                 let tag = ctx.typ(s).get_tag();
+                // eprintln!("[ICV2] a tag={:?}", tag);
                 if tag == TypeTag::ERROR || tag == TypeTag::BOT {
                     return true;
                 }
@@ -4057,7 +4126,9 @@ impl Types {
                     }
                     return false;
                 }
+                // eprintln!("[ICV2] b");
                 if self.is_compound(ctx, t) || self.is_compound(ctx, s) {
+                    // eprintln!("[ICV2] compound");
                     return if !self.is_compound(ctx, t) {
                         self.visit_compound_type(ctx, syms, s, t, true, warn)
                     } else {
@@ -4065,9 +4136,13 @@ impl Types {
                     };
                 }
                 if tag == TypeTag::CLASS || tag == TypeTag::ARRAY {
+                    // eprintln!("[ICV2] c");
                     let t_erasure = self.erasure(ctx, syms, t);
+                    // eprintln!("[ICV2] d");
                     let s_erasure = self.erasure(ctx, syms, s);
+                    // eprintln!("[ICV2] e");
                     let upcast = self.is_subtype(ctx, syms, t_erasure, s_erasure);
+                    // eprintln!("[ICV2] f upcast={}", upcast);
                     if upcast || self.is_subtype(ctx, syms, s_erasure, t_erasure) {
                         if !upcast && tag == TypeTag::ARRAY {
                             if !self.is_reifiable(ctx, syms, s) {
@@ -4114,28 +4189,56 @@ impl Types {
                                 self.as_sub(ctx, syms, b_high, a_high_tsym)
                             });
                         }
+                        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                            let dt = crate::comp::attr::type_display_of(ctx, t);
+                            let ds = crate::comp::attr::type_display_of(ctx, s);
+                            eprintln!(
+                                "[IC3] t={} s={} low_sub={} high_sub={}",
+                                dt,
+                                ds,
+                                low_sub.is_some(),
+                                high_sub.is_some()
+                            );
+                        }
                         if let (Some(low_sub), Some(high_sub)) = (low_sub, high_sub) {
                             let a_high_params = self.class_allparams(ctx, a_high);
                             let a_low_params = self.class_allparams(ctx, a_low);
                             let high_params = self.class_allparams(ctx, high_sub);
                             let low_params = self.class_allparams(ctx, low_sub);
-                            let disjoint =
-                                self.disjoint_types(
-                                    ctx,
-                                    syms,
-                                    a_high_params.clone(),
-                                    high_params.clone(),
-                                ) || self.disjoint_types(
-                                    ctx,
-                                    syms,
-                                    a_high_params,
-                                    low_params.clone(),
-                                ) || self.disjoint_types(
-                                    ctx,
-                                    syms,
-                                    a_low_params.clone(),
-                                    high_params,
-                                ) || self.disjoint_types(ctx, syms, a_low_params, low_params);
+                            let a_high_all: Vec<TypeId> = a_high_params.iter().collect();
+                            let a_low_all: Vec<TypeId> = a_low_params.iter().collect();
+                            let high_all: Vec<TypeId> = high_params.iter().collect();
+                            let low_all: Vec<TypeId> = low_params.iter().collect();
+                            let dbg = crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL");
+                            let d1 = self.disjoint_types(
+                                ctx,
+                                syms,
+                                a_high_params.clone(),
+                                high_params.clone(),
+                            );
+                            let d2 = self.disjoint_types(ctx, syms, a_high_params, low_params.clone());
+                            let d3 = self.disjoint_types(ctx, syms, a_low_params.clone(), high_params);
+                            let d4 = self.disjoint_types(ctx, syms, a_low_params, low_params);
+                            if dbg {
+                                let p = |ctx: &mut CompilerContext, l: &[TypeId]| -> String {
+                                    l.iter()
+                                        .map(|t| crate::comp::attr::type_display_of(ctx, *t))
+                                        .collect::<Vec<_>>()
+                                        .join(",")
+                                };
+                                let ah = p(ctx, &a_high_all);
+                                let al = p(ctx, &a_low_all);
+                                let hp = p(ctx, &high_all);
+                                let lp = p(ctx, &low_all);
+                                eprintln!(
+                                    "[DIS] ah=[{}] al=[{}] hp=[{}] lp=[{}] d1={} d2={} d3={} d4={}",
+                                    ah, al, hp, lp, d1, d2, d3, d4
+                                );
+                            }
+                            let disjoint = d1 || d2 || d3 || d4;
+                            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                                eprintln!("[IC3] disjoint={}", disjoint);
+                            }
                             if !disjoint {
                                 let give_warning = if upcast {
                                     self.give_warning(ctx, syms, a, b)
@@ -6114,6 +6217,26 @@ impl Types {
         t: TypeId,
         elem: TypeId,
     ) -> bool {
+        // Java: WildcardType.contains(Type elem) — kind != UNBOUND delegates to
+        // the type argument, so "? super T" contains T. Without this branch
+        // typeContains(Comparable<? super T>, T) is false and rewriteQuantifiers
+        // (rewriteTypeVars = true) expands T -> Comparable<? super T> forever.
+        if let TypeKindData::WildcardType { type_, kind, .. } = &ctx.typ(t).kind {
+            if *kind != crate::code::bound_kind::BoundKind::UNBOUND {
+                let inner = type_.expect("wildcard bound type");
+                return self.type_contains(ctx, syms, inner, elem);
+            }
+            return false;
+        }
+        // Java: CapturedType extends WildcardType, so it inherits the override
+        // above. The port's CapturedType is a separate TypeKindData variant, so
+        // the same delegation has to be spelled out here.
+        if let TypeKindData::CapturedType { wildcard, .. } = &ctx.typ(t).kind {
+            if let Some(wildcard) = *wildcard {
+                return self.type_contains(ctx, syms, wildcard, elem);
+            }
+            return false;
+        }
         if type_equals_ignore_metadata(self, ctx, t, elem) {
             return true;
         }
@@ -6124,7 +6247,7 @@ impl Types {
                 return true;
             }
             let arguments = get_type_arguments_completed(ctx, syms, t, None);
-            if type_list_contains(self, ctx, arguments, elem) {
+            if type_list_contains(self, ctx, syms, arguments, elem) {
                 return true;
             }
         }
@@ -6134,7 +6257,7 @@ impl Types {
                 return true;
             }
             let interfaces = self.interfaces(ctx, syms, t);
-            if type_list_contains(self, ctx, interfaces, elem) {
+            if type_list_contains(self, ctx, syms, interfaces, elem) {
                 return true;
             }
         }
@@ -6262,7 +6385,21 @@ impl Types {
             TypeKindData::TypeVar { .. } => {
                 if rewrite_type_vars {
                     let upper = ctx.upper_bound_of(t).expect("type var upper bound");
-                    let bound = if self.type_contains(ctx, syms, upper, t) {
+                    let contained = self.type_contains(ctx, syms, upper, t);
+                    {
+                        static N: std::sync::atomic::AtomicUsize =
+                            std::sync::atomic::AtomicUsize::new(0);
+                        let c = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if c >= 50 && c % 50 == 0 {
+                            let du = crate::comp::attr::type_display_of(ctx, upper);
+                            let dt = crate::comp::attr::type_display_of(ctx, t);
+                            eprintln!(
+                                "[TVR] n={} contained={} upper={} t={}",
+                                c, contained, du, dt
+                            );
+                        }
+                    }
+                    let bound = if contained {
                         self.erasure(ctx, syms, upper)
                     } else {
                         self.rewrite_quantifiers(ctx, syms, upper, high, rewrite_type_vars)
@@ -6341,9 +6478,15 @@ impl Types {
                 TypeKindData::WildcardType { type_, kind, .. } => (*type_, *kind),
                 _ => break,
             };
-            t = match type_ {
-                Some(bound) => bound,
-                None => {
+            // Java: t = high ? w.getExtendsBound() : w.getSuperBound();
+            // getExtendsBound() is null unless kind == EXTENDS, getSuperBound()
+            // is null unless kind == SUPER; the null case falls back to
+            // objectType/botType. Reading type_ unconditionally turned an
+            // unbounded "?" into Object on the low side instead of botType.
+            t = match (high, kind, type_) {
+                (true, BoundKind::EXTENDS, Some(bound)) => bound,
+                (false, BoundKind::SUPER, Some(bound)) => bound,
+                _ => {
                     if high {
                         syms.object_type
                     } else {
@@ -6351,7 +6494,6 @@ impl Types {
                     }
                 }
             };
-            let _ = kind;
         }
         t
     }
@@ -6458,12 +6600,20 @@ impl Types {
 fn type_list_contains(
     types: &Types,
     ctx: &mut CompilerContext,
+    syms: &Symtab,
     ts: List<TypeId>,
     elem: TypeId,
 ) -> bool {
+    // Java: boolean containsType(List<Type> ts, Type s) — "for (Type t : ts) if
+    // (t.contains(s)) return true". The element check must be Type.contains, not
+    // identity: against a type argument list of [? super T] the element T is
+    // contained through WildcardType.contains. Comparing for equality here made
+    // typeContains(Comparable<? super T>, T) false, which sent
+    // rewriteQuantifiers(T, rewriteTypeVars = true) into an infinite
+    // T -> Comparable<? super T> expansion.
     let current = ts;
     for t in &current {
-        if type_equals_ignore_metadata(types, ctx, t, elem) {
+        if types.type_contains(ctx, syms, t, elem) {
             return true;
         }
     }

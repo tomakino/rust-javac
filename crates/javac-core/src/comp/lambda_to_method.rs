@@ -383,8 +383,64 @@ impl LambdaToMethod {
             TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
             _ => panic!("expected a class declaration"),
         };
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+            let nm = ctx.sym(class_sym).name.to_java_string().to_string_lossy().to_string();
+            if nm == "M28" {
+                if let TreeKind::ClassDecl { defs, .. } = &ctx.tree(tree).kind {
+                    let tags: Vec<String> = defs
+                        .iter()
+                        .map(|d| format!("{:?}", ctx.tree(d).tag))
+                        .collect();
+                    eprintln!("[VCD] M28 defs={:?}", tags);
+                }
+            }
+            if nm == "PairBox" {
+                let mut parent = None;
+                let mut stack: Vec<TreeId> = vec![];
+                for cand in self.context_map.borrow().keys().copied() {
+                    stack.push(cand);
+                }
+                for cand in stack {
+                    if let TreeKind::MethodDecl { body: Some(body), .. } = ctx.tree(cand).kind
+                        && let TreeKind::Block { stats, .. } = &ctx.tree(body).kind
+                    {
+                        for s in stats.iter() {
+                            if ctx.tree(s).has_tag(crate::tree::jc_tree::Tag::LAMBDA) {
+                                parent = Some(s);
+                            }
+                        }
+                    }
+                }
+                let _ = parent;
+                let in_block = |t: TreeId, d: i32| -> bool { d > 3 };
+                let _ = in_block;
+                eprintln!(
+                    "[VCD] class=PairBox owner_none={} context_none={}",
+                    ctx.sym(class_sym).owner.is_none(),
+                    self.context.is_none()
+                );
+            }
+        }
         if ctx.sym(class_sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::PCK) {
             tree = self.analyzer.analyze_and_preprocess_class(ctx, tree);
+        }
+        // Java: if (directlyEnclosingLambda() != null) tree.sym.owner = owner();
+        // (LambdaToMethod.java:1327-1328). A local class DEFINED inside a lambda
+        // body belongs to the synthetic lambda method; Lower then collects the
+        // lambda's parameters as its free variables.
+        if self.context.is_some()
+            && let Some(context_tree) = self.context
+        {
+            let translated: Option<SymbolId> = {
+                let contexts = self.context_map.borrow();
+                match contexts.get(&context_tree).map(|context| &context.kind) {
+                    Some(TranslationContextKind::Lambda(lambda)) => Some(lambda.translated_sym),
+                    _ => None,
+                }
+            };
+            if let Some(translated) = translated {
+                ctx.sym_mut(class_sym).owner = Some(translated);
+            }
         }
         let previous_klass_info = self.k_info.take();
         let klass_info = self.new_klass_info(ctx, tree, class_sym);
@@ -844,6 +900,19 @@ impl LambdaToMethod {
         let filter = sym
             .map(|sym| self.analyzer.lambda_ident_symbol_filter(ctx, sym))
             .unwrap_or(false);
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL")
+            && let Some(s) = sym
+        {
+            let nm = ctx.sym(s).name.to_java_string().to_string_lossy().to_string();
+            if nm == "s1" || nm == "s2" {
+                eprintln!(
+                    "[VIL] sym={} filter={} context_none={}",
+                    nm,
+                    filter,
+                    self.context.is_none()
+                );
+            }
+        }
         if self.context.is_none()
             && filter
             && let Some(s) = sym
@@ -1516,18 +1585,12 @@ impl LambdaAnalyzerPreprocessor {
         class_sym: SymbolId,
         lambda_context: TreeId,
     ) {
-        // A local/anonymous class defined in a lambda body is owned by the
-        // synthetic lambda method (upstream Lower then collects the lambda
-        // parameter as a free variable of the class). Leaving the owner at the
-        // enclosing <clinit> loses that capture and emits an empty constructor.
-        let translated = {
-            let contexts = self.context_map.borrow();
-            match contexts.get(&lambda_context).map(|context| &context.kind) {
-                Some(TranslationContextKind::Lambda(lambda)) => lambda.translated_sym,
-                _ => return,
-            }
-        };
-        ctx.sym_mut(class_sym).owner = Some(translated);
+        // Java: the owner is reassigned in LambdaTranslator.visitClassDef
+        // (LambdaToMethod.java:1327-1328), i.e. only when the class DEFINITION
+        // sits inside a lambda body. Reassigning it here mislabels a class whose
+        // definition is outside the lambda but which is instantiated inside one
+        // (PairBox in Collectors.teeing0): the definition's owner must stay the
+        // enclosing method for Lower.freevars to match its captured variables.
         let local_class_defs = self.local_class_defs.clone();
         let lower = Rc::clone(&self.lower);
         let frame_stack = self.frame_stack.clone();
@@ -2288,14 +2351,17 @@ impl LambdaAnalyzerPreprocessor {
     }
 
     /// Increments and returns the per-prefix synthetic method name count.
+    ///
+    /// Java: SyntheticMethodNameCounter.getIndex (LambdaToMethod.java:1244-1253)
+    /// increments BEFORE returning, so the first name for a given prefix ends in
+    /// "$1", not "$0".
     fn synthetic_method_name_index(&mut self, key: &str) -> i32 {
         let index = self
             .synthetic_method_name_counts
             .entry(key.to_string())
             .or_insert(0);
-        let result = *index;
         *index += 1;
-        result
+        *index
     }
 
     /// A simple synthetic lambda method name (upstream lambdaName).
@@ -2427,6 +2493,18 @@ impl LambdaAnalyzerPreprocessor {
             TreeKind::Ident { sym: Some(sym), .. } => (*sym, ctx.tree(tree).ty),
             _ => return None,
         };
+        if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+            let nm = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
+            if nm == "s1" || nm == "s2" {
+                let contexts = self.context_map.borrow();
+                let ctxname = match contexts.get(&context_tree).map(|context| &context.kind) {
+                    Some(TranslationContextKind::Lambda(_)) => "Lambda",
+                    Some(_) => "Other",
+                    None => "Missing",
+                };
+                eprintln!("[TLI] sym={} context={}", nm, ctxname);
+            }
+        }
         let symbols: Vec<(LambdaSymbolKind, Vec<(SymbolId, SymbolId)>)> = {
             let contexts = self.context_map.borrow();
             let lambda = match contexts.get(&context_tree).map(|context| &context.kind) {
@@ -3044,13 +3122,20 @@ fn add_lambda_symbol_ro(
                     ctx.sym(sym).ty.expect("captured var type"),
                 )
             };
-            new_var_symbol_static(
+            let param = new_var_symbol_static(
                 ctx,
                 flags::SYNTHETIC as i64 | flags::FINAL as i64 | flags::PARAMETER,
                 sym_name,
                 erased,
                 translated_sym,
-            )
+            );
+            // Java: Lower.makeTranslationMap keys the map on p.baseSymbol()
+            // (Lower.java:2756-2765). A captured lambda parameter must therefore
+            // keep a link to the variable it captures, otherwise the rewrite
+            // never fires and the original variable's register (from the
+            // enclosing method) is used inside the lambda.
+            ctx.sym_mut(param).base_symbol_override = Some(sym);
+            param
         }
         LambdaSymbolKind::CAPTURED_OUTER_THIS => {
             let flat = ctx.sym(sym).flat_name();
@@ -3177,6 +3262,16 @@ fn capture_local_class_defs_static(
         }
 
         fn visit_symbol(&mut self, ctx: &mut CompilerContext, sym: SymbolId) {
+            if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                let nm = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
+                let on = ctx
+                    .sym(sym)
+                    .owner
+                    .map(|o| ctx.sym(o).name.to_java_string().to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let ok = ctx.sym(sym).owner.map(|o| ctx.sym(o).kind).unwrap_or(crate::code::kinds::Kind::ERR);
+                eprintln!("[CV] sym={} owner={} owner_kind={:?}", nm, on, ok);
+            }
             let const_value = ctx
                 .sym(sym)
                 .ty
@@ -3185,6 +3280,23 @@ fn capture_local_class_defs_static(
                 && ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::MTH)
                 && const_value.is_none()
             {
+                if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+                    let nm = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
+                    let frames: Vec<String> = self
+                        .frame_stack
+                        .iter()
+                        .map(|f| {
+                            let t = format!("{:?}", ctx.tree(f.tree).tag);
+                            format!("{}:{}", t, t.len())
+                        })
+                        .collect();
+                    eprintln!(
+                        "[CVS] sym={} stack_len={} frames={:?}",
+                        nm,
+                        self.frame_stack.len(),
+                        frames
+                    );
+                }
                 let mut local_context = context_key_ro(self.frame_stack, self.context_map);
                 while let Some(context_tree) = local_context {
                     if ctx.tree(context_tree).has_tag(Tag::LAMBDA) {
@@ -3630,13 +3742,28 @@ impl LambdaToMethod {
             };
             let serializable_type = self.syms.serializable_type;
             let serializable_tsym = ctx.typ(serializable_type).tsym;
-            let target_tsym2 = ctx.typ(target).tsym;
+            // Java filters against tree.type.tsym (LambdaToMethod.java:1135).
+            // For an intersection type that symbol is its primary (first)
+            // supertype; Type.tsym may be absent on the intersection itself, and
+            // then the functional interface would wrongly be recorded as a
+            // marker (flags 7 with one marker instead of flags 5).
+            let target_tsym2 = match ctx.typ(target).tsym {
+                Some(tsym) => Some(tsym),
+                None if targets.is_empty() => None,
+                None => ctx.typ(*targets.head()).tsym,
+            };
             let object_tsym = ctx.typ(self.syms.object_type).tsym;
+            let mut is_primary = true;
             for marker in targets.iter() {
+                let primary = is_primary;
+                is_primary = false;
                 let syms = &*self.syms;
                 let erased = self.types.erasure(ctx, &syms, marker);
                 let _ = syms;
                 let marker_tsym = ctx.typ(erased).tsym;
+                if primary {
+                    continue;
+                }
                 if marker_tsym != serializable_tsym
                     && marker_tsym != target_tsym2
                     && marker_tsym != object_tsym
@@ -3697,8 +3824,21 @@ impl LambdaToMethod {
                 let k_info_class = self.k_info.as_ref().map(|info| info.clazz);
                 if let Some(clazz) = k_info_class {
                     {
+                        // Java positions the synthesized method at the class
+                        // declaration's JCClassDecl.pos, which starts at the
+                        // modifiers (annotations included: Comparator.java:115 is
+                        // "@FunctionalInterface"). The ported ClassDecl.pos points
+                        // at the "public" keyword instead, one line later.
+                        let clazz_pos = match &ctx.tree(clazz).kind {
+                            TreeKind::ClassDecl { mods: Some(mods), .. }
+                                if ctx.tree(*mods).pos > 0 =>
+                            {
+                                ctx.tree(*mods).pos
+                            }
+                            _ => ctx.tree(clazz).pos,
+                        };
                         let make = &*self.make;
-                        make.at(ctx.tree(clazz).pos);
+                        make.at(clazz_pos);
                     }
                     self.add_deserialization_case(
                         ctx,
@@ -3867,14 +4007,42 @@ impl LambdaToMethod {
             .as_ref()
             .map(|info| info.deserialize_cases.clone())
             .unwrap_or_default();
+        // Java stores deserializeCases in a HashMap (LambdaToMethod.java:243),
+        // so the switch cases come out in bucket order, not insertion order.
+        // Reproduce that order: spread the java.lang.String hash and sort by
+        // bucket index in a 16-slot table (four entries never resize it).
+        let mut ordered_cases: Vec<&(String, Vec<TreeId>)> = cases.iter().collect();
+        ordered_cases.sort_by_key(|(key, _)| {
+            let mut h: i32 = 0;
+            for unit in key.encode_utf16() {
+                h = h.wrapping_mul(31).wrapping_add(unit as i32);
+            }
+            let spread = (h ^ ((h as u32 >> 16) as i32)) as u32;
+            spread & 15
+        });
+        // Java: makeDeserializeMethod builds statements at the current make
+        // position, which addDeserializationCase leaves at the class
+        // declaration's position. Anchor it here so every synthesized statement
+        // carries the same line, matching javac's single-entry line table.
+        if let Some(info) = self.k_info.as_ref() {
+            let clazz = info.clazz;
+            let clazz_pos = match &ctx.tree(clazz).kind {
+                TreeKind::ClassDecl { mods: Some(mods), .. } if ctx.tree(*mods).pos > 0 => {
+                    ctx.tree(*mods).pos
+                }
+                _ => ctx.tree(clazz).pos,
+            };
+            let make = &*self.make;
+            make.at(clazz_pos);
+        }
         let mut case_trees: Vec<TreeId> = Vec::new();
         let mut breaks: Vec<TreeId> = Vec::new();
-        for (key, statements) in cases.iter() {
+        for (key, statements) in ordered_cases {
             let br = {
-                let clazz = self.k_info.as_ref().map(|info| info.clazz);
-                let pos = clazz.map(|clazz| ctx.tree(clazz).pos).unwrap_or(0);
+                // Java: make.Break(null) uses the current make position, which
+                // addDeserializationCase set to the class declaration position.
+                // Re-anchoring on the break would add extra line-table entries.
                 let make = &*self.make;
-                make.at(pos);
                 make.break_(ctx, None)
             };
             breaks.push(br);
@@ -4080,7 +4248,15 @@ impl LambdaToMethod {
         let functional_interface_method_signature = self.type_sig(ctx, sam_erasure, false);
         let impl_owner = ctx.sym(ref_sym).owner.expect("impl owner");
         let impl_owner_ty = ctx.sym(impl_owner).ty.expect("impl owner type");
-        let impl_class = self.class_sig_of_type(ctx, impl_owner_ty);
+        // Java: classSig(types.erasure(refSym.owner.type))
+        // (LambdaToMethod.java:758). Without the erasure the implementation
+        // class is written with type arguments ("Map$Entry<TK;TV;>"), which no
+        // SerializedLambda can ever contain.
+        let impl_owner_erasure = {
+            let syms = &*self.syms;
+            self.types.erasure(ctx, &syms, impl_owner_ty)
+        };
+        let impl_class = self.class_sig_of_type(ctx, impl_owner_erasure);
         let impl_method_name = ctx
             .sym(ref_sym)
             .name
@@ -4091,12 +4267,19 @@ impl LambdaToMethod {
         let impl_method_signature = self.type_sig(ctx, ref_ty, false);
         let int_type = self.syms.int_type;
         let method_kind_getter = self.deser_getter(ctx, "getImplMethodKind", int_type);
+        // Java: make.Literal(refSym.referenceKind()) (LambdaToMethod.java:762-763),
+        // where refSym is the MethodHandleSymbol. Deriving the kind from the
+        // tree instead falls back to BOUND whenever the tree is not a member
+        // reference node (e.g. a lambda converted from one), which reports
+        // REF_invokeVirtual (5) for a static implementation method.
+        let kind_value = crate::code::symbol::method_handle_reference_kind(ctx, ref_sym)
+            .unwrap_or_else(|| reference_kind_of(ctx, pos_tree));
         let kind_literal = {
             let make = &*self.make;
             make.literal(
                 ctx,
                 TypeTag::INT,
-                Some(LiteralValue::Integer(reference_kind_of(ctx, pos_tree))),
+                Some(LiteralValue::Integer(kind_value)),
             )
         };
         ctx.tree_mut(kind_literal).ty = Some(int_type);

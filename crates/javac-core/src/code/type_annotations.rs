@@ -817,6 +817,14 @@ impl<'a, 'b> TreeScannerVisitor for TypeAnnotationPositions<'a, 'b> {
             } else if element_kind == ElementKind::ENUM_CONSTANT {
                 // No type annotations can occur here.
             } else {
+                let nm = ctx
+                    .sym(sym)
+                    .name
+                    .to_java_string()
+                    .to_string_lossy()
+                    .to_string();
+                let kk = ctx.sym(sym).kind;
+                eprintln!("[VA] unhandled kind={:?} name={} symkind={:?}", element_kind, nm, kk);
                 panic!("AssertionError: Unhandled variable kind");
             }
         }

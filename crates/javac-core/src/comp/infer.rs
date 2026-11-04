@@ -2814,18 +2814,16 @@ impl Infer {
                 _ => sp_type,
             },
         };
-        // Java: new ImplicitArgType(spMethod, resolveContext.step). The entry this
-        // lookup must hit is recorded by the RecoveryDeferredTypeMap used by
-        // basicMethodInvocationRecovery, whose phase is
-        // env.info.pendingResolutionPhase (BASIC for a signature-polymorphic
-        // access, Resolve.java:2748). Keying on the context step (VARARITY)
-        // always missed that entry.
-        let _ = resolve_step;
-        let phase = env
-            .info
-            .borrow()
-            .pending_resolution_phase
-            .unwrap_or(crate::comp::resolve::MethodResolutionPhase::BOX);
+        // Java: new ImplicitArgType(spMethod, resolveContext.step)
+        // (Infer.java:600-620). resolveContext.step is the phase the overload
+        // resolution actually succeeded in (VARARITY for a signature-polymorphic
+        // call whose declared parameter list does not match the argument count),
+        // not env.info.pendingResolutionPhase -- Resolve.access forces that to
+        // BASIC right before calling findPolymorphicSignatureInstance
+        // (Resolve.java:2748). Keying on the latter missed every entry recorded
+        // during the successful phase and left noType placeholders in the
+        // synthetic method signature.
+        let phase = resolve_step;
         let mut implicit_map =
             crate::comp::deferred_attr::DeferredTypeMap::new_implicit_arg(sp_method, phase);
         let mut dctx = crate::comp::deferred_attr::DeferredMapCtx {

@@ -52,6 +52,7 @@ def main():
     ap.add_argument("--src", default=str(DEFAULT_SRC))
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--filter", default="")
+    ap.add_argument("--exclude", default="")
     ap.add_argument("--work", default=str(ROOT / "target/tmp/java_base_check"))
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
@@ -60,6 +61,10 @@ def main():
     java_files = sorted(src_root.rglob("*.java"))
     if args.filter:
         java_files = [f for f in java_files if args.filter in f.as_posix()]
+    if args.exclude:
+        # A source that crashes the compiler would abort the whole batch, so the
+        # known-offender can be dropped while the rest is compared in one run.
+        java_files = [f for f in java_files if args.exclude not in f.as_posix()]
     if args.limit:
         java_files = java_files[: args.limit]
     if not java_files:
@@ -80,11 +85,31 @@ def main():
     jc_all, jerr_all = run(JAVAC, src_root, jout_all, java_files, argfile_dir=work)
     all_jclasses = hash_dir(jout_all)
     print(f"[javac] exit={jc_all} classes={len(all_jclasses)}", flush=True)
+    # Compile the whole module with rust in one process, the same way javac was
+    # invoked: spawning one process per source file dominated the runtime
+    # (3067 process starts) without adding any isolation that this check needs.
+    # On a non-zero exit the per-file path below retries each file so a single
+    # failing source still produces a precise per-file report.
+    print("[rust] compiling the module once...", flush=True)
+    rout_all = work / "rust_all"
+    rc_all, rerr_all = run(exe, src_root, rout_all, java_files, argfile_dir=work / "rust")
+    parsed_all = hash_dir(rout_all)
+    print(f"[rust] exit={rc_all} classes={len(parsed_all)}", flush=True)
+    batch_ok = rc_all == 0
     for i, f in enumerate(java_files, 1):
         rel = f.relative_to(src_root).as_posix()
-        rout = work / "rust" / rel.replace("/", "_")[:-5]
-        rc, rerr = run(exe, src_root, rout, [f])
-        rclasses = hash_dir(rout)
+        prefix = rel[:-5]
+        if batch_ok:
+            rclasses = {
+                k: v
+                for k, v in parsed_all.items()
+                if k == prefix + ".class" or k.startswith(prefix + "$")
+            }
+            rc, rerr = 0, ""
+        else:
+            rout = work / "rust" / rel.replace("/", "_")[:-5]
+            rc, rerr = run(exe, src_root, rout, [f])
+            rclasses = hash_dir(rout)
         # A package-info.java legitimately produces no class file.
         ok = (
             rc == 0
@@ -103,7 +128,7 @@ def main():
             print(f"  [{i}/{len(java_files)}] matched={matched}", flush=True)
 
     print(f"checked={len(java_files)} matched={matched} failures={len(diffs)}")
-    for rel, jc, rc, jn, rn, missing, extra, diff, jerr, rerr in diffs[:10]:
+    for rel, jc, rc, jn, rn, missing, extra, diff, jerr, rerr in diffs[:60]:
         print(f"FAIL {rel}: javac exit={jc} classes={jn} rust exit={rc} classes={rn}")
         if missing:
             print(f"  missing: {missing}")

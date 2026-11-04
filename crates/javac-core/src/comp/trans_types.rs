@@ -1651,12 +1651,28 @@ impl TreeVisitor for TransTypes {
         // symbol still tells us that a trailing array parameter is consumed
         // variadically.
         let mut varargs_element = varargs_element;
+        // The trailing argument is packed into a fresh array when it is not
+        // already an array, even if the arity matches the formal parameter
+        // count: ofNamed(DirectMethodHandleDesc, String, ClassDesc,
+        // ConstantDesc...) called with four arguments packs the fourth one.
+        let last_arg_is_array = {
+            let mut rest = args.clone();
+            let mut last = None;
+            while rest.non_empty() {
+                last = Some(*rest.head());
+                rest = rest.tail();
+            }
+            last.and_then(|arg| ctx.tree(arg).ty)
+                .map(|ty| ctx.typ(ty).has_tag(TypeTag::ARRAY))
+                .unwrap_or(false)
+        };
         if varargs_element.is_none()
             && (ctx.sym(meth_sym).flags_field & flags::VARARGS) != 0
             // A mismatch in either direction can only be a varargs call: fewer
             // explicit arguments than parameters (empty varargs tail) or more
-            // (several tail elements).
-            && args.length() != argtypes.length()
+            // (several tail elements). Equal arity with a non-array trailing
+            // argument is also a varargs call (the trailing argument is packed).
+            && (args.length() != argtypes.length() || !last_arg_is_array)
             && !argtypes.is_empty()
             && ctx
                 .typ(argtypes.last().expect("last parameter"))
@@ -2260,8 +2276,20 @@ impl TreeVisitor for TransTypes {
                 // The selection's own type is missing when the qualifier was
                 // a synthetic super; the field symbol's erasure is what the
                 // selection denotes.
-                let s = sym.expect("field symbol for untyped select");
-                self.symbol_erasure(ctx, s)
+                // Java: visitSelect reads tree.type/tree.sym unconditionally,
+                // which holds for every attributed select. A synthesized select
+                // (pos == NOPOS) with neither is not something javac produces; fall
+                // back to the qualifier's erasure instead of aborting the
+                // compilation.
+                match sym {
+                    Some(s) => self.symbol_erasure(ctx, s),
+                    None => {
+                        let sel_ty = selected
+                            .and_then(|sel| ctx.tree(sel).ty)
+                            .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
+                        self.erasure(ctx, sel_ty)
+                    }
+                }
             }
         };
         if ctx.typ(tree_ty).const_value().is_some() {

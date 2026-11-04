@@ -2826,11 +2826,14 @@ impl Check {
         req: TypeId,
         check_context: &dyn CheckContext,
     ) -> TypeId {
+        // eprintln!("[CC] enter pos={}", pos);
         let warn = self.cast_warner(pos);
-        if self
+        // eprintln!("[CC] warn-built");
+        let castable = self
             .types
-            .is_castable_with_warn(ctx, syms, found, req, &warn)
-        {
+            .is_castable_with_warn(ctx, syms, found, req, &warn);
+        // eprintln!("[CC] castable={}", castable);
+        if castable {
             if warn.has_lint(LintCategory::UNCHECKED) {
                 self.warn_unchecked(
                     pos,
