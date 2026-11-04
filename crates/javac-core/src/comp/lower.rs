@@ -3443,7 +3443,12 @@ impl Lower {
                 panic!("AssertionError: unboxed type is not a subtype of the primitive");
             }
         }
-        let pos = ctx.tree(tree).pos;
+        // Java: Lower.unbox uses make_at(tree.pos()), but the position that
+        // javac's line table ends up with for the synthetic intValue() call is
+        // the START of the whole invocation chain (the creator, e.g. `Foo` in
+        // "Foo\n    .bar(...)"), not the '(' of the applied method. Verified
+        // with M37/M40/M41: intValue lands on the `Foo` line in all three.
+        let pos = crate::tree::tree_info::get_start_pos(ctx, tree);
         self.make.at(pos);
         let tree_ty = ctx.tree(tree).ty.expect("tree type");
         let unboxed_tsym = ctx.typ(unboxed).tsym.expect("unboxed type symbol");

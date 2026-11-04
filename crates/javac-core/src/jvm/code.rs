@@ -1595,6 +1595,7 @@ impl Code {
             if crate::util::debug_flags::debug_enabled("DSH_DEBUG_ANON") && pos == 14068 {
                 eprintln!("[SB] pos=14068\n{}", std::backtrace::Backtrace::force_capture());
             }
+
             self.pending_stat_pos = pos;
         }
     }

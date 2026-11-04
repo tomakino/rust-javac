@@ -232,7 +232,7 @@ impl crate::code::class_finder::SourceFileReader for SourceFileCompleter {
                     ctx,
                     &content,
                     false,
-                    false,
+                    true,
                     self.line_debug_info,
                     module_info,
                 );
@@ -1466,11 +1466,17 @@ impl MiniCompiler {
             // Java: JavaCompiler.java:618-619 passes lineDebugInfo as
             // keepLineMap; the line map is required for LineNumberTable.
             let keep_line_map = self.generator.borrow().line_debug_info;
+            // Java: JavaCompiler.genEndPos is true whenever a
+            // DiagnosticListener is registered (JavaCompiler.java:423-424),
+            // which always holds for the command line compiler via the
+            // MultiTaskListener. End positions carry the ',' markers that
+            // identify multi-declarator field statements.
+            let keep_end_pos = true;
             let mut parser = self.parser_factory.new_parser_full(
                 &mut self.ctx,
                 &content,
                 false,
-                false,
+                keep_end_pos,
                 keep_line_map,
                 module_info,
             );
