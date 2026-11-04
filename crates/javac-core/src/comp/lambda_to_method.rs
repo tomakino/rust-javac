@@ -536,7 +536,13 @@ impl LambdaToMethod {
                 context.owner,
                 lambda.self_sym,
                 lambda.method_reference_receiver,
-                self.map_prev_context(ctx),
+                // Java: TranslationContext.prev is the context that enclosed
+                // this lambda when it was analyzed. The lambda body may be
+                // reached while the translator's current context is still an
+                // enclosing one, so the recorded prev must be used: the indy
+                // arguments of a nested lambda are translated in its parent's
+                // context (LambdaToMethod.java:443).
+                context.prev_context,
                 lambda.synthetic_params.clone(),
             )
         };
