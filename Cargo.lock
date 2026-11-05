@@ -20,6 +20,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "javac-analysis"
+version = "0.1.0"
+dependencies = [
+ "javac-core",
+ "javac-strings",
+ "javac-tools",
+]
+
+[[package]]
 name = "javac-charset"
 version = "0.1.0"
 dependencies = [
@@ -70,6 +79,25 @@ dependencies = [
 [[package]]
 name = "javac-fs"
 version = "0.1.0"
+
+[[package]]
+name = "javac-ide-core"
+version = "0.1.0"
+dependencies = [
+ "javac-charset",
+ "javac-classpath",
+ "javac-ctsym",
+ "javac-floating",
+ "javac-fs",
+ "javac-jimage",
+ "javac-source",
+ "javac-strings",
+ "javac-tools",
+ "javac-unicode",
+ "javac-zip",
+ "sys-locale",
+ "unic-langid",
+]
 
 [[package]]
 name = "javac-jimage"

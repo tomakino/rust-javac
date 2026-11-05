@@ -1,0 +1,10 @@
+[package]
+name = "javac-analysis"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+javac-core = { workspace = true }
+javac-tools = { workspace = true }
+javac-strings = { workspace = true }

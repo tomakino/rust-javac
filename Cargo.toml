@@ -13,6 +13,8 @@ members = [
     "crates/javac-zip",
     "crates/javac-ctsym",
     "crates/javac-core",
+    "crates/javac-analysis",
+    "crates/javac-ide-core",
     "crates/javac-floating",
     "crates/rust-javac",
     "xtask",
