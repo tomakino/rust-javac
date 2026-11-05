@@ -4,9 +4,9 @@
 
 This project reimplements the Java compiler rather than wrapping it. The parser, symbol
 entering, attribution, flow analysis, lowering, bytecode generation, class-file writing
-and diagnostic machinery are implemented in Rust. The objective is observational
-equivalence with the reference compiler: identical class-file bytes, identical diagnostic
-output and identical exit codes, established by automated comparison.
+and diagnostic machinery are implemented in Rust. The objective is to reproduce the
+reference compiler's observable behavior — class-file bytes, diagnostic output and exit
+codes — as verified by automated comparison on fixed corpora.
 
 - Reference implementation: jdk17u commit `982d53c` (Temurin 17.0.19+10)
 - Language levels: Java 9–17, module system, `--release` via ct.sym
@@ -56,10 +56,28 @@ lazily.
 ## 2. Compatibility and verification
 
 **Class files.** Each output class is compared with the reference compiler by SHA-256.
-Equivalence therefore covers constant-pool contents and ordering, attribute tables (`LineNumberTable`,
+The comparison therefore covers constant-pool contents and ordering, attribute tables (`LineNumberTable`,
 `LocalVariableTable`, `StackMapTable`, `BootstrapMethods`,
 `InnerClasses`, `Signature`, `NestMembers`, `Record`, `PermittedSubclasses`,
 module attributes) and the class-file version fields.
+
+**Conditions.** A SHA-256 comparison is meaningful only when both compilers see the same
+inputs. The conditions used for every run below are:
+
+- reference compiler: `javac 17.0.19` (Temurin 17.0.19+10) running on Windows x64;
+- platform data: the same JDK's `lib/modules` and `lib/ct.sym` — the two files the
+  packaged compiler reads;
+- options: the default `-source`/`-target` (17), plus these variants, each verified on
+  Gson 2.10.1 (81 sources → 208 classes): `-g`, `-g:none`, `-g:source`, `-g:lines`,
+  `-g:vars`, `-g:source,lines,vars`, `--release 11/17`, `-parameters`, `-encoding UTF-8`,
+  `-Xmaxerrs 3`, `-Xdiags:compact`, `-Xlint:all`, `-Xlint:none`, `-nowarn`,
+  `-sourcepath`, `-s`, `-h`, `@argfile` and direct command-line arguments;
+- `-source 8`: verified separately (80 sources without `module-info.java`, 207 classes).
+
+A different `javac` patch release or a different platform-data set can produce
+different bytes; the claim does not extend to those combinations. `--release 8`
+fails on the Gson corpus in both compilers (module-info is not valid for release 8),
+so it does not contribute a byte comparison.
 
 **Diagnostics.** The output of both compilers is normalized (temporary and source paths,
 line endings, timing values) and compared line by line: message text, source position,
@@ -84,6 +102,34 @@ caret placement, note/warning/error counts and the process exit code (0/1/2/3/4)
 | JDK 17      | Temurin 17.0.19+10                                     | platform data and reference compiler |
 | Python      | 3.8+                                                   | test and packaging scripts           |
 | Android NDK | API 21+                                                | `android-arm64` packages only        |
+
+### Reference environment
+
+The validation results in section 4 were produced on this machine:
+
+| Component | Value |
+|:---|:---|
+| OS | Windows x64 |
+| Rust | 1.101.0-nightly (2026-10-31), pinned by `rust-toolchain.toml` |
+| JDK | Temurin 17.0.19+10 |
+| Python | 3.13.6 |
+| Android NDK | 30.0.16248370 |
+| Build profile | `dev` (debug) |
+
+Tests and scripts pin `-J-Duser.language=en -J-Duser.country=US` so diagnostics are
+compared against the English baselines regardless of the host locale.
+
+### Environment variables
+
+| Variable | Scope | Purpose |
+|:---|:---|:---|
+| `JAVA_HOME` | build, tests, packaging | JDK providing `lib/modules` and `lib/ct.sym`; also locates `javac` for parity checks |
+| `RAVAC_PLATFORM_DIR` | `ravac` at run time | overrides the platform directory (must contain `modules`); the only variable read by the compiler |
+| `BUILD_DATE` | build (`build.rs`) | overrides the `-version` build date (default: UTC build day) |
+| `ANDROID_NDK_HOME`, `ANDROID_HOME` | packaging | alternative NDK locations (default: `%LOCALAPPDATA%\Android\Sdk\ndk`) |
+| `TEMP`, `TMP` | tests (Windows) | writable temporary directory; point inside the repository when the system temp is restricted |
+| `RUSTUP_DIST_SERVER` | toolchain installation | mirror used by rustup |
+| `DIAG_EXAMPLES_FILTER`, `DIAG_EXAMPLES_VERBOSE`, `DIAG_EXAMPLES_TIMEOUT_SECS` | `scripts/check_examples.py` | case filter, verbosity, per-case timeout |
 
 ### Build
 
@@ -123,19 +169,20 @@ scan the file system for a JDK.
 
 ## 4. Validation results
 
-Results of the last full runs:
+Results of the last full runs. These are sampled verifications on the listed corpora, not a
+proof of equivalence for arbitrary programs:
 
 | Subject                 | Scope                            | Result                          |
 |:------------------------|:---------------------------------|:--------------------------------|
 | `javac-core` unit tests | 750 tests                        | 750 passed                      |
-| Gson 2.10.1             | 208 classes                      | 208 byte-identical              |
-| Guava 33.4.0            | 1970 classes                     | 1970 byte-identical             |
-| OkHttp 3.14.9           | 542 classes                      | 542 byte-identical              |
-| commons-lang3 3.12.0    | 359 classes                      | 359 byte-identical              |
-| JUnit 5.10.2            | 625 classes                      | 625 byte-identical              |
-| `jdk.compiler`          | 1637 classes                     | all byte-identical              |
-| `java.base`             | 3067 source files (6410 classes) | all byte-identical              |
-| `java.desktop`          | 2617 source files (5393 classes) | all byte-identical              |
+| Gson 2.10.1             | 208 classes                      | 208 matched              |
+| Guava 33.4.0            | 1970 classes                     | 1970 matched             |
+| OkHttp 3.14.9           | 542 classes                      | 542 matched              |
+| commons-lang3 3.12.0    | 359 classes                      | 359 matched              |
+| JUnit 5.10.2            | 625 classes                      | 625 matched              |
+| `jdk.compiler`          | 1637 classes                     | all matched              |
+| `java.base`             | 3067 source files (6410 classes) | all matched              |
+| `java.desktop`          | 2617 source files (5393 classes) | all matched              |
 | Diagnostic corpus       | 602 comparable cases             | 602 matched (last recorded run) |
 
 ## 5. Testing
