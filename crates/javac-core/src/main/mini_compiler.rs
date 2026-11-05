@@ -405,10 +405,12 @@ impl MiniCompiler {
                     .get("--source")
                     .and_then(|value| Source::lookup(&value))
                     .unwrap_or(Source::JDK17);
+                // Java: Arguments.java:505-512 — an explicit --target wins,
+                // otherwise Target.DEFAULT (17); --source does not change it.
                 let target = options
                     .get("--target")
                     .and_then(|value| Target::lookup(&value))
-                    .unwrap_or_else(|| source.required_target());
+                    .unwrap_or(Target::DEFAULT);
                 (source, target)
             }
         };

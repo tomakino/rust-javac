@@ -343,6 +343,12 @@ impl TypeEnter {
             CompletionCause::IMPORTS_PHASE,
             Some(Rc::clone(&hierarchy_phase)),
         ));
+        // Java: allowDeprecationOnImport = Feature.DEPRECATION_ON_IMPORT
+        // .allowedInSource(source) (TypeEnter.java:148): imports are checked
+        // for deprecation/removal only up to source 8.  Computed before `chk`
+        // is moved into the struct.
+        let allow_deprecation_on_import =
+            crate::code::source::Feature::DEPRECATION_ON_IMPORT.allowed_in_source(chk.source);
         TypeEnter {
             names,
             enter,
@@ -357,10 +363,7 @@ impl TypeEnter {
             type_envs,
             dependencies,
             allow_type_annos: true,
-            // Java: allowDeprecationOnImport = Feature.DEPRECATION_ON_IMPORT
-            // .allowedInSource(source); the feature's max level is JDK8, so
-            // source 9+ (the compiler default) must not warn on imports.
-            allow_deprecation_on_import: false,
+            allow_deprecation_on_import,
             completion_enabled: std::cell::Cell::new(true),
             deferred_attr: std::cell::Cell::new(false),
             complete_class: imports_phase,
