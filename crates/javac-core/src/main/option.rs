@@ -105,6 +105,7 @@ pub enum Option {
     PATCH_MODULE,
     PARAMETERS,
     D,
+    S,
     IMPLICIT,
     ENCODING,
     SOURCE,
@@ -134,11 +135,23 @@ pub enum Option {
     PROMPT,
     HELP_LINT,
     XSTDOUT,
+    BOOT_CLASS_PATH,
+    XBOOTCLASSPATH_PREPEND,
+    XBOOTCLASSPATH_APPEND,
+    XBOOTCLASSPATH,
+    EXTDIRS,
+    DJAVA_EXT_DIRS,
+    ENDORSEDDIRS,
+    DJAVA_ENDORSED_DIRS,
+    PROFILE,
+    DEFAULT_MODULE_FOR_CREATED_FILES,
+    XPREFER,
+    XPKGINFO,
 }
 
 impl Option {
     /// Java: Option.values() (the trimmed constants are absent, see the header).
-    pub fn values() -> [Option; 44] {
+    pub fn values() -> [Option; 57] {
         [
             Option::G,
             Option::G_NONE,
@@ -157,6 +170,7 @@ impl Option {
             Option::PATCH_MODULE,
             Option::PARAMETERS,
             Option::D,
+            Option::S,
             Option::IMPLICIT,
             Option::ENCODING,
             Option::SOURCE,
@@ -184,6 +198,18 @@ impl Option {
             Option::MULTIRELEASE,
             Option::HELP_LINT,
             Option::XSTDOUT,
+            Option::BOOT_CLASS_PATH,
+            Option::XBOOTCLASSPATH_PREPEND,
+            Option::XBOOTCLASSPATH_APPEND,
+            Option::XBOOTCLASSPATH,
+            Option::EXTDIRS,
+            Option::DJAVA_EXT_DIRS,
+            Option::ENDORSEDDIRS,
+            Option::DJAVA_ENDORSED_DIRS,
+            Option::PROFILE,
+            Option::DEFAULT_MODULE_FOR_CREATED_FILES,
+            Option::XPREFER,
+            Option::XPKGINFO,
         ]
     }
 
@@ -208,6 +234,7 @@ impl Option {
             Option::PATCH_MODULE => &["--patch-module"],
             Option::PARAMETERS => &["-parameters"],
             Option::D => &["-d"],
+            Option::S => &["-s"],
             Option::IMPLICIT => &["-implicit:"],
             Option::ENCODING => &["-encoding"],
             Option::SOURCE => &["--source", "-source"],
@@ -236,6 +263,18 @@ impl Option {
             Option::PROMPT => &["-prompt"],
             Option::HELP_LINT => &["--help-lint"],
             Option::XSTDOUT => &["-Xstdout"],
+            Option::BOOT_CLASS_PATH => &["--boot-class-path", "-bootclasspath"],
+            Option::XBOOTCLASSPATH_PREPEND => &["-Xbootclasspath/p:"],
+            Option::XBOOTCLASSPATH_APPEND => &["-Xbootclasspath/a:"],
+            Option::XBOOTCLASSPATH => &["-Xbootclasspath:"],
+            Option::EXTDIRS => &["-extdirs"],
+            Option::DJAVA_EXT_DIRS => &["-Djava.ext.dirs="],
+            Option::ENDORSEDDIRS => &["-endorseddirs"],
+            Option::DJAVA_ENDORSED_DIRS => &["-Djava.endorsed.dirs="],
+            Option::PROFILE => &["-profile"],
+            Option::DEFAULT_MODULE_FOR_CREATED_FILES => &["--default-module-for-created-files"],
+            Option::XPREFER => &["-Xprefer:"],
+            Option::XPKGINFO => &["-Xpkginfo:"],
         }
     }
 
@@ -257,6 +296,7 @@ impl Option {
             Option::SYSTEM => Some("opt.arg.jdk"),
             Option::PATCH_MODULE => Some("opt.arg.patch"),
             Option::D => Some("opt.arg.directory"),
+            Option::S => Some("opt.arg.directory"),
             Option::ENCODING => Some("opt.arg.encoding"),
             Option::SOURCE => Some("opt.arg.release"),
             Option::TARGET => Some("opt.arg.release"),
@@ -272,6 +312,18 @@ impl Option {
             Option::AT => Some("opt.arg.file"),
             Option::MULTIRELEASE => Some("opt.arg.multi-release"),
             Option::XSTDOUT => Some("opt.arg.file"),
+            Option::BOOT_CLASS_PATH => Some("opt.arg.path"),
+            Option::XBOOTCLASSPATH_PREPEND => Some("opt.arg.path"),
+            Option::XBOOTCLASSPATH_APPEND => Some("opt.arg.path"),
+            Option::XBOOTCLASSPATH => Some("opt.arg.path"),
+            Option::EXTDIRS => Some("opt.arg.dirs"),
+            Option::DJAVA_EXT_DIRS => Some("opt.arg.dirs"),
+            Option::ENDORSEDDIRS => Some("opt.arg.dirs"),
+            Option::DJAVA_ENDORSED_DIRS => Some("opt.arg.dirs"),
+            Option::PROFILE => Some("opt.arg.profile"),
+            Option::DEFAULT_MODULE_FOR_CREATED_FILES => {
+                Some("opt.arg.default.module.for.created.files")
+            }
             _ => None,
         }
     }
@@ -298,6 +350,7 @@ impl Option {
             Option::PATCH_MODULE => Some("opt.patch"),
             Option::PARAMETERS => Some("opt.parameters"),
             Option::D => Some("opt.d"),
+            Option::S => Some("opt.sourceDest"),
             Option::IMPLICIT => Some("opt.implicit"),
             Option::ENCODING => Some("opt.encoding"),
             Option::SOURCE => Some("opt.source"),
@@ -325,6 +378,20 @@ impl Option {
             Option::DOE | Option::PROMPT => None,
             Option::HELP_LINT => Some("opt.help.lint"),
             Option::XSTDOUT => Some("opt.Xstdout"),
+            Option::BOOT_CLASS_PATH => Some("opt.bootclasspath"),
+            Option::XBOOTCLASSPATH_PREPEND => Some("opt.Xbootclasspath.p"),
+            Option::XBOOTCLASSPATH_APPEND => Some("opt.Xbootclasspath.a"),
+            Option::XBOOTCLASSPATH => Some("opt.bootclasspath"),
+            Option::EXTDIRS => Some("opt.extdirs"),
+            Option::DJAVA_EXT_DIRS => Some("opt.extdirs"),
+            Option::ENDORSEDDIRS => Some("opt.endorseddirs"),
+            Option::DJAVA_ENDORSED_DIRS => Some("opt.endorseddirs"),
+            Option::PROFILE => Some("opt.profile"),
+            Option::DEFAULT_MODULE_FOR_CREATED_FILES => {
+                Some("opt.default.module.for.created.files")
+            }
+            Option::XPREFER => Some("opt.prefer"),
+            Option::XPKGINFO => Some("opt.pkginfo"),
         }
     }
 
@@ -345,6 +412,7 @@ impl Option {
             | Option::SYSTEM
             | Option::PARAMETERS
             | Option::D
+            | Option::S
             | Option::IMPLICIT
             | Option::ENCODING
             | Option::SOURCE
@@ -358,7 +426,11 @@ impl Option {
             | Option::ADD_MODULES
             | Option::LIMIT_MODULES
             | Option::MODULE_VERSION
-            | Option::H => OptionKind::STANDARD,
+            | Option::H
+            | Option::BOOT_CLASS_PATH
+            | Option::EXTDIRS
+            | Option::ENDORSEDDIRS
+            | Option::PROFILE => OptionKind::STANDARD,
             Option::XLINT
             | Option::XLINT_CUSTOM
             | Option::PATCH_MODULE
@@ -368,7 +440,15 @@ impl Option {
             | Option::ADD_EXPORTS
             | Option::ADD_READS
             | Option::HELP_LINT
-            | Option::XSTDOUT => OptionKind::EXTENDED,
+            | Option::XSTDOUT
+            | Option::XBOOTCLASSPATH_PREPEND
+            | Option::XBOOTCLASSPATH_APPEND
+            | Option::XBOOTCLASSPATH
+            | Option::DJAVA_EXT_DIRS
+            | Option::DJAVA_ENDORSED_DIRS
+            | Option::DEFAULT_MODULE_FOR_CREATED_FILES
+            | Option::XPREFER
+            | Option::XPKGINFO => OptionKind::EXTENDED,
             Option::FULLVERSION
             | Option::XD
             | Option::SOURCEFILE
@@ -417,6 +497,7 @@ impl Option {
             | Option::SYSTEM
             | Option::PATCH_MODULE
             | Option::D
+            | Option::S
             | Option::ENCODING
             | Option::MULTIRELEASE
             | Option::H => OptionGroup::FILEMANAGER,
@@ -428,6 +509,18 @@ impl Option {
             | Option::SOURCEFILE
             | Option::HELP_LINT
             | Option::XSTDOUT => OptionGroup::INFO,
+            Option::BOOT_CLASS_PATH
+            | Option::XBOOTCLASSPATH_PREPEND
+            | Option::XBOOTCLASSPATH_APPEND
+            | Option::XBOOTCLASSPATH
+            | Option::EXTDIRS
+            | Option::DJAVA_EXT_DIRS
+            | Option::ENDORSEDDIRS
+            | Option::DJAVA_ENDORSED_DIRS => OptionGroup::FILEMANAGER,
+            Option::PROFILE
+            | Option::DEFAULT_MODULE_FOR_CREATED_FILES
+            | Option::XPREFER
+            | Option::XPKGINFO => OptionGroup::BASIC,
         }
     }
 
@@ -471,7 +564,10 @@ impl Option {
     fn choice_kind(self) -> StdOption<ChoiceKind> {
         match self {
             Option::G_CUSTOM | Option::XLINT_CUSTOM => Some(ChoiceKind::ANYOF),
-            Option::IMPLICIT | Option::XDIAGS => Some(ChoiceKind::ONEOF),
+            Option::IMPLICIT
+            | Option::XDIAGS
+            | Option::XPREFER
+            | Option::XPKGINFO => Some(ChoiceKind::ONEOF),
             _ => None,
         }
     }
@@ -488,6 +584,12 @@ impl Option {
             Option::XLINT_CUSTOM => Some(get_xlint_choices()),
             Option::IMPLICIT => Some(vec!["none".to_string(), "class".to_string()]),
             Option::XDIAGS => Some(vec!["compact".to_string(), "verbose".to_string()]),
+            Option::XPREFER => Some(vec!["source".to_string(), "newer".to_string()]),
+            Option::XPKGINFO => Some(vec![
+                "always".to_string(),
+                "legacy".to_string(),
+                "nonempty".to_string(),
+            ]),
             _ => None,
         }
     }
@@ -1008,11 +1110,11 @@ mod tests {
     #[test]
     fn kept_options_are_complete_and_in_declaration_order() {
         let values = Option::values();
-        assert_eq!(values.len(), 44);
+        assert_eq!(values.len(), 57);
         assert_eq!(values[0], Option::G);
-        assert_eq!(values[values.len() - 1], Option::XSTDOUT);
-        // 83 upstream constants - 44 kept = 39 trimmed (see the file header).
-        assert_eq!(44 + 39, 83);
+        assert_eq!(values[values.len() - 1], Option::XPKGINFO);
+        // 83 upstream constants - 57 kept = 26 trimmed (see the file header).
+        assert_eq!(57 + 26, 83);
     }
 
     #[test]
@@ -1077,12 +1179,12 @@ mod tests {
     fn option_groups_partition_the_kept_options() {
         let tool = Option::get_javac_tool_options();
         let file_manager = Option::get_javac_file_manager_options();
-        assert_eq!(tool.len(), 25);
-        assert_eq!(file_manager.len(), 11);
+        assert_eq!(tool.len(), 29);
+        assert_eq!(file_manager.len(), 20);
         assert!(tool.iter().all(|option| !file_manager.contains(option)));
         // BASIC + FILEMANAGER + INFO = all kept options.
-        assert_eq!(tool.len() + file_manager.len(), 36);
-        assert_eq!(Option::get_java_compiler_options().len(), 44);
+        assert_eq!(tool.len() + file_manager.len(), 49);
+        assert_eq!(Option::get_java_compiler_options().len(), 57);
         assert!(Option::get_java_compiler_options().contains(&Option::VERSION));
         assert!(Option::get_java_compiler_options().contains(&Option::SOURCEFILE));
         assert_eq!(
@@ -1187,6 +1289,7 @@ mod tests {
         assert_eq!(Option::lookup("-cp"), Some(Option::CLASS_PATH));
         assert_eq!(Option::lookup("--class-path=x"), Some(Option::CLASS_PATH));
         assert_eq!(Option::lookup("-d"), Some(Option::D));
+        assert_eq!(Option::lookup("-s"), Some(Option::S));
         assert_eq!(Option::lookup("-encoding"), Some(Option::ENCODING));
         assert_eq!(Option::lookup("-source"), Some(Option::SOURCE));
         assert_eq!(Option::lookup("--target=17"), Some(Option::TARGET));
@@ -1213,17 +1316,10 @@ mod tests {
             "-processorpath",
             "--processor-module-path",
             "-Akey=value",
-            "-s",
             "-J-Xmx1g",
             "-Xdoclint",
             "-Xdoclint:all",
             "-Xdoclint/package:java.lang",
-            "-bootclasspath",
-            "-Xbootclasspath/p:",
-            "-extdirs",
-            "-endorseddirs",
-            "-Djava.ext.dirs=",
-            "-profile",
             "-moreinfo",
             "-doe",
             "-prompt",
@@ -1232,9 +1328,7 @@ mod tests {
             "-Xprint",
             "-XprintRounds",
             "-XprintProcessorInfo",
-            "-Xprefer:source",
             "-XXuserPathsFirst",
-            "-Xpkginfo:always",
             "-O",
             "-Xjcov",
             "-Xplugin:name",
@@ -1242,7 +1336,6 @@ mod tests {
             "--should-stop=at=FLOW",
             "--diags",
             "--add-opens",
-            "--default-module-for-created-files",
             "--inherit-runtime-environment",
         ] {
             assert_eq!(Option::lookup(trimmed), None, "{trimmed} must be trimmed");

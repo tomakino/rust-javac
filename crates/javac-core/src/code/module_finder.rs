@@ -1119,6 +1119,7 @@ mod tests {
         let finder = ClassFinder::new(
             Rc::clone(&reader),
             Rc::clone(&file_manager) as Rc<dyn JavaFileManager>,
+            None,
             Rc::clone(&names),
             Rc::clone(&log),
             Rc::clone(&diags),

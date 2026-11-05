@@ -732,6 +732,46 @@ fn release_option_errors(options: &[(String, String)], locale: &Locale) -> Vec<S
     }
 }
 
+/// Java: Arguments.validate (Arguments.java:595-602) — the boot class path,
+/// ext dirs, endorsed dirs and -profile options are only allowed for target 8
+/// and earlier; for target 9+ javac reports OptionNotAllowedWithTarget.
+fn option_target_errors(options: &[(String, String)], locale: &Locale) -> Vec<String> {
+    if options.iter().any(|(key, _)| key == "--release") {
+        return Vec::new();
+    }
+    use javac_core::jvm::target::Target;
+    let target = options
+        .iter()
+        .find(|(key, _)| key == "--target" || key == "-target")
+        .and_then(|(_, value)| Target::lookup(value))
+        .unwrap_or(Target::JDK1_17);
+    if target <= Target::JDK1_8 {
+        return Vec::new();
+    }
+    // Storage key -> the option name javac reports (Option.getName()).
+    const GATED: &[(&str, &str)] = &[
+        ("--boot-class-path", "--boot-class-path"),
+        ("-Xbootclasspath/p", "-Xbootclasspath/p:"),
+        ("-Xbootclasspath", "-Xbootclasspath:"),
+        ("-Xbootclasspath/a", "-Xbootclasspath/a:"),
+        ("-endorseddirs", "-endorseddirs"),
+        ("-extdirs", "-extdirs"),
+        ("-profile", "-profile"),
+    ];
+    let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
+    let target_name = target.name();
+    let mut errors = Vec::new();
+    for (key, reported) in GATED {
+        if options.iter().any(|(name, _)| name == key) {
+            errors.push(messages.get_localized_string(
+                "compiler.err.option.not.allowed.with.target",
+                &[reported.to_string(), target_name.to_string()],
+            ));
+        }
+    }
+    errors
+}
+
 fn compile(args: &[String]) -> Result<i32, String> {
     let expanded = match expand_argfiles(args) {
         Ok(expanded) => expanded,
@@ -833,6 +873,49 @@ fn compile(args: &[String]) -> Result<i32, String> {
         }
         if let Some(value) = arg.strip_prefix("-Djava.ext.dirs=") {
             helper.put("-extdirs", value);
+            index += 1;
+            continue;
+        }
+        // -profile: Profile.lookup rejects an unknown profile with
+        // Errors.InvalidProfile while the option is processed
+        // (Option.java:380-389).
+        if arg == "-profile" {
+            if index + 1 < expanded.len() {
+                let value = &expanded[index + 1];
+                if javac_core::jvm::profile::Profile::lookup(value).is_none() {
+                    let compiler_messages =
+                        JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
+                    let javac_messages =
+                        JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
+                    eprintln!(
+                        "error: {}",
+                        compiler_messages.get_localized_string(
+                            "compiler.err.invalid.profile",
+                            &[value.clone()]
+                        )
+                    );
+                    eprintln!(
+                        "{}",
+                        javac_messages
+                            .get_localized_string("javac.msg.usage", &["javac".to_string()])
+                    );
+                    return Ok(CMDERR);
+                }
+                helper.put("-profile", value);
+                index += 2;
+                continue;
+            }
+        }
+        // --default-module-for-created-files: hidden option whose value is a
+        // module name (Option.java:451-472).
+        if arg == "--default-module-for-created-files" {
+            if index + 1 < expanded.len() {
+                helper.put("--default-module-for-created-files", &expanded[index + 1]);
+                index += 2;
+                continue;
+            }
+        } else if let Some(value) = arg.strip_prefix("--default-module-for-created-files=") {
+            helper.put("--default-module-for-created-files", value);
             index += 1;
             continue;
         }
@@ -1209,6 +1292,15 @@ fn compile(args: &[String]) -> Result<i32, String> {
             "{}",
             javac_messages.get_localized_string("javac.msg.usage", &["javac".to_string()])
         );
+        return Ok(CMDERR);
+    }
+    // Java: Arguments.validate — the options that are only allowed up to
+    // target 8 are rejected for target 9 and later (Arguments.java:595-602).
+    let target_errors = option_target_errors(&options, &locale);
+    if !target_errors.is_empty() {
+        for error in &target_errors {
+            eprintln!("error: {error}");
+        }
         return Ok(CMDERR);
     }
     let removed_errors = module_option_errors(&options, &locale);

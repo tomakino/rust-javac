@@ -202,7 +202,15 @@ impl PathFileObject {
                 user_jar_path.to_java_string(),
                 self.path.to_java_string()
             )),
-            PathFileObjectKind::Jrt => jstr(self.path.to_java_string()),
+            PathFileObjectKind::Jrt => {
+                // Java: the jrt: FileSystem path is "/modules/<module>/<path>"
+                // and Path.toString keeps the '/'; the port stores the same
+                // path in an FsPath, whose Windows display would use ''.
+                // Normalize back to the jrt form so getName matches javac
+                // (verbose output, diagnostics).
+                let name = self.path.to_java_string().replace('\\', "/");
+                jstr(name)
+            }
             PathFileObjectKind::Simple { user_path } => jstr(user_path.to_java_string()),
         }
     }
@@ -898,7 +906,12 @@ mod tests {
     fn jrt_and_jar_file_objects() {
         let jrt_path = FsPath::new("/modules/java.base/java/lang/Object.class").expect("path");
         let jrt = PathFileObject::for_jrt_path(manager(), &jrt_path);
-        assert_eq!(jrt.get_name().to_string_lossy(), jrt_path.to_java_string());
+        // Java: JRTFileObject.getName() is the jrt path "/modules/...";
+        // the FsPath display would use '\' on Windows.
+        assert_eq!(
+            jrt.get_name().to_string_lossy(),
+            "/modules/java.base/java/lang/Object.class"
+        );
         assert_eq!(
             jrt.infer_binary_name(&[])
                 .expect("binary name")

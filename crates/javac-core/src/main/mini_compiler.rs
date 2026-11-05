@@ -436,6 +436,25 @@ impl MiniCompiler {
                 .set_location(&*class_out, Some(&[out_dir.to_path_buf()]))
                 .expect("cannot set CLASS_OUTPUT");
         }
+        // Java: the Locations SOURCE_OUTPUT handler is bound to Option.S
+        // (Locations.java:2101); the -s directory receives generated sources.
+        // Nothing is generated without annotation processing, but the location
+        // must be installed for getSourceOutDir/getLocationForModule.
+        if let Some(source_out) = options.get_option(crate::main::option::Option::S) {
+            let source_out_location = StandardLocation::location_for(&js("SOURCE_OUTPUT"));
+            // Java: Locations.OutputLocationHandler uses Paths.get(value); an
+            // empty value therefore means the current directory (Path ""), not
+            // an error.  The ported set_location validates that the directory
+            // exists, so translate the empty path explicitly.
+            let source_out_dir = if source_out.is_empty() {
+                PathBuf::from(".")
+            } else {
+                PathBuf::from(source_out.as_str())
+            };
+            file_manager
+                .set_location(&*source_out_location, Some(&[source_out_dir]))
+                .expect("cannot set SOURCE_OUTPUT");
+        }
         // Java: JavaCompiler sets the CLASS_PATH location from -class-path before
         // entering symbols; without this the ClassFinder cannot see test jars.
         if let Some(class_path) = options.get_option(crate::main::option::Option::CLASS_PATH) {
@@ -525,9 +544,12 @@ impl MiniCompiler {
             source,
             Rc::clone(&annotate_cell),
         )));
+        let concrete_file_manager: Rc<JavacFileManager> = Rc::clone(&file_manager);
+        let standard_file_manager: Rc<dyn StandardJavaFileManager> = concrete_file_manager;
         let finder = crate::code::class_finder::ClassFinder::new(
             Rc::clone(&reader),
             Rc::clone(&file_manager) as Rc<dyn JavaFileManager>,
+            Some(standard_file_manager),
             Rc::clone(&names),
             Rc::clone(&log),
             Rc::clone(&diags),
@@ -1149,6 +1171,27 @@ impl MiniCompiler {
         &mut self,
         source_paths: &[PathBuf],
     ) -> Result<Vec<CompiledClass>, String> {
+        // Java: JavaCompiler.compile's finally block prints the total elapsed
+        // time for -verbose, even when the compilation failed
+        // (JavaCompiler.java:956-960).
+        let start = std::time::Instant::now();
+        let result = self.compile_files_inner(source_paths);
+        if self.options.is_set_option(crate::main::option::Option::VERBOSE) {
+            self.log.print_verbose(
+                "total",
+                vec![crate::util::jc_diagnostic::diagnostic_arg(
+                    start.elapsed().as_millis().to_string(),
+                )],
+            );
+        }
+        result
+    }
+
+    /// The body of JavaCompiler.compile (the -verbose total is printed by the wrapper).
+    fn compile_files_inner(
+        &mut self,
+        source_paths: &[PathBuf],
+    ) -> Result<Vec<CompiledClass>, String> {
         // JavaCompiler.parseFiles: if (!force && shouldStop(PARSE)) return List.nil().
         if self.should_stop(crate::comp::compile_states::CompileState::PARSE) {
             self.last_compiled_classes = Vec::new();
@@ -1475,6 +1518,19 @@ impl MiniCompiler {
             .get_char_content(false)
             .map_err(|error| format!("cannot read {}: {error:?}", absolute.display()))?
             .ok_or_else(|| format!("cannot read {}", absolute.display()))?;
+        // Java: JavaCompiler.parse logs "parsing started"/"parsing done" around
+        // the parser run (JavaCompiler.java:605-624).
+        let verbose = self.options.is_set_option(crate::main::option::Option::VERBOSE);
+        let parse_start = std::time::Instant::now();
+        if verbose {
+            self.log.print_verbose(
+                "parsing.started",
+                vec![crate::util::jc_diagnostic::diagnostic_arg(format!(
+                    "SimpleFileObject[{}]",
+                    sourcefile.get_name().to_string_lossy()
+                ))],
+            );
+        }
         let prev_source = self.log.use_source(Some(Rc::clone(&sourcefile)));
         let module_info = sourcefile.is_name_compatible(
             &javac_strings::JavaString::from("module-info"),
@@ -1500,6 +1556,14 @@ impl MiniCompiler {
             );
             parser.parse_compilation_unit(&mut self.ctx)
         };
+        if verbose {
+            self.log.print_verbose(
+                "parsing.done",
+                vec![crate::util::jc_diagnostic::diagnostic_arg(
+                    parse_start.elapsed().as_millis().to_string(),
+                )],
+            );
+        }
         self.log.use_source(prev_source);
         // JavaCompiler.parse: tree.sourcefile = filename
         if let TreeKind::CompilationUnit {
@@ -1579,6 +1643,25 @@ impl MiniCompiler {
     }
 
     fn attribute(&mut self, env: &Rc<Env<AttrContext>>) -> Result<(), String> {
+        // Java: JavaCompiler.attribute logs "checking <class>" before attributing
+        // (JavaCompiler.java:1305-1308).
+        if self.options.is_set_option(crate::main::option::Option::VERBOSE) {
+            let class_name = env
+                .encl_class
+                .and_then(|encl| match &self.ctx.tree(encl).kind {
+                    TreeKind::ClassDecl { sym: Some(sym), .. } => {
+                        Some(self.ctx.sym(*sym).name.to_java_string())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_default();
+            self.log.print_verbose(
+                "checking.attribution",
+                vec![crate::util::jc_diagnostic::diagnostic_arg(
+                    class_name.to_string_lossy(),
+                )],
+            );
+        }
         let sourcefile = env
             .encl_class
             .and_then(|encl| match &self.ctx.tree(encl).kind {
@@ -1751,6 +1834,16 @@ impl MiniCompiler {
             .map_err(|error| format!("cannot open the output file for {name}: {error:?}"))?;
         std::io::Write::write_all(&mut stream, bytes)
             .map_err(|error| format!("cannot write the class file {name}: {error}"))?;
+        // Java: ClassWriter.writeClassFile logs "wrote <file>" after writing
+        // (ClassWriter.java:1505-1507).
+        if self.options.is_set_option(crate::main::option::Option::VERBOSE) {
+            self.log.print_verbose(
+                "wrote.file",
+                vec![crate::util::jc_diagnostic::diagnostic_arg(
+                    file.get_name().to_string_lossy(),
+                )],
+            );
+        }
         Ok(())
     }
 

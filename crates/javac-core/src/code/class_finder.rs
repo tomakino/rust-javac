@@ -42,6 +42,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use javac_tools::error::Error;
+use javac_tools::tools::standard_java_file_manager::StandardJavaFileManager;
 use javac_tools::tools::java_file_manager::{
     JavaFileManager, JavaFileObjectRef, Location, LocationRef,
 };
@@ -84,6 +85,17 @@ pub trait SourceFileReader {
     ) -> Result<(), CompletionFailure>;
 }
 
+/// Renders a path list the way javac's verbose output does: the Java
+/// List<Path>.toString of the scanUserPaths printing is observed as the bare
+/// paths joined by ',' (no brackets, no spaces).
+fn paths_text(paths: &[std::path::PathBuf]) -> String {
+    paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 /// Java: public class ClassFinder
 pub struct ClassFinder {
     /// Java: ClassReader reader;
@@ -104,6 +116,13 @@ pub struct ClassFinder {
     pub completion_failure_name: Option<Name>,
     /// Java: private final JavaFileManager fileManager;
     pub file_manager: Rc<dyn JavaFileManager>,
+    /// Java: fileManager instanceof StandardJavaFileManager (ClassFinder.java:644).
+    ///
+    /// The verbose path printing (ClassFinder.java:642-669) calls
+    /// getLocationAsPaths, which only StandardJavaFileManager exposes; the
+    /// JavaFileManager trait object cannot be downcast, so the bootstrap
+    /// injects the standard view.  None means "no verbose paths to print".
+    pub standard_file_manager: Option<Rc<dyn StandardJavaFileManager>>,
     /// Java: private final Dependencies dependencies;
     pub dependencies: Rc<dyn Dependencies>,
     /// Java: JCDiagnostic.Factory diagFactory;
@@ -153,6 +172,7 @@ impl ClassFinder {
     pub fn new(
         reader: Rc<RefCell<ClassReader>>,
         file_manager: Rc<dyn JavaFileManager>,
+        standard_file_manager: Option<Rc<dyn StandardJavaFileManager>>,
         names: Rc<Names>,
         log: Rc<Log>,
         diag_factory: Rc<Factory>,
@@ -189,6 +209,7 @@ impl ClassFinder {
             names,
             completion_failure_name,
             file_manager,
+            standard_file_manager,
             dependencies: Rc::new(crate::code::dependencies::DummyDependencies),
             diag_factory,
             dcfh,
@@ -838,9 +859,45 @@ impl ClassFinder {
             include_source_path && self.file_manager.has_location(&*source_path_location);
         if self.verbose && self.verbose_path.get() {
             self.verbose_path.set(false); // print once per compile
-            // REGISTERED: upstream prints source/class paths through
-            // StandardJavaFileManager.getLocationAsPaths (ClassFinder.java:642-669);
-            // that method is not part of the ported JavaFileManager trait.
+            if let Some(standard_file_manager) = &self.standard_file_manager {
+                // Java: ClassFinder.java:642-669.
+                let class_path_location = standard_location(StandardLocation::CLASS_PATH);
+                if have_source_path && want_source_files {
+                    if let Some(paths) = standard_file_manager
+                        .get_location_as_paths(&*source_path_location)
+                    {
+                        self.log.print_verbose(
+                            "sourcepath",
+                            vec![crate::util::jc_diagnostic::diagnostic_arg(paths_text(&paths))],
+                        );
+                    }
+                } else if want_source_files {
+                    if let Some(paths) =
+                        standard_file_manager.get_location_as_paths(&*class_path_location)
+                    {
+                        self.log.print_verbose(
+                            "sourcepath",
+                            vec![crate::util::jc_diagnostic::diagnostic_arg(paths_text(&paths))],
+                        );
+                    }
+                }
+                if want_class_files {
+                    let platform_path_location =
+                        standard_location(StandardLocation::PLATFORM_CLASS_PATH);
+                    let mut paths = standard_file_manager
+                        .get_location_as_paths(&*platform_path_location)
+                        .unwrap_or_default();
+                    paths.extend(
+                        standard_file_manager
+                            .get_location_as_paths(&*class_path_location)
+                            .unwrap_or_default(),
+                    );
+                    self.log.print_verbose(
+                        "classpath",
+                        vec![crate::util::jc_diagnostic::diagnostic_arg(paths_text(&paths))],
+                    );
+                }
+            }
         }
         let package_name = package_fullname(ctx, p);
         if want_source_files && !have_source_path {
@@ -1529,6 +1586,7 @@ mod tests {
         let finder = ClassFinder::new(
             Rc::clone(&reader),
             manager as Rc<dyn JavaFileManager>,
+            None,
             Rc::clone(&names),
             Rc::clone(&log),
             Rc::clone(&factory),

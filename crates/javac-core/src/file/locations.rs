@@ -753,7 +753,7 @@ impl Locations {
             ),
             handler(
                 StandardLocation::SOURCE_OUTPUT,
-                Vec::new(),
+                vec![JavacOption::S],
                 HandlerKind::Output(OutputState {
                     output_dir: None,
                     module_table: None,
