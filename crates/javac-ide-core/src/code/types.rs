@@ -461,6 +461,18 @@ thread_local! {
 }
 
 impl Types {
+    /// IDE analysis: drop the context-dependent caches before re-analyzing an
+    /// edited file in the same compiler session.
+    pub fn reset_caches(&self) {
+        self.descriptor_cache.borrow_mut().clear();
+        self.implementation_cache.borrow_mut().clear();
+        self.members_closure_cache.borrow_mut().clear();
+        self.members_closure_seen.borrow_mut().clear();
+        self.candidates_cache.borrow_mut().clear();
+        self.is_derived_raw_cache.borrow_mut().clear();
+        self.rank_cache.borrow_mut().clear();
+    }
+
     /// Get a Types instance whose Names service is the shared thread-local
     /// default table.
     ///

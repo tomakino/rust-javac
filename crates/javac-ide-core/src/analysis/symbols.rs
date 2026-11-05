@@ -8,6 +8,7 @@ use crate::code::symbol::{symbol_packge, SymbolKind};
 use crate::ids::SymbolId;
 use crate::util::name::Name;
 use super::positions::{line_offset, word_at};
+use super::type_names::type_name;
 use super::{canonical, AnalysisSession};
 
 /// One symbol of the analyzed file (classes and their direct members).
@@ -18,11 +19,13 @@ pub struct SymbolInfo {
     pub flat_name: String,
     /// Declaration offset in the source text (NOPOS when unknown).
     pub pos: i32,
+    /// Hover text (kind, type/signature, qualified name).
+    pub detail: String,
 }
 
 
 pub(crate) struct TracedClass {
-    sym: SymbolId,
+    pub(crate) sym: SymbolId,
     flat_name: Name,
     package: Option<SymbolId>,
 }
@@ -70,7 +73,7 @@ impl AnalysisSession {
         if chars.is_empty() {
             return None;
         }
-        let mut col = column.saturating_sub(1).min(chars.len() - 1);
+        let mut col = super::positions::char_index_for_utf16(&chars, column.saturating_sub(1));
         let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
         if !is_ident(chars[col]) && col > 0 && is_ident(chars[col - 1]) {
             col -= 1;
@@ -110,6 +113,7 @@ impl AnalysisSession {
                 kind: "class",
                 flat_name: traced.flat_name.to_string(),
                 pos: class_pos,
+                detail: format!("class {}", traced.flat_name),
             });
             let scope = class.members();
             if let Some(scope) = scope {
@@ -130,11 +134,25 @@ impl AnalysisSession {
                         SymbolKind::VarSymbol { pos, .. } => *pos,
                         _ => sym.pos.get(),
                     };
+                    let type_text = sym
+                        .ty
+                        .map(|ty| type_name(&self.compiler.ctx, ty))
+                        .filter(|text| text != "?");
+                    let name = sym.name.to_java_string().to_string_lossy();
+                    let detail = match (kind, type_text) {
+                        ("method", Some(text)) => {
+                            format!("{}.{} {}", traced.flat_name, name, text)
+                        }
+                        ("method", None) => format!("{}.{}", traced.flat_name, name),
+                        (_, Some(text)) => format!("{} {}", text, name),
+                        (_, None) => format!("{}.{}", traced.flat_name, name),
+                    };
                     out.push(SymbolInfo {
                         name: sym.name.to_java_string().to_string_lossy(),
                         kind,
                         flat_name: traced.flat_name.to_string(),
                         pos: member_pos,
+                        detail,
                     });
                 }
             }

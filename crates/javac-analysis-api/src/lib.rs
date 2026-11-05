@@ -83,6 +83,15 @@ pub struct Symbol {
     pub qualified_name: Option<String>,
 }
 
+/// A symbol shown in the outline view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocumentSymbol {
+    pub name: String,
+    pub kind: SymbolKind,
+    pub range: Range,
+    pub children: Vec<DocumentSymbol>,
+}
+
 /// A completion candidate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompletionItem {
@@ -126,4 +135,10 @@ pub trait AnalysisHost {
 
     /// Hover text for the symbol at a position.
     fn hover(&mut self, file: &Path, position: Position) -> Option<String>;
+
+    /// Hierarchical symbols of a file (outline view).
+    fn document_symbols(&mut self, file: &Path) -> Vec<DocumentSymbol> {
+        let _ = file;
+        Vec::new()
+    }
 }

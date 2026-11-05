@@ -14,8 +14,10 @@
 mod diagnostics;
 mod host;
 mod index;
+mod jdk_sources;
 mod positions;
 mod symbols;
+mod type_names;
 
 pub use host::*;
 pub use index::*;
@@ -84,7 +86,12 @@ impl AnalysisSession {
     pub fn new(config: AnalysisConfig) -> Self {
         std::fs::create_dir_all(&config.output_dir)
             .expect("create analysis output directory");
-        let compiler = build_compiler(&config);
+        let mut compiler = build_compiler(&config);
+        // The IDE reports diagnostics through AnalysisHost; keep the
+        // compiler's default writer from polluting the server stderr.
+        compiler.log.set_writers(std::rc::Rc::new(std::cell::RefCell::new(
+            Box::new(NullWriter) as Box<dyn std::io::Write>,
+        )));
         Self {
             config,
             compiler,
@@ -119,10 +126,10 @@ impl AnalysisSession {
         {
             return cached.result.clone();
         }
-        // Edited file: the cross-compilation caches are not isolated yet, so a
-        // fresh compiler keeps semantics correct. Unchanged files never pay it.
+        // Edited file: reuse the compiler and drop the context-dependent type
+        // caches, so the next round sees the new symbols.
         if self.initialized {
-            self.rebuild();
+            self.compiler.types.reset_caches();
         }
         if !self.initialized {
             let _ = self.compiler.compile_files(&[source.to_path_buf()]);
@@ -182,6 +189,7 @@ impl AnalysisSession {
                 .attrib(&mut self.compiler.ctx, syms_ref, &env);
         }
         self.trace_classes_for(source);
+        self.update_index_for(source);
         let result = self.result();
         self.cache = Some(CachedFile {
             path: source.to_path_buf(),
@@ -214,10 +222,27 @@ impl AnalysisSession {
             .get_java_file_objects_from_files(&[absolute.clone()])
             .into_iter()
             .next()?;
-        let content = sourcefile
-            .get_char_content(false)
-            .ok()
-            .and_then(|content| content)?;
+        let overlay = self
+            .compiler
+            .overlay_text
+            .as_ref()
+            .filter(|(path, _)| {
+                if path == &absolute {
+                    return true;
+                }
+                match std::fs::canonicalize(&absolute) {
+                    Ok(canonical) => path == &canonical,
+                    Err(_) => false,
+                }
+            })
+            .map(|(_, text)| JavaString::from(text.as_str()));
+        let content = match overlay {
+            Some(text) => text,
+            None => sourcefile
+                .get_char_content(false)
+                .ok()
+                .and_then(|content| content)?,
+        };
         let module_info =
             sourcefile.is_name_compatible(&JavaString::from("module-info"), Kind::SOURCE);
         let mut parser = self.compiler.parser_factory.new_parser_full(
@@ -272,3 +297,17 @@ fn canonical(path: &Path) -> String {
 }
 
 
+
+
+/// Discards the compiler's formatted diagnostics (the IDE uses the API).
+struct NullWriter;
+
+impl std::io::Write for NullWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}

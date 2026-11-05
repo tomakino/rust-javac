@@ -50,7 +50,7 @@ pub(crate) fn word_at(text: &str, line: usize, column: usize) -> Option<String> 
         return None;
     }
     let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
-    let mut col = column.saturating_sub(1).min(chars.len() - 1);
+    let mut col = char_index_for_utf16(&chars, column.saturating_sub(1));
     if !is_ident(chars[col]) && col > 0 && is_ident(chars[col - 1]) {
         col -= 1;
     }
@@ -76,4 +76,98 @@ pub(crate) fn indexed_location(file: PathBuf, pos: i32) -> Option<javac_analysis
         file,
         range: javac_analysis_api::Range::point(javac_analysis_api::Position::new(line, column)),
     })
+}
+
+
+/// The identifier prefix before a 1-based line/column (completion input).
+pub(crate) fn prefix_at(text: &str, line: usize, column: usize) -> String {
+    let line_text = text.lines().nth(line.saturating_sub(1)).unwrap_or("");
+    let chars: Vec<char> = line_text.chars().collect();
+    let mut end = char_index_for_utf16(&chars, column.saturating_sub(1)).min(chars.len());
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    let mut start = end;
+    while start > 0 && is_ident(chars[start - 1]) {
+        start -= 1;
+    }
+    end = end.max(start);
+    chars[start..end].iter().collect()
+}
+
+
+/// A range for an identifier declared at the given offset.
+pub(crate) fn symbol_range(
+    text: &str,
+    pos: i32,
+    name: &str,
+) -> javac_analysis_api::Range {
+    let (line, column) = offset_to_line_col(text, pos.max(0) as usize);
+    javac_analysis_api::Range::new(
+        javac_analysis_api::Position::new(line, column),
+        javac_analysis_api::Position::new(line, column + name.len() as u32),
+    )
+}
+
+
+/// All word-boundary occurrences of an identifier in a text.
+pub(crate) fn occurrences(
+    text: &str,
+    word: &str,
+    file: &std::path::Path,
+) -> Vec<javac_analysis_api::Location> {
+    let mut result = Vec::new();
+    if word.is_empty() {
+        return result;
+    }
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    for (line_index, line_text) in text.lines().enumerate() {
+        let chars: Vec<char> = line_text.chars().collect();
+        let mut start = 0;
+        while start + word.chars().count() <= chars.len() {
+            let slice: String = chars[start..].iter().collect();
+            let Some(offset) = slice.find(word) else { break };
+            let begin = start + offset;
+            let end = begin + word.chars().count();
+            let before_ok = begin == 0 || !is_ident(chars[begin - 1]);
+            let after_ok = end >= chars.len() || !is_ident(chars[end]);
+            if before_ok && after_ok {
+                result.push(javac_analysis_api::Location {
+                    file: file.to_path_buf(),
+                    range: javac_analysis_api::Range::new(
+                        javac_analysis_api::Position::new(
+                            line_index as u32,
+                            utf16_column(&chars, begin),
+                        ),
+                        javac_analysis_api::Position::new(
+                            line_index as u32,
+                            utf16_column(&chars, end),
+                        ),
+                    ),
+                });
+            }
+            start = begin + 1;
+        }
+    }
+    result
+}
+
+
+/// Convert a UTF-16 column to a char index in the given line.
+pub(crate) fn char_index_for_utf16(chars: &[char], utf16_column: usize) -> usize {
+    let mut units = 0usize;
+    for (index, current) in chars.iter().enumerate() {
+        if units >= utf16_column {
+            return index;
+        }
+        units += current.len_utf16();
+    }
+    chars.len().saturating_sub(1)
+}
+
+/// Convert a char index to a UTF-16 column.
+fn utf16_column(chars: &[char], char_index: usize) -> u32 {
+    chars
+        .iter()
+        .take(char_index)
+        .map(|current| current.len_utf16() as u32)
+        .sum()
 }

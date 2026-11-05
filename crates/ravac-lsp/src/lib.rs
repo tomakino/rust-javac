@@ -43,7 +43,31 @@ pub fn run(
                     }
                 }
             }
-            "textDocument/didClose" => {}
+            "textDocument/didClose" => {
+                if let Some(uri) = document_uri(&message) {
+                    if let Ok(path) = uri_to_path(&uri) {
+                        docs.remove(&path);
+                    }
+                    publish_empty(&mut stdout, &uri);
+                }
+            }
+            "textDocument/didSave" => {
+                if let Some(uri) = document_uri(&message) {
+                    if let Ok(path) = uri_to_path(&uri) {
+                        let text = message
+                            .get("params")
+                            .and_then(|params| params.get("text"))
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                            .or_else(|| docs.get(&path).cloned());
+                        if let Some(text) = text {
+                            docs.insert(path.clone(), text.clone());
+                            publish_diagnostics(&mut stdout, host, &uri, &path, &text);
+                        }
+                    }
+                }
+            }
+            "$/cancelRequest" => {}
             "textDocument/completion" => {
                 respond(&mut stdout, id, completion(host, &message));
             }
@@ -52,6 +76,12 @@ pub fn run(
             }
             "textDocument/hover" => {
                 respond(&mut stdout, id, hover(host, &message));
+            }
+            "textDocument/documentSymbol" => {
+                respond(&mut stdout, id, document_symbols(host, &message));
+            }
+            "textDocument/references" => {
+                respond(&mut stdout, id, references(host, &message));
             }
             _ => {
                 if let Some(id) = id {
@@ -64,10 +94,12 @@ pub fn run(
 
 fn capabilities() -> Value {
     json!({
-        "textDocumentSync": 1,
+        "textDocumentSync": { "openClose": true, "change": 1, "save": { "includeText": true } },
         "completionProvider": { "triggerCharacters": [".", ":"] },
         "definitionProvider": true,
-        "hoverProvider": true
+        "hoverProvider": true,
+        "documentSymbolProvider": true,
+        "referencesProvider": true
     })
 }
 
@@ -93,6 +125,23 @@ fn change_text(message: &Value) -> Option<(String, String)> {
         .as_str()?
         .to_string();
     Some((uri, text))
+}
+
+fn document_uri(message: &Value) -> Option<String> {
+    let params = message.get("params")?;
+    params
+        .get("textDocument")?
+        .get("uri")?
+        .as_str()
+        .map(str::to_string)
+}
+
+fn publish_empty(stdout: &mut impl Write, uri: &str) {
+    notify(
+        stdout,
+        "textDocument/publishDiagnostics",
+        json!({ "uri": uri, "diagnostics": [] }),
+    );
 }
 
 fn uri_to_path(uri: &str) -> Result<PathBuf, ()> {
@@ -173,6 +222,50 @@ fn definition(host: &mut dyn AnalysisHost, message: &Value) -> Value {
         }
         None => Value::Null,
     }
+}
+
+fn references(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some((path, position)) = request_position(message) else {
+        return Value::Null;
+    };
+    let locations = host.references(&path, position);
+    Value::Array(
+        locations
+            .iter()
+            .map(|location| {
+                let uri = Url::from_file_path(&location.file)
+                    .map(|url| url.to_string())
+                    .unwrap_or_default();
+                json!({ "uri": uri, "range": range_json(location.range) })
+            })
+            .collect(),
+    )
+}
+
+fn document_symbols(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some(uri) = message
+        .get("params")
+        .and_then(|params| params.get("textDocument"))
+        .and_then(|doc| doc.get("uri"))
+        .and_then(Value::as_str)
+    else {
+        return Value::Null;
+    };
+    let Ok(path) = uri_to_path(uri) else {
+        return Value::Null;
+    };
+    let symbols = host.document_symbols(&path);
+    Value::Array(symbols.iter().map(document_symbol_json).collect())
+}
+
+fn document_symbol_json(symbol: &javac_analysis_api::DocumentSymbol) -> Value {
+    json!({
+        "name": symbol.name,
+        "kind": symbol_kind_number(symbol.kind),
+        "range": range_json(symbol.range),
+        "selectionRange": range_json(symbol.range),
+        "children": symbol.children.iter().map(document_symbol_json).collect::<Vec<_>>(),
+    })
 }
 
 fn hover(host: &mut dyn AnalysisHost, message: &Value) -> Value {
