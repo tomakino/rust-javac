@@ -4,6 +4,9 @@ dist
 
 *.class
 
+__pycache__/
+*.pyc
+
 .samply
 
 # The JUnit 5 corpus keeps only the sources that scripts/check_junit5.py

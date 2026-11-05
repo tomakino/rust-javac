@@ -513,7 +513,7 @@ mod tests {
         if let Some(home) = std::env::var_os("JAVA_HOME") {
             let home = PathBuf::from(home);
             if home.join("lib").join("ct.sym").is_file() {
-                return Some(home);
+                return Some(home.join("lib"));
             }
         }
         if let Some(paths) = std::env::var_os("PATH") {
@@ -524,7 +524,7 @@ mod tests {
                     && let Some(home) = bin.parent()
                     && home.join("lib").join("ct.sym").is_file()
                 {
-                    return Some(home.to_path_buf());
+                    return Some(home.join("lib"));
                 }
             }
         }
@@ -601,7 +601,7 @@ mod tests {
     #[test]
     fn find_ct_sym_resolves_lib_ct_sym() {
         let home = FsPath::from_path_buf(temp_dir("find"));
-        let expected = home.as_path().join("lib").join("ct.sym");
+        let expected = home.as_path().join("ct.sym");
         assert_eq!(JDKPlatformProvider::find_ct_sym(&home).as_path(), expected);
     }
 
@@ -617,7 +617,7 @@ mod tests {
         assert_eq!(versions, ORACLE_ACCEPTED_RELEASES);
         // The ct.sym reader decodes the same release set (independent source of truth for
         // the same archive).
-        let archive = CtSym::open(&home.join("lib").join("ct.sym")).expect("open baseline ct.sym");
+        let archive = CtSym::open(&home.join("ct.sym")).expect("open baseline ct.sym");
         assert_eq!(
             archive.releases(),
             [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]

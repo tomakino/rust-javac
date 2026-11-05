@@ -391,7 +391,7 @@ mod tests {
         if let Some(home) = std::env::var_os("JAVA_HOME") {
             let home = PathBuf::from(home);
             if home.join("lib").join("modules").is_file() {
-                return Some(home);
+                return Some(home.join("lib"));
             }
         }
         if let Some(paths) = std::env::var_os("PATH") {
@@ -402,7 +402,7 @@ mod tests {
                     && let Some(home) = bin.parent()
                     && home.join("lib").join("modules").is_file()
                 {
-                    return Some(home.to_path_buf());
+                    return Some(home.join("lib"));
                 }
             }
         }

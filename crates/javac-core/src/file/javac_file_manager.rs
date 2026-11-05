@@ -1888,7 +1888,7 @@ mod tests {
 
     fn java_home() -> FsPath {
         match std::env::var_os("JAVA_HOME") {
-            Some(home) => FsPath::from_path_buf(PathBuf::from(home)),
+            Some(home) => FsPath::from_path_buf(PathBuf::from(home).join("lib")),
             None => FsPath::from_path_buf(std::env::temp_dir()),
         }
     }

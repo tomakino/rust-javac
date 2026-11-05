@@ -130,47 +130,74 @@ py scripts/gate.py --level L3 --run   # full gate
 Individual scripts accept `--help`; most support `--filter`, `--limit`
 and `--verbose`.
 
-## 7. Self-contained distribution
+## 7. Self-contained distributions
 
-The release artifact is a zip, not a single exe:
+One command builds every supported target:
 
 ```powershell
-py scripts/package.py --build --release
+py scripts/package.py --build --release --platforms all
 ```
 
-It writes `dist/ravac-17.0.19-win64.zip` with:
+Outputs (one zip per platform, `<os>-<arch>`):
 
 ```text
-ravac.exe
-modules         # jimage: system classes for every module
-ct.sym          # --release 7-17 signatures
+dist/ravac-17.0.19-windows-amd64.zip
+dist/ravac-17.0.19-linux-amd64.zip
+dist/ravac-17.0.19-linux-arm64.zip
+dist/ravac-17.0.19-android-arm64.zip
 ```
 
-Extract anywhere and run `ravac.exe`; no JDK is required.  At run time the
-platform directory is chosen deterministically:
+Each zip contains the platform binary, `modules` (jimage) and `ct.sym`.
+Extract anywhere; no JDK is required.
 
-1. `RAVAC_PLATFORM_DIR` (the only environment variable consulted; it must
-   contain `modules` directly),
-2. the executable's directory (or one level above for a `bin/` layout),
-3. otherwise the compiler reports that no platform data was found.
+### Build prerequisites
 
-The compiler never scans the machine for a JDK.  Development builds are
-self-contained too: `crates/rust-javac/build.rs` hard-links the baseline
-JDK's `lib/modules` and `lib/ct.sym` into `target/<profile>/`, so
-`target/<profile>/ravac.exe` behaves exactly like the packaged binary.
+| Target | Requires |
+|---|---|
+| windows-amd64 | native toolchain |
+| linux-amd64 | `rustup target add x86_64-unknown-linux-musl`; Rust's bundled `rust-lld` |
+| linux-arm64 | `rustup target add aarch64-unknown-linux-musl`; Rust's bundled `rust-lld` |
+| android-arm64 | `rustup target add aarch64-linux-android`; Android NDK (`%LOCALAPPDATA%\Android\Sdk\ndk`, API 21+) |
 
-`modules` is 128.7 MB and `ct.sym` is 8.3 MB; the zip is about 63 MB.
+`package.py` uses Rust's bundled `rust-lld` for both Linux targets and locates
+the Android NDK automatically; `--linker PATH` overrides the linker.  No
+other cross toolchain (zig, MSYS2) is needed.
 
-Verification:
+### Platform data
+
+The build copies `lib/modules` and `lib/ct.sym` from `--java-home`
+(default: `JAVA_HOME`).  For the Linux targets this can be a Linux JDK 17
+(for example extracted from WSL):
+
+```powershell
+mkdir -p target/tmp/linux-platform/lib
+wsl -d Ubuntu-22.04 -- cp /usr/lib/jvm/java-17-openjdk-amd64/lib/modules /usr/lib/jvm/java-17-openjdk-amd64/lib/ct.sym /mnt/c/.../target/tmp/linux-platform/lib/
+```
+
+Using the Windows JDK data for Linux targets also works (the jimage is
+mostly platform independent).
+
+### Run-time lookup
+
+1. `RAVAC_PLATFORM_DIR` (must contain `modules` directly),
+2. the executable's directory (or one level above for `bin/`),
+3. otherwise an error: no platform data.
+
+The compiler never scans for a JDK (`JAVA_HOME`, `PATH`, install dirs are
+not consulted at run time).  Development builds are self-contained too:
+`crates/rust-javac/build.rs` hard-links the JDK data into
+`target/<profile>/`.
+
+### Verify without a JDK
 
 ```powershell
 Remove-Item Env:JAVA_HOME
 Remove-Item Env:RAVAC_PLATFORM_DIR
-dist\ravac-win64\ravac.exe -d out @sources.txt
+dist\ravac-17.0.19-windows-amd64\ravac.exe -version
+dist\ravac-17.0.19-windows-amd64\ravac.exe -d out @sources.txt
 ```
 
-In this setup Gson 2.10.1 compiles to 208/208 byte-identical classes,
-including `--release 11`.
+Gson 2.10.1 compiles to 208/208 byte-identical classes this way.
 
 ## 8. Windows notes
 
