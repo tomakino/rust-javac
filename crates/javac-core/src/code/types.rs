@@ -2854,6 +2854,26 @@ impl Types {
             _ => {
                 if ctx.typ(s).is_partial() {
                     self.contained_by(ctx, syms, s, t)
+                } else if ctx.typ(s).has_tag(TypeTag::TYPEVAR) {
+                    // A captured variable on the right of `C<T> <: C<S>` still
+                    // contains the target argument when it is bounded from below
+                    // by a concrete type: `? super Object` captures to a variable
+                    // whose lower bound is Object, so `List<? super Object>` is
+                    // assignable to `List<Object>` (javac accepts it), while the
+                    // bottom lower bound of `? extends Object` keeps that case
+                    // rejected. A lower bound that is itself a type variable
+                    // (`? super T`) keeps the plain same-type comparison;
+                    // otherwise generic inference rebinds Guava's
+                    // `Ordering.from`/`TypeToken.of` to the wrong candidate.
+                    match ctx.typ(s).get_lower_bound() {
+                        Some(lower)
+                            if !ctx.typ(lower).has_tag(TypeTag::BOT)
+                                && !ctx.typ(lower).has_tag(TypeTag::TYPEVAR) =>
+                        {
+                            self.contains_type(ctx, syms, t, lower)
+                        }
+                        _ => self.is_same_type(ctx, syms, t, s),
+                    }
                 } else {
                     self.is_same_type(ctx, syms, t, s)
                 }

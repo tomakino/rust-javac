@@ -1369,6 +1369,13 @@ impl Lower {
                             return self.make_lit(ctx, sym_ty, &constant);
                         }
                         if acc_req {
+                            // Java: Lower.access builds the accessor call with
+                            // make.at(pos), where pos is the accessed tree's own
+                            // position. Without it the synthetic call inherits
+                            // whatever position the maker was left at, which put
+                            // a field read on the previous source line and added
+                            // a stray LineNumberTable entry.
+                            self.make.at(ctx.tree(tree).pos);
                             let mut args = List::nil();
                             let mut base = base;
                             if (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) == 0 {
@@ -5307,10 +5314,14 @@ impl Lower {
                         ),
                         _ => panic!("expected a method invocation"),
                     };
+                // Java: the accessor call keeps the original argument order
+                // after the synthetic ones (receiver first, then the source
+                // arguments left to right). Prepending here reversed the list,
+                // so the bytecode evaluated the arguments back to front.
                 let mut new_args = app_args;
                 let mut current = args;
                 while current.non_empty() {
-                    new_args = new_args.prepend(*current.head());
+                    new_args = new_args.append(*current.head());
                     current = current.tail();
                 }
                 let app = ctx.alloc_tree(crate::tree::jc_tree::JCTree {
@@ -5813,8 +5824,11 @@ impl Lower {
                     return;
                 }
             };
+        // Java: the accessor call keeps the synthetic arguments first and
+        // appends the assigned value (visitAssign -> make.at(pos).Apply).
+        // Prepending reversed that order in the bytecode.
         let mut new_args = app_args;
-        new_args = new_args.prepend(rhs);
+        new_args = new_args.append(rhs);
         let app = ctx.alloc_tree(crate::tree::jc_tree::JCTree {
             pos: app_pos,
             ty: app_ty,

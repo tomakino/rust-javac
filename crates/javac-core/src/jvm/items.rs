@@ -754,7 +754,9 @@ impl Items {
             let literal = self.make_immediate_item(
                 ctx,
                 self.syms.int_type,
-                ImmediateValue::Int(if x >= 0 { x } else { -x }),
+                // Java int negation wraps: -Integer.MIN_VALUE is still
+                // Integer.MIN_VALUE.
+                ImmediateValue::Int(if x >= 0 { x } else { x.wrapping_neg() }),
             );
             self.load(ctx, &literal);
             self.code

@@ -618,15 +618,12 @@ impl Resolve {
                     return true;
                 }
             }
-            // c = c.owner.enclClass()
-            let owner = ctx.sym(class).owner.expect("class owner");
-            if ctx.sym(owner).kind == Kind::TYP {
-                current = Some(owner);
-            } else if ctx.sym(owner).kind == Kind::MTH {
-                current = symbols_encl_class(ctx, class);
-            } else {
-                current = None;
-            }
+            // Java: c = c.owner.enclClass() — walk up from the owner to the
+            // nearest enclosing class for every owner kind. An anonymous class
+            // declared in a field initializer is owned by a variable, so the
+            // previous KIND-based dispatch returned null there and the walk
+            // stopped before reaching the subclass that grants access.
+            current = symbols_encl_class(ctx, class);
         }
         false
     }
@@ -8797,6 +8794,40 @@ impl Resolve {
                 };
             } else {
                 best_so_far = best_of(ctx, best_so_far, sym);
+                // Java: findFun delegates to findMethod, which re-enters
+                // lookupMethod and therefore keeps looking for the same
+                // signature through the boxing phase. When this layer would
+                // match after boxing, stop here instead of falling through to
+                // the enclosing classes, where an exactly matching overload
+                // could win before the boxing phase ever runs.
+                if !allow_boxing {
+                    // Java: findFun delegates to findMethod, which re-enters
+                    // lookupMethod and therefore keeps looking for the same
+                    // signature through the boxing phase. If this layer's
+                    // inheritance chain declares a member with that name but the
+                    // current phase did not match it, stay at this layer so a
+                    // later phase (BOX) can match it, instead of letting an
+                    // enclosing class with an exactly matching overload win.
+                    // Probing with a real lookup here would add an extra
+                    // "resolving method" note to the verbose output.
+                    let mut current = Some(encl_class);
+                    let mut seen: Vec<SymbolId> = Vec::new();
+                    let mut has_named = false;
+                    while let Some(s) = current {
+                        if let Some(members) = self.member_scope(ctx, syms, s, Some(&mut *attr))
+                            && ctx.scope(members).lookup(&name, &ctx.symbols).is_some()
+                        {
+                            has_named = true;
+                            break;
+                        }
+                        let st = ctx.sym(s).ty.expect("class type");
+                        let sup = types.supertype(ctx, syms, st, None);
+                        current = symbol_for(ctx, syms, &mut seen, sup);
+                    }
+                    if has_named {
+                        break;
+                    }
+                }
             }
             if (ctx.sym(encl_class).flags_field & flags::STATIC as i64) != 0 {
                 static_only = true;
@@ -11587,10 +11618,22 @@ fn is_inner_sub_class_free(
         if symbol_is_sub_class(ctx, types, syms, class, base) {
             return true;
         }
-        current = ctx
-            .sym(class)
-            .owner
-            .and_then(|owner| symbols_encl_class(ctx, owner));
+        // Java: c = c.owner.enclClass() — the owner itself may already be the
+        // enclosing class, so start the walk at the owner, not at its owner.
+        current = ctx.sym(class).owner.and_then(|owner| {
+            let mut cur = Some(owner);
+            while let Some(sym) = cur {
+                let kind = ctx.sym(sym).kind;
+                if kind == Kind::TYP {
+                    return Some(sym);
+                }
+                if kind == Kind::PCK || kind == Kind::MDL {
+                    return None;
+                }
+                cur = ctx.sym(sym).owner;
+            }
+            None
+        });
     }
     false
 }

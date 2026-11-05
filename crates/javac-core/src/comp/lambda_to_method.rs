@@ -1392,13 +1392,12 @@ impl LambdaAnalyzerPreprocessor {
                 );
             }
             if self.context_key(ctx).is_some() && self.lambda_ident_symbol_filter(ctx, sym) {
-                let const_value = ctx
-                    .sym(sym)
-                    .ty
-                    .and_then(|ty| ctx.typ(ty).const_value().cloned());
+                // Java: Lower.FreeVarCollector skips constant variables (their
+                // value is inlined in the lambda body instead of captured).
+                // The constant value lives on the symbol, not on its type.
                 if ctx.sym(sym).kind == Kind::VAR
                     && ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::MTH)
-                    && const_value.is_none()
+                    && ctx.sym(sym).get_const_value().is_none()
                 {
                     self.capture_symbol(ctx, sym, LambdaSymbolKind::CAPTURED_VAR);
                 } else if ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::TYP) {

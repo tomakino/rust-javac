@@ -912,6 +912,14 @@ impl Gen {
                     let pos = ctx.tree(def).pos;
                     let sym_ty = ctx.sym(*sym).ty.expect("variable type");
                     self.check_dimension(ctx, pos, sym_ty);
+                    // A declarator without an initializer still starts a new
+                    // field statement, so it must anchor the ones that follow
+                    // it in the same statement. Without this the next
+                    // declarator's initializer inherited the anchor of the
+                    // previous statement and landed on the wrong source line.
+                    if !continues {
+                        instance_anchor = Some(pos);
+                    }
                     continues = has_comma;
                 }
                 // Upstream Gen.normalizeDefs (JDK17 Gen.java:421-476) partitions
@@ -1425,12 +1433,46 @@ impl Gen {
         }
         let boolean_type = self.syms.boolean_type;
         let mut result = self.gen_expr(ctx, tree, boolean_type);
+        if result.typecode == crate::jvm::byte_codes::OBJECT_CODE {
+            // Java: the default branch of Gen.genCond coerces the item to int,
+            // and Item.coerce sends OBJECT_CODE -> INT_CODE through Items.UNBOX.
+            // Without it a condition on a boxed boolean compared the reference.
+            result = self.unbox_boolean(ctx, &result);
+        }
         result = self.get_items().mk_cond(ctx, &result);
         if mark_branches {
             let items = self.get_items();
             items.set_cond_tree(&mut result, tree);
         }
         result
+    }
+
+    /// Emit the unboxing call for a boxed boolean value.
+    fn unbox_boolean(&mut self, ctx: &mut CompilerContext, item: &Item) -> Item {
+        let boolean_type = self.syms.boolean_type;
+        let boxed = self.types.boxed_class(ctx, &self.syms, boolean_type);
+        let name = self
+            .names
+            .from_string(&javac_strings::JavaString::from("booleanValue"));
+        let members = ctx.sym(boxed).members().expect("boxed class members");
+        let method = {
+            let scope = ctx.scopes.get(members.index());
+            scope
+                .find_first(
+                    &name,
+                    &|s| ctx.sym(s).kind == crate::code::kinds::Kind::MTH,
+                    &ctx.symbols,
+                )
+                .expect("Boolean.booleanValue")
+        };
+        let mty = ctx.sym(method).ty.expect("method type");
+        let mtype = self.types.erasure(ctx, &self.syms, mty);
+        let items = self.get_items();
+        items.load(ctx, item);
+        self.get_code()
+            .borrow_mut()
+            .emit_invokevirtual(ctx, method, mtype);
+        items.make_stack_item(ctx, boolean_type)
     }
 
     /// Generate code for an expression, short-circuiting constant expressions.
@@ -3980,7 +4022,13 @@ impl Gen {
                     Some(other) => panic!("AssertionError: integer constant expected: {:?}", other),
                     None => panic!("AssertionError: constant value expected"),
                 };
-                let ival = if tag == Tag::MINUS_ASG { -ival } else { ival };
+                // Java: Items.incr(-ival) wraps like int arithmetic, so
+                // -Integer.MIN_VALUE stays Integer.MIN_VALUE.
+                let ival = if tag == Tag::MINUS_ASG {
+                    ival.wrapping_neg()
+                } else {
+                    ival
+                };
                 let items = self.get_items();
                 items.incr(ctx, &l, ival);
                 self.result = Some(l.clone());

@@ -1602,6 +1602,13 @@ impl Code {
 
     /// Force the statement beginning eagerly.
     pub fn mark_stat_begin(&mut self, ctx: &mut CompilerContext) {
+        // Java: Code.emitop/emitop2 guard the call with
+        // "if (pendingStatPos != Position.NOPOS) markStatBegin();" — without the
+        // guard a line number is recorded for bytecode that has no pending
+        // statement position, using a bogus line.
+        if self.pending_stat_pos == NOPOS {
+            return;
+        }
         if self.alive && self.line_debug_info {
             let line_map = self.line_map.as_ref().expect("line map").clone();
             let line = line_map.get_line_number(self.pending_stat_pos);

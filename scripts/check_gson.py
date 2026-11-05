@@ -64,6 +64,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build", action="store_true", help="cargo build -p rust-javac first")
     parser.add_argument("--verbose", action="store_true", help="print the first differing classes")
+    parser.add_argument("--release", help="pass --release N to both compilers")
     args = parser.parse_args()
 
     projects = root / "internal" / "test" / "real-projects"
@@ -104,6 +105,8 @@ def main() -> int:
         j_out.mkdir()
         r_out.mkdir()
         common = ["-J-Duser.language=en", "-J-Duser.country=US"]
+        if args.release:
+            common = common + ["--release", args.release]
         for out_dir in (j_out, r_out):
             lines = ["-d", str(out_dir)] + sources
             (temp / (out_dir.name + ".args")).write_text("\n".join(lines), encoding="utf-8")
