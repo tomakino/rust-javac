@@ -153,6 +153,8 @@ pub struct MiniCompiler {
     /// The class files returned by the last compile run (kept for callers that
     /// inspect the generated classes after compile_files).
     pub last_compiled_classes: Vec<CompiledClass>,
+    /// IDE analysis: in-memory content for one source path (unsaved buffer).
+    pub overlay_text: Option<(PathBuf, String)>,
 }
 
 /// Java: the Completer that JavaCompiler.readSourceFile installs on the
@@ -822,6 +824,7 @@ impl MiniCompiler {
             enter_done: false,
             generated_classes: Vec::new(),
             last_compiled_classes: Vec::new(),
+            overlay_text: None,
         };
         // Java: the JavaCompiler installs readSourceFile as the ClassFinder
         // source completer (ClassFinder.sourceCompleter = this::readSourceFile).
@@ -1230,16 +1233,44 @@ impl MiniCompiler {
         // JavaCompiler.parseFiles: fileManager.getJavaFileObjectsFromFiles
         // (the file-manager PathFileObjects are required by the later
         // isSameFile/asPath module-source-path queries).
-        let sourcefile: JavaFileObjectRef = self
-            .file_manager
-            .get_java_file_objects_from_files(&[absolute.clone()])
-            .into_iter()
-            .next()
-            .ok_or_else(|| format!("cannot open {}", absolute.display()))?;
-        let content = sourcefile
-            .get_char_content(false)
-            .map_err(|error| format!("cannot read {}: {error:?}", absolute.display()))?
-            .ok_or_else(|| format!("cannot read {}", absolute.display()))?;
+        let overlay = self
+            .overlay_text
+            .as_ref()
+            .filter(|(path, _)| {
+                if path == &absolute {
+                    return true;
+                }
+                match std::fs::canonicalize(&absolute) {
+                    Ok(canonical) => path == &canonical,
+                    Err(_) => false,
+                }
+            })
+            .map(|(_, text)| text.clone());
+        let (sourcefile, content): (JavaFileObjectRef, javac_strings::JavaString) = match overlay {
+            Some(text) => {
+                let name = javac_strings::JavaString::from(absolute.to_string_lossy().as_ref());
+                let object: JavaFileObjectRef = Rc::new(
+                    crate::file::overlay_file_object::OverlayFileObject::new(
+                        name,
+                        javac_strings::JavaString::from(text.as_str()),
+                    ),
+                );
+                (object, javac_strings::JavaString::from(text.as_str()))
+            }
+            None => {
+                let sourcefile: JavaFileObjectRef = self
+                    .file_manager
+                    .get_java_file_objects_from_files(&[absolute.clone()])
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| format!("cannot open {}", absolute.display()))?;
+                let content = sourcefile
+                    .get_char_content(false)
+                    .map_err(|error| format!("cannot read {}: {error:?}", absolute.display()))?
+                    .ok_or_else(|| format!("cannot read {}", absolute.display()))?;
+                (sourcefile, content)
+            }
+        };
         // Java: JavaCompiler.parse logs "parsing started"/"parsing done" around
         // the parser run (JavaCompiler.java:605-624).
         let verbose = self.options.is_set_option(crate::main::option::Option::VERBOSE);

@@ -113,6 +113,8 @@ pub struct Symbol {
     pub display_override: Option<SymbolDisplayOverride>,
     /// Java: ModuleSymbol.isNoModule() anonymous override (Symtab.java:438-442).
     pub no_module: bool,
+    /// Java: protected int pos (Symbol.java) - the declaration position.
+    pub pos: std::cell::Cell<i32>,
     /// The node-specific fields (one variant per upstream concrete subclass).
     pub kind_data: SymbolKind,
 }
@@ -156,6 +158,7 @@ impl Symbol {
             base_symbol_override: None,
             display_override: None,
             no_module: false,
+            pos: std::cell::Cell::new(crate::util::position::NOPOS),
             kind_data,
         }
     }
@@ -672,6 +675,7 @@ impl Clone for Symbol {
             no_module: self.no_module,
             kind_data: self.kind_data.clone(),
             id: self.id.clone(),
+            pos: self.pos.clone(),
         }
     }
 }

@@ -23,5 +23,6 @@ pub mod javac_file_manager;
 pub mod jrt_index;
 pub(crate) mod platform_paths;
 pub mod locations;
+pub mod overlay_file_object;
 pub mod path_file_object;
 pub mod relative_path;

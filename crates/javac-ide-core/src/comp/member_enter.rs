@@ -321,6 +321,8 @@ impl MemberEnter {
             .check_flags(ctx, ctx.tree(tree).pos, mods_flags, m, tree);
         ctx.sym_mut(m).flags_field = checked;
         set_method_decl_symbol(ctx, tree, m);
+        let method_pos = ctx.tree(tree).pos;
+        ctx.sym_mut(m).pos.set(method_pos);
         // if this is a default method, add the DEFAULT flag to the enclosing interface.
         if (mods_flags & flags::DEFAULT) != 0 {
             ctx.sym_mut(owner).flags_field |= flags::DEFAULT;

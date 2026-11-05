@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+javac-analysis-api = { path = "../javac-analysis-api" }
 javac-strings.workspace = true
 javac-charset.workspace = true
 javac-floating.workspace = true

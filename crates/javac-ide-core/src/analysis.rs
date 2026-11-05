@@ -11,6 +11,7 @@
 //! setup). Later calls parse, enter and attribute the file directly, clean up
 //! the previous round's user classes, and skip code generation.
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -43,6 +44,8 @@ pub struct SymbolInfo {
     pub name: String,
     pub kind: &'static str,
     pub flat_name: String,
+    /// Declaration offset in the source text (NOPOS when unknown).
+    pub pos: i32,
 }
 
 /// Result of analyzing one source file.
@@ -74,6 +77,7 @@ pub struct AnalysisSession {
     initialized: bool,
     traced: Vec<TracedClass>,
     cache: Option<CachedFile>,
+    last_text: Option<String>,
 }
 
 impl AnalysisSession {
@@ -87,6 +91,7 @@ impl AnalysisSession {
             initialized: false,
             traced: Vec::new(),
             cache: None,
+            last_text: None,
         }
     }
 
@@ -101,6 +106,13 @@ impl AnalysisSession {
     /// The first call initializes the module graph through the compiler
     /// driver; later calls reuse it. Code generation is skipped.
     pub fn analyze(&mut self, source: &Path) -> AnalysisResult {
+        self.last_text = self
+            .compiler
+            .overlay_text
+            .as_ref()
+            .map(|(_, text)| text.clone())
+            .or_else(|| std::fs::read_to_string(source).ok());
+        self.compiler.log.take_diagnostics();
         // Unchanged file: answer from the cache (an edit invalidates it by
         // mtime/length, so a resident IDE session does not re-analyze on every
         // keystroke).
@@ -256,7 +268,10 @@ impl AnalysisSession {
     /// against the analyzed symbols; this is the base for go-to-definition and
     /// hover.
     pub fn symbol_at(&mut self, source: &Path, line: usize, column: usize) -> Option<SymbolInfo> {
-        let text = std::fs::read_to_string(source).ok()?;
+        let text = self
+            .last_text
+            .clone()
+            .or_else(|| std::fs::read_to_string(source).ok())?;
         let line_text = text.lines().nth(line.saturating_sub(1))?;
         let chars: Vec<char> = line_text.chars().collect();
         if chars.is_empty() {
@@ -282,7 +297,12 @@ impl AnalysisSession {
         if word.is_empty() {
             return None;
         }
-        self.symbols().into_iter().find(|symbol| symbol.name == word)
+        let cursor = line_offset(&text, line, start + 1) as i64;
+        self.symbols()
+            .into_iter()
+            .filter(|symbol| symbol.name == word && symbol.pos >= 0)
+            .min_by_key(|symbol| (symbol.pos as i64 - cursor).abs())
+            .or_else(|| self.symbols().into_iter().find(|symbol| symbol.name == word))
     }
 
     /// Symbols of the analyzed file: its classes and their direct members.
@@ -291,10 +311,12 @@ impl AnalysisSession {
         let mut out = Vec::new();
         for traced in &self.traced {
             let class = &self.compiler.ctx.sym(traced.sym);
+            let class_pos = class.pos.get();
             out.push(SymbolInfo {
                 name: class.name.to_java_string().to_string_lossy(),
                 kind: "class",
                 flat_name: traced.flat_name.to_string(),
+                pos: class_pos,
             });
             let scope = class.members();
             if let Some(scope) = scope {
@@ -311,10 +333,15 @@ impl AnalysisSession {
                         SymbolKind::ClassSymbol { .. } => "nested",
                         _ => "member",
                     };
+                    let member_pos = match &sym.kind_data {
+                        SymbolKind::VarSymbol { pos, .. } => *pos,
+                        _ => sym.pos.get(),
+                    };
                     out.push(SymbolInfo {
                         name: sym.name.to_java_string().to_string_lossy(),
                         kind,
                         flat_name: traced.flat_name.to_string(),
+                        pos: member_pos,
                     });
                 }
             }
@@ -368,4 +395,188 @@ fn canonical(path: &Path) -> String {
     std::fs::canonicalize(path)
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| path.to_string_lossy().into_owned())
+}
+
+
+impl javac_analysis_api::AnalysisHost for AnalysisSession {
+    fn analyze(
+        &mut self,
+        file: &Path,
+        text: Option<&str>,
+    ) -> Vec<javac_analysis_api::Diagnostic> {
+        self.compiler.overlay_text = text.map(|text| (PathBuf::from(canonical(file)), text.to_string()));
+        if text.is_some() {
+            self.cache = None;
+        }
+        let _ = self.analyze(file);
+        self.compiler.overlay_text = None;
+        let text = self.last_text.clone().unwrap_or_default();
+        let diagnostics = self.compiler.log.take_diagnostics();
+        diagnostics
+            .iter()
+            .map(|diag| convert_diagnostic(diag, &text))
+            .collect()
+    }
+
+    fn symbols(&mut self, _file: &Path) -> Vec<javac_analysis_api::Symbol> {
+        self.symbols()
+            .into_iter()
+            .map(|symbol| javac_analysis_api::Symbol {
+                name: symbol.name,
+                kind: map_kind(symbol.kind),
+                range: None,
+                qualified_name: Some(symbol.flat_name),
+            })
+            .collect()
+    }
+
+    fn symbol_at(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+    ) -> Option<javac_analysis_api::Symbol> {
+        self.symbol_at(file, position.line as usize + 1, position.column as usize + 1)
+            .map(|symbol| javac_analysis_api::Symbol {
+                name: symbol.name,
+                kind: map_kind(symbol.kind),
+                range: None,
+                qualified_name: Some(symbol.flat_name),
+            })
+    }
+
+    fn completion(
+        &mut self,
+        _file: &Path,
+        _position: javac_analysis_api::Position,
+    ) -> Vec<javac_analysis_api::CompletionItem> {
+        // Baseline completion: every symbol of the analyzed file. The LSP
+        // client filters by the typed prefix.
+        self.symbols()
+            .into_iter()
+            .map(|symbol| javac_analysis_api::CompletionItem {
+                label: symbol.name,
+                kind: map_kind(symbol.kind),
+                detail: Some(symbol.flat_name),
+            })
+            .collect()
+    }
+
+    fn definition(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+    ) -> Option<javac_analysis_api::Location> {
+        let symbol = AnalysisSession::symbol_at(
+            self,
+            file,
+            position.line as usize + 1,
+            position.column as usize + 1,
+        )?;
+        if symbol.pos < 0 {
+            return None;
+        }
+        let text = self.last_text.clone()?;
+        let (line, column) = offset_to_line_col(&text, symbol.pos as usize);
+        Some(javac_analysis_api::Location {
+            file: file.to_path_buf(),
+            range: javac_analysis_api::Range::point(javac_analysis_api::Position::new(
+                line, column,
+            )),
+        })
+    }
+
+    fn references(
+        &mut self,
+        _file: &Path,
+        _position: javac_analysis_api::Position,
+    ) -> Vec<javac_analysis_api::Location> {
+        Vec::new()
+    }
+
+    fn hover(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+    ) -> Option<String> {
+        let symbol = AnalysisSession::symbol_at(self, file, position.line as usize + 1, position.column as usize + 1)?;
+        Some(format!("{:?} {}", symbol.kind, symbol.name))
+    }
+}
+
+fn map_kind(kind: &'static str) -> javac_analysis_api::SymbolKind {
+    match kind {
+        "class" => javac_analysis_api::SymbolKind::Class,
+        "method" => javac_analysis_api::SymbolKind::Method,
+        "field" => javac_analysis_api::SymbolKind::Field,
+        "nested" => javac_analysis_api::SymbolKind::Class,
+        _ => javac_analysis_api::SymbolKind::Field,
+    }
+}
+
+
+
+
+/// Convert one compiler diagnostic to the API type.
+fn convert_diagnostic(
+    diagnostic: &crate::util::jc_diagnostic::JCDiagnostic,
+    text: &str,
+) -> javac_analysis_api::Diagnostic {
+    use crate::util::jc_diagnostic::DiagnosticType;
+    let offset = diagnostic.get_position().max(0) as usize;
+    let offset = offset.min(text.len());
+    let before = &text[..offset];
+    let line = before.matches('\n').count() as u32;
+    let column = before
+        .rfind('\n')
+        .map(|index| (offset - index - 1) as u32)
+        .unwrap_or(offset as u32);
+    let severity = match diagnostic.get_type() {
+        DiagnosticType::ERROR => javac_analysis_api::Severity::Error,
+        DiagnosticType::WARNING => javac_analysis_api::Severity::Warning,
+        _ => javac_analysis_api::Severity::Information,
+    };
+    javac_analysis_api::Diagnostic {
+        range: javac_analysis_api::Range::point(javac_analysis_api::Position::new(line, column)),
+        severity,
+        message: diagnostic.get_message(None).to_string_lossy(),
+        code: None,
+    }
+}
+
+
+/// Character offset of a 1-based line/column in the given text.
+fn line_offset(text: &str, line: usize, column: usize) -> usize {
+    let mut current_line = 1;
+    let mut current_column = 1;
+    for (byte_index, current) in text.char_indices() {
+        if current_line == line && current_column >= column {
+            return byte_index;
+        }
+        if current == '\n' {
+            current_line += 1;
+            current_column = 1;
+        } else {
+            current_column += 1;
+        }
+    }
+    text.len()
+}
+
+
+/// Zero-based line/column of a character offset.
+fn offset_to_line_col(text: &str, offset: usize) -> (u32, u32) {
+    let mut line = 0u32;
+    let mut column = 0u32;
+    for (byte_index, current) in text.char_indices() {
+        if byte_index >= offset {
+            break;
+        }
+        if current == '\n' {
+            line += 1;
+            column = 0;
+        } else {
+            column += 1;
+        }
+    }
+    (line, column)
 }

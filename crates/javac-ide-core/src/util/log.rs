@@ -305,6 +305,8 @@ pub struct Log {
 
     /// The number of errors encountered so far.
     pub nerrors: Cell<i32>,
+    /// IDE analysis: diagnostics collected as they are written.
+    pub collected: RefCell<Vec<JCDiagnostic>>,
     /// The number of warnings encountered so far.
     pub nwarnings: Cell<i32>,
     /// The number of errors encountered after MaxErrors was reached.
@@ -476,6 +478,7 @@ impl Log {
             messages,
             diagnostic_handler: RefCell::new(DiagnosticHandler::Default),
             nerrors: Cell::new(0),
+            collected: RefCell::new(Vec::new()),
             nwarnings: Cell::new(0),
             nsuppressederrors: Cell::new(0),
             nsuppressedwarns: Cell::new(0),
@@ -920,6 +923,11 @@ impl Log {
     /// Primary method to report a diagnostic.
     ///
     /// Java: public void report(JCDiagnostic diagnostic)
+    /// IDE analysis: take the diagnostics written since the last call.
+    pub fn take_diagnostics(&self) -> Vec<JCDiagnostic> {
+        std::mem::take(&mut *self.collected.borrow_mut())
+    }
+
     pub fn report(&self, diagnostic: JCDiagnostic) {
         let mut handler = self.diagnostic_handler.replace(DiagnosticHandler::Default);
         handler.report(self, diagnostic);
@@ -978,6 +986,7 @@ impl Log {
     ///
     /// Java: protected void writeDiagnostic(JCDiagnostic diag)
     fn write_diagnostic(&self, diag: &JCDiagnostic) {
+        self.collected.borrow_mut().push(diag.clone());
         if let Some(listener) = self.diag_listener.clone() {
             let diagnostic: Rc<dyn Diagnostic<Rc<dyn JavaFileObject>>> = Rc::new(diag.clone());
             listener.report(diagnostic);

@@ -761,6 +761,8 @@ impl Enter {
             c
         };
         set_class_tree_symbol(ctx, tree, class);
+        let class_pos = ctx.tree(tree).pos;
+        ctx.sym_mut(class).pos.set(class_pos);
         // Enter class into 'compiled' table and enclosing scope.
         let already_compiled = self.chk.get_compiled(ctx, class);
         if crate::util::debug_flags::debug_enabled("DSH_DEBUG_LOCALREC")
