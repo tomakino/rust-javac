@@ -16,6 +16,7 @@ fn main() {
         class_path: vec![PathBuf::from(&args[1])],
         output_dir: PathBuf::from(&args[3]),
         source_level: "17".to_string(),
+        source_path: Vec::new(),
     });
     let file = PathBuf::from(&args[2]);
     let host: &mut dyn AnalysisHost = &mut session;

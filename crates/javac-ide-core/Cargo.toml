@@ -18,6 +18,7 @@ javac-zip.workspace = true
 javac-unicode.workspace = true
 sys-locale.workspace = true
 unic-langid.workspace = true
+quick-xml = "0.42.0"
 
 [dev-dependencies]
 # Baseline JDK class bytes for the PoolReader/ModuleNameReader tests.

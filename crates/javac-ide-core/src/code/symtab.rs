@@ -2450,6 +2450,72 @@ impl Symtab {
         finish_package_lookup(ctx, self, msym, result)
     }
 
+    /// Look up an existing package by dotted name without creating it.
+    pub fn lookup_package_str(
+        &self,
+        ctx: &mut CompilerContext,
+        name: &str,
+    ) -> Option<SymbolId> {
+        let java_name = JavaString::from(name);
+        let flat = self.names.table.from_string(&java_name);
+        let package = self.lookup_package_only_existing(ctx, self.unnamed_module, &flat);
+        // Parent packages created implicitly (e.g. "java" for "java.util") exist
+        // without the EXISTS flag; accept them when they own subpackages.
+        if package_exists(ctx, package) || !self.subpackages_of(ctx, name).is_empty() {
+            Some(package)
+        } else {
+            None
+        }
+    }
+
+    /// Every package visible to the unnamed module (for new-expression class
+    /// completion over the JDK).
+    pub fn all_visible_packages(&self, ctx: &mut CompilerContext) -> Vec<(crate::util::name::Name, SymbolId)> {
+        // Module completion fills visible_packages.
+        if ctx.sym(self.unnamed_module).completer.is_none()
+            && let Some(factory) = self.module_completer.get()
+        {
+            ctx.sym_mut(self.unnamed_module).completer = Some(factory());
+        }
+        let _ = ctx.complete_symbol(self, self.unnamed_module);
+        let module = ctx.sym(self.unnamed_module);
+        match &module.kind_data {
+            crate::code::symbol::SymbolKind::ModuleSymbol {
+                visible_packages, ..
+            } => visible_packages
+                .iter()
+                .map(|(name, package)| (name.clone(), *package))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Immediate subpackages of a package, from the module's visible packages.
+    pub fn subpackages_of(
+        &self,
+        ctx: &CompilerContext,
+        parent: &str,
+    ) -> Vec<(String, SymbolId)> {
+        let module = ctx.sym(self.unnamed_module);
+        let visible = match &module.kind_data {
+            crate::code::symbol::SymbolKind::ModuleSymbol {
+                visible_packages, ..
+            } => visible_packages,
+            _ => return Vec::new(),
+        };
+        let prefix = format!("{parent}.");
+        let mut result = Vec::new();
+        for (name, package) in visible.iter() {
+            let flat = name.to_java_string().to_string_lossy();
+            if let Some(rest) = flat.strip_prefix(&prefix) {
+                if !rest.is_empty() && !rest.contains('.') {
+                    result.push((rest.to_string(), *package));
+                }
+            }
+        }
+        result
+    }
+
     /// Java: public boolean packageExists(ModuleSymbol msym, Name fullname)
     pub fn package_exists(
         &self,

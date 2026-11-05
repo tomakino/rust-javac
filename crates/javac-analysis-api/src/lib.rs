@@ -70,6 +70,7 @@ pub enum SymbolKind {
     Parameter,
     Package,
     TypeParameter,
+    Keyword,
 }
 
 /// A symbol declared or referenced in a file.
@@ -92,6 +93,16 @@ pub struct DocumentSymbol {
     pub children: Vec<DocumentSymbol>,
 }
 
+/// How a completion item's insert text must be interpreted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InsertTextFormat {
+    /// Plain text insertion.
+    #[default]
+    PlainText,
+    /// Snippet syntax: `$0` is the final cursor position.
+    Snippet,
+}
+
 /// A completion candidate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompletionItem {
@@ -99,6 +110,65 @@ pub struct CompletionItem {
     pub kind: SymbolKind,
     pub detail: Option<String>,
     pub documentation: Option<String>,
+    /// Extra label detail rendered next to the label (e.g. "(int i)").
+    pub label_detail: Option<String>,
+    /// Sort key sent to clients that reorder completions themselves.
+    pub sort_text: Option<String>,
+    /// Text actually inserted; `None` means the label is inserted.
+    pub insert_text: Option<String>,
+    /// How `insert_text` is interpreted.
+    pub insert_text_format: InsertTextFormat,
+    /// When set, the editor replaces this many UTF-16 columns before the
+    /// cursor (the typed prefix) with `insert_text`.
+    pub replace_prefix_len: Option<u32>,
+    /// Text used for filtering; `None` means the label is used.
+    pub filter_text: Option<String>,
+}
+
+/// One node of the call hierarchy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallHierarchyItem {
+    pub name: String,
+    pub file: PathBuf,
+    pub range: Range,
+}
+
+/// One call edge of the call hierarchy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallHierarchyCall {
+    pub item: CallHierarchyItem,
+    pub from_ranges: Vec<Range>,
+}
+
+/// One node of the type hierarchy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeHierarchyItem {
+    pub name: String,
+    pub kind: SymbolKind,
+    pub file: PathBuf,
+    pub range: Range,
+}
+
+/// A quick fix or refactoring action.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodeAction {
+    pub title: String,
+    pub edits: Vec<TextEdit>,
+}
+
+/// One callable signature shown by signature help.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignatureInformation {
+    pub label: String,
+    pub parameters: Vec<String>,
+}
+
+/// Signature help result.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SignatureHelp {
+    pub signatures: Vec<SignatureInformation>,
+    pub active_signature: u32,
+    pub active_parameter: u32,
 }
 
 /// A text replacement.
@@ -137,6 +207,71 @@ pub trait AnalysisHost {
 
     /// The declaration of the symbol at a position.
     fn definition(&mut self, file: &Path, position: Position) -> Option<Location>;
+
+    /// The declaration of the type of the symbol at a position.
+    fn type_definition(&mut self, file: &Path, position: Position) -> Option<Location> {
+        self.definition(file, position)
+    }
+
+    /// All implementations/subclasses of the type at a position.
+    fn implementation(&mut self, file: &Path, position: Position) -> Vec<Location> {
+        let _ = (file, position);
+        Vec::new()
+    }
+
+    /// Signature help for the call at a position.
+    fn signature_help(&mut self, file: &Path, position: Position) -> Option<SignatureHelp> {
+        let _ = (file, position);
+        None
+    }
+
+    /// Format the whole document (external formatter).
+    fn format(&mut self, file: &Path, text: &str) -> Option<String> {
+        let _ = (file, text);
+        None
+    }
+
+    /// Quick fixes available at a position.
+    fn code_actions(&mut self, file: &Path, position: Position) -> Vec<CodeAction> {
+        let _ = (file, position);
+        Vec::new()
+    }
+
+    /// Prepare the type hierarchy for the type at a position.
+    fn prepare_type_hierarchy(&mut self, file: &Path, position: Position) -> Option<TypeHierarchyItem> {
+        let _ = (file, position);
+        None
+    }
+
+    /// Supertypes of a type hierarchy item.
+    fn supertypes(&mut self, item: &TypeHierarchyItem) -> Vec<TypeHierarchyItem> {
+        let _ = item;
+        Vec::new()
+    }
+
+    /// Subtypes of a type hierarchy item.
+    fn subtypes(&mut self, item: &TypeHierarchyItem) -> Vec<TypeHierarchyItem> {
+        let _ = item;
+        Vec::new()
+    }
+
+    /// Prepare the call hierarchy for the method at a position.
+    fn prepare_call_hierarchy(&mut self, file: &Path, position: Position) -> Option<CallHierarchyItem> {
+        let _ = (file, position);
+        None
+    }
+
+    /// Incoming calls of a call hierarchy item.
+    fn incoming_calls(&mut self, item: &CallHierarchyItem) -> Vec<CallHierarchyCall> {
+        let _ = item;
+        Vec::new()
+    }
+
+    /// Outgoing calls of a call hierarchy item.
+    fn outgoing_calls(&mut self, item: &CallHierarchyItem) -> Vec<CallHierarchyCall> {
+        let _ = item;
+        Vec::new()
+    }
 
     /// References to the symbol at a position.
     fn references(&mut self, file: &Path, position: Position) -> Vec<Location>;

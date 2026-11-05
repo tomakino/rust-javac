@@ -25,7 +25,7 @@ pub(crate) fn convert_diagnostic(
         range: javac_analysis_api::Range::point(javac_analysis_api::Position::new(line, column)),
         severity,
         message: diagnostic.get_message(None).to_string_lossy(),
-        code: None,
+        code: Some(diagnostic.get_code_string()),
     }
 }
 

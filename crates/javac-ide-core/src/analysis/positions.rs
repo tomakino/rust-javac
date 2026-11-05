@@ -50,7 +50,8 @@ pub(crate) fn word_at(text: &str, line: usize, column: usize) -> Option<String> 
         return None;
     }
     let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
-    let mut col = char_index_for_utf16(&chars, column.saturating_sub(1));
+    let mut col = char_index_for_utf16(&chars, column.saturating_sub(1))
+        .min(chars.len().saturating_sub(1));
     if !is_ident(chars[col]) && col > 0 && is_ident(chars[col - 1]) {
         col -= 1;
     }
@@ -160,7 +161,8 @@ pub(crate) fn char_index_for_utf16(chars: &[char], utf16_column: usize) -> usize
         }
         units += current.len_utf16();
     }
-    chars.len().saturating_sub(1)
+    // Past the last character: the cursor is at the end of the line.
+    chars.len()
 }
 
 /// Convert a char index to a UTF-16 column.

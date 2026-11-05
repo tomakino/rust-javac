@@ -13,7 +13,7 @@ use lsp_types::Url;
 use serde_json::{json, Value};
 
 pub fn run(
-    host: &mut dyn AnalysisHost,
+    host: &mut javac_ide_core::analysis::AnalysisSession,
     mut stdin: impl BufRead,
     mut stdout: impl Write,
 ) {
@@ -23,21 +23,51 @@ pub fn run(
         let method = message.get("method").and_then(Value::as_str).unwrap_or("");
         let id = message.get("id").cloned();
         match method {
-            "initialize" => respond(&mut stdout, id, json!({ "capabilities": capabilities() })),
+            "initialize" => {
+                // A Maven project root on the client side contributes its
+                // compile classpath (local repository only, no network).
+                if let Some(root) = initialize_root(&message) {
+                    let mut class_path = host.config().class_path.clone();
+                    let mut source_path = host.config().source_path.clone();
+                    for project in javac_ide_core::project::maven::discover_all(&root) {
+                        for jar in project.classpath {
+                            if !class_path.contains(&jar) {
+                                class_path.push(jar);
+                            }
+                        }
+                        for source in project.source_roots {
+                            if !source_path.contains(&source) {
+                                source_path.push(source);
+                            }
+                        }
+                    }
+                    let changed = class_path.len() > host.config().class_path.len()
+                        || source_path.len() > host.config().source_path.len();
+                    if changed {
+                        let mut config = host.config().clone();
+                        config.class_path = class_path;
+                        config.source_path = source_path;
+                        *host = javac_ide_core::analysis::AnalysisSession::new(config);
+                    }
+                }
+                respond(&mut stdout, id, json!({ "capabilities": capabilities() }));
+            }
             "initialized" => {}
             "shutdown" => respond(&mut stdout, id, Value::Null),
             "exit" => break,
             "textDocument/didOpen" => {
                 if let Some((uri, text)) = document_text(&message, "text") {
                     if let Ok(path) = uri_to_path(&uri) {
+                        log_line(&format!("didOpen {} len={} head={:?}", uri, text.len(), &text[..text.len().min(120)]));
                         docs.insert(path.clone(), text.clone());
                         publish_diagnostics(&mut stdout, host, &uri, &path, &text);
                     }
                 }
             }
             "textDocument/didChange" => {
-                if let Some((uri, text)) = change_text(&message) {
+                if let Some((uri, text)) = change_text(&message, &docs) {
                     if let Ok(path) = uri_to_path(&uri) {
+                        log_line(&format!("didChange {} len={} head={:?}", uri, text.len(), &text[..text.len().min(120)]));
                         docs.insert(path.clone(), text.clone());
                         publish_diagnostics(&mut stdout, host, &uri, &path, &text);
                     }
@@ -69,10 +99,59 @@ pub fn run(
             }
             "$/cancelRequest" => {}
             "textDocument/completion" => {
+                if let Some(params) = message.get("params") {
+                    let position = params.get("position").cloned().unwrap_or(Value::Null);
+                    let line_number = position.get("line").and_then(Value::as_u64);
+                    let line_text = params
+                        .get("textDocument")
+                        .and_then(|doc| doc.get("uri"))
+                        .and_then(Value::as_str)
+                        .and_then(|uri| uri_to_path(uri).ok())
+                        .and_then(|path| docs.get(&path).cloned())
+                        .and_then(|text| {
+                            line_number.and_then(|line| {
+                                text.lines().nth(line as usize).map(str::to_string)
+                            })
+                        });
+                    log_line(&format!("completion position={position} line={line_text:?}"));
+                }
                 respond(&mut stdout, id, completion(host, &message));
+            }
+            "textDocument/formatting" => {
+                respond(&mut stdout, id, formatting(host, &message, &docs));
             }
             "textDocument/definition" => {
                 respond(&mut stdout, id, definition(host, &message));
+            }
+            "textDocument/typeDefinition" => {
+                respond(&mut stdout, id, type_definition(host, &message));
+            }
+            "textDocument/implementation" => {
+                respond(&mut stdout, id, implementations(host, &message));
+            }
+            "textDocument/signatureHelp" => {
+                respond(&mut stdout, id, signature_help(host, &message));
+            }
+            "textDocument/codeAction" => {
+                respond(&mut stdout, id, code_action(host, &message));
+            }
+            "textDocument/prepareTypeHierarchy" => {
+                respond(&mut stdout, id, prepare_type_hierarchy(host, &message));
+            }
+            "typeHierarchy/supertypes" => {
+                respond(&mut stdout, id, type_hierarchy_supertypes(host, &message));
+            }
+            "typeHierarchy/subtypes" => {
+                respond(&mut stdout, id, type_hierarchy_subtypes(host, &message));
+            }
+            "textDocument/prepareCallHierarchy" => {
+                respond(&mut stdout, id, prepare_call_hierarchy(host, &message));
+            }
+            "callHierarchy/incomingCalls" => {
+                respond(&mut stdout, id, incoming_calls(host, &message));
+            }
+            "callHierarchy/outgoingCalls" => {
+                respond(&mut stdout, id, outgoing_calls(host, &message));
             }
             "textDocument/hover" => {
                 respond(&mut stdout, id, hover(host, &message));
@@ -95,11 +174,35 @@ pub fn run(
     }
 }
 
+/// Project root advertised by the client (rootUri or first workspace folder).
+fn initialize_root(message: &Value) -> Option<PathBuf> {
+    let params = message.get("params")?;
+    let uri = params
+        .get("rootUri")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            params
+                .get("workspaceFolders")?
+                .as_array()?
+                .first()?
+                .get("uri")?
+                .as_str()
+        })?;
+    uri_to_path(uri).ok()
+}
+
 fn capabilities() -> Value {
     json!({
         "textDocumentSync": { "openClose": true, "change": 1, "save": { "includeText": true } },
         "completionProvider": { "triggerCharacters": [".", ":"] },
+            "documentFormattingProvider": true,
         "definitionProvider": true,
+        "typeDefinitionProvider": true,
+        "implementationProvider": true,
+        "signatureHelpProvider": { "triggerCharacters": ["(", ","] },
+        "codeActionProvider": true,
+        "typeHierarchyProvider": true,
+        "callHierarchyProvider": true,
         "hoverProvider": true,
         "documentSymbolProvider": true,
         "referencesProvider": true,
@@ -119,16 +222,66 @@ fn document_text(message: &Value, key: &str) -> Option<(String, String)> {
     Some((uri, text))
 }
 
-fn change_text(message: &Value) -> Option<(String, String)> {
+/// Debug log for server-side request tracing.
+fn log_line(message: &str) {
+    use std::io::Write as _;
+    let path = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("lsp.log")))
+        .unwrap_or_else(|| std::path::PathBuf::from("lsp.log"));
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "{message}");
+    }
+}
+
+fn change_text(
+    message: &Value,
+    docs: &std::collections::HashMap<PathBuf, String>,
+) -> Option<(String, String)> {
     let params = message.get("params")?;
     let uri = params.get("textDocument")?.get("uri")?.as_str()?.to_string();
-    let text = params
-        .get("contentChanges")?
-        .get(0)?
-        .get("text")?
-        .as_str()?
-        .to_string();
+    let path = uri_to_path(&uri).ok()?;
+    let changes = params.get("contentChanges")?.as_array()?;
+    let mut text = docs.get(&path)?.clone();
+    for change in changes {
+        let new = change.get("text")?.as_str()?;
+        match change.get("range") {
+            Some(range) => {
+                let start = offset_in(&text, range.get("start")?)?;
+                let end = offset_in(&text, range.get("end")?)?;
+                if start <= end && end <= text.len() {
+                    text.replace_range(start..end, new);
+                }
+            }
+            None => text = new.to_string(),
+        }
+    }
     Some((uri, text))
+}
+
+/// Byte offset of an LSP position (0-based line, UTF-16 column).
+fn offset_in(text: &str, position: &Value) -> Option<usize> {
+    let line = position.get("line")?.as_u64()? as usize;
+    let character = position.get("character")?.as_u64()? as usize;
+    let mut offset = 0;
+    for (index, current) in text.split_inclusive(char::from(10)).enumerate() {
+        if index == line {
+            let mut column = 0;
+            for (byte, ch) in current.char_indices() {
+                if column >= character {
+                    return Some(offset + byte);
+                }
+                column += ch.len_utf16();
+            }
+            return Some(offset + current.len());
+        }
+        offset += current.len();
+    }
+    Some(text.len())
 }
 
 fn document_uri(message: &Value) -> Option<String> {
@@ -173,9 +326,7 @@ fn diagnostic_json(diagnostic: &Diagnostic) -> Value {
     json!({
         "range": range_json(diagnostic.range),
         "severity": severity_number(diagnostic.severity),
-        "source": "ravac",
         "message": diagnostic.message,
-        "code": diagnostic.code,
     })
 }
 
@@ -208,6 +359,34 @@ fn completion(host: &mut dyn AnalysisHost, message: &Value) -> Value {
                 "kind": symbol_kind_number(item.kind),
                 "detail": item.detail,
             });
+            if let Some(filter_text) = item.filter_text {
+                value["filterText"] = json!(filter_text);
+            }
+            if let Some(label_detail) = item.label_detail {
+                value["labelDetails"] = json!({ "detail": label_detail });
+            }
+            if let Some(sort_text) = item.sort_text {
+                value["sortText"] = json!(sort_text);
+            }
+            if let Some(insert_text) = item.insert_text {
+                let insert_format = match item.insert_text_format {
+                    javac_analysis_api::InsertTextFormat::PlainText => 1,
+                    javac_analysis_api::InsertTextFormat::Snippet => 2,
+                };
+                if let Some(prefix_len) = item.replace_prefix_len {
+                    let start = position.column.saturating_sub(prefix_len);
+                    value["textEdit"] = json!({
+                        "range": {
+                            "start": { "line": position.line, "character": start },
+                            "end": { "line": position.line, "character": position.column }
+                        },
+                        "newText": insert_text
+                    });
+                } else {
+                    value["insertText"] = json!(insert_text);
+                }
+                value["insertTextFormat"] = json!(insert_format);
+            }
             if let Some(documentation) = item.documentation {
                 value["documentation"] = json!({ "kind": "markdown", "value": documentation });
             }
@@ -215,6 +394,279 @@ fn completion(host: &mut dyn AnalysisHost, message: &Value) -> Value {
         })
         .collect();
     Value::Array(items)
+}
+
+fn call_item_json(item: &javac_analysis_api::CallHierarchyItem) -> Value {
+    let uri = Url::from_file_path(&item.file)
+        .map(|url| url.to_string())
+        .unwrap_or_default();
+    json!({
+        "name": item.name,
+        "kind": 6,
+        "uri": uri,
+        "range": range_json(item.range),
+        "selectionRange": range_json(item.range),
+        "detail": "",
+    })
+}
+
+fn call_item_from_params(message: &Value) -> Option<javac_analysis_api::CallHierarchyItem> {
+    let item = message.get("params")?.get("item")?;
+    let name = item.get("name")?.as_str()?.to_string();
+    let uri = item.get("uri")?.as_str()?;
+    let file = uri_to_path(uri).ok()?;
+    let start = item.get("range")?.get("start")?;
+    let line = start.get("line")?.as_u64()? as u32;
+    let character = start.get("character")?.as_u64()? as u32;
+    Some(javac_analysis_api::CallHierarchyItem {
+        name,
+        file,
+        range: javac_analysis_api::Range::point(javac_analysis_api::Position::new(line, character)),
+    })
+}
+
+fn prepare_call_hierarchy(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some((path, position)) = request_position(message) else {
+        return Value::Null;
+    };
+    match host.prepare_call_hierarchy(&path, position) {
+        Some(item) => Value::Array(vec![call_item_json(&item)]),
+        None => Value::Null,
+    }
+}
+
+fn incoming_calls(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some(item) = call_item_from_params(message) else {
+        return Value::Null;
+    };
+    Value::Array(
+        host.incoming_calls(&item)
+            .iter()
+            .map(|call| {
+                json!({
+                    "from": call_item_json(&call.item),
+                    "fromRanges": call.from_ranges.iter().map(|range| range_json(*range)).collect::<Vec<_>>(),
+                })
+            })
+            .collect(),
+    )
+}
+
+fn outgoing_calls(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some(item) = call_item_from_params(message) else {
+        return Value::Null;
+    };
+    Value::Array(
+        host.outgoing_calls(&item)
+            .iter()
+            .map(|call| {
+                json!({
+                    "to": call_item_json(&call.item),
+                    "fromRanges": call.from_ranges.iter().map(|range| range_json(*range)).collect::<Vec<_>>(),
+                })
+            })
+            .collect(),
+    )
+}
+
+fn type_hierarchy_json(item: &javac_analysis_api::TypeHierarchyItem) -> Value {
+    let uri = Url::from_file_path(&item.file)
+        .map(|url| url.to_string())
+        .unwrap_or_default();
+    json!({
+        "name": item.name,
+        "kind": symbol_kind_number(item.kind),
+        "uri": uri,
+        "range": range_json(item.range),
+        "selectionRange": range_json(item.range),
+    })
+}
+
+fn prepare_type_hierarchy(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some((path, position)) = request_position(message) else {
+        return Value::Null;
+    };
+    match host.prepare_type_hierarchy(&path, position) {
+        Some(item) => Value::Array(vec![type_hierarchy_json(&item)]),
+        None => Value::Null,
+    }
+}
+
+fn item_from_params(host: &mut dyn AnalysisHost, message: &Value) -> Option<javac_analysis_api::TypeHierarchyItem> {
+    let item = message.get("params")?.get("item")?;
+    let name = item.get("name")?.as_str()?.to_string();
+    let uri = item.get("uri")?.as_str()?;
+    let path = uri_to_path(uri).ok()?;
+    let range = item.get("range")?;
+    let start = range.get("start")?;
+    let line = start.get("line")?.as_u64()? as u32;
+    let character = start.get("character")?.as_u64()? as u32;
+    let item = javac_analysis_api::TypeHierarchyItem {
+        name,
+        kind: javac_analysis_api::SymbolKind::Class,
+        file: path,
+        range: javac_analysis_api::Range::point(javac_analysis_api::Position::new(line, character)),
+    };
+    let _ = host;
+    Some(item)
+}
+
+fn type_hierarchy_supertypes(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some(item) = item_from_params(host, message) else {
+        return Value::Null;
+    };
+    Value::Array(host.supertypes(&item).iter().map(type_hierarchy_json).collect())
+}
+
+fn type_hierarchy_subtypes(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some(item) = item_from_params(host, message) else {
+        return Value::Null;
+    };
+    Value::Array(host.subtypes(&item).iter().map(type_hierarchy_json).collect())
+}
+
+fn code_action(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some(path) = message
+        .get("params")
+        .and_then(|params| params.get("textDocument"))
+        .and_then(|doc| doc.get("uri"))
+        .and_then(Value::as_str)
+        .and_then(|uri| uri_to_path(uri).ok())
+    else {
+        return Value::Null;
+    };
+    let Some(start) = message
+        .get("params")
+        .and_then(|params| params.get("range"))
+        .and_then(|range| range.get("start"))
+    else {
+        return Value::Null;
+    };
+    let line = start.get("line").and_then(Value::as_u64).unwrap_or(0) as u32;
+    let character = start.get("character").and_then(Value::as_u64).unwrap_or(0) as u32;
+    let position = javac_analysis_api::Position::new(line, character);
+    let actions = host.code_actions(&path, position);
+    let uri = Url::from_file_path(&path)
+        .map(|url| url.to_string())
+        .unwrap_or_default();
+    Value::Array(
+        actions
+            .iter()
+            .map(|action| {
+                let edits: Vec<Value> = action
+                    .edits
+                    .iter()
+                    .map(|edit| {
+                        json!({
+                            "range": range_json(edit.range),
+                            "newText": edit.new_text,
+                        })
+                    })
+                    .collect();
+                json!({
+                    "title": action.title,
+                    "kind": "quickfix",
+                    "edit": { "changes": { uri.clone(): edits } },
+                })
+            })
+            .collect(),
+    )
+}
+
+fn formatting(
+    host: &mut dyn AnalysisHost,
+    message: &Value,
+    docs: &std::collections::HashMap<PathBuf, String>,
+) -> Value {
+    let Some(uri) = message
+        .get("params")
+        .and_then(|params| params.get("textDocument"))
+        .and_then(|doc| doc.get("uri"))
+        .and_then(Value::as_str)
+    else {
+        return Value::Null;
+    };
+    let Ok(path) = uri_to_path(uri) else {
+        return Value::Null;
+    };
+    let Some(text) = docs.get(&path) else {
+        return Value::Null;
+    };
+    let Some(formatted) = host.format(&path, text) else {
+        return Value::Null;
+    };
+    let last_line = text.lines().count().saturating_sub(1) as u32;
+    let last_column = text
+        .lines()
+        .last()
+        .map(|line| line.chars().map(|c| c.len_utf16() as u32).sum())
+        .unwrap_or(0);
+    json!([{
+        "range": {
+            "start": {"line": 0, "character": 0},
+            "end": {"line": last_line, "character": last_column},
+        },
+        "newText": formatted,
+    }])
+}
+
+fn signature_help(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some((path, position)) = request_position(message) else {
+        return Value::Null;
+    };
+    match host.signature_help(&path, position) {
+        Some(help) => {
+            let signatures: Vec<Value> = help
+                .signatures
+                .iter()
+                .map(|signature| {
+                    json!({
+                        "label": signature.label,
+                        "parameters": signature.parameters.iter().map(|parameter| json!({ "label": parameter })).collect::<Vec<_>>(),
+                    })
+                })
+                .collect();
+            json!({
+                "signatures": signatures,
+                "activeSignature": help.active_signature,
+                "activeParameter": help.active_parameter,
+            })
+        }
+        None => Value::Null,
+    }
+}
+
+fn implementations(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some((path, position)) = request_position(message) else {
+        return Value::Null;
+    };
+    let locations = host.implementation(&path, position);
+    Value::Array(
+        locations
+            .iter()
+            .map(|location| {
+                let uri = Url::from_file_path(&location.file)
+                    .map(|url| url.to_string())
+                    .unwrap_or_default();
+                json!({ "uri": uri, "range": range_json(location.range) })
+            })
+            .collect(),
+    )
+}
+
+fn type_definition(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some((path, position)) = request_position(message) else {
+        return Value::Null;
+    };
+    match host.type_definition(&path, position) {
+        Some(location) => {
+            let uri = Url::from_file_path(&location.file)
+                .map(|url| url.to_string())
+                .unwrap_or_default();
+            json!({ "uri": uri, "range": range_json(location.range) })
+        }
+        None => Value::Null,
+    }
 }
 
 fn definition(host: &mut dyn AnalysisHost, message: &Value) -> Value {
@@ -333,6 +785,7 @@ fn symbol_kind_number(kind: SymbolKind) -> i32 {
         SymbolKind::Parameter => 14,
         SymbolKind::Package => 4,
         SymbolKind::TypeParameter => 25,
+        SymbolKind::Keyword => 14,
     }
 }
 

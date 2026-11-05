@@ -15,6 +15,7 @@ fn main() {
         class_path: vec![class_dir],
         output_dir: out_dir,
         source_level: "17".to_string(),
+        source_path: Vec::new(),
     });
     let host: &mut dyn AnalysisHost = &mut session;
     // 1. Analyze the declaration file (fills the project index).

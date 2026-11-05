@@ -3,7 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use super::diagnostics::convert_diagnostic;
+use super::type_names::type_name;
 use super::positions::{indexed_location, occurrences, offset_to_line_col, prefix_at, symbol_range, word_at};
+use super::features::map_kind;
 use super::{canonical, AnalysisSession};
 
 impl javac_analysis_api::AnalysisHost for AnalysisSession {
@@ -28,10 +30,12 @@ impl javac_analysis_api::AnalysisHost for AnalysisSession {
             .cloned()
             .unwrap_or_default();
         let diagnostics = self.compiler.log.take_diagnostics();
-        diagnostics
+        let mut result: Vec<javac_analysis_api::Diagnostic> = diagnostics
             .iter()
             .map(|diag| convert_diagnostic(diag, &text))
-            .collect()
+            .collect();
+        result.extend(super::inspections::unused_imports(&text));
+        result
     }
 
     fn symbols(&mut self, _file: &Path) -> Vec<javac_analysis_api::Symbol> {
@@ -65,67 +69,7 @@ impl javac_analysis_api::AnalysisHost for AnalysisSession {
         file: &Path,
         position: javac_analysis_api::Position,
     ) -> Vec<javac_analysis_api::CompletionItem> {
-        let text = self
-            .texts
-            .get(&PathBuf::from(canonical(file)))
-            .cloned()
-            .or_else(|| std::fs::read_to_string(file).ok())
-            .unwrap_or_default();
-        let prefix = prefix_at(
-            &text,
-            position.line as usize + 1,
-            position.column as usize + 1,
-        );
-        if let Some(mut items) = self.receiver_completion(&text, position) {
-            items.sort_by_key(|item| item.label.clone());
-            items.dedup_by(|a, b| a.label == b.label && a.kind == b.kind);
-            items.truncate(100);
-            return items;
-        }
-        let mut items: Vec<javac_analysis_api::CompletionItem> = Vec::new();
-        for symbol in self.symbols() {
-            items.push(javac_analysis_api::CompletionItem {
-                label: symbol.name,
-                kind: map_kind(symbol.kind),
-                detail: Some(symbol.flat_name),
-                documentation: symbol.doc,
-            });
-        }
-        self.ensure_index();
-        let indexed: Vec<(String, &'static str)> = self
-            .index
-            .iter()
-            .map(|(key, entry)| (key.clone(), entry.kind))
-            .collect();
-        for (key, kind) in indexed {
-            // The index contributes classes only; members of other files are
-            // not valid completion candidates without a receiver.
-            if kind != "class" && kind != "nested" {
-                continue;
-            }
-            let Some(name) = key.rsplit('.').next() else { continue };
-            items.push(javac_analysis_api::CompletionItem {
-                label: name.to_string(),
-                kind: map_kind(kind),
-                detail: Some(key),
-                documentation: None,
-            });
-        }
-        items.retain(|item| item.label.starts_with(&prefix));
-        items.sort_by_key(|item| {
-            let exact = if item.label == prefix { 0 } else { 1 };
-            let rank = match item.kind {
-                javac_analysis_api::SymbolKind::Class => 0,
-                javac_analysis_api::SymbolKind::Interface => 1,
-                javac_analysis_api::SymbolKind::Method => 2,
-                javac_analysis_api::SymbolKind::Field => 3,
-                _ => 4,
-            };
-            (exact, rank, item.label.clone())
-        });
-        items.dedup_by(|a, b| a.label == b.label && a.kind == b.kind);
-        items.truncate(100);
-        items
+        self.completion_impl(file, position)
     }
 
     fn definition(
@@ -133,55 +77,67 @@ impl javac_analysis_api::AnalysisHost for AnalysisSession {
         file: &Path,
         position: javac_analysis_api::Position,
     ) -> Option<javac_analysis_api::Location> {
-        let key = PathBuf::from(canonical(file));
-        let text = self
-            .texts
-            .get(&key)
-            .cloned()
-            .or_else(|| std::fs::read_to_string(file).ok())?;
-        let line = position.line as usize + 1;
-        let column = position.column as usize + 1;
-        if let Some(symbol) = AnalysisSession::symbol_at(self, file, line, column) {
-            if symbol.pos >= 0 {
-                let (symbol_line, symbol_column) =
-                    offset_to_line_col(&text, symbol.pos as usize);
-                return Some(javac_analysis_api::Location {
-                    file: file.to_path_buf(),
-                    range: javac_analysis_api::Range::point(
-                        javac_analysis_api::Position::new(symbol_line, symbol_column),
-                    ),
-                });
-            }
-        }
-        self.ensure_index();
-        let word = word_at(&text, line, column)?;
-        // Prefer the symbol's own key, then the word suffix.
-        if let Some(symbol) = AnalysisSession::symbol_at(self, file, line, column) {
-            let key = if symbol.kind == "class" {
-                symbol.flat_name.clone()
-            } else {
-                format!("{}.{}", symbol.flat_name, symbol.name)
-            };
-            if let Some((indexed_file, pos)) = self.index_lookup(&key) {
-                return self.location_for(&indexed_file, pos);
-            }
-        }
-        let indexed_hit = self
-            .index
-            .iter()
-            .find(|(key, _)| *key == &word || key.ends_with(&format!(".{word}")))
-            .map(|(_, entry)| (entry.file.clone(), entry.pos));
-        if let Some((file, pos)) = indexed_hit {
-            return self.location_for(&file, pos);
-        }
-        if let Some(jdk_src) = super::jdk_sources::default_jdk_src() {
-            return super::jdk_sources::jdk_source_location(
-                &jdk_src,
-                &word,
-                &self.config.output_dir,
-            );
-        }
-        None
+        self.definition_impl(file, position)
+    }
+
+    fn type_definition(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+    ) -> Option<javac_analysis_api::Location> {
+        self.type_definition_impl(file, position)
+    }
+
+    fn prepare_call_hierarchy(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+    ) -> Option<javac_analysis_api::CallHierarchyItem> {
+        self.prepare_call_hierarchy_impl(file, position)
+    }
+
+    fn incoming_calls(
+        &mut self,
+        item: &javac_analysis_api::CallHierarchyItem,
+    ) -> Vec<javac_analysis_api::CallHierarchyCall> {
+        self.incoming_calls_impl(item)
+    }
+
+    fn outgoing_calls(
+        &mut self,
+        item: &javac_analysis_api::CallHierarchyItem,
+    ) -> Vec<javac_analysis_api::CallHierarchyCall> {
+        self.outgoing_calls_impl(item)
+    }
+
+    fn prepare_type_hierarchy(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+    ) -> Option<javac_analysis_api::TypeHierarchyItem> {
+        self.prepare_type_hierarchy_impl(file, position)
+    }
+
+    fn supertypes(
+        &mut self,
+        item: &javac_analysis_api::TypeHierarchyItem,
+    ) -> Vec<javac_analysis_api::TypeHierarchyItem> {
+        self.supertypes_impl(item)
+    }
+
+    fn subtypes(
+        &mut self,
+        item: &javac_analysis_api::TypeHierarchyItem,
+    ) -> Vec<javac_analysis_api::TypeHierarchyItem> {
+        self.subtypes_impl(item)
+    }
+
+    fn implementation(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+    ) -> Vec<javac_analysis_api::Location> {
+        self.implementation_impl(file, position)
     }
 
     fn references(
@@ -189,87 +145,30 @@ impl javac_analysis_api::AnalysisHost for AnalysisSession {
         file: &Path,
         position: javac_analysis_api::Position,
     ) -> Vec<javac_analysis_api::Location> {
-        let key = PathBuf::from(canonical(file));
-        let text = self
-            .texts
-            .get(&key)
-            .cloned()
-            .or_else(|| std::fs::read_to_string(file).ok())
-            .unwrap_or_default();
-        let Some(word) = word_at(
-            &text,
-            position.line as usize + 1,
-            position.column as usize + 1,
-        ) else {
-            return Vec::new();
-        };
-        // The tree arena keeps every analyzed file; a tree belongs to this file
-        // when the text at its position starts with the identifier.
-        let in_file = |pos: i32| -> bool {
-            if pos < 0 {
-                return false;
-            }
-            let pos = pos as usize;
-            pos <= text.len() && text[pos..].starts_with(&word)
-        };
-        let mut locations = Vec::new();
-        for tree in self.compiler.ctx.trees.iter() {
-            match &tree.kind {
-                crate::tree::jc_tree::TreeKind::VariableDecl {
-                    name, decl_pos, ..
-                } if name.to_java_string().to_string_lossy() == word => {
-                    if in_file(*decl_pos) {
-                        if let Some(location) = location_at(&text, file, *decl_pos) {
-                            locations.push(location);
-                        }
-                    }
-                }
-                crate::tree::jc_tree::TreeKind::Ident { name, .. }
-                    if name.to_java_string().to_string_lossy() == word =>
-                {
-                    if in_file(tree.pos) {
-                        if let Some(location) = location_at(&text, file, tree.pos) {
-                            locations.push(location);
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        locations.sort_by_key(|location| (location.range.start.line, location.range.start.column));
-        locations.dedup_by(|a, b| a.range == b.range);
-        locations
+        self.references_impl(file, position)
     }
 
     fn document_symbols(
         &mut self,
         file: &Path,
     ) -> Vec<javac_analysis_api::DocumentSymbol> {
-        let text = self
-            .texts
-            .get(&PathBuf::from(canonical(file)))
-            .cloned()
-            .or_else(|| std::fs::read_to_string(file).ok())
-            .unwrap_or_default();
-        let mut classes: Vec<javac_analysis_api::DocumentSymbol> = Vec::new();
-        for symbol in self.symbols() {
-            let range = symbol_range(&text, symbol.pos, &symbol.name);
-            let node = javac_analysis_api::DocumentSymbol {
-                name: symbol.name.clone(),
-                kind: map_kind(symbol.kind),
-                range,
-                children: Vec::new(),
-            };
-            if symbol.kind == "class" {
-                classes.push(node);
-            } else if let Some(class) = classes
-                .iter_mut()
-                .find(|class| class.name == symbol.flat_name.rsplit('.').next().unwrap_or(""))
-            {
-                class.children.push(node);
-            }
-        }
-        classes
+        self.document_symbols_impl(file)
+    }
+
+    fn code_actions(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+    ) -> Vec<javac_analysis_api::CodeAction> {
+        self.code_actions_impl(file, position)
+    }
+
+    fn signature_help(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+    ) -> Option<javac_analysis_api::SignatureHelp> {
+        self.signature_help_impl(file, position)
     }
 
     fn rename(
@@ -278,34 +177,11 @@ impl javac_analysis_api::AnalysisHost for AnalysisSession {
         position: javac_analysis_api::Position,
         new_name: &str,
     ) -> Vec<javac_analysis_api::TextEdit> {
-        let key = PathBuf::from(canonical(file));
-        let text = self
-            .texts
-            .get(&key)
-            .cloned()
-            .or_else(|| std::fs::read_to_string(file).ok())
-            .unwrap_or_default();
-        let line = position.line as usize + 1;
-        let column = position.column as usize + 1;
-        let Some(word) = word_at(&text, line, column) else {
-            return Vec::new();
-        };
-        let word_len: u32 = word.chars().map(|c| c.len_utf16() as u32).sum();
-        let locations =
-            AnalysisSession::references(self, file, position);
-        locations
-            .into_iter()
-            .map(|location| {
-                let start = location.range.start;
-                javac_analysis_api::TextEdit {
-                    range: javac_analysis_api::Range::new(
-                        start,
-                        javac_analysis_api::Position::new(start.line, start.column + word_len),
-                    ),
-                    new_text: new_name.to_string(),
-                }
-            })
-            .collect()
+        self.rename_impl(file, position, new_name)
+    }
+
+    fn format(&mut self, file: &Path, text: &str) -> Option<String> {
+        self.format_impl(file, text)
     }
 
     fn hover(
@@ -313,26 +189,7 @@ impl javac_analysis_api::AnalysisHost for AnalysisSession {
         file: &Path,
         position: javac_analysis_api::Position,
     ) -> Option<String> {
-        let symbol = AnalysisSession::symbol_at(
-            self,
-            file,
-            position.line as usize + 1,
-            position.column as usize + 1,
-        )?;
-        Some(match symbol.doc {
-            Some(doc) if !doc.is_empty() => format!("{}\n\n{doc}", symbol.detail),
-            _ => symbol.detail,
-        })
-    }
-}
-
-fn map_kind(kind: &'static str) -> javac_analysis_api::SymbolKind {
-    match kind {
-        "class" => javac_analysis_api::SymbolKind::Class,
-        "method" => javac_analysis_api::SymbolKind::Method,
-        "field" => javac_analysis_api::SymbolKind::Field,
-        "nested" => javac_analysis_api::SymbolKind::Class,
-        _ => javac_analysis_api::SymbolKind::Field,
+        self.hover_impl(file, position)
     }
 }
 
@@ -341,98 +198,12 @@ fn map_kind(kind: &'static str) -> javac_analysis_api::SymbolKind {
 
 
 
-impl AnalysisSession {
-    /// Completion after a receiver dot: members of the receiver's type.
-    fn receiver_completion(
-        &mut self,
-        text: &str,
-        position: javac_analysis_api::Position,
-    ) -> Option<Vec<javac_analysis_api::CompletionItem>> {
-        use crate::code::type_::TypeKindData;
-        let line_text = text.lines().nth(position.line as usize)?;
-        let chars: Vec<char> = line_text.chars().collect();
-        let cursor = super::positions::char_index_for_utf16(&chars, position.column as usize);
-        let before: String = chars[..cursor].iter().collect();
-        let trimmed = before.trim_end();
-        if !trimmed.ends_with('.') {
-            return None;
-        }
-        let trimmed_chars: Vec<char> = trimmed.chars().collect();
-        let dot = trimmed_chars.len() - 1;
-        let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
-        let mut start = dot;
-        while start > 0 && is_ident(trimmed_chars[start - 1]) {
-            start -= 1;
-        }
-        let receiver: String = trimmed_chars[start..dot].iter().collect();
-        if receiver.is_empty() {
-            return None;
-        }
-        let mut variable = None;
-        for tree in self.compiler.ctx.trees.iter() {
-            if let crate::tree::jc_tree::TreeKind::VariableDecl {
-                name,
-                sym: Some(sym),
-                ..
-            } = &tree.kind
-            {
-                if name.to_java_string().to_string_lossy() == receiver {
-                    variable = Some(*sym);
-                    break;
-                }
-            }
-        }
-        let Some(symbol) = variable else {
-            return None;
-        };
-        let Some(ty) = self.compiler.ctx.sym(symbol).ty else {
-            return Some(Vec::new());
-        };
-        let class = match &self.compiler.ctx.typ(ty).kind {
-            TypeKindData::ClassType { .. } => self.compiler.ctx.typ(ty).tsym,
-            _ => None,
-        };
-        let Some(class) = class else {
-            return Some(Vec::new());
-        };
-        let class_flat = self.compiler.ctx.sym(class).flat_name().to_string();
-        let Some(scope) = self.compiler.ctx.sym(class).members() else {
-            return Some(Vec::new());
-        };
-        let members = self.compiler.ctx.scope_get_symbols(
-            scope,
-            crate::code::scope::LookupKind::NON_RECURSIVE,
-            &|_| true,
-        );
-        let mut items = Vec::new();
-        for member in members {
-            let symbol = self.compiler.ctx.sym(member);
-            if (symbol.flags_field & crate::code::flags::GENERATEDCONSTR) != 0 {
-                continue;
-            }
-            let name = symbol.name.to_java_string().to_string_lossy();
-            let kind = match symbol.kind_data {
-                crate::code::symbol::SymbolKind::MethodSymbol { .. } => "method",
-                crate::code::symbol::SymbolKind::VarSymbol { .. } => "field",
-                crate::code::symbol::SymbolKind::ClassSymbol { .. } => "nested",
-                _ => "member",
-            };
-            items.push(javac_analysis_api::CompletionItem {
-                label: name.clone(),
-                kind: map_kind(kind),
-                detail: Some(format!("{class_flat}.{name}")),
-                documentation: None,
-            });
-        }
-        Some(items)
-    }
-}
 
 
 impl AnalysisSession {
     /// Location of a declaration, using the session text when available
     /// (unsaved files have no content on disk).
-    fn location_for(&self, file: &Path, pos: i32) -> Option<javac_analysis_api::Location> {
+    pub(crate) fn location_for(&self, file: &Path, pos: i32) -> Option<javac_analysis_api::Location> {
         let key = PathBuf::from(canonical(file));
         let text = self
             .texts
@@ -454,7 +225,7 @@ impl AnalysisSession {
 
 
 /// A Location for a source offset in a text.
-fn location_at(
+pub(crate) fn location_at(
     text: &str,
     file: &Path,
     pos: i32,
@@ -465,3 +236,175 @@ fn location_at(
         range: javac_analysis_api::Range::point(javac_analysis_api::Position::new(line, column)),
     })
 }
+
+
+impl AnalysisSession {
+    /// The class symbol with the given simple name (any of the compiler's
+    /// source-backed classes).
+    pub(crate) fn class_symbol_named(&self, name: &str) -> Option<crate::ids::SymbolId> {
+        for sym in self.compiler.syms.get_all_classes() {
+            let simple = self
+                .compiler
+                .ctx
+                .sym(sym)
+                .name
+                .to_java_string()
+                .to_string_lossy();
+            if simple == name
+                && let crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } =
+                    &self.compiler.ctx.sym(sym).kind_data
+                && sourcefile.is_some()
+            {
+                return Some(sym);
+            }
+        }
+        None
+    }
+}
+
+
+impl AnalysisSession {
+    /// Type hierarchy node for a class symbol.
+    pub(crate) fn type_hierarchy_item(
+        &self,
+        class: crate::ids::SymbolId,
+    ) -> Option<javac_analysis_api::TypeHierarchyItem> {
+        let symbol = self.compiler.ctx.sym(class);
+        let name = symbol.name.to_java_string().to_string_lossy();
+        let file = match &symbol.kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile
+                .as_ref()
+                .map(|file| PathBuf::from(file.get_name().to_string_lossy()))?,
+            _ => return None,
+        };
+        let pos = symbol.pos.get();
+        let text = self
+            .texts
+            .get(&PathBuf::from(canonical(&file)))
+            .cloned()
+            .or_else(|| std::fs::read_to_string(&file).ok())?;
+        let (line, column) = offset_to_line_col(&text, pos.max(0) as usize);
+        Some(javac_analysis_api::TypeHierarchyItem {
+            name,
+            kind: javac_analysis_api::SymbolKind::Class,
+            file,
+            range: javac_analysis_api::Range::point(javac_analysis_api::Position::new(line, column)),
+        })
+    }
+}
+
+
+impl AnalysisSession {
+    /// Call hierarchy node for a method declared in an analyzed file.
+    pub(crate) fn method_item(
+        &self,
+        name: &str,
+    ) -> Option<javac_analysis_api::CallHierarchyItem> {
+        let mut found = None;
+        for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {
+            if let crate::tree::jc_tree::TreeKind::MethodDecl {
+                name: method,
+                sym,
+                ..
+            } = &tree.kind
+            {
+                if method.to_java_string().to_string_lossy() != name {
+                    continue;
+                }
+                let _ = index;
+                let _ = sym;
+                let _ = tree;
+                found = Some(index);
+                break;
+            }
+        }
+        let index = found?;
+        let tree = self.compiler.ctx.trees.get(index as u32);
+        let (sym, pos) = match &tree.kind {
+            crate::tree::jc_tree::TreeKind::MethodDecl { sym, .. } => (*sym, tree.pos),
+            _ => return None,
+        };
+        let sym = sym?;
+        let file = match &self.compiler.ctx.sym(sym).kind_data {
+            crate::code::symbol::SymbolKind::MethodSymbol { .. } => {
+                let owner = self.compiler.ctx.sym(sym).owner;
+                owner.and_then(|owner| match &self.compiler.ctx.sym(owner).kind_data {
+                    crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => {
+                        sourcefile
+                            .as_ref()
+                            .map(|file| PathBuf::from(file.get_name().to_string_lossy()))
+                    }
+                    _ => None,
+                })
+            }
+            _ => None,
+        }?;
+        let text = self
+            .texts
+            .get(&PathBuf::from(canonical(&file)))
+            .cloned()
+            .or_else(|| std::fs::read_to_string(&file).ok())?;
+        let (line, column) = offset_to_line_col(&text, pos.max(0) as usize);
+        Some(javac_analysis_api::CallHierarchyItem {
+            name: name.to_string(),
+            file,
+            range: javac_analysis_api::Range::point(javac_analysis_api::Position::new(line, column)),
+        })
+    }
+}
+
+
+impl AnalysisSession {
+    /// Method bodies of one file as (name, start, end) byte ranges.
+    pub(crate) fn method_ranges(&self, file: &Path) -> Vec<(String, i32, i32)> {
+        let file_name = canonical(file);
+        let mut methods: Vec<(String, i32, i32)> = Vec::new();
+        for tree in self.compiler.ctx.trees.iter() {
+            if let crate::tree::jc_tree::TreeKind::MethodDecl {
+                name,
+                sym: Some(sym),
+                body: Some(body),
+                ..
+            } = &tree.kind
+            {
+                let owner = self.compiler.ctx.sym(*sym).owner;
+                let owner_file = owner.and_then(|owner| match &self
+                    .compiler
+                    .ctx
+                    .sym(owner)
+                    .kind_data
+                {
+                    crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile
+                        .as_ref()
+                        .map(|file| canonical(Path::new(&file.get_name().to_string_lossy()))),
+                    _ => None,
+                });
+                if owner_file.as_deref() != Some(file_name.as_str()) {
+                    continue;
+                }
+                methods.push((
+                    name.to_java_string().to_string_lossy(),
+                    self.compiler.ctx.tree(*body).pos,
+                    0,
+                ));
+            }
+        }
+        methods.sort_by_key(|(_, start, _)| *start);
+        let text_len = self
+            .texts
+            .get(&PathBuf::from(canonical(file)))
+            .map(|text| text.len())
+            .or_else(|| std::fs::metadata(file).ok().map(|meta| meta.len() as usize))
+            .unwrap_or(0) as i32;
+        for index in 0..methods.len() {
+            methods[index].2 = methods
+                .get(index + 1)
+                .map(|(_, start, _)| *start)
+                .unwrap_or(text_len);
+        }
+        methods
+    }
+}
+
+
+

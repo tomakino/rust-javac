@@ -111,6 +111,7 @@ impl AnalysisSession {
             std::collections::HashMap::new();
         for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {
             let symbol = match &tree.kind {
+                crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
                 crate::tree::jc_tree::TreeKind::MethodDecl { sym: Some(sym), .. } => *sym,
                 crate::tree::jc_tree::TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
                 _ => continue,
@@ -128,7 +129,10 @@ impl AnalysisSession {
                 kind: "class",
                 flat_name: traced.flat_name.to_string(),
                 pos: class_pos,
-                detail: format!("class {}", traced.flat_name),
+                detail: decl_trees
+                    .get(&traced.sym)
+                    .and_then(|tree| super::signatures::class_signature(&self.compiler.ctx, *tree))
+                    .unwrap_or_else(|| format!("class {}", traced.flat_name)),
                 doc: docs.get(&traced.sym).cloned(),
             });
             let scope = class.members();
@@ -158,19 +162,22 @@ impl AnalysisSession {
                         SymbolKind::VarSymbol { pos, .. } => *pos,
                         _ => sym.pos.get(),
                     };
-                    let type_text = decl_trees
+                    let detail = decl_trees
                         .get(&member)
-                        .and_then(|tree| self.member_type_text(*tree))
-                        .filter(|text| text != "?");
-                    let name = sym.name.to_java_string().to_string_lossy();
-                    let detail = match (kind, type_text) {
-                        ("method", Some(text)) => {
-                            format!("{}.{} {}", traced.flat_name, name, text)
-                        }
-                        ("method", None) => format!("{}.{}", traced.flat_name, name),
-                        (_, Some(text)) => format!("{} {}", text, name),
-                        (_, None) => format!("{}.{}", traced.flat_name, name),
-                    };
+                        .and_then(|tree| match kind {
+                            "method" => super::signatures::method_signature(
+                                &self.compiler.ctx,
+                                *tree,
+                            ),
+                            _ => super::signatures::field_signature(&self.compiler.ctx, *tree),
+                        })
+                        .unwrap_or_else(|| {
+                            format!(
+                                "{}.{}",
+                                traced.flat_name,
+                                sym.name.to_java_string().to_string_lossy()
+                            )
+                        });
                     out.push(SymbolInfo {
                         name: sym.name.to_java_string().to_string_lossy(),
                         kind,

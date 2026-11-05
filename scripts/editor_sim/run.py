@@ -89,20 +89,24 @@ def member_completion(client):
 
 def hover_types(client):
     a = WORK / "HoverFoo.java"
-    text = "class HoverFoo { int value; String name(int a) { return \"\"; } }\n"
+    text = "public class HoverFoo { public int value; public String name(int a) { return null; } }\n"
     client.did_open(a, text)
     client.wait_diagnostics(a)
 
     value_column = text.index("value")
     value = client.hover(a, 0, value_column)
     value_text = ((value or {}).get("contents") or {}).get("value", "")
-    check("hover: field type", "int" in value_text, value_text)
+    check("hover: field signature", "public int value" in value_text, value_text)
 
     name_column = text.index("name")
     name = client.hover(a, 0, name_column)
     name_text = ((name or {}).get("contents") or {}).get("value", "")
-    check("hover: method return type", "String" in name_text, name_text)
-    check("hover: method parameter type", "int" in name_text, name_text)
+    check("hover: method signature", "public String name(int a)" in name_text, name_text)
+
+    class_column = text.index("HoverFoo")
+    class_hover = client.hover(a, 0, class_column)
+    class_text = ((class_hover or {}).get("contents") or {}).get("value", "")
+    check("hover: class signature", "public class HoverFoo" in class_text, class_text)
 
 
 def definition_targets(client):
@@ -194,6 +198,171 @@ def rename_symbol(client):
     )
 
 
+def type_definition_targets(client):
+    path = WORK / "TypeJump.java"
+    text = "class TypeJump { java.util.List<String> list; }\n"
+    client.did_open(path, text)
+    client.wait_diagnostics(path)
+    target = client.type_definition(path, 0, text.index("list"))
+    uri = (target or {}).get("uri", "")
+    check("typeDefinition: variable type", target is not None and "List.java" in uri, uri)
+
+
+def implementation_targets(client):
+    shape = WORK / "Shape.java"
+    circle = WORK / "Circle.java"
+    client.did_open(shape, "interface Shape {}\n")
+    client.wait_diagnostics(shape)
+    client.did_open(circle, "class Circle implements Shape {}\n")
+    client.wait_diagnostics(circle)
+    targets = client.implementation(shape, 0, "interface ".index("i") + 10)
+    uris = [target["uri"] for target in targets]
+    check(
+        "implementation: interface implementation",
+        any("Circle.java" in uri for uri in uris),
+        str(uris),
+    )
+
+
+def signature_help(client):
+    path = WORK / "Sig.java"
+    text = "class Sig { void f(int a, String b) {} void g() { f(1, ); } }\n"
+    client.did_open(path, text)
+    client.wait_diagnostics(path)
+    column = text.index("f(1, ") + len("f(1, ")
+    result = client.signature_help(path, 0, column)
+    signatures = (result or {}).get("signatures") or []
+    labels = [signature["label"] for signature in signatures]
+    check(
+        "signatureHelp: signature",
+        any("void f(int a, String b)" in label for label in labels),
+        str(labels),
+    )
+    check(
+        "signatureHelp: active parameter",
+        (result or {}).get("activeParameter") == 1,
+        str(result),
+    )
+
+
+def completion_extras(client):
+    path = WORK / "Comp.java"
+    text = "class Comp { void f() { int local = 1; lo } }\n"
+    client.did_open(path, text)
+    client.wait_diagnostics(path)
+    column = text.index("lo }") + 2
+    labels = [item["label"] for item in client.completion(path, 0, column)]
+    check("completion: local variable", "local" in labels, str(labels[:12]))
+
+    keyword_text = "class Comp { void f() { ret } }\n"
+    client.did_change(path, keyword_text, version=2)
+    client.wait_diagnostics(path)
+    keyword_column = keyword_text.index("ret }") + 3
+    labels = [item["label"] for item in client.completion(path, 0, keyword_column)]
+    check("completion: keyword", "return" in labels, str(labels[:12]))
+
+    class_text = "class Comp { void f() { Lis } }\n"
+    client.did_change(path, class_text, version=3)
+    client.wait_diagnostics(path)
+    class_column = class_text.index("Lis }") + 3
+    labels = [item["label"] for item in client.completion(path, 0, class_column)]
+    check("completion: class path class", "List" in labels, str(labels[:12]))
+
+
+def code_action_import(client):
+    path = WORK / "Imp.java"
+    text = "class Imp { List l; }\n"
+    client.did_open(path, text)
+    client.wait_diagnostics(path)
+    column = text.index("List")
+    actions = client.code_action(path, 0, column)
+    titles = [action["title"] for action in actions]
+    check(
+        "codeAction: import fix offered",
+        any("Import" in title for title in titles),
+        str(titles),
+    )
+    edits = ((actions[0].get("edit") or {}).get("changes") or {}).get(path.as_uri(), []) if actions else []
+    check(
+        "codeAction: import inserted",
+        any("import java.util.List;" in edit["newText"] for edit in edits),
+        str(edits),
+    )
+
+
+def type_hierarchy(client):
+    iface = WORK / "THShape.java"
+    impl = WORK / "THCircle.java"
+    client.did_open(iface, "interface THShape {}\n")
+    client.wait_diagnostics(iface)
+    client.did_open(impl, "class THCircle implements THShape {}\n")
+    client.wait_diagnostics(impl)
+    prepared = client.prepare_type_hierarchy(iface, 0, 10)
+    items = prepared or []
+    check(
+        "typeHierarchy: prepare",
+        bool(items) and items[0]["name"] == "THShape",
+        str([item["name"] for item in items]),
+    )
+    subtypes = client.type_hierarchy_subtypes(items[0]) if items else []
+    names = [item["name"] for item in subtypes]
+    check("typeHierarchy: subtypes", "THCircle" in names, str(names))
+    supertypes = client.type_hierarchy_supertypes(subtypes[0]) if subtypes else []
+    super_names = [item["name"] for item in supertypes]
+    check("typeHierarchy: supertypes", "THShape" in super_names, str(super_names))
+
+
+def call_hierarchy(client):
+    path = WORK / "CH.java"
+    text = "class CH { void helper() {} void main() { helper(); } }\n"
+    client.did_open(path, text)
+    client.wait_diagnostics(path)
+    prepared = client.prepare_call_hierarchy(path, 0, text.find("helper"))
+    items = prepared or []
+    check(
+        "callHierarchy: prepare",
+        bool(items) and items[0]["name"] == "helper",
+        str([item["name"] for item in items]),
+    )
+    incoming = client.incoming_calls(items[0]) if items else []
+    froms = [call["from"]["name"] for call in incoming]
+    check("callHierarchy: incoming", "main" in froms, str(froms))
+    main_prepared = client.prepare_call_hierarchy(path, 0, text.find("main"))
+    main_items = main_prepared or []
+    outgoing = client.outgoing_calls(main_items[0]) if main_items else []
+    tos = [call["to"]["name"] for call in outgoing]
+    check("callHierarchy: outgoing exact", tos == ["helper"], str(tos))
+
+
+def diagnostic_codes(client):
+    path = WORK / "Diag.java"
+    text = "class Diag { void f() { int x = ; } }\n"
+    client.did_open(path, text)
+    diagnostics = client.wait_diagnostics(path)
+    check("diagnostics: one error", len(diagnostics) == 1, str(len(diagnostics)))
+    message = diagnostics[0].get("message") if diagnostics else None
+    check(
+        "diagnostics: error message",
+        message is not None and len(message) > 0,
+        str(message),
+    )
+
+
+def unused_import_inspection(client):
+    path = WORK / "UnusedImport.java"
+    text = "import java.util.List;\nclass UnusedImport { int x; }\n"
+    client.did_open(path, text)
+    diagnostics = client.wait_diagnostics(path)
+    messages = [diagnostic.get("message") for diagnostic in diagnostics]
+    check(
+        "inspection: unused import reported",
+        any(message and "Unused import" in message for message in messages),
+        str(messages),
+    )
+    severities = [diagnostic.get("severity") for diagnostic in diagnostics]
+    check("inspection: unused import warning", 2 in severities, str(severities))
+
+
 def main():
     WORK.mkdir(parents=True, exist_ok=True)
     for path in WORK.glob("*.java"):
@@ -207,6 +376,15 @@ def main():
         member_completion(client)
         hover_types(client)
         definition_targets(client)
+        type_definition_targets(client)
+        implementation_targets(client)
+        signature_help(client)
+        completion_extras(client)
+        code_action_import(client)
+        type_hierarchy(client)
+        call_hierarchy(client)
+        diagnostic_codes(client)
+        unused_import_inspection(client)
         references_scope(client)
         outline_and_lifecycle(client)
         rename_symbol(client)

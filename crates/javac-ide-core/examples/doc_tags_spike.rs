@@ -14,6 +14,7 @@ fn main() {
         class_path: vec![class_dir],
         output_dir: out_dir,
         source_level: "17".to_string(),
+        source_path: Vec::new(),
     });
     let host: &mut dyn AnalysisHost = &mut session;
     let path = PathBuf::from("target/tmp/DocTags.java");

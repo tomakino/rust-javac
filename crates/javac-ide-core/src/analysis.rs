@@ -13,11 +13,14 @@
 
 mod diagnostics;
 mod doc_render;
+mod features;
 mod host;
 mod index;
+mod inspections;
 mod jdk_sources;
 mod positions;
 mod symbols;
+mod signatures;
 mod type_names;
 
 pub use host::*;
@@ -53,6 +56,8 @@ pub struct AnalysisConfig {
     pub output_dir: PathBuf,
     /// Source language level, e.g. "17".
     pub source_level: String,
+    /// Source roots used to resolve project classes that are not yet compiled.
+    pub source_path: Vec<PathBuf>,
 }
 
 /// Result of analyzing one source file.
@@ -81,10 +86,19 @@ pub struct AnalysisSession {
     pub(crate) texts: HashMap<PathBuf, String>,
     pub(crate) index: HashMap<String, IndexEntry>,
     pub(crate) index_built: bool,
+    /// True when receiver completion consumed the typed prefix as part of a
+    /// fully qualified class name ("java.util.Base64"), so the prefix must
+    /// not be used for filtering or replacement.
+    pub(crate) receiver_prefix_consumed: bool,
 }
 
 impl AnalysisSession {
-    pub fn new(config: AnalysisConfig) -> Self {
+    /// Read-only access to the configuration this session was created with.
+pub fn config(&self) -> &AnalysisConfig {
+    &self.config
+}
+
+pub fn new(config: AnalysisConfig) -> Self {
         std::fs::create_dir_all(&config.output_dir)
             .expect("create analysis output directory");
         let mut compiler = build_compiler(&config);
@@ -102,6 +116,7 @@ impl AnalysisSession {
             texts: HashMap::new(),
             index: HashMap::new(),
             index_built: false,
+            receiver_prefix_consumed: false,
         }
     }
 
@@ -288,12 +303,24 @@ fn build_compiler(config: &AnalysisConfig) -> MiniCompiler {
         .collect::<Vec<_>>()
         .join(";");
     let source_level = config.source_level.clone();
+    let source_path = config
+        .source_path
+        .iter()
+        .map(|entry| entry.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join(";");
     MiniCompiler::new_with_options(&config.output_dir, |options| {
         if !class_path.is_empty() {
             options.put("--class-path", class_path.clone());
         }
         options.put("--source", source_level.clone());
+        if !source_path.is_empty() {
+            options.put("--source-path", source_path);
+        }
         options.put("should-stop.at", "ATTR");
+        // Read parameter names from LocalVariableTable / MethodParameters so
+        // completion can show real names instead of synthetic arg0/arg1.
+        options.put("-parameters", "");
     })
 }
 

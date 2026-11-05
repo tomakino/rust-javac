@@ -154,6 +154,74 @@ class LspClient:
             },
         ) or []
 
+    def prepare_call_hierarchy(self, path, line, character):
+        return self.request(
+            "textDocument/prepareCallHierarchy",
+            {
+                "textDocument": {"uri": Path(path).as_uri()},
+                "position": {"line": line, "character": character},
+            },
+        )
+
+    def incoming_calls(self, item):
+        return self.request("callHierarchy/incomingCalls", {"item": item}) or []
+
+    def outgoing_calls(self, item):
+        return self.request("callHierarchy/outgoingCalls", {"item": item}) or []
+
+    def prepare_type_hierarchy(self, path, line, character):
+        return self.request(
+            "textDocument/prepareTypeHierarchy",
+            {
+                "textDocument": {"uri": Path(path).as_uri()},
+                "position": {"line": line, "character": character},
+            },
+        )
+
+    def type_hierarchy_subtypes(self, item):
+        return self.request("typeHierarchy/subtypes", {"item": item}) or []
+
+    def type_hierarchy_supertypes(self, item):
+        return self.request("typeHierarchy/supertypes", {"item": item}) or []
+
+    def code_action(self, path, line, character):
+        point = {"line": line, "character": character}
+        return self.request(
+            "textDocument/codeAction",
+            {
+                "textDocument": {"uri": Path(path).as_uri()},
+                "range": {"start": point, "end": point},
+                "context": {"diagnostics": []},
+            },
+        ) or []
+
+    def signature_help(self, path, line, character):
+        return self.request(
+            "textDocument/signatureHelp",
+            {
+                "textDocument": {"uri": Path(path).as_uri()},
+                "position": {"line": line, "character": character},
+            },
+        )
+
+    def implementation(self, path, line, character):
+        return self.request(
+            "textDocument/implementation",
+            {
+                "textDocument": {"uri": Path(path).as_uri()},
+                "position": {"line": line, "character": character},
+            },
+        ) or []
+
+    def type_definition(self, path, line, character):
+        return self.request(
+            "textDocument/typeDefinition",
+            {
+                "textDocument": {"uri": Path(path).as_uri()},
+                "position": {"line": line, "character": character},
+            },
+        )
+
     def rename(self, path, line, character, new_name):
         return self.request(
             "textDocument/rename",

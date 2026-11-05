@@ -19,6 +19,7 @@ fn main() {
         class_path: vec![class_dir],
         output_dir: out_dir,
         source_level: "17".to_string(),
+        source_path: Vec::new(),
     });
     for attempt in 1..=3 {
         let t = Instant::now();
