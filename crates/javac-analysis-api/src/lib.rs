@@ -98,6 +98,14 @@ pub struct CompletionItem {
     pub label: String,
     pub kind: SymbolKind,
     pub detail: Option<String>,
+    pub documentation: Option<String>,
+}
+
+/// A text replacement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextEdit {
+    pub range: Range,
+    pub new_text: String,
 }
 
 /// A location in another file.
@@ -135,6 +143,12 @@ pub trait AnalysisHost {
 
     /// Hover text for the symbol at a position.
     fn hover(&mut self, file: &Path, position: Position) -> Option<String>;
+
+    /// Rename the symbol at a position; returns the edits to apply.
+    fn rename(&mut self, file: &Path, position: Position, new_name: &str) -> Vec<TextEdit> {
+        let _ = (file, position, new_name);
+        Vec::new()
+    }
 
     /// Hierarchical symbols of a file (outline view).
     fn document_symbols(&mut self, file: &Path) -> Vec<DocumentSymbol> {

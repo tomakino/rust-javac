@@ -83,6 +83,9 @@ pub fn run(
             "textDocument/references" => {
                 respond(&mut stdout, id, references(host, &message));
             }
+            "textDocument/rename" => {
+                respond(&mut stdout, id, rename(host, &message));
+            }
             _ => {
                 if let Some(id) = id {
                     respond_error(&mut stdout, id, -32601, "method not found");
@@ -99,7 +102,8 @@ fn capabilities() -> Value {
         "definitionProvider": true,
         "hoverProvider": true,
         "documentSymbolProvider": true,
-        "referencesProvider": true
+        "referencesProvider": true,
+        "renameProvider": true
     })
 }
 
@@ -199,11 +203,15 @@ fn completion(host: &mut dyn AnalysisHost, message: &Value) -> Value {
         .completion(&path, position)
         .into_iter()
         .map(|item| {
-            json!({
+            let mut value = json!({
                 "label": item.label,
                 "kind": symbol_kind_number(item.kind),
                 "detail": item.detail,
-            })
+            });
+            if let Some(documentation) = item.documentation {
+                value["documentation"] = json!({ "kind": "markdown", "value": documentation });
+            }
+            value
         })
         .collect();
     Value::Array(items)
@@ -222,6 +230,33 @@ fn definition(host: &mut dyn AnalysisHost, message: &Value) -> Value {
         }
         None => Value::Null,
     }
+}
+
+fn rename(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some((path, position)) = request_position(message) else {
+        return Value::Null;
+    };
+    let Some(new_name) = message
+        .get("params")
+        .and_then(|params| params.get("newName"))
+        .and_then(Value::as_str)
+    else {
+        return Value::Null;
+    };
+    let edits = host.rename(&path, position, new_name);
+    let uri = Url::from_file_path(&path)
+        .map(|url| url.to_string())
+        .unwrap_or_default();
+    let changes: Vec<Value> = edits
+        .iter()
+        .map(|edit| {
+            json!({
+                "range": range_json(edit.range),
+                "newText": edit.new_text,
+            })
+        })
+        .collect();
+    json!({ "changes": { uri: changes } })
 }
 
 fn references(host: &mut dyn AnalysisHost, message: &Value) -> Value {
@@ -273,7 +308,7 @@ fn hover(host: &mut dyn AnalysisHost, message: &Value) -> Value {
         return Value::Null;
     };
     host.hover(&path, position)
-        .map(|text| json!({ "contents": { "kind": "plaintext", "value": text } }))
+        .map(|text| json!({ "contents": { "kind": "markdown", "value": text } }))
         .unwrap_or(Value::Null)
 }
 

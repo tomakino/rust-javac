@@ -32,6 +32,18 @@ pub(crate) fn type_name(ctx: &CompilerContext, ty: TypeId) -> String {
         TypeKindData::ForAll { qtype, .. } => qtype
             .map(|qtype| type_name(ctx, qtype))
             .unwrap_or_else(|| "?".to_string()),
+        TypeKindData::JCPrimitiveType => match current.tag {
+            crate::code::type_tag::TypeTag::BYTE => "byte",
+            crate::code::type_tag::TypeTag::CHAR => "char",
+            crate::code::type_tag::TypeTag::SHORT => "short",
+            crate::code::type_tag::TypeTag::LONG => "long",
+            crate::code::type_tag::TypeTag::FLOAT => "float",
+            crate::code::type_tag::TypeTag::INT => "int",
+            crate::code::type_tag::TypeTag::DOUBLE => "double",
+            crate::code::type_tag::TypeTag::BOOLEAN => "boolean",
+            _ => "?",
+        }
+        .to_string(),
         TypeKindData::JCVoidType => "void".to_string(),
         TypeKindData::BottomType => "null".to_string(),
         _ => "?".to_string(),

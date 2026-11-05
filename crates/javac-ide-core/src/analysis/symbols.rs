@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use crate::code::scope::LookupKind;
 use crate::code::symbol::{symbol_packge, SymbolKind};
-use crate::ids::SymbolId;
+use crate::ids::{SymbolId, TreeId};
 use crate::util::name::Name;
 use super::positions::{line_offset, word_at};
 use super::type_names::type_name;
@@ -21,6 +21,8 @@ pub struct SymbolInfo {
     pub pos: i32,
     /// Hover text (kind, type/signature, qualified name).
     pub detail: String,
+    /// Javadoc text of the declaration, when present.
+    pub doc: Option<String>,
 }
 
 
@@ -104,6 +106,19 @@ impl AnalysisSession {
     /// Symbols of the analyzed file: its classes and their direct members.
     /// This is the base for completion and go-to-definition.
     pub fn symbols(&mut self) -> Vec<SymbolInfo> {
+        let docs = self.doc_comments_for_traced();
+        let mut decl_trees: std::collections::HashMap<SymbolId, TreeId> =
+            std::collections::HashMap::new();
+        for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {
+            let symbol = match &tree.kind {
+                crate::tree::jc_tree::TreeKind::MethodDecl { sym: Some(sym), .. } => *sym,
+                crate::tree::jc_tree::TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
+                _ => continue,
+            };
+            decl_trees
+                .entry(symbol)
+                .or_insert_with(|| TreeId::new(index as u32));
+        }
         let mut out = Vec::new();
         for traced in &self.traced {
             let class = &self.compiler.ctx.sym(traced.sym);
@@ -114,6 +129,7 @@ impl AnalysisSession {
                 flat_name: traced.flat_name.to_string(),
                 pos: class_pos,
                 detail: format!("class {}", traced.flat_name),
+                doc: docs.get(&traced.sym).cloned(),
             });
             let scope = class.members();
             if let Some(scope) = scope {
@@ -123,6 +139,14 @@ impl AnalysisSession {
                     &|_| true,
                 );
                 for member in members {
+                    // Compiler-generated members (default constructor) are not
+                    // part of the source outline.
+                    if (self.compiler.ctx.sym(member).flags_field
+                        & crate::code::flags::GENERATEDCONSTR)
+                        != 0
+                    {
+                        continue;
+                    }
                     let sym = &self.compiler.ctx.sym(member);
                     let kind = match sym.kind_data {
                         SymbolKind::MethodSymbol { .. } => "method",
@@ -134,9 +158,9 @@ impl AnalysisSession {
                         SymbolKind::VarSymbol { pos, .. } => *pos,
                         _ => sym.pos.get(),
                     };
-                    let type_text = sym
-                        .ty
-                        .map(|ty| type_name(&self.compiler.ctx, ty))
+                    let type_text = decl_trees
+                        .get(&member)
+                        .and_then(|tree| self.member_type_text(*tree))
                         .filter(|text| text != "?");
                     let name = sym.name.to_java_string().to_string_lossy();
                     let detail = match (kind, type_text) {
@@ -153,6 +177,7 @@ impl AnalysisSession {
                         flat_name: traced.flat_name.to_string(),
                         pos: member_pos,
                         detail,
+                        doc: docs.get(&member).cloned(),
                     });
                 }
             }
@@ -173,6 +198,103 @@ impl AnalysisSession {
                     .syms
                     .remove_class(traced.sym, &traced.flat_name);
             }
+        }
+    }
+}
+
+
+impl AnalysisSession {
+    /// Javadoc text of the declarations of the traced classes, keyed by symbol.
+    fn doc_comments_for_traced(&mut self) -> std::collections::HashMap<SymbolId, String> {
+        let source_names: Vec<String> = self
+            .traced
+            .iter()
+            .filter_map(|traced| match &self.compiler.ctx.sym(traced.sym).kind_data {
+                SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile
+                    .as_ref()
+                    .map(|file| canonical(Path::new(&file.get_name().to_string_lossy()))),
+                _ => None,
+            })
+            .collect();
+        let table = self.compiler.ctx.trees.iter().find_map(|tree| {
+            if let crate::tree::jc_tree::TreeKind::CompilationUnit {
+                sourcefile,
+                doc_comments,
+                ..
+            } = &tree.kind
+            {
+                let file = sourcefile.as_ref()?.get_name().to_string_lossy();
+                if source_names.iter().any(|name| name == &canonical(Path::new(&file))) {
+                    return Some(doc_comments.clone());
+                }
+            }
+            None
+        });
+        let Some(Some(table)) = table else {
+            return std::collections::HashMap::new();
+        };
+        let mut docs: std::collections::HashMap<SymbolId, String> = std::collections::HashMap::new();
+        let mut tree_ids: Vec<(TreeId, SymbolId)> = Vec::new();
+        for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {
+            let symbol = match &tree.kind {
+                crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+                crate::tree::jc_tree::TreeKind::MethodDecl { sym: Some(sym), .. } => *sym,
+                crate::tree::jc_tree::TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
+                _ => continue,
+            };
+            tree_ids.push((TreeId::new(index as u32), symbol));
+        }
+        for (tree_id, symbol) in tree_ids {
+            let rendered = {
+                let mut table_ref = table.borrow_mut();
+                table_ref
+                    .get_comment_tree(&mut self.compiler.ctx, tree_id)
+                    .and_then(|doc| super::doc_render::format_doc_comment(&doc))
+                    .or_else(|| {
+                        table_ref
+                            .get_comment_text(tree_id)
+                            .map(|text| text.to_string_lossy())
+                    })
+            };
+            if let Some(rendered) = rendered {
+                docs.insert(symbol, rendered);
+            }
+        }
+        docs
+    }
+}
+
+
+impl AnalysisSession {
+    /// Type text of a member declaration tree (field type or method signature).
+    fn member_type_text(&self, tree: TreeId) -> Option<String> {
+        let ctx = &self.compiler.ctx;
+        match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::VariableDecl { vartype, .. } => {
+                vartype.and_then(|v| ctx.tree(v).ty).map(|ty| type_name(ctx, ty))
+            }
+            crate::tree::jc_tree::TreeKind::MethodDecl {
+                params,
+                restype,
+                ..
+            } => {
+                let args = params
+                    .iter()
+                    .filter_map(|param| match &ctx.tree(param).kind {
+                        crate::tree::jc_tree::TreeKind::VariableDecl { vartype, .. } => vartype
+                            .and_then(|v| ctx.tree(v).ty)
+                            .map(|ty| type_name(ctx, ty)),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let ret = restype
+                    .and_then(|r| ctx.tree(r).ty)
+                    .map(|ty| type_name(ctx, ty))
+                    .unwrap_or_else(|| "void".to_string());
+                Some(format!("({args}){ret}"))
+            }
+            _ => None,
         }
     }
 }

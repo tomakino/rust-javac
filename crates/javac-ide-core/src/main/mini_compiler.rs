@@ -1302,7 +1302,7 @@ impl MiniCompiler {
             let mut parser = self.parser_factory.new_parser_full(
                 &mut self.ctx,
                 &content,
-                false,
+                true,
                 keep_end_pos,
                 keep_line_map,
                 module_info,

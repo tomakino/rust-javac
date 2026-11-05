@@ -43,7 +43,11 @@ pub(crate) fn jdk_source_location(
                 .map(|line| line.len() + 1)
                 .sum::<usize>()
         })?;
-    let extracted = output_dir.join("jdk-src").join(&entry_name);
+    let extracted = std::env::current_dir()
+        .ok()?
+        .join(output_dir)
+        .join("jdk-src")
+        .join(&entry_name);
     if let Some(parent) = extracted.parent() {
         std::fs::create_dir_all(parent).ok()?;
     }

@@ -12,6 +12,7 @@
 //! the previous round's user classes, and skip code generation.
 
 mod diagnostics;
+mod doc_render;
 mod host;
 mod index;
 mod jdk_sources;
@@ -216,12 +217,6 @@ impl AnalysisSession {
         } else {
             std::env::current_dir().ok()?.join(path)
         };
-        let sourcefile = self
-            .compiler
-            .file_manager
-            .get_java_file_objects_from_files(&[absolute.clone()])
-            .into_iter()
-            .next()?;
         let overlay = self
             .compiler
             .overlay_text
@@ -235,20 +230,40 @@ impl AnalysisSession {
                     Err(_) => false,
                 }
             })
-            .map(|(_, text)| JavaString::from(text.as_str()));
-        let content = match overlay {
-            Some(text) => text,
-            None => sourcefile
-                .get_char_content(false)
-                .ok()
-                .and_then(|content| content)?,
+            .map(|(_, text)| text.clone());
+        let (sourcefile, content): (
+            Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>,
+            JavaString,
+        ) = match overlay {
+            Some(text) => {
+                let name = JavaString::from(absolute.to_string_lossy().as_ref());
+                let object: Rc<dyn javac_tools::tools::java_file_object::JavaFileObject> =
+                    Rc::new(crate::file::overlay_file_object::OverlayFileObject::new(
+                        name,
+                        JavaString::from(text.as_str()),
+                    ));
+                (object, JavaString::from(text.as_str()))
+            }
+            None => {
+                let sourcefile = self
+                    .compiler
+                    .file_manager
+                    .get_java_file_objects_from_files(&[absolute.clone()])
+                    .into_iter()
+                    .next()?;
+                let content = sourcefile
+                    .get_char_content(false)
+                    .ok()
+                    .and_then(|content| content)?;
+                (sourcefile, content)
+            }
         };
         let module_info =
             sourcefile.is_name_compatible(&JavaString::from("module-info"), Kind::SOURCE);
         let mut parser = self.compiler.parser_factory.new_parser_full(
             &mut self.compiler.ctx,
             &content,
-            false,
+            true,
             true,
             false,
             module_info,
@@ -291,8 +306,16 @@ fn file_len(path: &Path) -> u64 {
 }
 
 fn canonical(path: &Path) -> String {
-    std::fs::canonicalize(path)
-        .map(|p| p.to_string_lossy().into_owned())
+    if let Ok(resolved) = std::fs::canonicalize(path) {
+        return resolved.to_string_lossy().into_owned();
+    }
+    // Unsaved buffers do not exist on disk: make the path absolute so it
+    // matches the compiler's SimpleFileObject name.
+    if path.is_absolute() {
+        return path.to_string_lossy().into_owned();
+    }
+    std::env::current_dir()
+        .map(|cwd| cwd.join(path).to_string_lossy().into_owned())
         .unwrap_or_else(|_| path.to_string_lossy().into_owned())
 }
 

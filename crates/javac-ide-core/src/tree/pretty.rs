@@ -245,10 +245,37 @@ impl Pretty {
     /// line.
     pub fn print_stats(&mut self, ctx: &CompilerContext, trees: &List<TreeId>) {
         for tree in trees.iter() {
+            if self.source_output && Pretty::is_synthetic_member(ctx, tree) {
+                continue;
+            }
             self.align();
             self.print_stat(ctx, tree);
             self.println();
         }
+    }
+
+    /// Whether a class member carries the SYNTHETIC flag or has no source
+    /// position (compiler-generated members such as the default constructor).
+    fn is_synthetic_member(ctx: &CompilerContext, tree: TreeId) -> bool {
+        if ctx.tree(tree).pos == crate::util::position::NOPOS {
+            return true;
+        }
+        let mods = match &ctx.tree(tree).kind {
+            TreeKind::MethodDecl { mods, .. } => *mods,
+            TreeKind::VariableDecl { mods, .. } => *mods,
+            TreeKind::ClassDecl { mods, .. } => *mods,
+            _ => None,
+        };
+        mods.map(|mods| match &ctx.tree(mods).kind {
+            TreeKind::Modifiers { flags, .. } => {
+                (*flags
+                    & (crate::code::flags::SYNTHETIC as i64
+                        | crate::code::flags::GENERATEDCONSTR as i64))
+                    != 0
+            }
+            _ => false,
+        })
+        .unwrap_or(false)
     }
 
     /// Print a set of modifiers.
