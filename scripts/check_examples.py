@@ -149,6 +149,10 @@ def skip_reason(example: Example):
     options = example.options
     if example.proc or any(option in SKIP_OPTIONS for option in options):
         return "annotation-processing"
+    if "--enable-preview" in options:
+        return "preview"
+    if "--enable-preview" in options:
+        return "preview"
     if "-verbose" in options:
         return "verbose"
     if "-doe" in options:

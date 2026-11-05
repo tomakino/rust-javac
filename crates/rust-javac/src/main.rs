@@ -22,6 +22,8 @@ use javac_core::util::javac_messages::{
 };
 use javac_core::util::log::Log;
 
+const OWN_NAME: &str = "ravac";
+
 const OK: i32 = 0;
 const ERROR: i32 = 1;
 const CMDERR: i32 = 2;
@@ -52,7 +54,7 @@ fn main() {
         .spawn(|| {
             let args: Vec<String> = std::env::args().skip(1).collect();
             let code = compile(&args).unwrap_or_else(|message| {
-                eprintln!("javac: {message}");
+                eprintln!("{OWN_NAME}: {message}");
                 CMDERR
             });
             // The driver owns the whole compiler object graph: the arenas, the
@@ -72,7 +74,7 @@ fn main() {
     let code = match handle.join() {
         Ok(()) => ABNORMAL,
         Err(_) => {
-            eprintln!("javac: internal error");
+            eprintln!("{OWN_NAME}: internal error");
             ABNORMAL
         }
     };
@@ -236,7 +238,7 @@ impl OptionHelper for CommandLineHelper {
     }
 
     fn get_own_name(&self) -> String {
-        "javac".to_string()
+        OWN_NAME.to_string()
     }
 
     fn add_file(&mut self, path: &javac_fs::Path) {
@@ -364,7 +366,7 @@ fn help_lint_text(messages: &JavacMessages) -> String {
 }
 
 fn help_text(messages: &JavacMessages, extra: bool) -> String {
-    let usage = messages.get_localized_string("javac.msg.usage.header", &["javac".to_string()]);
+    let usage = messages.get_localized_string("javac.msg.usage.header", &[OWN_NAME.to_string()]);
     // Java: Option.getHelp substitutes the supported source/target releases
     // into "{0}" (jdk.compiler Source.getSupportedVersions).
     let supported = Source::values()
@@ -897,7 +899,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
                     eprintln!(
                         "{}",
                         javac_messages
-                            .get_localized_string("javac.msg.usage", &["javac".to_string()])
+                            .get_localized_string("javac.msg.usage", &[OWN_NAME.to_string()])
                     );
                     return Ok(CMDERR);
                 }
@@ -976,6 +978,18 @@ fn compile(args: &[String]) -> Result<i32, String> {
             continue;
         }
         if arg.starts_with('-') {
+            // --enable-preview is refused: the preview feature support is
+            // incomplete (guard switch cases produce a different
+            // LineNumberTable than javac), so the option would silently
+            // produce different class files.  Unsupported like APT.
+            if arg == "--enable-preview" {
+                eprintln!(
+                    "error: --enable-preview is not supported: preview features are \
+                     unstable and the generated class files do not match javac \
+                     byte-for-byte"
+                );
+                return Ok(CMDERR);
+            }
             if let Some(name) = unimplemented_annotation_processing_option(arg) {
                 // The annotation processing framework (javax.annotation.processing)
                 // is not ported: rust-javac cannot discover, load or run
@@ -998,7 +1012,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
                     eprintln!("error: invalid flag: {arg}");
                     eprintln!(
                         "{}",
-                        messages.get_localized_string("javac.msg.usage", &["javac".to_string()])
+                        messages.get_localized_string("javac.msg.usage", &[OWN_NAME.to_string()])
                     );
                     return Ok(CMDERR);
                 }
@@ -1014,7 +1028,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
                 eprintln!("error: {}", error.get_message());
                 eprintln!(
                     "{}",
-                    messages.get_localized_string("javac.msg.usage", &["javac".to_string()])
+                    messages.get_localized_string("javac.msg.usage", &[OWN_NAME.to_string()])
                 );
                 return Ok(CMDERR);
             }
@@ -1050,7 +1064,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
                 eprintln!("error: {}", exception.get_message());
                 eprintln!(
                     "{}",
-                    messages.get_localized_string("javac.msg.usage", &["javac".to_string()])
+                    messages.get_localized_string("javac.msg.usage", &[OWN_NAME.to_string()])
                 );
                 return Ok(CMDERR);
             }
@@ -1080,7 +1094,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
                 JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
             eprintln!(
                 "{}",
-                javac_messages.get_localized_string("javac.msg.usage", &["javac".to_string()])
+                javac_messages.get_localized_string("javac.msg.usage", &[OWN_NAME.to_string()])
             );
             return Ok(CMDERR);
         }
@@ -1146,7 +1160,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
             eprintln!("error: invalid target release: {value}");
             eprintln!(
                 "{}",
-                messages.get_localized_string("javac.msg.usage", &["javac".to_string()])
+                messages.get_localized_string("javac.msg.usage", &[OWN_NAME.to_string()])
             );
             return Ok(CMDERR);
         }
@@ -1155,7 +1169,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
             eprintln!("error: invalid source release: {value}");
             eprintln!(
                 "{}",
-                messages.get_localized_string("javac.msg.usage", &["javac".to_string()])
+                messages.get_localized_string("javac.msg.usage", &[OWN_NAME.to_string()])
             );
             return Ok(CMDERR);
         }
@@ -1290,7 +1304,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
         let javac_messages = JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
         eprintln!(
             "{}",
-            javac_messages.get_localized_string("javac.msg.usage", &["javac".to_string()])
+            javac_messages.get_localized_string("javac.msg.usage", &[OWN_NAME.to_string()])
         );
         return Ok(CMDERR);
     }
