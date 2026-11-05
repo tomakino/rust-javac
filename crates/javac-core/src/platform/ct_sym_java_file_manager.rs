@@ -50,6 +50,35 @@ struct KnownCtSymFile {
     delegate: Option<JavaFileObjectRef>,
 }
 
+/// The package-oriented location of one ct.sym module (Java: the locations
+/// installed by `fm.setLocationForModule(SYSTEM_MODULES, module, paths)` in
+/// JDKPlatformProvider.java:296-319).
+///
+/// The ct.sym archive is read through javac-ctsym, not through a java.nio
+/// FileSystem, so a module has no path: the port identifies it by the
+/// `SYSTEM_MODULES[module]` name and reads the .sig entries from the archive.
+struct CtSymModuleLocation {
+    /// The module name (the directory name inside the release section).
+    module: JavaString,
+}
+
+impl Location for CtSymModuleLocation {
+    fn get_name(&self) -> JavaString {
+        JavaString::from(
+            format!("SYSTEM_MODULES[{}]", self.module.to_string_lossy()).as_str(),
+        )
+    }
+
+    fn is_output_location(&self) -> bool {
+        false
+    }
+
+    fn is_module_oriented_location(&self) -> bool {
+        // Java: the per-module locations are package-oriented.
+        false
+    }
+}
+
 /// Java: the anonymous JavacFileManager subclass in
 /// PlatformDescriptionImpl.getFileManager() (JDKPlatformProvider.java:159-248).
 ///
@@ -120,35 +149,11 @@ impl CtSymJavaFileManager {
                 .is_some()
             {
                 let entry = self.archive.find_sig(self.release, &name)?;
-                let entry_name = entry.entry_name();
-                let module = module.to_string();
-                let underlying: JavaFileObjectRef = Rc::new(CtSymFileObject {
-                    archive: Rc::clone(&self.archive),
-                    release: self.release,
-                    module,
-                    class_name: class_name.clone(),
-                    entry_name: entry_name.clone(),
-                });
-                self.known.borrow_mut().insert(
-                    Rc::as_ptr(&underlying) as *const () as usize,
-                    KnownCtSymFile {
-                        class_name: class_name.clone(),
-                        entry_name: entry_name.clone(),
-                        delegate: None,
-                    },
+                return self.make_sig_file(
+                    module.to_string(),
+                    class_name.clone(),
+                    entry.entry_name(),
                 );
-                let sig: JavaFileObjectRef = Rc::new(SigJavaFileObject {
-                    delegate: Rc::clone(&underlying),
-                });
-                self.known.borrow_mut().insert(
-                    Rc::as_ptr(&sig) as *const () as usize,
-                    KnownCtSymFile {
-                        class_name: class_name.clone(),
-                        entry_name: entry_name.clone(),
-                        delegate: Some(underlying),
-                    },
-                );
-                return Some(sig);
             }
         }
         None
@@ -179,6 +184,121 @@ impl CtSymJavaFileManager {
             }
         }
         result
+    }
+
+    /// Whether the release is described by the running JDK image (the
+    /// `system-modules` list) instead of ct.sym signatures
+    /// (JDKPlatformProvider.java:284-295).
+    fn image_release(&self) -> bool {
+        self.has_modules && self.archive.has_system_modules(self.release)
+    }
+
+    /// The module name of a per-module location created by this manager.
+    fn module_of_location(location: &dyn Location) -> Option<JavaString> {
+        let name = location.get_name().to_string_lossy();
+        name.strip_prefix("SYSTEM_MODULES[")
+            .and_then(|rest| rest.strip_suffix(']'))
+            .map(JavaString::from)
+    }
+
+    /// Reads one signature of a specific module (Java: getFileForInput on the
+    /// package-oriented location installed for that module,
+    /// JDKPlatformProvider.java:168-187).
+    fn ct_sym_class_in_module(
+        &self,
+        module: &str,
+        class_name: &JavaString,
+    ) -> Option<JavaFileObjectRef> {
+        let name = class_name.to_string_lossy();
+        let entry = self
+            .archive
+            .sig_entries(self.release)
+            .into_iter()
+            .find(|entry| entry.module() == module && entry.class_name() == name)?;
+        self.make_sig_file(module.to_string(), class_name.clone(), entry.entry_name())
+    }
+
+    /// Wraps one .sig entry into a SigJavaFileObject and records it.
+    fn make_sig_file(
+        &self,
+        module: String,
+        class_name: JavaString,
+        entry_name: String,
+    ) -> Option<JavaFileObjectRef> {
+        let underlying: JavaFileObjectRef = Rc::new(CtSymFileObject {
+            archive: Rc::clone(&self.archive),
+            release: self.release,
+            module,
+            class_name: class_name.clone(),
+            entry_name: entry_name.clone(),
+        });
+        self.known.borrow_mut().insert(
+            Rc::as_ptr(&underlying) as *const () as usize,
+            KnownCtSymFile {
+                class_name: class_name.clone(),
+                entry_name: entry_name.clone(),
+                delegate: None,
+            },
+        );
+        let sig: JavaFileObjectRef = Rc::new(SigJavaFileObject {
+            delegate: Rc::clone(&underlying),
+        });
+        self.known.borrow_mut().insert(
+            Rc::as_ptr(&sig) as *const () as usize,
+            KnownCtSymFile {
+                class_name,
+                entry_name,
+                delegate: Some(underlying),
+            },
+        );
+        Some(sig)
+    }
+
+    /// Lists the signature files of one module's package
+    /// (Java: list on the per-module location, JDKPlatformProvider.java:192-238).
+    fn list_module_sig_files(
+        &self,
+        module: &JavaString,
+        package_name: &JavaString,
+        recurse: bool,
+    ) -> Vec<JavaFileObjectRef> {
+        let package = package_name.to_string_lossy();
+        let module = module.to_string_lossy();
+        let mut result = Vec::new();
+        for entry in self.archive.sig_entries(self.release) {
+            if entry.module() != module {
+                continue;
+            }
+            let class_name = entry.class_name();
+            let class_package = match class_name.rfind('.') {
+                Some(index) => &class_name[..index],
+                None => "",
+            };
+            let included = if package.is_empty() {
+                recurse || class_package.is_empty()
+            } else if recurse {
+                class_package == package || class_package.starts_with(&format!("{package}."))
+            } else {
+                class_package == package
+            };
+            if !included {
+                continue;
+            }
+            if let Some(file) = self.ct_sym_class_in_module(&module, &JavaString::from(class_name))
+            {
+                result.push(file);
+            }
+        }
+        result
+    }
+
+    /// The module of a recorded file object (from the ct.sym entry name
+    /// `section/module/path.sig`).
+    fn known_module_for_ptr(&self, ptr: usize) -> Option<String> {
+        self.known
+            .borrow()
+            .get(&ptr)
+            .and_then(|known| known.entry_name.split('/').nth(1).map(str::to_string))
     }
 
     /// The class name recorded for a created file object.
@@ -219,6 +339,25 @@ impl JavaFileManager for CtSymJavaFileManager {
     ) -> Result<Vec<JavaFileObjectRef>, Error> {
         if Self::location_name(location) == PLATFORM_CLASS_PATH && !self.has_modules {
             return Ok(self.list_sig_files(package_name, recurse));
+        }
+        if Self::module_of_location(location).is_some() {
+            if self.image_release() {
+                // JDKPlatformProvider.java:284-295: a release with a
+                // system-modules list resolves its modules through the running
+                // jrt image; the location came from the inner manager.
+                return self.inner.list(location, package_name, kinds, recurse);
+            }
+            let Some(module) = Self::module_of_location(location) else {
+                unreachable!("checked above")
+            };
+            // The per-module locations installed by getFileManager list the .sig
+            // entries of that module (JDKPlatformProvider.java:296-319).  The
+            // platform manager reports them as CLASS file objects (SigJavaFileObject),
+            // so a request that does not ask for classes lists nothing.
+            if !kinds.iter().any(|kind| *kind == Kind::CLASS) {
+                return Ok(Vec::new());
+            }
+            return Ok(self.list_module_sig_files(&module, package_name, recurse));
         }
         self.inner.list(location, package_name, kinds, recurse)
     }
@@ -261,7 +400,14 @@ impl JavaFileManager for CtSymJavaFileManager {
         match Self::location_name(location).as_str() {
             PLATFORM_CLASS_PATH => !self.has_modules,
             SYSTEM_MODULES => self.has_modules,
-            _ => false,
+            _ => {
+                // The package-oriented locations of the managed modules: the
+                // ct.sym per-module locations before the image list, and the
+                // inner manager's jrt module locations for a modules release
+                // described by the running JDK image.  Both are named
+                // `SYSTEM_MODULES[<module>]` (Locations.ModuleLocation).
+                self.has_modules && Self::module_of_location(location).is_some()
+            }
         }
     }
 
@@ -276,6 +422,17 @@ impl JavaFileManager for CtSymJavaFileManager {
                 return Ok(None);
             }
             return Ok(self.ct_sym_class(class_name));
+        }
+        if let Some(module) = Self::module_of_location(location) {
+            if self.image_release() {
+                return self
+                    .inner
+                    .get_java_file_for_input(location, class_name, kind);
+            }
+            if kind != Kind::CLASS {
+                return Ok(None);
+            }
+            return Ok(self.ct_sym_class_in_module(&module.to_string_lossy(), class_name));
         }
         self.inner
             .get_java_file_for_input(location, class_name, kind)
@@ -298,6 +455,35 @@ impl JavaFileManager for CtSymJavaFileManager {
         package_name: &JavaString,
         relative_name: &JavaString,
     ) -> Result<Option<FileObjectRef>, Error> {
+        if let Some(module) = Self::module_of_location(location) {
+            if self.image_release() {
+                return self
+                    .inner
+                    .get_file_for_input(location, package_name, relative_name);
+            }
+            let relative = relative_name.to_string_lossy();
+            let Some(stem) = relative
+                .strip_suffix(".sig")
+                .or_else(|| relative.strip_suffix(".class"))
+            else {
+                return Ok(None);
+            };
+            let class_name = if package_name.is_empty() {
+                stem.replace('/', ".")
+            } else {
+                format!(
+                    "{}.{}",
+                    package_name.to_string_lossy(),
+                    stem.replace('/', ".")
+                )
+            };
+            return Ok(self
+                .ct_sym_class_in_module(
+                    &module.to_string_lossy(),
+                    &JavaString::from(class_name.as_str()),
+                )
+                .map(|file| file as FileObjectRef));
+        }
         if Self::location_name(location) == PLATFORM_CLASS_PATH && !self.has_modules {
             let relative = relative_name.to_string_lossy();
             let suffix = match relative.strip_suffix(".sig") {
@@ -350,6 +536,29 @@ impl JavaFileManager for CtSymJavaFileManager {
         location: &dyn Location,
         module_name: &JavaString,
     ) -> Result<LocationRef, Error> {
+        // Java: PlatformDescriptionImpl installs one location per ct.sym module
+        // when the release has no system-modules image list
+        // (JDKPlatformProvider.java:296-319); a modules release described by the
+        // running image forwards to the inner manager's jrt modules.
+        if Self::location_name(location) == SYSTEM_MODULES && self.has_modules && !self.image_release()
+        {
+            let module = module_name.to_string_lossy();
+            if self
+                .archive
+                .modules(self.release)
+                .iter()
+                .any(|name| *name == module)
+            {
+                return Ok(
+                    Rc::new(CtSymModuleLocation {
+                        module: module_name.clone(),
+                    }) as LocationRef,
+                );
+            }
+            return Err(Error::io(JavaString::from(
+                format!("module not found: {module}").as_str(),
+            )));
+        }
         self.inner.get_location_for_module(location, module_name)
     }
 
@@ -358,10 +567,22 @@ impl JavaFileManager for CtSymJavaFileManager {
         location: &dyn Location,
         fo: &JavaFileObjectRef,
     ) -> Result<LocationRef, Error> {
+        if Self::location_name(location) == SYSTEM_MODULES && self.has_modules {
+            if let Some(module) = self.known_module_for_ptr(Rc::as_ptr(fo) as *const () as usize) {
+                return Ok(
+                    Rc::new(CtSymModuleLocation {
+                        module: JavaString::from(module.as_str()),
+                    }) as LocationRef,
+                );
+            }
+        }
         self.inner.get_location_for_module_of_file(location, fo)
     }
 
     fn infer_module_name(&self, location: &dyn Location) -> Result<JavaString, Error> {
+        if let Some(module) = Self::module_of_location(location) {
+            return Ok(module);
+        }
         self.inner.infer_module_name(location)
     }
 
@@ -369,10 +590,31 @@ impl JavaFileManager for CtSymJavaFileManager {
         &self,
         location: &dyn Location,
     ) -> Result<Vec<Vec<LocationRef>>, Error> {
+        if Self::location_name(location) == SYSTEM_MODULES && self.has_modules && !self.image_release()
+        {
+            let mut result = Vec::new();
+            for module in self.archive.modules(self.release) {
+                result.push(vec![
+                    Rc::new(CtSymModuleLocation {
+                        module: JavaString::from(module),
+                    }) as LocationRef,
+                ]);
+            }
+            return Ok(result);
+        }
         self.inner.list_locations_for_modules(location)
     }
 
     fn contains(&self, location: &dyn Location, fo: &FileObjectRef) -> Result<bool, Error> {
+        if let Some(module) = Self::module_of_location(location) {
+            if self.image_release() {
+                return self.inner.contains(location, fo);
+            }
+            let ptr = Rc::as_ptr(fo) as *const () as usize;
+            return Ok(self
+                .known_module_for_ptr(ptr)
+                .is_some_and(|known| known == module.to_string_lossy()));
+        }
         self.inner.contains(location, fo)
     }
 }

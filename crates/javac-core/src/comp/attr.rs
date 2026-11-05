@@ -6061,6 +6061,15 @@ impl Attr {
                     let chk_rc = Rc::clone(&self.chk);
                     let chk = Rc::clone(&chk_rc);
                     let infer_rc = Rc::clone(&self.infer);
+                    // Java: Attr.selectSym calls
+                    // resolveQualifiedMethod(pos, env, site, name, ...), whose
+                    // overload uses site.tsym as the location (Resolve.java:
+                    // 2729-2745).  A qualifier expression with no symbol (for
+                    // example Stream.of(1).bogus()) passes a null location, so
+                    // the site type symbol is the location of the diagnostic.
+                    let access_location = location
+                        .or_else(|| ctx.typ(site).tsym)
+                        .unwrap_or(syms.no_symbol);
                     rs.resolve_qualified_method(
                         ctx,
                         syms,
@@ -6070,7 +6079,7 @@ impl Attr {
                         &infer_rc,
                         pos.clone(),
                         env,
-                        location.unwrap_or(syms.no_symbol),
+                        access_location,
                         site,
                         name.clone(),
                         argtypes,

@@ -698,6 +698,40 @@ fn removed_option_errors(options: &[(String, String)], locale: &Locale) -> Vec<S
     errors
 }
 
+/// Java: Arguments.handleReleaseOptions (Arguments.java:294-330) — the option
+/// combinations that cannot be used with --release and an unsupported platform
+/// name.  The platform description is resolved again by MiniCompiler when it
+/// installs the platform file manager.
+fn release_option_errors(options: &[(String, String)], locale: &Locale) -> Vec<String> {
+    use javac_core::main::release::{
+        ReleaseError, conflicting_options, java_home, lookup_platform,
+    };
+    let Some((_, value)) = options.iter().find(|(key, _)| key == "--release") else {
+        return Vec::new();
+    };
+    let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
+    let conflicts = conflicting_options(options);
+    if !conflicts.is_empty() {
+        return conflicts
+            .into_iter()
+            .map(|option| {
+                messages.get_localized_string(
+                    "compiler.err.release.bootclasspath.conflict",
+                    &[option],
+                )
+            })
+            .collect();
+    }
+    match lookup_platform(value, java_home()) {
+        Ok(_) => Vec::new(),
+        Err(ReleaseError::Unsupported(value)) => vec![messages.get_localized_string(
+            "compiler.err.unsupported.release.version",
+            &[value],
+        )],
+        Err(ReleaseError::Conflict(_)) => Vec::new(),
+    }
+}
+
 fn compile(args: &[String]) -> Result<i32, String> {
     let expanded = match expand_argfiles(args) {
         Ok(expanded) => expanded,
@@ -750,9 +784,68 @@ fn compile(args: &[String]) -> Result<i32, String> {
             index += 1;
             continue;
         }
-        // An explicitly empty boot class path makes java.lang unavailable.
+        // The removed boot class path options stay parseable in javac 17 (the
+        // trimmed Option enum omits them): they are deferred file manager
+        // options, and --release reports ReleaseBootclasspathConflict for them
+        // (Arguments.handleReleaseOptions, Arguments.java:297-304).  An
+        // explicitly empty boot class path makes java.lang unavailable.
         if arg == "-Xbootclasspath:" {
             helper.put("-Xbootclasspath", "");
+            index += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("-Xbootclasspath/a:") {
+            helper.put("-Xbootclasspath/a", value);
+            index += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("-Xbootclasspath/p:") {
+            helper.put("-Xbootclasspath/p", value);
+            index += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("-Xbootclasspath:") {
+            helper.put("-Xbootclasspath", value);
+            index += 1;
+            continue;
+        }
+        // The removed boot class path, endorsed dirs and ext dirs options that
+        // javac 17 still parses (Option.java): a separated value for
+        // -bootclasspath/-endorseddirs, "=" for --boot-class-path and the
+        // -Djava.{endorsed,ext}.dirs aliases.  --release reports
+        // ReleaseBootclasspathConflict for all of them.
+        if arg == "-bootclasspath" || arg == "--boot-class-path" {
+            if index + 1 < expanded.len() {
+                helper.put("--boot-class-path", &expanded[index + 1]);
+                index += 2;
+                continue;
+            }
+        }
+        if let Some(value) = arg.strip_prefix("--boot-class-path=") {
+            helper.put("--boot-class-path", value);
+            index += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("-Djava.endorsed.dirs=") {
+            helper.put("-endorseddirs", value);
+            index += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("-Djava.ext.dirs=") {
+            helper.put("-extdirs", value);
+            index += 1;
+            continue;
+        }
+        // -endorseddirs is a removed file-manager option that javac 17 still
+        // parses; --release conflicts with it.
+        if arg == "-endorseddirs" {
+            if index + 1 < expanded.len() {
+                helper.put("-endorseddirs", &expanded[index + 1]);
+                index += 2;
+                continue;
+            }
+        } else if let Some(value) = arg.strip_prefix("-endorseddirs:") {
+            helper.put("-endorseddirs", value);
             index += 1;
             continue;
         }
@@ -1101,6 +1194,23 @@ fn compile(args: &[String]) -> Result<i32, String> {
         return Ok(ERROR);
     }
     let option_warnings = emit_option_warnings(&expanded, &options, &locale);
+    let release_errors = release_option_errors(&options, &locale);
+    if !release_errors.is_empty() {
+        // Java: Arguments.init reports each diagnostic through Log.error and then
+        // prints the usage line (Arguments.java:193-196); Main returns CMDERR
+        // without a "N error" summary (Main.java:276-278).
+        let error_prefix = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()))
+            .get_localized_string("compiler.err.error", &[]);
+        for error in &release_errors {
+            eprintln!("{error_prefix}{error}");
+        }
+        let javac_messages = JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
+        eprintln!(
+            "{}",
+            javac_messages.get_localized_string("javac.msg.usage", &["javac".to_string()])
+        );
+        return Ok(CMDERR);
+    }
     let removed_errors = module_option_errors(&options, &locale);
     if !removed_errors.is_empty() {
         for error in removed_errors {

@@ -701,6 +701,15 @@ pub struct JavacFileManager {
     /// Adapter: the upstream ArchiveContainer holds one FileSystem per archive
     /// (JavacFileManager.java:557-575, PathFileObject.java:459).
     archive_readers: Arc<Mutex<HashMap<FsPath, Arc<Mutex<javac_zip::ZipArchive>>>>>,
+    /// Java: DelegatingJavaFileManager.releaseFM (DelegatingJavaFileManager.java:60).
+    ///
+    /// `--release` installs the platform file manager of the ct.sym
+    /// description (Arguments.handleReleaseOptions).  Java wraps the original
+    /// manager in a DelegatingJavaFileManager; the port keeps the original
+    /// manager and dispatches to the platform manager for the locations it
+    /// owns (PLATFORM_CLASS_PATH before 9, SYSTEM_MODULES from 9 on) — the
+    /// same `delegate(Location)` rule (DelegatingJavaFileManager.java:68-73).
+    release_file_manager: RefCell<StdOption<Rc<dyn JavaFileManager>>>,
 }
 
 impl JavacFileManager {
@@ -766,6 +775,7 @@ impl JavacFileManager {
                 paths_and_containers: Arc::new(Mutex::new(HashMap::new())),
                 non_indexing_containers: Arc::new(Mutex::new(HashMap::new())),
                 archive_readers: Arc::new(Mutex::new(HashMap::new())),
+                release_file_manager: RefCell::new(None),
             }
         })
     }
@@ -1218,6 +1228,9 @@ impl JavaFileManager for JavacFileManager {
         &self,
         location: &dyn Location,
     ) -> StdOption<Rc<dyn javac_tools::jdk::ClassLoader>> {
+        if let Some(release) = self.release_delegate(location) {
+            return release.get_class_loader(location);
+        }
         self.check_not_module_oriented_location(location);
         let paths = self.get_location_as_paths_impl(location);
         if paths.is_none() {
@@ -1238,6 +1251,9 @@ impl JavaFileManager for JavacFileManager {
         kinds: &[Kind],
         recurse: bool,
     ) -> Result<Vec<JavaFileObjectRef>, Error> {
+        if let Some(release) = self.release_delegate(location) {
+            return release.list(location, package_name, kinds, recurse);
+        }
         self.check_not_module_oriented_location(location);
         let subdirectory = RelativeDirectory::for_package(package_name);
         let mut results: Vec<JavaFileObjectRef> = Vec::new();
@@ -1259,6 +1275,9 @@ impl JavaFileManager for JavacFileManager {
         location: &dyn Location,
         file: &JavaFileObjectRef,
     ) -> StdOption<JavaString> {
+        if let Some(release) = self.release_delegate(location) {
+            return release.infer_binary_name(location, file);
+        }
         self.check_not_module_oriented_location(location);
         let path_file_object = self.lookup_by_name(&file.get_name())?;
         let paths = self.get_location_as_paths_impl(location)?;
@@ -1295,10 +1314,7 @@ impl JavaFileManager for JavacFileManager {
     }
 
     fn has_location(&self, location: &dyn Location) -> bool {
-        self.base
-            .borrow_mut()
-            .locations_mut()
-            .has_location(location)
+        self.has_location_with_release(location)
     }
 
     fn get_java_file_for_input(
@@ -1307,6 +1323,9 @@ impl JavaFileManager for JavacFileManager {
         class_name: &JavaString,
         kind: Kind,
     ) -> Result<StdOption<JavaFileObjectRef>, Error> {
+        if let Some(release) = self.release_delegate(location) {
+            return release.get_java_file_for_input(location, class_name, kind);
+        }
         self.check_not_module_oriented_location(location);
         if !matches!(kind, Kind::SOURCE | Kind::CLASS) {
             panic!("IllegalArgumentException: invalid kind: {kind}");
@@ -1322,6 +1341,9 @@ impl JavaFileManager for JavacFileManager {
         kind: Kind,
         sibling: StdOption<&FileObjectRef>,
     ) -> Result<JavaFileObjectRef, Error> {
+        if let Some(release) = self.release_delegate(location) {
+            return release.get_java_file_for_output(location, class_name, kind, sibling);
+        }
         self.check_output_location(location);
         if !matches!(kind, Kind::SOURCE | Kind::CLASS) {
             panic!("IllegalArgumentException: invalid kind: {kind}");
@@ -1336,6 +1358,9 @@ impl JavaFileManager for JavacFileManager {
         package_name: &JavaString,
         relative_name: &JavaString,
     ) -> Result<StdOption<FileObjectRef>, Error> {
+        if let Some(release) = self.release_delegate(location) {
+            return release.get_file_for_input(location, package_name, relative_name);
+        }
         self.check_not_module_oriented_location(location);
         if !is_relative_uri(&relative_name.to_string_lossy()) {
             panic!(
@@ -1363,6 +1388,9 @@ impl JavaFileManager for JavacFileManager {
         relative_name: &JavaString,
         sibling: StdOption<&FileObjectRef>,
     ) -> Result<FileObjectRef, Error> {
+        if let Some(release) = self.release_delegate(location) {
+            return release.get_file_for_output(location, package_name, relative_name, sibling);
+        }
         self.check_output_location(location);
         if !is_relative_uri(&relative_name.to_string_lossy()) {
             panic!(
@@ -1382,6 +1410,10 @@ impl JavaFileManager for JavacFileManager {
     }
 
     fn flush(&self) -> Result<(), Error> {
+        let release = self.release_file_manager.borrow().as_ref().map(Rc::clone);
+        if let Some(release) = release {
+            release.flush()?;
+        }
         self.base.borrow_mut().clear_content_cache();
         self.clear_caches();
         Ok(())
@@ -1402,6 +1434,10 @@ impl JavaFileManager for JavacFileManager {
     ///
     /// Upstream: JavacFileManager.java:422-432, BaseFileManager.java:145-175.
     fn close(&self) -> Result<(), Error> {
+        let release = self.release_file_manager.borrow().as_ref().map(Rc::clone);
+        if let Some(release) = release {
+            release.close()?;
+        }
         let deferred = self.base.borrow().deferred_state();
         if deferred.timeout_ms() > 0 {
             let containers = Arc::clone(&self.containers);
@@ -1439,6 +1475,9 @@ impl JavaFileManager for JavacFileManager {
         location: &dyn Location,
         module_name: &JavaString,
     ) -> Result<LocationRef, Error> {
+        if let Some(release) = self.release_delegate(location) {
+            return release.get_location_for_module(location, module_name);
+        }
         self.check_module_oriented_or_output_location(location);
         if location_is(location, StandardLocation::SOURCE_OUTPUT)
             && self.get_source_out_dir().is_none()
@@ -1454,6 +1493,9 @@ impl JavaFileManager for JavacFileManager {
         location: &dyn Location,
         fo: &JavaFileObjectRef,
     ) -> Result<LocationRef, Error> {
+        if let Some(release) = self.release_delegate(location) {
+            return release.get_location_for_module_of_file(location, fo);
+        }
         self.check_module_oriented_or_output_location(location);
         let Some(path_file_object) = self.lookup_by_name(&fo.get_name()) else {
             return Err(Error::io(jstr(
@@ -1473,6 +1515,9 @@ impl JavaFileManager for JavacFileManager {
     }
 
     fn infer_module_name(&self, location: &dyn Location) -> Result<JavaString, Error> {
+        if let Some(release) = self.release_delegate(location) {
+            return release.infer_module_name(location);
+        }
         self.check_not_module_oriented_location(location);
         match self
             .base
@@ -1491,6 +1536,9 @@ impl JavaFileManager for JavacFileManager {
         &self,
         location: &dyn Location,
     ) -> Result<Vec<Vec<LocationRef>>, Error> {
+        if let Some(release) = self.release_delegate(location) {
+            return release.list_locations_for_modules(location);
+        }
         self.check_module_oriented_or_output_location(location);
         self.base
             .borrow_mut()
@@ -1499,6 +1547,9 @@ impl JavaFileManager for JavacFileManager {
     }
 
     fn contains(&self, location: &dyn Location, fo: &FileObjectRef) -> Result<bool, Error> {
+        if let Some(release) = self.release_delegate(location) {
+            return release.contains(location, fo);
+        }
         let path = self.as_path_or_panic(fo);
         let file = FsPath::from_path_buf(path);
         self.base
@@ -1509,6 +1560,41 @@ impl JavaFileManager for JavacFileManager {
 }
 
 impl JavacFileManager {
+    /// Java: DelegatingJavaFileManager.installReleaseFileManager (DelegatingJavaFileManager.java:50-58).
+    ///
+    /// Java replaces the Context's JavaFileManager with a delegating wrapper;
+    /// the port records the platform manager on the original manager and
+    /// dispatches by location.  A second call replaces the platform manager
+    /// (Java: installation is idempotent through Context.put).
+    pub fn install_release_file_manager(&self, release_fm: Rc<dyn JavaFileManager>) {
+        *self.release_file_manager.borrow_mut() = Some(release_fm);
+    }
+
+    /// Java: DelegatingJavaFileManager.delegate(Location) (DelegatingJavaFileManager.java:68-73):
+    /// the release manager handles every location it owns, the original
+    /// manager handles the rest.
+    fn release_delegate(&self, location: &dyn Location) -> StdOption<Rc<dyn JavaFileManager>> {
+        let release = self.release_file_manager.borrow();
+        release
+            .as_ref()
+            .filter(|manager| manager.has_location(location))
+            .map(Rc::clone)
+    }
+
+    /// Java: DelegatingJavaFileManager.hasLocation —
+    /// `releaseFM.hasLocation(location) || baseFM.hasLocation(location)`.
+    fn has_location_with_release(&self, location: &dyn Location) -> bool {
+        self.release_file_manager
+            .borrow()
+            .as_ref()
+            .is_some_and(|manager| manager.has_location(location))
+            || self
+                .base
+                .borrow_mut()
+                .locations_mut()
+                .has_location(location)
+    }
+
     /// Java: BaseFileManager.handleOption(Option, String) (BaseFileManager.java:266-278).
     /// Main.java:265 hands the deferred file manager options to the file manager
     /// directly, without re-running Option.process, so this entry point skips

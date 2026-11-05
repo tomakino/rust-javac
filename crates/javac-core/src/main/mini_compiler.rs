@@ -384,24 +384,34 @@ impl MiniCompiler {
         }
         let lint = Lint::instance(&mut util_context);
         let preview = Preview::instance(&mut util_context);
-        // JavaCompiler: Source/Target.instance read --source/--target;
-        // --release selects both, and target defaults to source.requiredTarget().
-        let release_source = options
-            .get("--release")
-            .and_then(|value| Source::lookup(&value));
-        let source = options
-            .get("--source")
-            .and_then(|value| Source::lookup(&value))
-            .or(release_source)
-            .unwrap_or(Source::JDK17);
-        let release_target = options
-            .get("--release")
-            .and_then(|value| Target::lookup(&value));
-        let target = options
-            .get("--target")
-            .and_then(|value| Target::lookup(&value))
-            .or(release_target)
-            .unwrap_or_else(|| source.required_target());
+        // Java: Arguments.handleReleaseOptions puts the platform description's
+        // source/target versions into the Options table (Arguments.java:315-316);
+        // without --release Source/Target read --source/--target and target
+        // defaults to source.requiredTarget().
+        let release_platform = options.get("--release").map(|value| {
+            crate::main::release::lookup_platform(&value, java_home())
+                .expect("--release was validated by the caller")
+        });
+        let (source, target) = match &release_platform {
+            Some(platform) => {
+                let source = Source::lookup(&platform.source_version.to_string_lossy())
+                    .unwrap_or(Source::JDK17);
+                let target = Target::lookup(&platform.target_version.to_string_lossy())
+                    .unwrap_or_else(|| source.required_target());
+                (source, target)
+            }
+            None => {
+                let source = options
+                    .get("--source")
+                    .and_then(|value| Source::lookup(&value))
+                    .unwrap_or(Source::JDK17);
+                let target = options
+                    .get("--target")
+                    .and_then(|value| Target::lookup(&value))
+                    .unwrap_or_else(|| source.required_target());
+                (source, target)
+            }
+        };
         let profile = Profile::instance(&mut util_context);
         let mut ctx = CompilerContext::new();
         let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), target, source);
@@ -494,6 +504,14 @@ impl MiniCompiler {
                 file_manager
                     .handle_option_value(crate::main::option::Option::PATCH_MODULE, &patch_module);
             }
+        }
+        // Java: DelegatingJavaFileManager.installReleaseFileManager(context,
+        // platformDescription.getFileManager(), getFileManager())
+        // (Arguments.java:323-326).  The platform manager owns PLATFORM_CLASS_PATH
+        // before 9 and SYSTEM_MODULES from 9 on; the base manager keeps every
+        // other location.
+        if let Some(platform) = &release_platform {
+            file_manager.install_release_file_manager(platform.description.get_file_manager());
         }
         let annotate_cell: Rc<RefCell<Option<Rc<Annotate>>>> = Rc::new(RefCell::new(None));
         let reader = Rc::new(RefCell::new(ClassReader::new(
@@ -1014,7 +1032,7 @@ impl MiniCompiler {
 ///
 /// # Panics
 ///   - when no JDK home with `lib/modules` or `jmods` exists on this host.
-fn java_home() -> FsPath {
+pub(crate) fn java_home() -> FsPath {
     fn is_jdk_home(home: &Path) -> bool {
         home.join("lib").join("modules").is_file() || home.join("jmods").is_dir()
     }
