@@ -60,8 +60,8 @@ parsed lazily.
 ### Class files
 
 Each output class is compared with the reference compiler by SHA-256. The comparison
-covers the constant pool (contents and ordering), the attribute tables
-(`LineNumberTable`, `LocalVariableTable`, `StackMapTable`, `BootstrapMethods`,
+covers the constant pool (contents and ordering), the attribute tables (`LineNumberTable`, `LocalVariableTable`,
+`StackMapTable`, `BootstrapMethods`,
 `InnerClasses`, `Signature`, `NestMembers`, `Record`, `PermittedSubclasses`, module
 attributes) and the class-file version fields.
 
@@ -111,20 +111,20 @@ ravac @argfile
 
 ### Options
 
-| Option | Meaning |
-|:---|:---|
-| `-d <dir>` | output directory for class files |
-| `-cp`, `-classpath`, `--class-path <path>` | class search path |
-| `-sourcepath <path>` | source search path |
-| `--release <n>` | platform and language level (7–17) |
-| `-source <n>`, `-target <n>` | language level / class-file version |
-| `-g`, `-g:none`, `-g:source,lines,vars` | debug information |
-| `-Xlint[:<group>]`, `-nowarn` | lint warnings |
-| `-verbose` | print loaded files and modules |
-| `-s <dir>`, `-h <dir>` | source output / native header output |
-| `@<file>` | read options and files from an argument file |
-| `-J-Duser.language=<locale>` | diagnostic locale |
-| `-XDrawDiagnostics` | raw diagnostic format |
+| Option                                     | Meaning                                      |
+|:-------------------------------------------|:---------------------------------------------|
+| `-d <dir>`                                 | output directory for class files             |
+| `-cp`, `-classpath`, `--class-path <path>` | class search path                            |
+| `-sourcepath <path>`                       | source search path                           |
+| `--release <n>`                            | platform and language level (7–17)           |
+| `-source <n>`, `-target <n>`               | language level / class-file version          |
+| `-g`, `-g:none`, `-g:source,lines,vars`    | debug information                            |
+| `-Xlint[:<group>]`, `-nowarn`              | lint warnings                                |
+| `-verbose`                                 | print loaded files and modules               |
+| `-s <dir>`, `-h <dir>`                     | source output / native header output         |
+| `@<file>`                                  | read options and files from an argument file |
+| `-J-Duser.language=<locale>`               | diagnostic locale                            |
+| `-XDrawDiagnostics`                        | raw diagnostic format                        |
 
 ### Examples
 
@@ -144,13 +144,13 @@ ravac @sources.txt
 
 ### Exit codes
 
-| Code | Meaning |
-|:---:|:---|
-| 0 | success |
-| 1 | compilation error |
-| 2 | invalid command line |
-| 3 | system error |
-| 4 | internal error |
+| Code | Meaning              |
+|:----:|:---------------------|
+|  0   | success              |
+|  1   | compilation error    |
+|  2   | invalid command line |
+|  3   | system error         |
+|  4   | internal error       |
 
 `ravac --help` lists the full option set. Annotation processing,
 `--enable-preview`, `-Xplugin` and `-Xdoclint` are not implemented; see section 7.
@@ -170,29 +170,29 @@ ravac @sources.txt
 
 The validation results in section 5 were produced on this machine:
 
-| Component      | Value                                                       |
-|:---------------|:------------------------------------------------------------|
-| OS             | Windows x64                                                 |
-| Rust           | 1.101.0-nightly (2026-10-31), pinned by `rust-toolchain.toml` |
-| JDK            | Temurin 17.0.19+10                                          |
-| Python         | 3.13.6                                                      |
-| Android NDK    | 30.0.16248370                                               |
-| Build profile  | `dev` (debug)                                               |
+| Component     | Value                                                         |
+|:--------------|:--------------------------------------------------------------|
+| OS            | Windows x64                                                   |
+| Rust          | 1.101.0-nightly (2026-10-31), pinned by `rust-toolchain.toml` |
+| JDK           | Temurin 17.0.19+10                                            |
+| Python        | 3.13.6                                                        |
+| Android NDK   | 30.0.16248370                                                 |
+| Build profile | `dev` (debug)                                                 |
 
 Tests and scripts pin `-J-Duser.language=en -J-Duser.country=US` so diagnostics are
 compared against the English baselines regardless of the host locale.
 
 ### Environment variables
 
-| Variable | Scope | Purpose |
-|:---|:---|:---|
-| `JAVA_HOME` | build, tests, packaging | JDK providing `lib/modules` and `lib/ct.sym`; also locates `javac` for parity checks |
-| `RAVAC_PLATFORM_DIR` | `ravac` at run time | overrides the platform directory (must contain `modules`); the only variable read by the compiler |
-| `BUILD_DATE` | build (`build.rs`) | overrides the `-version` build date (default: UTC build day) |
-| `ANDROID_NDK_HOME`, `ANDROID_HOME` | packaging | alternative NDK locations (default: `%LOCALAPPDATA%\Android\Sdk\ndk`) |
-| `TEMP`, `TMP` | tests (Windows) | writable temporary directory; point inside the repository when the system temp is restricted |
-| `RUSTUP_DIST_SERVER` | toolchain installation | mirror used by rustup |
-| `DIAG_EXAMPLES_FILTER`, `DIAG_EXAMPLES_VERBOSE`, `DIAG_EXAMPLES_TIMEOUT_SECS` | `scripts/check_examples.py` | case filter, verbosity, per-case timeout |
+| Variable                                                                      | Scope                       | Purpose                                                                                           |
+|:------------------------------------------------------------------------------|:----------------------------|:--------------------------------------------------------------------------------------------------|
+| `JAVA_HOME`                                                                   | build, tests, packaging     | JDK providing `lib/modules` and `lib/ct.sym`; also locates `javac` for parity checks              |
+| `RAVAC_PLATFORM_DIR`                                                          | `ravac` at run time         | overrides the platform directory (must contain `modules`); the only variable read by the compiler |
+| `BUILD_DATE`                                                                  | build (`build.rs`)          | overrides the `-version` build date (default: UTC build day)                                      |
+| `ANDROID_NDK_HOME`, `ANDROID_HOME`                                            | packaging                   | alternative NDK locations (default: `%LOCALAPPDATA%\Android\Sdk\ndk`)                             |
+| `TEMP`, `TMP`                                                                 | tests (Windows)             | writable temporary directory; point inside the repository when the system temp is restricted      |
+| `RUSTUP_DIST_SERVER`                                                          | toolchain installation      | mirror used by rustup                                                                             |
+| `DIAG_EXAMPLES_FILTER`, `DIAG_EXAMPLES_VERBOSE`, `DIAG_EXAMPLES_TIMEOUT_SECS` | `scripts/check_examples.py` | case filter, verbosity, per-case timeout                                                          |
 
 ### Build
 
@@ -299,9 +299,6 @@ The verification results describe **samples** — specific corpora, option combi
 specific reference compiler (Temurin 17.0.19+10) and host platform — and are not a
 guarantee for arbitrary programs or configurations. The software may contain defects and
 is not certified for safety-critical, regulated or otherwise production-critical use.
-
-Warranty and liability terms are set by the license (GPL-2.0-only WITH
-Classpath-exception-2.0, sections 15–16); see [LICENSE](LICENSE).
 
 ## 10. License
 
