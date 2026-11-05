@@ -21,6 +21,7 @@ pub mod cache_fs_info;
 pub mod fs_info;
 pub mod javac_file_manager;
 pub mod jrt_index;
+pub(crate) mod platform_paths;
 pub mod locations;
 pub mod path_file_object;
 pub mod relative_path;

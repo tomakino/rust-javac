@@ -1081,9 +1081,11 @@ impl JavacFileManager {
 
 /// Java: Locations.thisSystemModules (lib/modules file, or the exploded modules directory).
 fn compute_this_system_modules(java_home: &FsPath) -> FsPath {
-    let lib_modules = FsPath::from_path_buf(java_home.as_path().join("lib").join("modules"));
-    if javac_fs::Files::is_regular_file(&lib_modules) {
-        return lib_modules;
+    let modules = FsPath::from_path_buf(crate::file::platform_paths::modules_file(
+        &java_home.as_path(),
+    ));
+    if javac_fs::Files::is_regular_file(&modules) {
+        return modules;
     }
     FsPath::from_path_buf(java_home.as_path().join("modules"))
 }

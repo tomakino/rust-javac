@@ -404,11 +404,6 @@ mod tests {
                 return Some(candidate);
             }
         }
-        let fallback =
-            PathBuf::from(r"C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot\lib\modules");
-        if fallback.is_file() {
-            return Some(fallback);
-        }
         None
     }
 

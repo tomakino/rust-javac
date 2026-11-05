@@ -1021,7 +1021,8 @@ impl MiniCompiler {
         // Java: the unnamed module's visible packages are all the packages of
         // the system modules it reads; for the minimal non-modular compilation
         // the java.base packages are entered and mapped (Modules.java:440-500).
-        let modules_file = self.java_home.join("lib").join("modules");
+        let modules_file =
+            crate::file::platform_paths::modules_file(&self.java_home.as_path());
         if let Ok(image) = javac_jimage::JImage::open(&modules_file) {
             let packages_result = image.packages_of_module("java.base");
             if let Ok(packages) = packages_result {
@@ -1046,52 +1047,60 @@ impl MiniCompiler {
 ///
 /// Java: `System.getProperty("java.home")` names the JDK running javac. The
 /// port has no JVM, so the host JDK is discovered instead (registered adapter):
-/// `JAVA_HOME` when it contains a system image, then a `javac`/`java` launcher
-/// on `PATH`, then the baseline JDK 17 path used by the test suite.
+/// The platform data directory.
+///
+/// Default (deterministic): `lib/modules` next to the executable, or one
+/// level above for a `bin/` layout.  The build script hard-links the
+/// baseline JDK data into `target/<profile>/lib` for development builds.
+///
+/// Override: `RAVAC_PLATFORM_DIR` points at any JDK home with `lib/modules`
+/// or `jmods`; it is the only environment variable consulted at run time.
+/// `JAVA_HOME` and `PATH` are never read by the compiler itself.
 ///
 /// # Returns
-///   - the JDK home path.
+///   - the directory that holds `lib/modules`.
 ///
 /// # Panics
-///   - when no JDK home with `lib/modules` or `jmods` exists on this host.
+///   - when `RAVAC_PLATFORM_DIR` is set to a non-JDK directory;
+///   - when the executable has no `lib/modules` next to it.
 pub(crate) fn java_home() -> FsPath {
     fn is_jdk_home(home: &Path) -> bool {
-        home.join("lib").join("modules").is_file() || home.join("jmods").is_dir()
+        crate::file::platform_paths::has_modules(home)
     }
-    if let Some(home) = std::env::var_os("JAVA_HOME") {
+    if let Some(home) =
+        std::env::var_os("RAVAC_PLATFORM_DIR").filter(|value| !value.is_empty())
+    {
         let home = PathBuf::from(home);
-        if is_jdk_home(&home) {
-            return FsPath::from_path_buf(home);
+        if !is_jdk_home(&home) {
+            panic!(
+                "RAVAC_PLATFORM_DIR has no modules image (expected modules in that directory): {}",
+                home.display()
+            );
         }
-    }
-    if let Some(home) = java_home_from_path() {
         return FsPath::from_path_buf(home);
     }
-    let baseline = PathBuf::from(r"C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot");
-    if is_jdk_home(&baseline) {
-        return FsPath::from_path_buf(baseline);
+    if let Some(home) = java_home_from_exe() {
+        return FsPath::from_path_buf(home);
     }
-    panic!("no JDK home with lib/modules or jmods found; set JAVA_HOME");
+    panic!(
+        "no platform data: put modules next to ravac.exe \
+         (or build with JAVA_HOME set so the build script links it into target/<profile>/, \
+         or set RAVAC_PLATFORM_DIR)"
+    );
 }
 
-/// Locate a JDK home from a `javac`/`java` launcher on `PATH`.
-fn java_home_from_path() -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for directory in std::env::split_paths(&path) {
-        for launcher in ["javac", "java"] {
-            let candidate = directory.join(format!("{launcher}{}", std::env::consts::EXE_SUFFIX));
-            if !candidate.is_file() {
-                continue;
-            }
-            if directory.file_name().is_none_or(|name| name != "bin") {
-                continue;
-            }
-            let Some(home) = directory.parent() else {
-                continue;
-            };
-            if home.join("lib").join("modules").is_file() || home.join("jmods").is_dir() {
-                return Some(home.to_path_buf());
-            }
+/// The distribution layout: ravac.exe with a sibling lib/modules, or
+/// bin/ravac.exe with lib/ one level above.
+fn java_home_from_exe() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let candidates = [
+        Some(dir.to_path_buf()),
+        dir.parent().map(|parent| parent.to_path_buf()),
+    ];
+    for home in candidates.into_iter().flatten() {
+        if crate::file::platform_paths::has_modules(&home) {
+            return Some(home);
         }
     }
     None

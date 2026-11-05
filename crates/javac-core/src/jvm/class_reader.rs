@@ -5527,11 +5527,6 @@ mod tests {
                 return Some(home);
             }
         }
-        let fallback =
-            std::path::PathBuf::from(r"C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot");
-        if fallback.join("lib").join("modules").is_file() || fallback.join("jmods").is_dir() {
-            return Some(fallback);
-        }
         None
     }
 

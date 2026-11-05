@@ -973,8 +973,9 @@ impl Locations {
 impl<'a> LocationCtx<'a> {
     /// Java: BootClassPathLocationHandler.systemClasses().
     fn system_classes(&self) -> Vec<FsPath> {
-        let modules = self.java_home.as_path().join("lib").join("modules");
-        let modules = FsPath::from_path_buf(modules);
+        let modules = FsPath::from_path_buf(crate::file::platform_paths::modules_file(
+            &self.java_home.as_path(),
+        ));
         if Files::is_regular_file(&modules) {
             return vec![modules];
         }
@@ -1303,8 +1304,9 @@ impl<'a> LocationCtx<'a> {
         };
         let parent = JavaString::from("SYSTEM_MODULES");
         let mut table = ModuleTable::new();
-        let lib_modules =
-            FsPath::from_path_buf(system_java_home.as_path().join("lib").join("modules"));
+        let lib_modules = FsPath::from_path_buf(crate::file::platform_paths::modules_file(
+            &system_java_home.as_path(),
+        ));
         let modules_path: StdOption<FsPath> = if Files::is_regular_file(&lib_modules) {
             // The jrt: FileSystem stand-in: javac-jimage over lib/modules; module locations
             // carry the jrt-style textual path /modules/<module> (see the file header).

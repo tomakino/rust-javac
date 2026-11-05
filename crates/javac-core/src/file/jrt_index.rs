@@ -183,7 +183,7 @@ impl JRTIndex {
     /// the jrt: FileSystem is simulated by javac-jimage over the injected JDK
     /// home (see the file header).
     pub fn open(java_home: &FsPath) -> Result<JRTIndex, javac_jimage::Error> {
-        let modules_file = java_home.as_path().join("lib").join("modules");
+        let modules_file = crate::file::platform_paths::modules_file(&java_home.as_path());
         let image = JImage::open(&modules_file)?;
         let modules = image.modules().to_vec();
         let mut module_resources: HashMap<String, Vec<String>> = HashMap::new();

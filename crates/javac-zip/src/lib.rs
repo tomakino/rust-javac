@@ -88,12 +88,7 @@ mod tests {
                 return Some(home);
             }
         }
-        let fallback = PathBuf::from(r"C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot");
-        if fallback.is_dir() {
-            Some(fallback)
-        } else {
-            None
-        }
+        None
     }
 
     fn jmod_path() -> Option<PathBuf> {

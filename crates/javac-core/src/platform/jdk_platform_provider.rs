@@ -91,9 +91,6 @@ use crate::util::log::Log;
 use crate::util::options::Options;
 use crate::util::string_utils::to_upper_case;
 
-/// Java: private static final String[] symbolFileLocation = { "lib", "ct.sym" };
-const SYMBOL_FILE_LOCATION: [&str; 2] = ["lib", "ct.sym"];
-
 /// PlatformProvider for JDK N.
 ///
 /// the JDK home is injected (the upstream reads the java.home system
@@ -132,12 +129,9 @@ impl JDKPlatformProvider {
     /// java.nio.file.Path is the registered javac-fs adapter; the java.home
     /// property is the injected argument.
     pub fn find_ct_sym(java_home: &FsPath) -> FsPath {
-        let mut file = java_home.clone();
-        for name in SYMBOL_FILE_LOCATION {
-            file = file
-                .resolve(&FsPath::new(name).expect("symbol file location names are valid paths"));
-        }
-        file
+        FsPath::from_path_buf(crate::file::platform_paths::ct_sym_file(
+            &java_home.as_path(),
+        ))
     }
 
     /// Java:
