@@ -1,12 +1,12 @@
 # rust-javac
 
-**A reimplementation of the JDK 17 `javac` compiler in Rust.**
+**A Rust reimplementation of the JDK 17 `javac` compiler.**
 
-This project reimplements the Java compiler rather than wrapping it. The parser, symbol
+This project reimplements the Java compiler rather than wrapping it: the parser, symbol
 entering, attribution, flow analysis, lowering, bytecode generation, class-file writing
-and diagnostic machinery are implemented in Rust. The objective is to reproduce the
-reference compiler's observable behavior — class-file bytes, diagnostic output and exit
-codes — as verified by automated comparison on fixed corpora.
+and diagnostic machinery are implemented in Rust. The goal is to reproduce the reference
+compiler's observable behavior — class-file bytes, diagnostics and exit codes — and to
+verify it by automated comparison on fixed corpora.
 
 - Reference implementation: jdk17u commit `982d53c` (Temurin 17.0.19+10)
 - Language levels: Java 9–17, module system, `--release` via ct.sym
@@ -18,18 +18,20 @@ codes — as verified by automated comparison on fixed corpora.
 
 1. [Architecture](#1-architecture)
 2. [Compatibility and verification](#2-compatibility-and-verification)
-3. [Build and distribution](#3-build-and-distribution)
-4. [Validation results](#4-validation-results)
-5. [Testing](#5-testing)
-6. [Limitations](#6-limitations)
-7. [Documentation](#7-documentation)
-8. [License](#8-license)
+3. [Command-line interface](#3-command-line-interface)
+4. [Build and distribution](#4-build-and-distribution)
+5. [Validation results](#5-validation-results)
+6. [Testing](#6-testing)
+7. [Limitations](#7-limitations)
+8. [Documentation](#8-documentation)
+9. [Disclaimer](#9-disclaimer)
+10. [License](#10-license)
 
 ---
 
 ## 1. Architecture
 
-The implementation is organized as 14 crates mirroring the subsystems of jdk.compiler.
+The implementation is organized as 14 crates mirroring the subsystems of `jdk.compiler`.
 
 | Crate             | Corresponding javac component                         |
 |:------------------|:------------------------------------------------------|
@@ -48,42 +50,48 @@ The implementation is organized as 14 crates mirroring the subsystems of jdk.com
 | `javac-strings`   | string utilities                                      |
 | `rust-javac`      | CLI (equivalent of `com.sun.tools.javac.Main`)        |
 
-The compiler pipeline follows javac's phase structure: parse → enter → attribute → flow →
-transTypes → lower → generate, with diagnostics emitted through a ported `Log` and
-resource-bundle layer. The official `.properties` language bundles are embedded and parsed
-lazily.
+The pipeline follows javac's phase structure: parse → enter → attribute → flow →
+transTypes → lower → generate. Diagnostics pass through a ported `Log` and
+resource-bundle layer; the official `.properties` language bundles are embedded and
+parsed lazily.
 
 ## 2. Compatibility and verification
 
-**Class files.** Each output class is compared with the reference compiler by SHA-256.
-The comparison therefore covers constant-pool contents and ordering, attribute tables (`LineNumberTable`,
-`LocalVariableTable`, `StackMapTable`, `BootstrapMethods`,
-`InnerClasses`, `Signature`, `NestMembers`, `Record`, `PermittedSubclasses`,
-module attributes) and the class-file version fields.
+### Class files
 
-**Conditions.** A SHA-256 comparison is meaningful only when both compilers see the same
-inputs. The conditions used for every run below are:
+Each output class is compared with the reference compiler by SHA-256. The comparison
+covers the constant pool (contents and ordering), the attribute tables
+(`LineNumberTable`, `LocalVariableTable`, `StackMapTable`, `BootstrapMethods`,
+`InnerClasses`, `Signature`, `NestMembers`, `Record`, `PermittedSubclasses`, module
+attributes) and the class-file version fields.
+
+### Conditions
+
+A SHA-256 comparison is meaningful only when both compilers see the same inputs. Every
+run reported below used:
 
 - reference compiler: `javac 17.0.19` (Temurin 17.0.19+10) running on Windows x64;
 - platform data: the same JDK's `lib/modules` and `lib/ct.sym` — the two files the
   packaged compiler reads;
-- options: the default `-source`/`-target` (17), plus these variants, each verified on
-  Gson 2.10.1 (81 sources → 208 classes): `-g`, `-g:none`, `-g:source`, `-g:lines`,
-  `-g:vars`, `-g:source,lines,vars`, `--release 11/17`, `-parameters`, `-encoding UTF-8`,
-  `-Xmaxerrs 3`, `-Xdiags:compact`, `-Xlint:all`, `-Xlint:none`, `-nowarn`,
-  `-sourcepath`, `-s`, `-h`, `@argfile` and direct command-line arguments;
+- options: the default `-source`/`-target` (17) plus, on Gson 2.10.1 (81 sources →
+  208 classes): `-g`, `-g:none`, `-g:source`, `-g:lines`, `-g:vars`,
+  `-g:source,lines,vars`; `--release 11/17`; `-parameters`; `-encoding UTF-8`;
+  `-Xmaxerrs 3`; `-Xdiags:compact`; `-Xlint:all`; `-Xlint:none`; `-nowarn`;
+  `-sourcepath`; `-s`; `-h`; `@argfile`; and direct command-line arguments;
 - `-source 8`: verified separately (80 sources without `module-info.java`, 207 classes).
 
 A different `javac` patch release or a different platform-data set can produce
-different bytes; the claim does not extend to those combinations. `--release 8`
-fails on the Gson corpus in both compilers (module-info is not valid for release 8),
-so it does not contribute a byte comparison.
+different bytes; the claim does not extend to those combinations. `--release 8` fails
+on the Gson corpus in both compilers (module-info is not valid for release 8), so it
+does not contribute a byte comparison.
 
-**Diagnostics.** The output of both compilers is normalized (temporary and source paths,
-line endings, timing values) and compared line by line: message text, source position,
-caret placement, note/warning/error counts and the process exit code (0/1/2/3/4).
+### Diagnostics
 
-**Scope.** Verification covers:
+The output of both compilers is normalized (temporary and source paths, line endings,
+timing values) and compared line by line: message text, source position, caret
+placement, note/warning/error counts and the process exit code (0/1/2/3/4).
+
+### Scope
 
 - real-world projects: Gson 2.10.1, Guava 33.4.0, OkHttp 3.14.9, commons-lang3 3.12.0,
   JUnit 5.10.2;
@@ -92,7 +100,62 @@ caret placement, note/warning/error counts and the process exit code (0/1/2/3/4)
 - the diagnostic example corpus (langtools), 602 comparable cases;
 - 43 language-feature cases spanning Java 9–17.
 
-## 3. Build and distribution
+## 3. Command-line interface
+
+`ravac` accepts the javac 17 command-line interface:
+
+```text
+ravac [options] <source files>
+ravac @argfile
+```
+
+### Options
+
+| Option | Meaning |
+|:---|:---|
+| `-d <dir>` | output directory for class files |
+| `-cp`, `-classpath`, `--class-path <path>` | class search path |
+| `-sourcepath <path>` | source search path |
+| `--release <n>` | platform and language level (7–17) |
+| `-source <n>`, `-target <n>` | language level / class-file version |
+| `-g`, `-g:none`, `-g:source,lines,vars` | debug information |
+| `-Xlint[:<group>]`, `-nowarn` | lint warnings |
+| `-verbose` | print loaded files and modules |
+| `-s <dir>`, `-h <dir>` | source output / native header output |
+| `@<file>` | read options and files from an argument file |
+| `-J-Duser.language=<locale>` | diagnostic locale |
+| `-XDrawDiagnostics` | raw diagnostic format |
+
+### Examples
+
+```powershell
+# one file
+ravac -d out Hello.java
+
+# several files with a class path
+ravac -d out -cp "lib/*" src/A.java src/B.java
+
+# platform view
+ravac --release 11 -d out src/Main.java
+
+# argument file
+ravac @sources.txt
+```
+
+### Exit codes
+
+| Code | Meaning |
+|:---:|:---|
+| 0 | success |
+| 1 | compilation error |
+| 2 | invalid command line |
+| 3 | system error |
+| 4 | internal error |
+
+`ravac --help` lists the full option set. Annotation processing,
+`--enable-preview`, `-Xplugin` and `-Xdoclint` are not implemented; see section 7.
+
+## 4. Build and distribution
 
 ### Requirements
 
@@ -105,16 +168,16 @@ caret placement, note/warning/error counts and the process exit code (0/1/2/3/4)
 
 ### Reference environment
 
-The validation results in section 4 were produced on this machine:
+The validation results in section 5 were produced on this machine:
 
-| Component | Value |
-|:---|:---|
-| OS | Windows x64 |
-| Rust | 1.101.0-nightly (2026-10-31), pinned by `rust-toolchain.toml` |
-| JDK | Temurin 17.0.19+10 |
-| Python | 3.13.6 |
-| Android NDK | 30.0.16248370 |
-| Build profile | `dev` (debug) |
+| Component      | Value                                                       |
+|:---------------|:------------------------------------------------------------|
+| OS             | Windows x64                                                 |
+| Rust           | 1.101.0-nightly (2026-10-31), pinned by `rust-toolchain.toml` |
+| JDK            | Temurin 17.0.19+10                                          |
+| Python         | 3.13.6                                                      |
+| Android NDK    | 30.0.16248370                                               |
+| Build profile  | `dev` (debug)                                               |
 
 Tests and scripts pin `-J-Duser.language=en -J-Duser.country=US` so diagnostics are
 compared against the English baselines regardless of the host locale.
@@ -146,12 +209,12 @@ cargo build -p rust-javac
 py scripts/package.py --build --release --platforms all
 ```
 
-| Platform        | Linkage | Runtime libc |
-|:----------------|:--------|:-------------|
-| `windows-amd64` | native  | Windows      |
-| `linux-amd64`   | static  | musl         |
-| `linux-arm64`   | static  | musl         |
-| `android-arm64` | dynamic | Bionic (NDK) |
+| Platform        | Linkage | Runtime library |
+|:----------------|:--------|:----------------|
+| `windows-amd64` | native  | msvcrt          |
+| `linux-amd64`   | static  | musl            |
+| `linux-arm64`   | static  | musl            |
+| `android-arm64` | dynamic | Bionic (NDK)    |
 
 A distribution contains the compiler and the two data files it reads:
 
@@ -162,30 +225,30 @@ ravac-17.0.19-windows-amd64/
 └─ ct.sym       platform signatures for --release 7–17
 ```
 
-The platform directory is resolved deterministically: `RAVAC_PLATFORM_DIR` if set, otherwise
-the executable's directory (or its parent for a `bin/` layout), otherwise an error. The
-compiler does not consult `JAVA_HOME`, `PATH` or installation directories, and does not
-scan the file system for a JDK.
+The platform directory is resolved deterministically: `RAVAC_PLATFORM_DIR` if set,
+otherwise the executable's directory (or its parent for a `bin/` layout), otherwise an
+error. The compiler does not consult `JAVA_HOME`, `PATH` or installation directories,
+and does not scan the file system for a JDK.
 
-## 4. Validation results
+## 5. Validation results
 
-Results of the last full runs. These are sampled verifications on the listed corpora, not a
-proof of equivalence for arbitrary programs:
+Results of the last full runs. These are sampled verifications on the listed corpora,
+not a proof of equivalence for arbitrary programs:
 
 | Subject                 | Scope                            | Result                          |
 |:------------------------|:---------------------------------|:--------------------------------|
 | `javac-core` unit tests | 750 tests                        | 750 passed                      |
-| Gson 2.10.1             | 208 classes                      | 208 matched              |
-| Guava 33.4.0            | 1970 classes                     | 1970 matched             |
-| OkHttp 3.14.9           | 542 classes                      | 542 matched              |
-| commons-lang3 3.12.0    | 359 classes                      | 359 matched              |
-| JUnit 5.10.2            | 625 classes                      | 625 matched              |
-| `jdk.compiler`          | 1637 classes                     | all matched              |
-| `java.base`             | 3067 source files (6410 classes) | all matched              |
-| `java.desktop`          | 2617 source files (5393 classes) | all matched              |
+| Gson 2.10.1             | 208 classes                      | 208 matched                     |
+| Guava 33.4.0            | 1970 classes                     | 1970 matched                    |
+| OkHttp 3.14.9           | 542 classes                      | 542 matched                     |
+| commons-lang3 3.12.0    | 359 classes                      | 359 matched                     |
+| JUnit 5.10.2            | 625 classes                      | 625 matched                     |
+| `jdk.compiler`          | 1637 classes                     | all matched                     |
+| `java.base`             | 3067 source files (6410 classes) | all matched                     |
+| `java.desktop`          | 2617 source files (5393 classes) | all matched                     |
 | Diagnostic corpus       | 602 comparable cases             | 602 matched (last recorded run) |
 
-## 5. Testing
+## 6. Testing
 
 ```powershell
 py scripts/gate.py --run              # level inferred from the working-tree diff
@@ -199,7 +262,7 @@ py scripts/gate.py --level L3 --run   # full gate
 |  L2   | L1, jdk.compiler, Guava, OkHttp                |
 |  L3   | workspace tests, all corpora and module checks |
 
-## 6. Limitations
+## 7. Limitations
 
 The following are intentionally out of scope and rejected at the command line:
 
@@ -212,7 +275,7 @@ The following are intentionally out of scope and rejected at the command line:
 Custom file managers and JVM stack-trace diagnostics (`-doe`) are likewise unsupported;
 the diagnostic corpus skips the corresponding cases.
 
-## 7. Documentation
+## 8. Documentation
 
 | Document                                       | Contents                                  |
 |:-----------------------------------------------|:------------------------------------------|
@@ -223,6 +286,23 @@ the diagnostic corpus skips the corresponding cases.
 | [docs/STYLE.md](docs/STYLE.md)                 | coding conventions                        |
 | [AGENTS.md](AGENTS.md)                         | collaboration rules                       |
 
-## 8. License
+## 9. Disclaimer
+
+This is an independent reimplementation, not affiliated with, endorsed by or sponsored by
+Oracle, the OpenJDK project or the Eclipse Adoptium project.
+
+It is **not a substitute for javac**: annotation processing, preview features and plugins
+are not implemented, and the project does not aim to cover every javac mode. Use the
+official JDK compiler where full javac compatibility is required.
+
+The verification results describe **samples** — specific corpora, option combinations, a
+specific reference compiler (Temurin 17.0.19+10) and host platform — and are not a
+guarantee for arbitrary programs or configurations. The software may contain defects and
+is not certified for safety-critical, regulated or otherwise production-critical use.
+
+Warranty and liability terms are set by the license (GPL-2.0-only WITH
+Classpath-exception-2.0, sections 15–16); see [LICENSE](LICENSE).
+
+## 10. License
 
 GPL-2.0-only WITH Classpath-exception-2.0. See [LICENSE](LICENSE).
