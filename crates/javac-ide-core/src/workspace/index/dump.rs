@@ -80,6 +80,9 @@ pub fn load(model: &super::super::model::WorkspaceModel) -> Option<ProjectIndex>
 
 fn file_hashes_match(index: &ProjectIndex) -> bool {
     index.files.iter().all(|record| {
+        if !record.status.is_live() {
+            return true;
+        }
         std::fs::read_to_string(&record.path)
             .map(|text| hash_text(&text) == record.hash)
             .unwrap_or(false)
@@ -115,6 +118,7 @@ fn write_index(index: &ProjectIndex, out: &mut Vec<u8>) {
             FileStatus::Indexed => 1,
             FileStatus::Failed => 2,
             FileStatus::Skipped => 3,
+            FileStatus::Deleted => 4,
         });
     }
 
@@ -237,6 +241,7 @@ fn read_index(bytes: &[u8]) -> Option<ProjectIndex> {
             1 => FileStatus::Indexed,
             2 => FileStatus::Failed,
             3 => FileStatus::Skipped,
+            4 => FileStatus::Deleted,
             _ => return None,
         };
         files.push(FileRecord {

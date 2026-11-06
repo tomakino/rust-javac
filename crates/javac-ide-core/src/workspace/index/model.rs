@@ -118,6 +118,15 @@ pub enum FileStatus {
     Indexed,
     Failed,
     Skipped,
+    /// The file was removed from disk; its record stays so the `FileId` space
+    /// stays stable, but queries ignore it.
+    Deleted,
+}
+
+impl FileStatus {
+    pub fn is_live(self) -> bool {
+        !matches!(self, Self::Deleted)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -256,7 +265,7 @@ impl ProjectIndex {
         let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
         self.files
             .iter()
-            .position(|file| file.path == canonical)
+            .position(|file| file.status.is_live() && file.path == canonical)
             .map(|index| index as FileId)
     }
 

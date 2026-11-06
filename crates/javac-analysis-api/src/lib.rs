@@ -324,6 +324,11 @@ pub trait WorkspaceService {
     /// snapshot instead of rebuilding the project.
     fn index_generation(&self) -> u64;
 
+    /// Whether a background index build is in flight.
+    ///
+    /// Queries keep serving the previous snapshot while this is true.
+    fn is_index_building(&self) -> bool;
+
     /// Current workspace configuration.
     fn configuration(&self) -> WorkspaceConfiguration;
 

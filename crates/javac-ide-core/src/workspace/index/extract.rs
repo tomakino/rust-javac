@@ -142,6 +142,32 @@ pub fn extract_file(
             });
         }
     }
+
+    // Type/method/constructor declarations are not emitted by the tree
+    // scanner; the builder adds their declaration occurrence itself. Mirror
+    // that here so a local FileIndex replacement keeps them.
+    let declaration_occurrences: Vec<ExtractedOccurrence> = out
+        .declarations
+        .iter()
+        .filter(|declaration| {
+            matches!(
+                declaration.identity.kind,
+                IndexSymbolKind::Class
+                    | IndexSymbolKind::Interface
+                    | IndexSymbolKind::Enum
+                    | IndexSymbolKind::Annotation
+                    | IndexSymbolKind::Record
+                    | IndexSymbolKind::Method
+                    | IndexSymbolKind::Constructor
+            )
+        })
+        .map(|declaration| ExtractedOccurrence {
+            identity: declaration.identity.clone(),
+            range: declaration.range,
+            role: OccurrenceRole::Declaration,
+        })
+        .collect();
+    out.occurrences.extend(declaration_occurrences);
     out
 }
 

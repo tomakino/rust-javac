@@ -177,7 +177,14 @@ pub fn run(
                 respond(&mut stdout, id, workspace_symbols(host.as_mut(), &message));
             }
             "ravac/indexStats" => {
-                respond(&mut stdout, id, json!({ "generation": host.index_generation() }));
+                respond(
+                    &mut stdout,
+                    id,
+                    json!({
+                        "generation": host.index_generation(),
+                        "building": host.is_index_building(),
+                    }),
+                );
             }
             "textDocument/references" => {
                 respond(&mut stdout, id, references(host.as_mut(), &message));

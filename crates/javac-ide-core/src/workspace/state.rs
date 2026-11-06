@@ -11,8 +11,10 @@ use std::sync::Arc;
 use super::analysis::{AnalysisConfig, FileAnalysis};
 use super::cache::AnalysisCache;
 use super::index::build::IndexLimits;
+use super::index::extract::ExtractedFile;
 use super::index::key::FileId;
-use super::index::model::{IndexStatus, ProjectIndex};
+use super::index::model::{IndexStatus, ProjectIndex, SourceSetKind};
+use super::index::update::UpdateTask;
 use super::index::{self, dump, IndexStore};
 use super::model::{hash_text, WorkspaceModel};
 
@@ -34,6 +36,9 @@ pub struct Workspace {
     temporary_ids: HashMap<PathBuf, FileId>,
     incremental_updates: u64,
     full_rebuilds: u64,
+    /// Test-only: delay the background build so a mid-build snapshot can be
+    /// observed deterministically.
+    build_delay: Option<std::time::Duration>,
 }
 
 /// Observable index counters, used by tests and the LSP stats request.
@@ -79,6 +84,7 @@ impl Workspace {
             temporary_ids: HashMap::new(),
             incremental_updates: 0,
             full_rebuilds: 0,
+            build_delay: None,
         };
         workspace.update_stamps();
         workspace.start_background_build();
@@ -168,7 +174,11 @@ impl Workspace {
         let overlays = self.overlays.clone();
         let limits = self.limits.clone();
         let batch_size = self.batch_size;
+        let delay = self.build_delay;
         self.build = Some(std::thread::spawn(move || {
+            if let Some(delay) = delay {
+                std::thread::sleep(delay);
+            }
             index::build::build(&model, &config, &overlays, batch_size, &limits)
         }));
     }
@@ -212,9 +222,9 @@ impl Workspace {
     /// extraction, unsafe edits) falls back to a background full rebuild.
     pub(crate) fn ensure_index(&mut self) {
         self.poll_build();
+        // A build in flight: keep serving the previous snapshot (or fall back
+        // to FileAnalysis when there is none) instead of blocking the query.
         if self.build.is_some() {
-            self.join_build();
-            self.dirty = false;
             return;
         }
         if self.index.snapshot().generation > 0 {
@@ -227,39 +237,185 @@ impl Workspace {
                 return;
             }
         }
-        if self.build.is_none() {
-            self.start_background_build();
-        }
-        self.join_build();
-        self.dirty = false;
+        // Start the rebuild in the background; do not wait for it.
+        self.start_background_build();
     }
 
-    /// Try to apply in-place updates for `changed` files.
+    /// Block until the index reflects the current sources.
     ///
-    /// Only content changes to existing files are eligible; new/deleted files
-    /// and unsafe edits return `false` so the caller can rebuild.
+    /// Queries deliberately do not wait for a background build; callers that
+    /// need the new snapshot (LSP initialization, tests) use this explicitly.
+    pub fn wait_for_index(&mut self) {
+        loop {
+            self.poll_build();
+            if self.build.is_some() {
+                self.join_build();
+                continue;
+            }
+            if self.index.snapshot().generation > 0 {
+                let changed = self.changed_files();
+                if changed.is_empty() {
+                    self.dirty = false;
+                    return;
+                }
+                if self.try_incremental_update(&changed) {
+                    return;
+                }
+            }
+            self.start_background_build();
+            if self.build.is_none() {
+                return;
+            }
+        }
+    }
+
+    /// Test-only hook: delay the background build so a mid-build snapshot can
+    /// be observed deterministically. Production callers leave this unset.
+    #[doc(hidden)]
+    pub fn set_build_delay_for_tests(&mut self, delay: std::time::Duration) {
+        self.build_delay = Some(delay);
+    }
+
+    /// Test-only hook: drop the published snapshot so the next query has to
+    /// fall back to `FileAnalysis`.
+    #[doc(hidden)]
+    pub fn clear_index_for_tests(&mut self) {
+        self.index.publish(empty_index(IndexStatus::Building));
+        self.stamps.clear();
+        self.dirty = true;
+    }
+
+    /// Try to apply incremental updates for `changed` files.
+    ///
+    /// Content changes are applied in place. When a file's declaration shape
+    /// changes, its reverse-dependency closure is re-extracted first, so the
+    /// batch stays consistent without a full project rebuild. Added files get
+    /// a new `FileId`; deleted files are tombstoned and their references
+    /// cleared. `false` means the batch is unsafe and the caller rebuilds.
     fn try_incremental_update(&mut self, changed: &[PathBuf]) -> bool {
         let snapshot = self.index.snapshot();
-        let mut next = (*snapshot).clone();
+        let mut updates: Vec<(FileId, PathBuf)> = Vec::new();
+        let mut adds: Vec<PathBuf> = Vec::new();
+        let mut deletes: Vec<FileId> = Vec::new();
         for path in changed {
-            let Some(file_id) = snapshot.file_id_for_path(path) else {
-                return false;
-            };
+            match snapshot.file_id_for_path(path) {
+                Some(file) => {
+                    if self.text_of(path).is_some() {
+                        updates.push((file, path.clone()));
+                    } else {
+                        deletes.push(file);
+                    }
+                }
+                None => adds.push(path.clone()),
+            }
+        }
+        if updates.is_empty() && adds.is_empty() && deletes.is_empty() {
+            return false;
+        }
+
+        // Extract the changed files and decide which dependents join the batch.
+        let mut extracted: HashMap<FileId, (u64, ExtractedFile)> = HashMap::new();
+        let mut roots: Vec<FileId> = Vec::new();
+        for (file, path) in &updates {
             let Some(text) = self.text_of(path) else {
                 return false;
             };
-            let extraction = index::extract::extract_file(&self.config, path, file_id, &text);
+            let extraction = index::extract::extract_file(&self.config, path, *file, &text);
             if extraction.failed {
                 return false;
             }
-            let hash = hash_text(&text);
-            let Some(updated) =
-                index::update::apply_file_update(&next, file_id, hash, &extraction)
-            else {
+            if index::update::declarations_changed(&snapshot, *file, &extraction) {
+                roots.push(*file);
+            }
+            extracted.insert(*file, (hash_text(&text), extraction));
+        }
+
+        // Declaration-changing files go first; their dependents follow.
+        let mut order: Vec<FileId> = roots.clone();
+        for (file, _) in &updates {
+            if !order.contains(file) {
+                order.push(*file);
+            }
+        }
+        if !roots.is_empty() {
+            // Two changed files that reference each other cannot be ordered
+            // safely; let the full rebuild handle it.
+            for a in &roots {
+                for b in &roots {
+                    if a != b && snapshot.dependent_closure(*a).contains(b) {
+                        return false;
+                    }
+                }
+            }
+            for root in &roots {
+                for member in snapshot.dependent_closure(*root) {
+                    if member == *root || order.contains(&member) || deletes.contains(&member) {
+                        continue;
+                    }
+                    let Some(record) = snapshot.file(member) else {
+                        return false;
+                    };
+                    if !record.status.is_live() {
+                        continue;
+                    }
+                    let Some(text) = self.text_of(&record.path) else {
+                        return false;
+                    };
+                    let extraction = index::extract::extract_file(
+                        &self.config,
+                        &record.path,
+                        member,
+                        &text,
+                    );
+                    if extraction.failed {
+                        return false;
+                    }
+                    extracted.insert(member, (hash_text(&text), extraction));
+                    order.push(member);
+                }
+            }
+        }
+
+        let mut tasks: Vec<UpdateTask> = Vec::new();
+        for file in &order {
+            let Some((hash, extraction)) = extracted.remove(file) else {
                 return false;
             };
-            next = updated;
+            tasks.push(UpdateTask::Update {
+                file: *file,
+                text_hash: hash,
+                extraction,
+            });
         }
+        let mut next_file = snapshot.files.len() as FileId;
+        for path in &adds {
+            let Some(text) = self.text_of(path) else {
+                return false;
+            };
+            let extraction = index::extract::extract_file(&self.config, path, next_file, &text);
+            if extraction.failed {
+                return false;
+            }
+            let source_set = self
+                .model
+                .source_set_for(path)
+                .unwrap_or(SourceSetKind::Main);
+            tasks.push(UpdateTask::Add {
+                file: next_file,
+                path: path.clone(),
+                source_set,
+                text_hash: hash_text(&text),
+                extraction,
+            });
+            next_file += 1;
+        }
+        for file in deletes {
+            tasks.push(UpdateTask::Delete { file });
+        }
+
+        let Some(mut next) = index::update::apply_batch(&snapshot, &tasks) else {
+            return false;
+        };
         next.generation = snapshot.generation.saturating_add(1);
         if let Some(cache) = index::dump::cache_path(index::dump::workspace_hash(&self.model)) {
             let _ = index::dump::save(&next, &cache);
@@ -284,6 +440,9 @@ impl Workspace {
         let mut changed = Vec::new();
         let mut present: Vec<&PathBuf> = current.iter().collect();
         for record in &snapshot.files {
+            if !record.status.is_live() {
+                continue;
+            }
             let Some(position) = present.iter().position(|path| **path == record.path) else {
                 changed.push(record.path.clone()); // deleted
                 continue;
@@ -323,6 +482,9 @@ impl Workspace {
         self.stamps.clear();
         let snapshot = self.index.snapshot();
         for record in &snapshot.files {
+            if !record.status.is_live() {
+                continue;
+            }
             let Ok(meta) = std::fs::metadata(&record.path) else {
                 continue;
             };

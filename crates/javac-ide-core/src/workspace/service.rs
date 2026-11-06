@@ -313,6 +313,10 @@ impl WorkspaceService for Workspace {
         self.index.snapshot().generation
     }
 
+    fn is_index_building(&self) -> bool {
+        self.is_building()
+    }
+
     fn configuration(&self) -> WorkspaceConfiguration {
         WorkspaceConfiguration {
             class_path: self.config.class_path.clone(),

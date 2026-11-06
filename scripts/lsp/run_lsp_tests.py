@@ -11,6 +11,7 @@ prints PASS/FAIL for each scenario.
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -92,6 +93,16 @@ def main():
             )
         ),
     )
+
+    # initialize() reconfigures the workspace and starts a background index
+    # build. Queries no longer block on it, so wait for the first snapshot.
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        send({"jsonrpc": "2.0", "id": 100, "method": "ravac/indexStats", "params": {}})
+        stats = read().get("result") or {}
+        if not stats.get("building") and stats.get("generation", 0) > 0:
+            break
+        time.sleep(0.05)
 
     uri = (ROOT / "target" / "tmp" / "LspSmoke.java").as_uri()
     text = "class LspSmoke { int bar; void baz() { bar = 1; } }\n"

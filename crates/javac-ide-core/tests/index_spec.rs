@@ -279,6 +279,7 @@ fn workspace_symbols_read_the_project_index() {
     std::fs::write(root.join("B.java"), "class B { int value; void run() {} }").unwrap();
     let output = root.join("out");
     let mut workspace = Workspace::new(config(&root, &output));
+    workspace.wait_for_index();
     let symbols = workspace.workspace_symbols("B");
     assert!(
         symbols.iter().any(|symbol| symbol.name == "B"),
@@ -314,6 +315,7 @@ fn added_removed_and_modified_files_update_the_index() {
     std::fs::write(root.join("B.java"), "class B { int oldValue; }").unwrap();
     let output = root.join("out");
     let mut workspace = Workspace::new(config(&root, &output));
+    workspace.wait_for_index();
     assert!(workspace
         .workspace_symbols("B")
         .iter()
@@ -321,6 +323,7 @@ fn added_removed_and_modified_files_update_the_index() {
 
     // Modified file: the workspace must detect the disk hash change.
     std::fs::write(root.join("B.java"), "class B { int newValue; }").unwrap();
+    workspace.wait_for_index();
     let symbols = workspace.workspace_symbols("newValue");
     assert!(
         symbols.iter().any(|symbol| symbol.name == "newValue"),
@@ -329,6 +332,7 @@ fn added_removed_and_modified_files_update_the_index() {
 
     // Added file.
     std::fs::write(root.join("C.java"), "class C { int addedField; }").unwrap();
+    workspace.wait_for_index();
     assert!(workspace
         .workspace_symbols("addedField")
         .iter()
@@ -336,6 +340,7 @@ fn added_removed_and_modified_files_update_the_index() {
 
     // Removed file.
     std::fs::remove_file(root.join("C.java")).unwrap();
+    workspace.wait_for_index();
     assert!(!workspace
         .workspace_symbols("addedField")
         .iter()
@@ -348,9 +353,11 @@ fn overlay_text_is_indexed() {
     std::fs::write(root.join("A.java"), "class A { int oldValue; }").unwrap();
     let output = root.join("out");
     let mut workspace = Workspace::new(config(&root, &output));
+    workspace.wait_for_index();
     let path = root.join("A.java");
     let unsaved = "class A { int overlayValue; }";
     workspace.diagnostics(&path, Some(unsaved));
+    workspace.wait_for_index();
     let symbols = workspace.workspace_symbols("overlayValue");
     assert!(
         symbols.iter().any(|symbol| symbol.name == "overlayValue"),
@@ -451,6 +458,7 @@ fn hover_reads_javadoc_from_the_index() {
     .unwrap();
     let output = root.join("out");
     let mut workspace = Workspace::new(config(&root, &output));
+    workspace.wait_for_index();
     let hover = workspace.hover(&path, Position::new(3, 8)).expect("hover");
     assert!(hover.contains("value doc"), "hover: {hover}");
     assert!(hover.contains("field value"), "hover: {hover}");

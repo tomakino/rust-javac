@@ -394,24 +394,29 @@ ravac-lsp：
 
 - M2 结构清理：`analysis/project_index` 迁移为 `workspace/index/{key,model,build,store,query,update,extract,dump}.rs`；`AnalysisHost` 删除并由 `WorkspaceService` 取代；prepareRename 改走索引 occurrence；`completion/mod.rs`（2400 行）与 `navigation/mod.rs`（550 行）按职责拆分，模块根文件只保留声明。
 - M3：`Workspace` 持有 `IndexStore`（`RwLock<Arc<ProjectIndex>>`）与最多 4 项 `FileAnalysis` LRU；overlay 文本参与索引与查询；磁盘文件用 mtime/len + hash 检测变更；`workspace/didChangeWatchedFiles` 与 `invalidate` 接入；Partial 状态显式化，索引查询在 Partial 时拒绝。
-- M3 增量：`index/extract.rs` 单文件提取声明/occurrence/supertype/Javadoc；`index/update.rs::apply_file_update` 按 `(flat name, kind, signature)` 复用 `SymbolId` 并局部替换该文件的 `FileIndex`，声明未变时不再全量重建；`ProjectIndex.dependents` 记录反向依赖并提供 `dependents_of` / `dependent_closure`。
+- M3 增量：`index/extract.rs` 单文件提取声明/occurrence/supertype/Javadoc；`index/update.rs::apply_batch` 统一处理 Update/Add/Delete 三类任务，按 `(flat name, kind, signature)` 复用 `SymbolId` 并局部替换 `FileIndex`。声明/签名/supertype 变化时按 `ProjectIndex::dependent_closure` 重新提取该文件与反向依赖闭包；新增文件分配新 `FileId` 与占位记录；删除文件标记 `FileStatus::Deleted`，清除其符号与所有指向它的 occurrence。
+- M3 快照/构建线程：`ensure_index` 不再 join 后台构建。构建进行中查询继续使用旧快照（`Workspace::is_building` 与 `WorkspaceService::is_index_building` 可观测，LSP `ravac/indexStats` 返回 `building` 与 `generation`）；无可用快照时索引查询回退 `FileAnalysis`。构建完成后由 `poll_build` 原子发布新快照（`IndexStore::publish`）。`Workspace::wait_for_index` 供需要新快照的调用方显式等待（测试、初始化）。
 - M4：`dump.rs` 版本化紧凑二进制（varint + 字符串表）、原子写与加载校验（fingerprint + 逐文件 hash）；`IndexLimits` 支持 `max_indexed_files`/`max_occurrence_bytes` 降级；completion 项目候选改由索引提供。
 - M4 Javadoc：批编译后按源文件关联 doc comment 表，`SymbolRecord.javadoc` 随索引持久化；`Workspace::hover` 优先返回索引 detail + Javadoc。
 
 测试：
 
 - `tests/index_spec.rs`（14 项）：声明/occurrence/supertype、重载键、注释/字符串/遮蔽、跨包同名类、接口/外部 supertype、workspace/symbol、增删改文件、overlay、磁盘 roundtrip 与 hash 不匹配回退、文件数阈值 Partial、Javadoc 提取、索引 Javadoc hover、Javadoc 磁盘 roundtrip。
-- `tests/index_perf_spec.rs`（5 项）：120 文件构建/查询时间预算、索引内存上限、方法体编辑走增量且不触发全量、被引用符号删除回退全量、反向依赖表方向与闭包。
+- `tests/index_incremental_spec.rs`（5 项）：声明变化经反向依赖闭包增量重建、新增文件增量、删除文件清除引用方 occurrence 且不触发全量、闭包外引用拒绝批次、闭包内不可编译时回退全量。
+- `tests/index_snapshot_spec.rs`（2 项）：构建进行中查询返回旧快照且不阻塞；无快照时 `definition` 回退 `FileAnalysis`。
+- `tests/index_perf_spec.rs`（5 项）：120 文件构建/查询时间预算、索引内存上限、方法体编辑走增量、声明改名 + 引用更新走增量、反向依赖表方向与闭包。
 - `navigation_spec`、`diagnostics_spec`、`completion_spec`、`completion_project_spec`、`inlay_hints` 改走 `WorkspaceService`/`FileAnalysis`，行为保持。
-- LSP 冒烟新增 workspace/symbol、跨文件 rename、index generation 缓存计数，17/17 通过。
+- LSP 冒烟在 initialize 后轮询 `ravac/indexStats` 直到首个快照，并覆盖 workspace/symbol、跨文件 rename、index generation，17/17 通过。
 
 偏差（显式记录）：
 
 - 索引符号类型名保留 `IndexSymbolKind`，避免与编译器 `code::symbol::SymbolKind` 冲突。
 - `ProjectIndex` 新增 `workspace: WorkspaceFingerprint` 与 `dependents`；`FileRecord` 用 `status: FileStatus` 替代 `failed: bool`。
 - `IndexStatus::is_ready` 只认 `Ready`；Partial 时不返回索引结果，回退单文件分析。
-- 增量边界：仅“已存在文件的内容变化”走局部替换；新增/删除文件、被其他文件引用的声明被移除、提取失败时回退后台全量重建。声明变化时仍以全量重建保证正确性；反向依赖表用于确定影响范围与验证，未单独重建依赖闭包。
-- 局部替换保留被移除声明的 `SymbolId` 槽位（tombstone），不再被任何索引表引用。
-- 后台构建在“没有可用快照”时仍会等待构建完成，优先保证查询正确性。
+- 增量边界：内容变化、声明变化（依赖闭包内）、新增、删除均走增量；闭包外仍有引用、闭包内文件提取失败、多个 changed 根文件相互引用时回退后台全量重建。
+- 删除文件时，其他文件指向被删声明的 occurrence 直接清除：这些源文件已无法编译，全量重建只会得到 `Partial` 索引。
+- 查询不等待后台构建；首次索引可用性由调用方通过 `is_index_building` / `ravac/indexStats` 轮询或 `wait_for_index` 等待。LSP 冒烟脚本按此轮询。
+- 被移除声明保留 `SymbolId` 槽位（tombstone），本轮不做回收。
 - hover 的 Javadoc 走索引；索引未命中时回退 `FileAnalysis`。
-- `WorkspaceService` 除第 9 节列出的方法外，保留 LSP 必需的 type/call hierarchy、implementation、format、symbols/symbol_at、invalidate、configuration/reconfigure、index_generation。
+- `WorkspaceService` 除第 9 节列出的方法外，保留 LSP 必需的 type/call hierarchy、implementation、format、symbols/symbol_at、invalidate、configuration/reconfigure、index_generation、is_index_building。
+- `set_build_delay_for_tests` / `clear_index_for_tests` 是 `#[doc(hidden)]` 的测试钩子，生产路径不设置。

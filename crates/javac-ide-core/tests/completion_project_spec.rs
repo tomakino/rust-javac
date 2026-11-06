@@ -59,6 +59,7 @@ fn labels_at(session: &mut Workspace, name: &str, source: &str) -> Vec<String> {
     let path = root.join(format!("{name}.java"));
     std::fs::write(&path, &text).unwrap();
     WorkspaceService::diagnostics(session, &path, Some(&text));
+    session.wait_for_index();
     session
         .completion(&path, Position::new(line, column))
         .into_iter()
@@ -72,6 +73,7 @@ fn project_index_supplies_class_candidates() {
     std::fs::write(root.join("ProjectThing.java"), "class ProjectThing { ProjectThing() {} }").unwrap();
     let output = root.join("out");
     let mut session = Workspace::new(config(&root, &output));
+    session.wait_for_index();
     let labels = labels_at(
         &mut session,
         "A",

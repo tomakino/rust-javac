@@ -143,6 +143,7 @@ fn incremental_body_edit_does_not_rebuild() {
     .unwrap();
     let output = root.join("out");
     let mut workspace = Workspace::new(config(&root, &output));
+    workspace.wait_for_index();
     assert!(workspace
         .workspace_symbols("A")
         .iter()
@@ -156,6 +157,7 @@ fn incremental_body_edit_does_not_rebuild() {
         "class A { int value; int m() { return value + 1; } }",
     )
     .unwrap();
+    workspace.wait_for_index();
     assert!(workspace
         .workspace_symbols("value")
         .iter()
@@ -173,8 +175,8 @@ fn incremental_body_edit_does_not_rebuild() {
 }
 
 #[test]
-fn removing_a_referenced_symbol_falls_back_to_rebuild() {
-    let root = fixture("rebuild");
+fn declaration_rename_rebuilds_dependents_incrementally() {
+    let root = fixture("rename");
     std::fs::write(root.join("A.java"), "class A { int value; }").unwrap();
     std::fs::write(
         root.join("B.java"),
@@ -183,32 +185,36 @@ fn removing_a_referenced_symbol_falls_back_to_rebuild() {
     .unwrap();
     let output = root.join("out");
     let mut workspace = Workspace::new(config(&root, &output));
+    workspace.wait_for_index();
     assert!(workspace
         .workspace_symbols("value")
         .iter()
         .any(|symbol| symbol.name == "value"));
     let before = workspace.index_stats();
 
-    // Rename `value` in A and update B in the same round. The old symbol is
-    // still referenced by B when A is processed first, so the incremental
-    // path must reject it and rebuild.
+    // Declaration change plus the dependent's updated reference.
     std::fs::write(root.join("A.java"), "class A { int renamed; }").unwrap();
     std::fs::write(
         root.join("B.java"),
         "class B { A a; int read() { return a.renamed; } }",
     )
     .unwrap();
+    workspace.wait_for_index();
     assert!(workspace
         .workspace_symbols("renamed")
         .iter()
         .any(|symbol| symbol.name == "renamed"));
     let after = workspace.index_stats();
-    assert!(
-        after.full_rebuilds > before.full_rebuilds,
-        "expected a full rebuild: {after:?}"
+    assert_eq!(
+        after.incremental_updates,
+        before.incremental_updates + 1,
+        "expected an incremental batch: {after:?}"
+    );
+    assert_eq!(
+        after.full_rebuilds, before.full_rebuilds,
+        "unexpected full rebuild: {after:?}"
     );
 }
-
 #[test]
 fn dependents_table_tracks_references() {
     let root = fixture("dependents");

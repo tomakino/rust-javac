@@ -122,6 +122,7 @@ fn references_cross_files_with_project_source_path() {
         source_level: "17".to_string(),
         source_path: vec![base.clone()],
     });
+    session.wait_for_index();
     WorkspaceService::diagnostics(&mut session, &a_path, Some(a_text));
     let references = WorkspaceService::references(&mut session, &a_path, Position::new(2, 10));
     assert_eq!(references.len(), 3, "references: {references:?}");
