@@ -26,15 +26,35 @@ use crate::tree::jc_tree::{TreeKind, TreeVisitor};
 use crate::util::list::List;
 
 /// Java: public class TreeScanner extends Visitor
+///
+/// ide-core: the scanner records enter/leave events so a post-order walk
+/// (children before parents) is available for the end-position fill; this is
+/// the port's single traversal hook (no per-node child lists needed).
 #[derive(Default)]
-pub struct TreeScanner;
+pub struct TreeScanner {
+    events: Vec<ScanEvent>,
+}
+
+/// Enter/leave marker for one visited tree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ScanEvent {
+    Enter(TreeId),
+    Leave(TreeId),
+}
 
 impl TreeScanner {
     /// Java: public void scan(JCTree tree) { if (tree != null) tree.accept(this); }
     pub fn scan(&mut self, ctx: &mut CompilerContext, tree: Option<TreeId>) {
         if let Some(tree) = tree {
+            self.events.push(ScanEvent::Enter(tree));
             crate::tree::jc_tree::accept(ctx, tree, self);
+            self.events.push(ScanEvent::Leave(tree));
         }
+    }
+
+    /// Take the recorded enter/leave events (post-order available on leave).
+    pub(crate) fn take_events(&mut self) -> Vec<ScanEvent> {
+        std::mem::take(&mut self.events)
     }
 
     /// Java: public void scan(List<? extends JCTree> trees)

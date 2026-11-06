@@ -40,13 +40,26 @@ pub trait EndPosTable {
 /// later lookups hit the table (single fill implementation).
 pub(crate) struct MapEndPosTable {
     positions: std::cell::RefCell<std::collections::HashMap<TreeId, i32>>,
+    /// Expression-level ends: subtree max (token/closure), without the
+    /// trailing `;`/`}` of the enclosing statement or declaration.
+    expression: std::cell::RefCell<std::collections::HashMap<TreeId, i32>>,
 }
 
 impl MapEndPosTable {
     pub(crate) fn new() -> MapEndPosTable {
         MapEndPosTable {
             positions: std::cell::RefCell::new(std::collections::HashMap::new()),
+            expression: std::cell::RefCell::new(std::collections::HashMap::new()),
         }
+    }
+
+    /// End of the expression/statement content of `tree` (no trailing `;`).
+    pub(crate) fn get_expression_end(&self, tree: TreeId) -> i32 {
+        self.expression.borrow().get(&tree).copied().unwrap_or(-1)
+    }
+
+    pub(crate) fn store_expression_end(&self, tree: TreeId, end: i32) {
+        self.expression.borrow_mut().insert(tree, end);
     }
 }
 
@@ -77,9 +90,7 @@ mod tests {
     use std::collections::HashMap;
 
     fn table() -> MapEndPosTable {
-        MapEndPosTable {
-            positions: std::cell::RefCell::new(HashMap::new()),
-        }
+        MapEndPosTable::new()
     }
 
     #[test]

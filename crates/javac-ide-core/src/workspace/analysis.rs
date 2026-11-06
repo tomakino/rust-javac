@@ -97,6 +97,8 @@ pub struct FileAnalysis {
     pub occurrences: Vec<Occurrence>,
     /// Cached LSP semantic-token data keyed by text hash.
     pub(crate) semantic_tokens_cache: Option<(u64, Vec<u32>)>,
+    /// Filled end-position table for the analyzed file (post-order text fill).
+    pub(crate) end_positions: Option<std::rc::Rc<crate::tree::end_pos_table::MapEndPosTable>>,
 }
 
 impl FileAnalysis {
@@ -138,6 +140,7 @@ impl FileAnalysis {
             declarations: Vec::new(),
             semantic_tokens_cache: None,
             occurrences: Vec::new(),
+            end_positions: None,
         }
     }
 
@@ -156,6 +159,7 @@ impl FileAnalysis {
         self.inlay_hint_cache.clear();
         self.selection_cache.clear();
         self.class_short_names = None;
+        self.end_positions = None;
     }
 
     /// Drop the cached diagnostics for the next query, keeping other per-file
@@ -163,6 +167,47 @@ impl FileAnalysis {
     pub(crate) fn invalidate_diagnostics(&mut self) {
         self.diagnostics_hash = None;
         self.cache = None;
+        self.end_positions = None;
+    }
+
+    /// Filled end-position table for `source` (lazily built, cached).
+    pub(crate) fn end_positions_for(
+        &mut self,
+        source: &Path,
+    ) -> Option<std::rc::Rc<crate::tree::end_pos_table::MapEndPosTable>> {
+        if let Some(table) = &self.end_positions {
+            return Some(std::rc::Rc::clone(table));
+        }
+        let key = PathBuf::from(canonical(source));
+        let text = self
+            .texts
+            .get(&key)
+            .cloned()
+            .or_else(|| std::fs::read_to_string(source).ok())?;
+        let target = PathBuf::from(canonical(source));
+        for index in 0..self.compiler.ctx.trees.len() {
+            let unit = crate::ids::TreeId::new(index as u32);
+            let source_path = match &self.compiler.ctx.tree(unit).kind {
+                TreeKind::CompilationUnit {
+                    sourcefile: Some(file),
+                    ..
+                } => PathBuf::from(canonical(Path::new(
+                    &file.get_name().to_string_lossy().to_string(),
+                ))),
+                _ => continue,
+            };
+            if source_path != target {
+                continue;
+            }
+            let table = crate::tree::end_position::fill_end_positions(
+                &mut self.compiler.ctx,
+                &text,
+                unit,
+            );
+            self.end_positions = Some(std::rc::Rc::clone(&table));
+            return Some(table);
+        }
+        None
     }
 
     /// Analyze one source file with the project class path.

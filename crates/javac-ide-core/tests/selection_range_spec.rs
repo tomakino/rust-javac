@@ -225,6 +225,7 @@ fn lambda_body() {
     let chain = ranges(&mut workspace, &path, source, position_of(source, "g(x)"));
     assert_nested(&chain);
     assert_contains(&chain, &range_of(source, "g(x)"));
+    eprintln!("[T] {chain:?}");
     assert_contains(&chain, &range_of(source, "x -> g(x)"));
 }
 

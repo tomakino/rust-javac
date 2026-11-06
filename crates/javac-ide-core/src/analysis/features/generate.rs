@@ -172,31 +172,27 @@ impl FileAnalysis {
         position: Position,
     ) -> Option<ClassContext> {
         let target = PathBuf::from(canonical(file));
-        // Class ranges come from the parser's end-position table (AST), not
-        // from text scanning. Each entry is (tree, class start byte, class end
-        // byte, class end UTF-16).
+        // Class ranges come from the filled end-position table (post-order
+        // text fill), not from text scanning. Each entry is (tree, class start
+        // byte, class end byte, class end UTF-16).
+        let table = self.end_positions_for(file);
         let mut classes: Vec<(crate::ids::TreeId, usize, usize, i32)> = Vec::new();
         for index in 0..self.compiler.ctx.trees.len() {
             let unit = crate::ids::TreeId::new(index as u32);
-            let (source, defs, end_positions) = match &self.compiler.ctx.tree(unit).kind {
+            let (source, defs) = match &self.compiler.ctx.tree(unit).kind {
                 TreeKind::CompilationUnit {
                     sourcefile: Some(source),
                     defs,
-                    end_positions,
                     ..
                 } => (
                     source.get_name().to_string_lossy().to_string(),
                     defs.clone(),
-                    end_positions.clone(),
                 ),
                 _ => continue,
             };
             if PathBuf::from(canonical(Path::new(&source))) != target {
                 continue;
             }
-            let Some(end_positions) = end_positions else {
-                continue;
-            };
             for def in defs.iter() {
                 if let TreeKind::ClassDecl { .. } = &self.compiler.ctx.tree(def).kind {
                     let class_pos_value = self.compiler.ctx.tree(def).pos;
@@ -205,7 +201,9 @@ impl FileAnalysis {
                         &self.compiler.ctx,
                         text,
                         def,
-                        Some(end_positions.as_ref()),
+                        table
+                            .as_ref()
+                            .map(|table| table.as_ref() as &dyn crate::tree::end_pos_table::EndPosTable),
                     );
                     if class_end_utf16 <= 0 {
                         continue;

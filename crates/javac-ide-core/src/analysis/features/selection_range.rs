@@ -25,6 +25,7 @@ use super::super::{canonical, FileAnalysis};
 use crate::compiler_context::CompilerContext;
 use crate::ids::TreeId;
 use crate::tree::jc_tree::{accept, TreeKind};
+use crate::tree::end_pos_table::EndPosTable;
 use crate::tree::tree_info::{end_pos, get_start_pos};
 use crate::tree::tree_scanner::{TreeScannerVisitor, tree_scanner_visitor_delegate};
 
@@ -262,8 +263,6 @@ impl ChainCollector {
                     .max()
             })
             .unwrap_or(-1);
-        // Authoritative end via `get_end_pos` (no text fallback here: the
-        // selection walk has its own children/token end).
         let known = crate::tree::tree_info::get_end_pos(ctx, Some(tree), None);
         if known > start {
             end = end.max(known);
@@ -295,19 +294,8 @@ impl ChainCollector {
                     break;
                 }
             }
-        } else if rest.starts_with("\"\"\"") {
-            let mut chars = rest[3..].char_indices();
-            while let Some((index, ch)) = chars.next() {
-                if ch == '\\' {
-                    let _ = chars.next();
-                    continue;
-                }
-                if rest[3 + index..].starts_with("\"\"\"") {
-                    consumed = 3 + index + 3;
-                    break;
-                }
-            }
-        } else if first == '"' || first == '\'' {
+        } else if first == '"' || first == '\''
+        {
             let quote = first;
             let mut chars = rest.char_indices().skip(1);
             while let Some((index, ch)) = chars.next() {
@@ -321,13 +309,12 @@ impl ChainCollector {
                 }
             }
         }
-        let length = rest[..consumed.min(rest.len())].encode_utf16().count() as i32;
-        start + length
+        start + rest[..consumed]
+            .chars()
+            .map(|ch| ch.len_utf16() as i32)
+            .sum::<i32>()
     }
 
-    /// Consume the `)`, `]` and `}` that close structures opened inside
-    /// `[start, end)`. The scan runs over the masked text, so brackets inside
-    /// strings and comments are never counted.
     fn close_brackets(&self, start: i32, end: i32) -> i32 {
         let Some(start_char) = char_index_of_utf16(&self.text, start) else {
             return end;
