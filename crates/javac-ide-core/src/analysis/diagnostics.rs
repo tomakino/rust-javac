@@ -10,23 +10,40 @@ pub(crate) fn convert_diagnostic(
     use crate::util::jc_diagnostic::DiagnosticType;
     let offset = diagnostic.get_position().max(0) as usize;
     let offset = offset.min(text.len());
-    let before = &text[..offset];
-    let line = before.matches('\n').count() as u32;
-    let column = before
-        .rfind('\n')
-        .map(|index| (offset - index - 1) as u32)
-        .unwrap_or(offset as u32);
+    let end = diagnostic_end(text, offset);
+    let (line, column) = super::positions::offset_to_line_col(text, offset);
+    let (end_line, end_column) = super::positions::offset_to_line_col(text, end);
     let severity = match diagnostic.get_type() {
         DiagnosticType::ERROR => javac_analysis_api::Severity::Error,
         DiagnosticType::WARNING => javac_analysis_api::Severity::Warning,
         _ => javac_analysis_api::Severity::Information,
     };
     javac_analysis_api::Diagnostic {
-        range: javac_analysis_api::Range::point(javac_analysis_api::Position::new(line, column)),
+        range: javac_analysis_api::Range::new(
+            javac_analysis_api::Position::new(line, column),
+            javac_analysis_api::Position::new(end_line, end_column),
+        ),
         severity,
         message: diagnostic.get_message(None).to_string_lossy(),
         code: Some(diagnostic.get_code_string()),
     }
+}
+
+fn diagnostic_end(text: &str, offset: usize) -> usize {
+    let mut end = offset;
+    for ch in text[offset..].chars() {
+        if ch.is_alphanumeric() || ch == '_' || ch == '$' {
+            end += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    if end == offset {
+        if let Some(ch) = text[offset..].chars().next() {
+            end += ch.len_utf8();
+        }
+    }
+    end.min(text.len())
 }
 
 

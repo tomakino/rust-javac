@@ -19,6 +19,37 @@ impl AnalysisSession {
             .cloned()
             .or_else(|| std::fs::read_to_string(file).ok())
             .unwrap_or_default();
+        let lines: Vec<&str> = text.lines().collect();
+        if let Some(line_text) = lines.get(position.line as usize) {
+            let trimmed = line_text.trim_start();
+            if trimmed.starts_with("import ") && !trimmed.starts_with("import static ") {
+                if let Some(end) = trimmed.find(';') {
+                    let path = trimmed[7..end].trim();
+                    if !path.is_empty() && !path.ends_with(".*") {
+                        if let Some(simple) = path.rsplit('.').next() {
+                            if text.matches(simple).count() <= 1 {
+                                let start = javac_analysis_api::Position::new(position.line, 0);
+                                let end_position = if (position.line as usize + 1) < lines.len() {
+                                    javac_analysis_api::Position::new(position.line + 1, 0)
+                                } else {
+                                    javac_analysis_api::Position::new(
+                                        position.line,
+                                        line_text.chars().map(|c| c.len_utf16() as u32).sum(),
+                                    )
+                                };
+                                return vec![javac_analysis_api::CodeAction {
+                                    title: format!("Remove unused import: {path}"),
+                                    edits: vec![javac_analysis_api::TextEdit {
+                                        range: javac_analysis_api::Range::new(start, end_position),
+                                        new_text: String::new(),
+                                    }],
+                                }];
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let Some(word) = word_at(
             &text,
             position.line as usize + 1,

@@ -33,13 +33,16 @@ The original compiler crate (crates/javac-core) is untouched.
 | textDocument/didChange | yes | full sync; incremental analysis (<1 ms on Gson) |
 | textDocument/didSave | yes | includeText; re-analyzes |
 | textDocument/didClose | yes | clears diagnostics |
-| textDocument/publishDiagnostics | yes | structured JCDiagnostic: line, UTF-16 column, message, severity |
+| textDocument/publishDiagnostics | yes | structured JCDiagnostic: UTF-16 start/end range, message, severity, code |
 | textDocument/completion | yes | prefix filter, ranking (class > interface > method > field), project index, Markdown Javadoc (project + JDK src.zip), auto-import additionalTextEdits |
 | textDocument/definition | yes | local declaration, project index, JDK source (JAVA_HOME/lib/src.zip) |
 | textDocument/hover | yes | class name / field / method signature (return and parameter types) |
-| textDocument/references | yes | word-boundary search in current file and indexed project sources |
+| textDocument/references | yes | symbol-level; project source_path compiled for cross-file results |
 | textDocument/documentSymbol | yes | class -> members hierarchy with ranges |
 | textDocument/inlayHint | yes | inferred var types and call parameter names, range-filtered |
+| textDocument/codeAction | yes | auto-import and remove-unused-import quick fixes |
+| textDocument/prepareRename | yes | range for the attributed symbol |
+| textDocument/rename | yes | symbol-level; cross-file edits grouped by file |
 
 ## Running
 
@@ -109,7 +112,9 @@ Regression:
   token still exists. Sublime LSP enables them with show_inlay_hints (false by
   default).
 - hover for fields falls back to the qualified name when the field type is unresolved.
-- diagnostics carry a single position (line + UTF-16 column), no length range.
+- compiler diagnostics span the offending identifier/token when one is available;
+  insertion-point diagnostics still collapse to a point. relatedInformation is
+  not produced yet.
 - Maven resolution is offline: no Gradle, no Maven profiles, no annotation
   processing/Lombok/generated sources, and no network. dependencyManagement
   scope is not applied yet; test source roots are parsed but not analyzed.

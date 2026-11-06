@@ -334,6 +334,8 @@ fn diagnostic_json(diagnostic: &Diagnostic) -> Value {
         "range": range_json(diagnostic.range),
         "severity": severity_number(diagnostic.severity),
         "message": diagnostic.message,
+        "code": diagnostic.code,
+        "source": "ravac-lsp",
     })
 }
 
