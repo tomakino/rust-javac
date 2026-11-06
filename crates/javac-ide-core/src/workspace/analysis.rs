@@ -144,7 +144,7 @@ impl FileAnalysis {
         self.text_hash = text_hash;
     }
 
-    fn rebuild(&mut self) {
+    pub(crate) fn rebuild(&mut self) {
         self.compiler = build_compiler(&self.config);
         self.initialized = false;
         self.traced.clear();
@@ -184,6 +184,20 @@ impl FileAnalysis {
         self.class_short_names = None;
         if self.initialized {
             self.compiler.types.reset_caches();
+        }
+        if self.initialized && self.config.source_path.is_empty() {
+            // Reusing the previous compiler round reported spurious override
+            // errors when dependencies come from the class path (generic
+            // supertypes read from class files). A fresh round matches javac;
+            // class-path analysis does not implicitly compile sources, so the
+            // rebuild stays cheap. Source-path mode keeps the incremental
+            // round (it would otherwise re-run implicit compilation).
+            self.rebuild();
+            self.compiler.set_overlays(&self.texts);
+            let key = PathBuf::from(canonical(source));
+            if let Some(text) = self.texts.get(&key) {
+                self.compiler.overlay_text = Some((key, text.clone()));
+            }
         }
         if !self.initialized {
             let _ = self.compiler.compile_files(&[source.to_path_buf()]);

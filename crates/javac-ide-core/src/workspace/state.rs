@@ -81,11 +81,27 @@ impl Workspace {
         if let Some(level) = source_level_override {
             model.source_level = level;
         }
+        let mut class_path = model.class_path();
+        // Dependencies are resolved from build output: the analysis compiler
+        // must not see project sources (a `module-info.java` on the source
+        // path hides JDK modules). The edited file is passed explicitly and
+        // its overlay text still wins.
+        for module in &project.modules {
+            for set in &module.source_sets {
+                if let Some(output) = &set.output
+                    && output.exists()
+                    && !class_path.contains(output)
+                {
+                    class_path.push(output.clone());
+                }
+            }
+        }
+        class_path.sort();
         let config = AnalysisConfig {
-            class_path: model.class_path(),
+            class_path,
             output_dir,
             source_level: model.source_level.clone(),
-            source_path: model.source_roots(),
+            source_path: Vec::new(),
         };
         Self::from_parts(
             config,
@@ -215,13 +231,14 @@ impl Workspace {
         }
     }
 
-    /// Keep only the edited file's analysis, invalidating its diagnostics.
+    /// Keep only the edited file's analysis.
+    ///
+    /// The edited file keeps its analysis (and diagnostics cache) so an
+    /// unchanged text does not trigger a re-analysis; a changed text is
+    /// recompiled by [`Self::analysis`] through its text-hash comparison.
     fn retain_analysis_for(&mut self, file: &Path) {
         let edited_id = self.analysis_key(file);
         self.analyses.entries.retain(|(id, _)| *id == edited_id);
-        for (_, analysis) in &mut self.analyses.entries {
-            analysis.invalidate_diagnostics();
-        }
     }
 
     /// Text the workspace currently associates with a file.
@@ -625,6 +642,7 @@ impl Workspace {
         file: &Path,
         text: Option<&str>,
     ) -> Option<&mut FileAnalysis> {
+        let provided = text.is_some();
         let text = match text {
             Some(text) => text.to_string(),
             None => self.text_of(file)?,
@@ -637,13 +655,40 @@ impl Workspace {
             if analysis.text_hash != hash {
                 analysis.texts = overlays.clone();
                 analysis.texts.insert(key.clone(), text.clone());
-                analysis.compiler.overlay_text = Some((key, text));
+                analysis.compiler.overlay_text = if provided || overlays.contains_key(&key) {
+                    Some((key.clone(), text.clone()))
+                } else {
+                    None
+                };
                 analysis.compiler.set_overlays(&overlays);
                 analysis.cache = None;
                 analysis.attach(file_id, hash);
+                // Re-analyzing a changed text reuses the old compiler round,
+                // which reported spurious override errors for class-path
+                // dependencies; a fresh compiler round matches javac.
+                if analysis.initialized {
+                    // A fresh compiler round matches javac; reusing the round
+                    // reported spurious override errors for class-path
+                    // dependencies. Hint memory survives the rebuild.
+                    let hints = std::mem::take(&mut analysis.inlay_hint_cache);
+                    analysis.rebuild();
+                    analysis.inlay_hint_cache = hints;
+                    analysis.texts = overlays.clone();
+                    analysis.texts.insert(key.clone(), text.clone());
+                    analysis.compiler.overlay_text = Some((key.clone(), text.clone()));
+                    analysis.compiler.set_overlays(&overlays);
+                }
                 let _ = analysis.analyze(file);
             } else {
                 analysis.compiler.set_overlays(&overlays);
+                // Only unsaved text needs the overlay parse path; a file read
+                // from disk must go through the file manager so path identity
+                // (binary name / module queries) stays intact.
+                analysis.compiler.overlay_text = if provided || overlays.contains_key(&key) {
+                    Some((key.clone(), text.clone()))
+                } else {
+                    None
+                };
             }
             self.analyses.insert(file_id, analysis);
             return self.analysis_mut(file_id);
@@ -652,7 +697,11 @@ impl Workspace {
         analysis.set_completion_show_constructors(self.completion_show_constructors);
         analysis.texts = overlays.clone();
         analysis.texts.insert(key.clone(), text.clone());
-        analysis.compiler.overlay_text = Some((key, text));
+        analysis.compiler.overlay_text = if provided || overlays.contains_key(&key) {
+            Some((key, text))
+        } else {
+            None
+        };
         analysis.compiler.set_overlays(&overlays);
         analysis.attach(file_id, hash);
         let _ = analysis.analyze(file);
