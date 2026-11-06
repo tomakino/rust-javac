@@ -20,6 +20,7 @@ mod inspections;
 mod jdk_docs;
 mod jdk_sources;
 mod positions;
+pub mod project_index;
 mod symbols;
 mod signatures;
 mod type_names;

@@ -4,6 +4,8 @@
 范围：crates/javac-ide-core、crates/ravac-lsp、editors/vscode/ravac-lsp
 目标：把 ravac-lsp 从“能演示的 Java LSP”推进到“能在真实 Java 项目里日常使用”。
 
+核心索引架构重构计划： [IDE_INDEX_PLAN.md](IDE_INDEX_PLAN.md)
+
 ## 1. 目标与非目标
 
 ### 目标
