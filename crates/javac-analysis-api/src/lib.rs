@@ -194,6 +194,12 @@ pub struct SignatureHelp {
 
 /// A text replacement.
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextDocumentEdit {
+    pub file: std::path::PathBuf,
+    pub edit: TextEdit,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextEdit {
     pub range: Range,
     pub new_text: String,
@@ -311,6 +317,22 @@ pub trait AnalysisHost {
 
     /// Hover text for the symbol at a position.
     fn hover(&mut self, file: &Path, position: Position) -> Option<String>;
+
+    /// Rename the symbol at a position across all project files.
+    fn rename_workspace(
+        &mut self,
+        file: &Path,
+        position: Position,
+        new_name: &str,
+    ) -> Vec<TextDocumentEdit> {
+        self.rename(file, position, new_name)
+            .into_iter()
+            .map(|edit| TextDocumentEdit {
+                file: file.to_path_buf(),
+                edit,
+            })
+            .collect()
+    }
 
     /// Rename the symbol at a position; returns the edits to apply.
     fn rename(&mut self, file: &Path, position: Position, new_name: &str) -> Vec<TextEdit> {

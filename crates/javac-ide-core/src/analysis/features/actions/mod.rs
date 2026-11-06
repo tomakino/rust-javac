@@ -71,6 +71,45 @@ impl AnalysisSession {
         Vec::new()
     }
 
+    /// Rename the symbol at a position across all project files.
+    pub(crate) fn rename_workspace_impl(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+        new_name: &str,
+    ) -> Vec<javac_analysis_api::TextDocumentEdit> {
+        let key = PathBuf::from(canonical(file));
+        let text = self
+            .texts
+            .get(&key)
+            .cloned()
+            .or_else(|| std::fs::read_to_string(file).ok())
+            .unwrap_or_default();
+        let line = position.line as usize + 1;
+        let column = position.column as usize + 1;
+        let Some(word) = word_at(&text, line, column) else {
+            return Vec::new();
+        };
+        let word_len: u32 = word.chars().map(|character| character.len_utf16() as u32).sum();
+        let locations = self.references_impl(file, position);
+        locations
+            .into_iter()
+            .map(|location| {
+                let start = location.range.start;
+                javac_analysis_api::TextDocumentEdit {
+                    file: location.file,
+                    edit: javac_analysis_api::TextEdit {
+                        range: javac_analysis_api::Range::new(
+                            start,
+                            javac_analysis_api::Position::new(start.line, start.column + word_len),
+                        ),
+                        new_text: new_name.to_string(),
+                    },
+                }
+            })
+            .collect()
+    }
+
     /// Rename the symbol at a position.
     pub(crate) fn rename_impl(
         &mut self,

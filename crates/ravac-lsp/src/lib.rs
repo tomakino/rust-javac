@@ -771,20 +771,23 @@ fn rename(host: &mut dyn AnalysisHost, message: &Value) -> Value {
     else {
         return Value::Null;
     };
-    let edits = host.rename(&path, position, new_name);
-    let uri = Url::from_file_path(&path)
-        .map(|url| url.to_string())
-        .unwrap_or_default();
-    let changes: Vec<Value> = edits
-        .iter()
-        .map(|edit| {
-            json!({
-                "range": range_json(edit.range),
-                "newText": edit.new_text,
-            })
-        })
-        .collect();
-    json!({ "changes": { uri: changes } })
+    let edits = host.rename_workspace(&path, position, new_name);
+    let mut changes = serde_json::Map::new();
+    for edit in edits {
+        let uri = Url::from_file_path(&edit.file)
+            .map(|url| url.to_string())
+            .unwrap_or_default();
+        let entry = changes
+            .entry(uri)
+            .or_insert_with(|| Value::Array(Vec::new()));
+        if let Value::Array(edits) = entry {
+            edits.push(json!({
+                "range": range_json(edit.edit.range),
+                "newText": edit.edit.new_text,
+            }));
+        }
+    }
+    json!({ "changes": changes })
 }
 
 fn prepare_rename(host: &mut dyn AnalysisHost, message: &Value) -> Value {

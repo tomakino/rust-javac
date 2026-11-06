@@ -36,7 +36,7 @@
 已知边界：
 
 - Maven 解析是离线的，只读本地 ~/.m2；不支持 Gradle、profiles、注解处理/Lombok、生成源码；test_source_roots 已解析但未加入分析；dependencyManagement 的 scope 尚未应用。
-- references/rename 已对已分析的编译单元使用 SymbolId，声明和同文件引用准确；跨文件仍受“一次只分析一个文件”的限制，需要项目级分析。
+- references/rename 已使用 SymbolId；同文件精确，跨文件通过 source_path 项目级编译后收集；项目级编译目前按请求执行，尚未缓存。
 - 诊断只有单点，没有 range、relatedInformation，也没有配套 quick fix。
 - 补全缺少继承成员、方法链、override、postfix、generate。
 - 不支持 Gradle、Lombok、注解处理、生成源码；test_source_roots 未加入分析。
@@ -260,7 +260,7 @@ P2 是补齐和优化，不阻塞 P0/P1。
 | ID | 项目 | 优先级 | 状态 | 验收信号 |
 |---|---|---|---|---|
 | P0-1 | Maven 传递依赖/parent/BOM | P0 | 完成（核心；test roots 在 P1-3） | 6 tests + 本地 JUnit/Hamcrest 传输依赖探针 |
-| P0-2 | 符号级 references/rename | P0 | 进行中（同文件 + prepareRename；跨文件待项目级分析） | 同名/注释/字符串不误改 |
+| P0-2 | 符号级 references/rename | P0 | 完成（同文件 + 跨文件项目级 + prepareRename；项目编译待缓存） | 同名/注释/字符串/跨文件 fixture 通过 |
 | P0-3 | 诊断范围 + quick fix | P0 | 未开始 | Problems 可一键修 |
 | P0-4 | 继承成员/方法链补全 | P0 | 未开始 | completion_spec 新增用例通过 |
 | P1-1 | 增量同步/取消/进度/配置 | P1 | 未开始 | 取消与 pom 变更测试通过 |

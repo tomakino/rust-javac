@@ -183,6 +183,15 @@ impl javac_analysis_api::AnalysisHost for AnalysisSession {
         self.inlay_hints_impl(file)
     }
 
+    fn rename_workspace(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+        new_name: &str,
+    ) -> Vec<javac_analysis_api::TextDocumentEdit> {
+        self.rename_workspace_impl(file, position, new_name)
+    }
+
     fn rename(
         &mut self,
         file: &Path,

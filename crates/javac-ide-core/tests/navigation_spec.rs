@@ -81,3 +81,53 @@ fn rename_does_not_touch_comments_strings_or_shadowed_names() {
     let lines: Vec<u32> = edits.iter().map(|edit| edit.range.start.line).collect();
     assert_eq!(lines, vec![1, 4, 8], "edits: {edits:?}");
 }
+
+#[test]
+fn references_cross_files_with_project_source_path() {
+    let base = PathBuf::from("target/tmp/navigation-cross-spec");
+    std::fs::create_dir_all(&base).unwrap();
+    let a_path = base.join("A.java");
+    let b_path = base.join("B.java");
+    let a_text = "public class A {\n    void f(B b) {\n        b.value = 1;\n        b.value++;\n    }\n}\n";
+    let b_text = "public class B {\n    int value;\n}\n";
+    std::fs::write(&a_path, a_text).unwrap();
+    std::fs::write(&b_path, b_text).unwrap();
+
+    let output = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("target")
+        .join("tmp")
+        .join("navigation-cross-spec-out");
+    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("target")
+            .join("debug");
+        unsafe {
+            std::env::set_var("RAVAC_PLATFORM_DIR", root);
+        }
+    }
+    let mut session = AnalysisSession::new(AnalysisConfig {
+        class_path: Vec::new(),
+        output_dir: output,
+        source_level: "17".to_string(),
+        source_path: vec![base.clone()],
+    });
+    AnalysisHost::analyze(&mut session, &a_path, Some(a_text));
+    let references = AnalysisHost::references(&mut session, &a_path, Position::new(2, 10));
+    assert_eq!(references.len(), 3, "references: {references:?}");
+    let files: Vec<String> = references
+        .iter()
+        .map(|location| location.file.file_name().unwrap().to_string_lossy().to_string())
+        .collect();
+    assert!(files.iter().any(|file| file == "A.java"));
+    assert!(files.iter().any(|file| file == "B.java"));
+
+    let edits = AnalysisHost::rename_workspace(&mut session, &a_path, Position::new(2, 10), "renamed");
+    assert_eq!(edits.len(), 3, "edits: {edits:?}");
+    let a_edits = edits.iter().filter(|edit| edit.file.ends_with("A.java")).count();
+    let b_edits = edits.iter().filter(|edit| edit.file.ends_with("B.java")).count();
+    assert_eq!((a_edits, b_edits), (2, 1), "edits: {edits:?}");
+}

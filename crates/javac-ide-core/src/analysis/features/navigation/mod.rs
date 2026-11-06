@@ -333,9 +333,83 @@ impl AnalysisSession {
         file: &Path,
         position: javac_analysis_api::Position,
     ) -> Vec<javac_analysis_api::Location> {
+        // A project-wide pass keeps symbols for every source file. The resident
+        // session only keeps one active file, which is enough for navigation but
+        // not for cross-file references.
+        if let Some(mut project) = self.project_session() {
+            if let Some((target, _)) = project.symbol_id_at(file, position) {
+                let locations = project.collect_references(target);
+                if !locations.is_empty() {
+                    return locations;
+                }
+            }
+        }
         let Some((target, _)) = self.symbol_id_at(file, position) else {
             return Vec::new();
         };
+        self.collect_references(target)
+    }
+
+    fn project_source_files(&self) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        let mut pending: Vec<PathBuf> = self.config().source_path.clone();
+        let mut seen = std::collections::HashSet::new();
+        while let Some(directory) = pending.pop() {
+            if !seen.insert(directory.clone()) {
+                continue;
+            }
+            let Ok(entries) = std::fs::read_dir(&directory) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else if path.extension().is_some_and(|extension| extension == "java") {
+                    files.push(path);
+                }
+            }
+        }
+        files.sort();
+        files
+    }
+
+    fn project_session(&self) -> Option<AnalysisSession> {
+        let files = self.project_source_files();
+        if files.is_empty() {
+            return None;
+        }
+        let mut project = AnalysisSession::new(self.config().clone());
+        let _ = project.compiler.compile_files(&files);
+        Some(project)
+    }
+
+    fn symbol_declaration_location(
+        &self,
+        symbol: SymbolId,
+    ) -> Option<javac_analysis_api::Location> {
+        let position = self.compiler.ctx.sym(symbol).pos.get();
+        if position < 0 {
+            return None;
+        }
+        let mut current = symbol;
+        for _ in 0..16 {
+            let current_symbol = self.compiler.ctx.sym(current);
+            if let crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } =
+                &current_symbol.kind_data
+            {
+                let file = sourcefile.as_ref().map(|source| {
+                    PathBuf::from(canonical(Path::new(&source.get_name().to_string_lossy())))
+                })?;
+                let text = self.source_text(&file)?;
+                return location_at(&text, &file, position);
+            }
+            current = current_symbol.owner?;
+        }
+        None
+    }
+
+    fn collect_references(&mut self, target: SymbolId) -> Vec<javac_analysis_api::Location> {
         let mut roots = Vec::new();
         for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {
             let crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } = &tree.kind else {
@@ -361,31 +435,8 @@ impl AnalysisSession {
             collector.scan(&mut self.compiler.ctx, Some(root));
             locations.extend(collector.locations);
         }
-        // The declaration tree carries the token position for fields and
-        // parameters even when sym.pos is NOPOS.
-        if let Some(tree_text) = self.source_text(file) {
-            let declaration_file = PathBuf::from(canonical(file));
-            for tree in self.compiler.ctx.trees.iter() {
-                let position = match &tree.kind {
-                    crate::tree::jc_tree::TreeKind::VariableDecl {
-                        sym: Some(sym),
-                        decl_pos,
-                        ..
-                    } if *sym == target => *decl_pos,
-                    crate::tree::jc_tree::TreeKind::MethodDecl { sym: Some(sym), .. }
-                    | crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. }
-                        if *sym == target =>
-                    {
-                        self.compiler.ctx.sym(*sym).pos.get()
-                    }
-                    _ => continue,
-                };
-                if position >= 0 {
-                    if let Some(location) = location_at(&tree_text, &declaration_file, position) {
-                        locations.push(location);
-                    }
-                }
-            }
+        if let Some(location) = self.symbol_declaration_location(target) {
+            locations.push(location);
         }
         locations.sort_by_key(|location| {
             (
@@ -498,6 +549,32 @@ impl ReferenceCollector {
 }
 
 impl crate::tree::tree_scanner::TreeScannerVisitor for ReferenceCollector {
+    fn visit_var_def(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: crate::ids::TreeId,
+    ) {
+        let (mods, vartype, nameexpr, init, sym, decl_pos) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::VariableDecl {
+                mods,
+                vartype,
+                nameexpr,
+                init,
+                sym,
+                decl_pos,
+                ..
+            } => (*mods, *vartype, *nameexpr, *init, *sym, *decl_pos),
+            _ => return,
+        };
+        if let Some(sym) = sym {
+            self.record(sym, decl_pos);
+        }
+        self.scan(ctx, mods);
+        self.scan(ctx, vartype);
+        self.scan(ctx, nameexpr);
+        self.scan(ctx, init);
+    }
+
     fn visit_ident(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -531,4 +608,3 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for ReferenceCollector {
 }
 
 crate::tree::tree_scanner::tree_scanner_visitor_delegate!(ReferenceCollector);
-
