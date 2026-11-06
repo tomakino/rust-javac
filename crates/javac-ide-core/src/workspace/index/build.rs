@@ -4,16 +4,20 @@
 //! own compilation units are indexed. The compiler is dropped after every
 //! batch, so the index never owns a compiler session.
 
+use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use crate::code::flags;
 use crate::code::scope::LookupKind;
 use crate::code::symbol::SymbolKind;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{SymbolId as CompilerSymbolId, TreeId};
+use crate::main::mini_compiler::MiniCompiler;
+use crate::tree::doc_comment_table::DocCommentTable;
 use crate::tree::jc_tree::TreeKind;
 use crate::tree::tree_scanner::TreeScannerVisitor;
 
@@ -91,6 +95,8 @@ pub struct IndexBuilder {
     status_reason: Option<String>,
     overlays: HashMap<PathBuf, String>,
     strings: StringInterner,
+    /// Rendered Javadoc of the symbols in the batch being indexed.
+    javadocs: HashMap<CompilerSymbolId, String>,
 }
 
 impl IndexBuilder {
@@ -147,6 +153,7 @@ impl IndexBuilder {
             status_reason: None,
             overlays: HashMap::new(),
             strings: StringInterner::default(),
+            javadocs: HashMap::new(),
         }
     }
 
@@ -246,25 +253,27 @@ impl IndexBuilder {
             }
         }
         let failed_files = self.failed_files.clone();
-        let result = IndexBuildResult {
-            index: ProjectIndex {
-                generation: 1,
-                workspace: self.model.fingerprint(),
-                strings: self.strings,
-                symbols: self.symbols,
-                by_key: self.by_key,
-                by_name: self.by_name,
-                by_file: self.by_file,
-                by_supertype: self.by_supertype,
-                occurrences: self.occurrences,
-                files: self.records,
-                status,
-            },
+        let mut index = ProjectIndex {
+            generation: 1,
+            workspace: self.model.fingerprint(),
+            strings: self.strings,
+            symbols: self.symbols,
+            by_key: self.by_key,
+            by_name: self.by_name,
+            by_file: self.by_file,
+            by_supertype: self.by_supertype,
+            occurrences: self.occurrences,
+            dependents: HashMap::new(),
+            files: self.records,
+            status,
+        };
+        index.compute_dependents();
+        IndexBuildResult {
+            index,
             skipped_files: self.skipped_files,
             failed_files,
             occurrence_bytes: self.occurrence_bytes,
-        };
-        result
+        }
     }
 
     fn build_batch(&mut self, batch: &[PathBuf]) {
@@ -278,6 +287,7 @@ impl IndexBuilder {
             }
         }
         let compiled = session.compiler.compile_files(batch);
+        self.javadocs = collect_javadocs(&mut session.compiler);
         let failed = compiled.is_err() || session.compiler.log.nerrors.get() > 0;
         if failed {
             for path in batch {
@@ -447,6 +457,7 @@ impl IndexBuilder {
             flat_name: flat_name.clone(),
             supertypes: Vec::new(),
             return_type: None,
+            javadoc: self.javadocs.get(&symbol).cloned(),
         });
         self.by_key.insert(key, id);
         self.by_name.entry(name).or_default().push(id);
@@ -594,20 +605,20 @@ impl IndexBuilder {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct RawOccurrence {
-    symbol: CompilerSymbolId,
-    position: i32,
-    role: OccurrenceRole,
+pub(crate) struct RawOccurrence {
+    pub(crate) symbol: CompilerSymbolId,
+    pub(crate) position: i32,
+    pub(crate) role: OccurrenceRole,
 }
 
-struct OccurrenceCollector {
+pub(crate) struct OccurrenceCollector {
     file: FileId,
     text: String,
-    raw: Vec<RawOccurrence>,
+    pub(crate) raw: Vec<RawOccurrence>,
 }
 
 impl OccurrenceCollector {
-    fn new(file: FileId, text: String) -> Self {
+    pub(crate) fn new(file: FileId, text: String) -> Self {
         Self {
             file,
             text,
@@ -687,7 +698,7 @@ impl TreeScannerVisitor for OccurrenceCollector {
 
 crate::tree::tree_scanner::tree_scanner_visitor_delegate!(OccurrenceCollector);
 
-fn source_file(ctx: &CompilerContext, symbol: CompilerSymbolId) -> Option<PathBuf> {
+pub(crate) fn source_file(ctx: &CompilerContext, symbol: CompilerSymbolId) -> Option<PathBuf> {
     match &ctx.sym(symbol).kind_data {
         SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile
             .as_ref()
@@ -699,7 +710,7 @@ fn source_file(ctx: &CompilerContext, symbol: CompilerSymbolId) -> Option<PathBu
     }
 }
 
-fn symbol_kind(ctx: &CompilerContext, symbol: CompilerSymbolId) -> Option<IndexSymbolKind> {
+pub(crate) fn symbol_kind(ctx: &CompilerContext, symbol: CompilerSymbolId) -> Option<IndexSymbolKind> {
     match &ctx.sym(symbol).kind_data {
         SymbolKind::ClassSymbol { .. } => {
             let flags = ctx.sym(symbol).flags_field;
@@ -742,7 +753,7 @@ fn symbol_kind(ctx: &CompilerContext, symbol: CompilerSymbolId) -> Option<IndexS
     }
 }
 
-fn class_supertypes(ctx: &CompilerContext, class: CompilerSymbolId) -> Vec<String> {
+pub(crate) fn class_supertypes(ctx: &CompilerContext, class: CompilerSymbolId) -> Vec<String> {
     let mut names = Vec::new();
     for index in 0..ctx.trees.len() {
         if let TreeKind::ClassDecl {
@@ -766,7 +777,7 @@ fn class_supertypes(ctx: &CompilerContext, class: CompilerSymbolId) -> Vec<Strin
     names
 }
 
-fn kind_name(kind: IndexSymbolKind) -> &'static str {
+pub(crate) fn kind_name(kind: IndexSymbolKind) -> &'static str {
     match kind {
         IndexSymbolKind::Class => "class",
         IndexSymbolKind::Interface => "interface",
@@ -787,6 +798,65 @@ pub(crate) fn hash_text(text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     text.hash(&mut hasher);
     hasher.finish()
+}
+
+/// Rendered Javadoc of every declaration in the compiled batch, keyed by the
+/// compiler symbol id. Symbols outside the batch have no entry.
+///
+/// A compilation unit is created *after* its children in the tree arena, so
+/// tree ids cannot delimit units; tables are associated by source file.
+pub(crate) fn collect_javadocs(compiler: &mut MiniCompiler) -> HashMap<CompilerSymbolId, String> {
+    let mut tables: HashMap<PathBuf, Rc<RefCell<dyn DocCommentTable>>> = HashMap::new();
+    for index in 0..compiler.ctx.trees.len() {
+        let tree_id = TreeId::new(index as u32);
+        if let TreeKind::CompilationUnit {
+            sourcefile: Some(source),
+            doc_comments: Some(table),
+            ..
+        } = &compiler.ctx.tree(tree_id).kind
+        {
+            let key = PathBuf::from(canonical(Path::new(&source.get_name().to_string_lossy())));
+            tables.insert(key, table.clone());
+        }
+    }
+    if tables.is_empty() {
+        return HashMap::new();
+    }
+    let mut docs = HashMap::new();
+    for index in 0..compiler.ctx.trees.len() {
+        let tree_id = TreeId::new(index as u32);
+        let symbol = match &compiler.ctx.tree(tree_id).kind {
+            TreeKind::ClassDecl { sym, .. }
+            | TreeKind::MethodDecl { sym, .. }
+            | TreeKind::VariableDecl { sym, .. } => *sym,
+            _ => None,
+        };
+        let Some(symbol) = symbol else {
+            continue;
+        };
+        let Some(source) = source_file(&compiler.ctx, symbol) else {
+            continue;
+        };
+        let key = PathBuf::from(canonical(&source));
+        let Some(table) = tables.get(&key).cloned() else {
+            continue;
+        };
+        let rendered = {
+            let mut table_ref = table.borrow_mut();
+            table_ref
+                .get_comment_tree(&mut compiler.ctx, tree_id)
+                .and_then(|tree| crate::analysis::doc_render::format_doc_comment(&tree))
+                .or_else(|| {
+                    table_ref
+                        .get_comment_text(tree_id)
+                        .map(|text| text.to_string_lossy())
+                })
+        };
+        if let Some(text) = rendered {
+            docs.insert(symbol, text);
+        }
+    }
+    docs
 }
 
 pub fn collect_java_files(roots: &[PathBuf]) -> Vec<PathBuf> {

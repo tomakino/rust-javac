@@ -32,6 +32,18 @@ pub struct Workspace {
     completion_show_constructors: bool,
     /// Stable analysis slots for files that are not (yet) in the index.
     temporary_ids: HashMap<PathBuf, FileId>,
+    incremental_updates: u64,
+    full_rebuilds: u64,
+}
+
+/// Observable index counters, used by tests and the LSP stats request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IndexStats {
+    pub generation: u64,
+    pub files: usize,
+    pub symbols: usize,
+    pub incremental_updates: u64,
+    pub full_rebuilds: u64,
 }
 
 impl Workspace {
@@ -65,6 +77,8 @@ impl Workspace {
             stamps: HashMap::new(),
             completion_show_constructors: false,
             temporary_ids: HashMap::new(),
+            incremental_updates: 0,
+            full_rebuilds: 0,
         };
         workspace.update_stamps();
         workspace.start_background_build();
@@ -93,6 +107,18 @@ impl Workspace {
 
     pub fn is_building(&self) -> bool {
         self.index.is_building()
+    }
+
+    /// Snapshot counters for diagnostics and tests.
+    pub fn index_stats(&self) -> IndexStats {
+        let snapshot = self.index.snapshot();
+        IndexStats {
+            generation: snapshot.generation,
+            files: snapshot.files.len(),
+            symbols: snapshot.symbols.len(),
+            incremental_updates: self.incremental_updates,
+            full_rebuilds: self.full_rebuilds,
+        }
     }
 
     /// Record an open buffer so every query sees it instead of the disk text.
@@ -181,71 +207,116 @@ impl Workspace {
 
     /// Make sure the index snapshot reflects the current sources.
     ///
-    /// Disk edits and overlay changes mark the workspace dirty; the next
-    /// index-backed query waits for the rebuild so it never answers from a
-    /// stale snapshot.
+    /// A content change in an already-indexed file is applied in place
+    /// ([`try_incremental_update`]); anything else (new/deleted files, failed
+    /// extraction, unsafe edits) falls back to a background full rebuild.
     pub(crate) fn ensure_index(&mut self) {
         self.poll_build();
-        self.detect_changes();
-        if !self.dirty && self.index.snapshot().generation > 0 {
+        if self.build.is_some() {
+            self.join_build();
+            self.dirty = false;
             return;
+        }
+        if self.index.snapshot().generation > 0 {
+            let changed = self.changed_files();
+            if changed.is_empty() {
+                self.dirty = false;
+                return;
+            }
+            if self.try_incremental_update(&changed) {
+                return;
+            }
         }
         if self.build.is_none() {
             self.start_background_build();
         }
         self.join_build();
+        self.dirty = false;
     }
 
-    fn detect_changes(&mut self) {
-        if self.index.snapshot().generation == 0 {
-            return;
+    /// Try to apply in-place updates for `changed` files.
+    ///
+    /// Only content changes to existing files are eligible; new/deleted files
+    /// and unsafe edits return `false` so the caller can rebuild.
+    fn try_incremental_update(&mut self, changed: &[PathBuf]) -> bool {
+        let snapshot = self.index.snapshot();
+        let mut next = (*snapshot).clone();
+        for path in changed {
+            let Some(file_id) = snapshot.file_id_for_path(path) else {
+                return false;
+            };
+            let Some(text) = self.text_of(path) else {
+                return false;
+            };
+            let extraction = index::extract::extract_file(&self.config, path, file_id, &text);
+            if extraction.failed {
+                return false;
+            }
+            let hash = hash_text(&text);
+            let Some(updated) =
+                index::update::apply_file_update(&next, file_id, hash, &extraction)
+            else {
+                return false;
+            };
+            next = updated;
         }
-        if self.sources_changed() {
-            self.dirty = true;
+        next.generation = snapshot.generation.saturating_add(1);
+        if let Some(cache) = index::dump::cache_path(index::dump::workspace_hash(&self.model)) {
+            let _ = index::dump::save(&next, &cache);
         }
+        self.index.publish(next);
+        self.update_stamps();
+        self.dirty = false;
+        self.incremental_updates += 1;
+        true
     }
 
-    fn sources_changed(&self) -> bool {
+    /// Files whose content no longer matches the published snapshot.
+    ///
+    /// Also reports added (`path` not in the snapshot) and removed files; the
+    /// incremental updater rejects both and the caller rebuilds.
+    fn changed_files(&self) -> Vec<PathBuf> {
         let snapshot = self.index.snapshot();
         if snapshot.files.is_empty() {
-            return false;
+            return Vec::new();
         }
         let current = index::collect_java_files(&self.model.source_roots());
-        if current.len() != snapshot.files.len() {
-            return true;
-        }
-        for (path, record) in current.iter().zip(snapshot.files.iter()) {
-            if path != &record.path {
-                return true;
-            }
-            if let Some(text) = self.overlays.get(path) {
+        let mut changed = Vec::new();
+        let mut present: Vec<&PathBuf> = current.iter().collect();
+        for record in &snapshot.files {
+            let Some(position) = present.iter().position(|path| **path == record.path) else {
+                changed.push(record.path.clone()); // deleted
+                continue;
+            };
+            present.remove(position);
+            if let Some(text) = self.overlays.get(&record.path) {
                 if hash_text(text) != record.hash {
-                    return true;
+                    changed.push(record.path.clone());
                 }
                 continue;
             }
-            let Some((mtime, len)) = self.stamps.get(path) else {
-                return true;
+            let Some((mtime, len)) = self.stamps.get(&record.path) else {
+                changed.push(record.path.clone());
+                continue;
             };
-            let Ok(meta) = std::fs::metadata(path) else {
-                return true;
+            let Ok(meta) = std::fs::metadata(&record.path) else {
+                changed.push(record.path.clone());
+                continue;
             };
-            let changed = meta.modified().ok().as_ref() != Some(mtime) || meta.len() != *len;
-            if changed {
-                let hash = std::fs::read_to_string(path)
+            let touched =
+                meta.modified().ok().as_ref() != Some(mtime) || meta.len() != *len;
+            if touched {
+                let hash = std::fs::read_to_string(&record.path)
                     .map(|text| hash_text(&text))
                     .unwrap_or(0);
                 if hash != record.hash {
-                    return true;
+                    changed.push(record.path.clone());
                 }
             }
         }
-        for path in self.overlays.keys() {
-            if snapshot.file_id_for_path(path).is_none() {
-                return true;
-            }
-        }
-        false
+        // Any file left over was added after the snapshot.
+        changed.extend(present.into_iter().cloned());
+        changed
     }
 
     fn update_stamps(&mut self) {
@@ -281,6 +352,7 @@ impl Workspace {
         self.index.publish(index);
         self.dirty = false;
         self.update_stamps();
+        self.full_rebuilds += 1;
     }
 
     /// Force a rebuild after external changes (pom/classpath/file watchers).
@@ -388,6 +460,7 @@ pub(crate) fn empty_index(status: IndexStatus) -> ProjectIndex {
         by_file: Default::default(),
         by_supertype: Default::default(),
         occurrences: Default::default(),
+        dependents: Default::default(),
         files: Vec::new(),
         status,
     }

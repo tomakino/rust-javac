@@ -388,28 +388,30 @@ ravac-lsp：
 
 ## 15. 实施记录（2026-11-06）
 
-本次按第 11 节顺序完成 M2 遗留清理、M3、M4 的主体实现；门禁全部通过。
+本次按第 11 节顺序完成 M2 遗留清理、M3、M4；门禁与新增基准全部通过。
 
 完成：
 
-- M2 结构清理：`analysis/project_index` 迁移为 `workspace/index/{key,model,build,store,query,update,dump}.rs`；`AnalysisHost` 删除并由 `WorkspaceService` 取代；prepareRename 改走索引 occurrence；`completion/mod.rs`（2400 行）与 `navigation/mod.rs`（550 行）按职责拆分，模块根文件只保留声明。
-- M3：`Workspace` 持有 `IndexStore`（`RwLock<Arc<ProjectIndex>>`）与最多 4 项 `FileAnalysis` LRU；overlay 文本参与索引与查询；磁盘文件用 mtime/len + hash 检测变更并后台重建；`workspace/didChangeWatchedFiles` 与 `invalidate` 接入；Partial 状态显式化，索引查询在 Partial 时拒绝。
-- M4：`dump.rs` 实现版本化紧凑二进制（varint + 字符串表）、原子写与加载校验（fingerprint + 逐文件 hash）；`IndexLimits` 支持 `max_indexed_files`/`max_occurrence_bytes` 降级；completion 项目候选改由索引提供。
+- M2 结构清理：`analysis/project_index` 迁移为 `workspace/index/{key,model,build,store,query,update,extract,dump}.rs`；`AnalysisHost` 删除并由 `WorkspaceService` 取代；prepareRename 改走索引 occurrence；`completion/mod.rs`（2400 行）与 `navigation/mod.rs`（550 行）按职责拆分，模块根文件只保留声明。
+- M3：`Workspace` 持有 `IndexStore`（`RwLock<Arc<ProjectIndex>>`）与最多 4 项 `FileAnalysis` LRU；overlay 文本参与索引与查询；磁盘文件用 mtime/len + hash 检测变更；`workspace/didChangeWatchedFiles` 与 `invalidate` 接入；Partial 状态显式化，索引查询在 Partial 时拒绝。
+- M3 增量：`index/extract.rs` 单文件提取声明/occurrence/supertype/Javadoc；`index/update.rs::apply_file_update` 按 `(flat name, kind, signature)` 复用 `SymbolId` 并局部替换该文件的 `FileIndex`，声明未变时不再全量重建；`ProjectIndex.dependents` 记录反向依赖并提供 `dependents_of` / `dependent_closure`。
+- M4：`dump.rs` 版本化紧凑二进制（varint + 字符串表）、原子写与加载校验（fingerprint + 逐文件 hash）；`IndexLimits` 支持 `max_indexed_files`/`max_occurrence_bytes` 降级；completion 项目候选改由索引提供。
+- M4 Javadoc：批编译后按源文件关联 doc comment 表，`SymbolRecord.javadoc` 随索引持久化；`Workspace::hover` 优先返回索引 detail + Javadoc。
 
 测试：
 
-- 新增 `tests/index_spec.rs`（12 项）：声明/occurrence/supertype、重载键、注释/字符串/遮蔽、跨包同名类、接口/外部 supertype、workspace/symbol、增删改文件、overlay、磁盘 roundtrip 与 hash 不匹配回退、文件数阈值 Partial。
-- `navigation_spec`、`diagnostics_spec`、`completion_spec`、`completion_project_spec` 改走 `WorkspaceService`/`FileAnalysis`，行为保持。
+- `tests/index_spec.rs`（14 项）：声明/occurrence/supertype、重载键、注释/字符串/遮蔽、跨包同名类、接口/外部 supertype、workspace/symbol、增删改文件、overlay、磁盘 roundtrip 与 hash 不匹配回退、文件数阈值 Partial、Javadoc 提取、索引 Javadoc hover、Javadoc 磁盘 roundtrip。
+- `tests/index_perf_spec.rs`（5 项）：120 文件构建/查询时间预算、索引内存上限、方法体编辑走增量且不触发全量、被引用符号删除回退全量、反向依赖表方向与闭包。
+- `navigation_spec`、`diagnostics_spec`、`completion_spec`、`completion_project_spec`、`inlay_hints` 改走 `WorkspaceService`/`FileAnalysis`，行为保持。
 - LSP 冒烟新增 workspace/symbol、跨文件 rename、index generation 缓存计数，17/17 通过。
 
 偏差（显式记录）：
 
 - 索引符号类型名保留 `IndexSymbolKind`，避免与编译器 `code::symbol::SymbolKind` 冲突。
-- `ProjectIndex` 新增 `workspace: WorkspaceFingerprint`；`FileRecord` 用 `status: FileStatus` 替代 `failed: bool`。
+- `ProjectIndex` 新增 `workspace: WorkspaceFingerprint` 与 `dependents`；`FileRecord` 用 `status: FileStatus` 替代 `failed: bool`。
 - `IndexStatus::is_ready` 只认 `Ready`；Partial 时不返回索引结果，回退单文件分析。
-- 细粒度增量仅做到“检测 + 分类”：声明/签名/supertype 未变时可替换文件索引，当前实现仍通过后台全量重建保证一致性；真正的单文件 FileIndex 局部替换与反向依赖表未实现。
-- 后台构建在“没有可用快照”或“overlay 与快照不一致”时仍会等待构建完成，优先保证查询正确性。
-- hover 的项目符号走索引 detail；Javadoc 仍通过 `FileAnalysis` 取得。
+- 增量边界：仅“已存在文件的内容变化”走局部替换；新增/删除文件、被其他文件引用的声明被移除、提取失败时回退后台全量重建。声明变化时仍以全量重建保证正确性；反向依赖表用于确定影响范围与验证，未单独重建依赖闭包。
+- 局部替换保留被移除声明的 `SymbolId` 槽位（tombstone），不再被任何索引表引用。
+- 后台构建在“没有可用快照”时仍会等待构建完成，优先保证查询正确性。
+- hover 的 Javadoc 走索引；索引未命中时回退 `FileAnalysis`。
 - `WorkspaceService` 除第 9 节列出的方法外，保留 LSP 必需的 type/call hierarchy、implementation、format、symbols/symbol_at、invalidate、configuration/reconfigure、index_generation。
-- 未做基准型性能/内存测试；仅有 occurrence 字节阈值的行为测试。
-

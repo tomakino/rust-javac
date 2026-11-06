@@ -83,6 +83,8 @@ pub struct SymbolRecord {
     pub flat_name: String,
     pub supertypes: Vec<TypeRef>,
     pub return_type: Option<TypeRef>,
+    /// Rendered Javadoc of the declaration, when present.
+    pub javadoc: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,7 +177,7 @@ pub struct WorkspaceFingerprint {
 
 /// Read-only snapshot of the whole project. `Arc<ProjectIndex>` is the unit of
 /// publication; queries clone the `Arc` and never observe a partial mutation.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProjectIndex {
     pub generation: u64,
     pub workspace: WorkspaceFingerprint,
@@ -186,11 +188,62 @@ pub struct ProjectIndex {
     pub by_file: HashMap<FileId, FileIndex>,
     pub by_supertype: HashMap<SymbolId, Vec<SymbolId>>,
     pub occurrences: HashMap<SymbolId, Vec<Occurrence>>,
+    /// Declaring file -> files that reference its symbols. Used to bound
+    /// invalidation when a declaration changes.
+    pub dependents: HashMap<FileId, Vec<FileId>>,
     pub files: Vec<FileRecord>,
     pub status: IndexStatus,
 }
 
 impl ProjectIndex {
+    /// Recompute the reverse dependency table from the occurrence facts.
+    pub fn compute_dependents(&mut self) {
+        let mut dependents: HashMap<FileId, Vec<FileId>> = HashMap::new();
+        for (symbol, occurrences) in &self.occurrences {
+            let Some(record) = self.symbols.get(*symbol as usize) else {
+                continue;
+            };
+            let declarer = record.file;
+            for occurrence in occurrences {
+                if occurrence.file == declarer {
+                    continue;
+                }
+                let entry = dependents.entry(declarer).or_default();
+                if !entry.contains(&occurrence.file) {
+                    entry.push(occurrence.file);
+                }
+            }
+        }
+        for files in dependents.values_mut() {
+            files.sort_unstable();
+        }
+        self.dependents = dependents;
+    }
+
+    /// Files that must be re-indexed when `file`'s declarations change.
+    pub fn dependents_of(&self, file: FileId) -> &[FileId] {
+        self.dependents
+            .get(&file)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// Transitive closure of `file` plus everything that depends on it.
+    pub fn dependent_closure(&self, file: FileId) -> Vec<FileId> {
+        let mut visited = vec![file];
+        let mut index = 0;
+        while index < visited.len() {
+            let current = visited[index];
+            index += 1;
+            for dependent in self.dependents_of(current) {
+                if !visited.contains(dependent) {
+                    visited.push(*dependent);
+                }
+            }
+        }
+        visited
+    }
+
     pub fn symbol(&self, id: SymbolId) -> Option<&SymbolRecord> {
         self.symbols.get(id as usize)
     }
@@ -267,17 +320,53 @@ impl ProjectIndex {
         self.symbols.iter()
     }
 
-    /// Look up a declaration by its fully qualified name (display identity).
+    /// Look up a live declaration by its fully qualified name.
+    ///
+    /// Removed declarations keep their id slot (ids are stable) but are no
+    /// longer listed by any file index, so the scan is over live symbols only.
     pub fn symbol_by_flat(&self, flat_name: &str) -> Option<SymbolId> {
-        self.symbols
-            .iter()
-            .position(|record| record.flat_name == flat_name)
-            .map(|index| index as SymbolId)
+        self.by_file
+            .values()
+            .flat_map(|file_index| file_index.declarations.iter())
+            .copied()
+            .find(|id| {
+                self.symbols
+                    .get(*id as usize)
+                    .is_some_and(|record| record.flat_name == flat_name)
+            })
     }
 
     /// The short name an editor shows for a declaration.
     pub fn display_name(&self, record: &SymbolRecord) -> String {
         simple_name(&record.flat_name)
+    }
+
+    /// Rough resident-memory estimate of this snapshot, in bytes.
+    ///
+    /// Used by the memory-bound test; deliberately conservative.
+    pub fn approximate_memory_bytes(&self) -> usize {
+        let mut total = std::mem::size_of::<Self>();
+        for (_, text) in self.strings.iter() {
+            total += text.len() + 24;
+        }
+        total += self.symbols.len() * std::mem::size_of::<SymbolRecord>();
+        for record in &self.symbols {
+            total += record.flat_name.len() + record.detail.len();
+            if let Some(javadoc) = &record.javadoc {
+                total += javadoc.len();
+            }
+            total += record.supertypes.len() * std::mem::size_of::<TypeRef>();
+        }
+        let occurrence_count: usize = self.occurrences.values().map(Vec::len).sum();
+        total += occurrence_count * std::mem::size_of::<Occurrence>();
+        total += self.by_file.len() * std::mem::size_of::<FileIndex>();
+        total += self.files.len() * std::mem::size_of::<FileRecord>();
+        for record in &self.files {
+            total += record.path.to_string_lossy().len();
+        }
+        total += self.by_key.len() * (std::mem::size_of::<SymbolKey>() + 24);
+        total += self.by_name.len() * 24;
+        total
     }
 }
 

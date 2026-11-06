@@ -33,6 +33,7 @@ impl IndexStore {
             by_file: Default::default(),
             by_supertype: Default::default(),
             occurrences: Default::default(),
+            dependents: Default::default(),
             files: Vec::new(),
             status,
         };

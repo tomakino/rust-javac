@@ -12,7 +12,7 @@ pub type SignatureId = u32;
 
 /// The only string table in the index. Names and signature fingerprints are
 /// interned here; the index never stores `String` in hot structures.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct StringInterner {
     strings: Vec<String>,
     ids: HashMap<String, u32>,

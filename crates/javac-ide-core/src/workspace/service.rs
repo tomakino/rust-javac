@@ -220,6 +220,10 @@ impl WorkspaceService for Workspace {
                     index::TypeRef::External(name) => name.clone(),
                 });
             }
+            if let Some(javadoc) = &record.javadoc {
+                detail.push_str("\n\n");
+                detail.push_str(javadoc);
+            }
             return Some(detail);
         }
         self.with_analysis(file, None, |analysis, _| analysis.hover_impl(file, position))

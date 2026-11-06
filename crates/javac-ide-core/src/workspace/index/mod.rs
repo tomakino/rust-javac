@@ -10,6 +10,7 @@
 
 pub mod build;
 pub mod dump;
+pub mod extract;
 pub mod key;
 pub mod model;
 pub mod query;

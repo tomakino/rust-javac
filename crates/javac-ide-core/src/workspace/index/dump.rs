@@ -16,7 +16,7 @@ use super::model::*;
 use super::build::hash_text;
 
 pub const MAGIC: &[u8; 4] = b"RAVI";
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// Directory that holds persisted indexes.
 pub fn cache_dir() -> Option<PathBuf> {
@@ -160,6 +160,7 @@ fn write_index(index: &ProjectIndex, out: &mut Vec<u8>) {
             }
             None => out.push(0),
         }
+        write_opt_string(out, symbol.javadoc.as_deref());
     }
 
     // Occurrences grouped by symbol, matching `ProjectIndex::occurrences`.
@@ -284,6 +285,7 @@ fn read_index(bytes: &[u8]) -> Option<ProjectIndex> {
         } else {
             None
         };
+        let javadoc = reader.opt_string()?;
         let key = SymbolKey {
             owner,
             name,
@@ -300,6 +302,7 @@ fn read_index(bytes: &[u8]) -> Option<ProjectIndex> {
             flat_name,
             supertypes,
             return_type,
+            javadoc,
         };
         by_key.insert(key, id);
         by_name.entry(name).or_default().push(id);
@@ -352,7 +355,7 @@ fn read_index(bytes: &[u8]) -> Option<ProjectIndex> {
         _ => return None,
     };
 
-    Some(ProjectIndex {
+    let mut index = ProjectIndex {
         generation,
         workspace: WorkspaceFingerprint {
             root,
@@ -369,9 +372,12 @@ fn read_index(bytes: &[u8]) -> Option<ProjectIndex> {
         by_file,
         by_supertype,
         occurrences,
+        dependents: HashMap::new(),
         files,
         status,
-    })
+    };
+    index.compute_dependents();
+    Some(index)
 }
 
 fn read_type_ref(reader: &mut Reader<'_>) -> Option<TypeRef> {

@@ -361,7 +361,7 @@ fn overlay_text_is_indexed() {
 #[test]
 fn disk_roundtrip_and_hash_mismatch_fallback() {
     let root = fixture("dump");
-    std::fs::write(root.join("A.java"), "class A { int value; }").unwrap();
+    std::fs::write(root.join("A.java"), "/** A doc. */\nclass A { int value; }").unwrap();
     std::fs::write(root.join("B.java"), "class B { A a; }").unwrap();
     let output = root.join("out");
     // Isolate the cache directory so the test never touches the real one.
@@ -381,6 +381,12 @@ fn disk_roundtrip_and_hash_mismatch_fallback() {
     let loaded = index::dump::load(&WorkspaceModel::from_config(&config)).expect("load");
     assert_eq!(loaded.symbols.len(), index.symbols.len());
     assert_eq!(loaded.files.len(), index.files.len());
+    let loaded_a = loaded.symbols_named("A").into_iter().next().expect("A");
+    assert!(
+        loaded_a.javadoc.as_deref().unwrap_or("").contains("A doc"),
+        "javadoc lost on roundtrip: {:?}",
+        loaded_a.javadoc
+    );
 
     // Change a file without rebuilding: the recorded hash no longer matches.
     std::fs::write(root.join("A.java"), "class A { int other; }").unwrap();
@@ -403,4 +409,49 @@ fn file_threshold_reports_partial() {
     assert!(matches!(result.index.status, IndexStatus::Partial { .. }));
     assert_eq!(result.skipped_files.len(), 1);
     assert_eq!(result.index.files.len(), 1);
+}
+
+#[test]
+fn symbol_records_carry_rendered_javadoc() {
+    let root = fixture("javadoc");
+    std::fs::write(
+        root.join("A.java"),
+        "/** A doc. */\nclass A {\n    /** value doc. */\n    int value;\n    /** read doc. */\n    int read() { return value; }\n}\n",
+    )
+    .unwrap();
+    let output = root.join("out");
+    let index = build_one(&config(&root, &output), 8);
+    let class = index.symbols_named("A").into_iter().next().expect("A");
+    assert!(
+        class.javadoc.as_deref().unwrap_or("").contains("A doc"),
+        "javadoc: {:?}",
+        class.javadoc
+    );
+    let value = index
+        .symbols_named("value")
+        .into_iter()
+        .next()
+        .expect("value");
+    assert!(
+        value.javadoc.as_deref().unwrap_or("").contains("value doc"),
+        "javadoc: {:?}",
+        value.javadoc
+    );
+}
+
+#[test]
+fn hover_reads_javadoc_from_the_index() {
+    use javac_analysis_api::Position;
+    let root = fixture("hover-doc");
+    let path = root.join("A.java");
+    std::fs::write(
+        &path,
+        "/** A doc. */\nclass A {\n    /** value doc. */\n    int value;\n}\n",
+    )
+    .unwrap();
+    let output = root.join("out");
+    let mut workspace = Workspace::new(config(&root, &output));
+    let hover = workspace.hover(&path, Position::new(3, 8)).expect("hover");
+    assert!(hover.contains("value doc"), "hover: {hover}");
+    assert!(hover.contains("field value"), "hover: {hover}");
 }
