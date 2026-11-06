@@ -66,7 +66,7 @@ var types and parameter names).
 
 Regression:
 
-    cargo test -p javac-ide-core --test completion_spec   # 108 tests
+    cargo test -p javac-ide-core --test completion_spec   # 126 tests
     cargo test -p javac-core --lib        # 750 tests
     cargo test -p javac-ide-core --lib    # 746 tests
     py scripts/check_gson.py              # 208/208 byte-for-byte

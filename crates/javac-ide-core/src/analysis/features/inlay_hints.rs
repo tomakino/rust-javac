@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use javac_analysis_api::{InlayHint, InlayHintKind, Position};
 
-use crate::analysis::positions::offset_to_line_col;
+use crate::analysis::positions::{offset_to_line_col, utf16_to_byte};
 use crate::analysis::type_names::type_name;
 use crate::code::symbol::SymbolKind;
 use crate::compiler_context::CompilerContext;
@@ -440,23 +440,4 @@ fn is_argument_start(text: &str, byte: usize) -> bool {
         return false;
     };
     !(next.is_whitespace() || matches!(next, ')' | ',' | ';'))
-}
-
-/// Convert a UTF-16 offset to a byte index, returning None for an offset in
-/// the middle of a surrogate pair or past the end.
-fn utf16_to_byte(text: &str, offset: usize) -> Option<usize> {
-    if offset == 0 {
-        return Some(0);
-    }
-    let mut units = 0usize;
-    for (byte, ch) in text.char_indices() {
-        if units == offset {
-            return Some(byte);
-        }
-        units += ch.len_utf16();
-        if units > offset {
-            return None;
-        }
-    }
-    (units == offset).then_some(text.len())
 }

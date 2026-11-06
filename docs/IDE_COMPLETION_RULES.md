@@ -5,35 +5,74 @@ Each rule has an evidence note; untestable rules are marked NOT IMPLEMENTED.
 
 ## 1. Search (matching)
 
-Five levels, best first (search.rs):
+The matcher is a direct Rust port of IntelliJ IDEA's name matcher
+(`matcher.rs`, from `MinusculeMatcherImpl.kt` and
+`CamelHumpMatcher.java`), not a custom five-level heuristic.
 
-1. ExactStart - case-exact prefix ("File" -> FileInputStream).
-2. Start - case-insensitive prefix ("file" -> FileInputStream).
-3. Camel - camel-hump subsequence; a character is accepted on a word
-   boundary (start, after '_'/'$'/'.', or uppercase) or when it extends the
-   previous contiguous run ("zie" -> ZipEntry, "gSM" -> getSecurityManager).
-4. Contiguous - substring anywhere ("co" -> arraycopy).
-5. Fuzzy - loose subsequence; only used as a fallback, never in the
-   standard path.
-
-Query parsing splits the prefix at '.' when the receiver is a package or a
-qualified class ("java.util.Ba").
+- Completion builds CamelHumpMatcher's middle-matching prefix:
+  `"*" + prefix.replace('.', ". ").trim()` (IDEA
+  `applyMiddleMatching`, `ide.completion.middle.matching`).
+- Matching produces IDEA `MatchedFragment` ranges and uses
+  `calculateHumpedMatchingScore` for ranking. Word starts, acronyms,
+  consecutive uppercase letters, digits, wildcards, spaces, dots and
+  separators follow the Java/Kotlin implementation.
+- Middle matches must be at least 3 characters
+  (`isMiddleMatch`/`matchInsideFragment`); a fragment that reaches the
+  end of the pattern is still allowed.
+- Query parsing splits the prefix at '.' when the receiver is a package or a
+  qualified class ("java.util.Ba").
+- Ranking uses IDEA's start-match preference before matching degree:
+  start matches first, then `matching_degree` descending. This mirrors
+  `PreferStartMatching`; it is not a match-level enum.
 
 ### new expressions
 
-Every match quality expands constructors of matching classes:
-"new Zip" / "new zie" / "new zipf" / "new Filein" / "new Fileinp".
+Class candidates come from a short-name catalog built once per analysis round
+and reused by later completion requests, mirroring IDEA's short-name index
+instead of rescanning every package per request. Candidates are filtered by
+prefix, visibility, scope, and internal-package rules before rendering.
+
+Matching classes are expanded to public constructors
+("new Zip" / "new zie" / "new zipf" / "new Filein" / "new Fileinp").
 Package-private classes and JDK-internal packages are filtered out.
 Constructor items insert `Class($0)` as a snippet; the label carries the real
 parameter names (`StringBuffer(int capacity)`), which are display-only and are
 never inserted into the source.
 
+When the nested `new` expression has an array expected type, constructor
+expansion is disabled (IDEA `isArrayTypeExpected`): the list contains class
+items instead, and the expected array type (for example `byte[]`) is inserted
+first. Constructor expansion is controlled by
+`AnalysisSession::set_completion_show_constructors` and is **off by default**
+(IDEA's normal type lookup). In plain type mode a class item inserts
+`Class($0)`; in array mode it inserts only the class name. Primitive array
+types (`byte[]`, `int[]`, ...) are offered for a matching `new` prefix even
+without an expected array type. Expected types are read from:
+
+- the enclosing constructor or method parameter at the current argument index;
+- a cast immediately before the `new` expression;
+- an explicit local-variable initializer or assignment LHS;
+- the enclosing method return type.
+
+For non-array expected types, the expected class item is inserted before other
+candidates; the attributed method's parameter type is used first, while other
+overloads still contribute array expectations. Varargs arguments use the component type, so an element argument
+does not spuriously count as an array expectation.
+
+Method overloads and constructor overloads all contribute expected parameter
+types at the current argument index, instead of using only the attributed
+callee. Explicit constructor/method type arguments are substituted through the
+declared type variables before the array check. For generic methods and
+constructors without explicit type arguments, type variables are inferred from
+the types of the preceding actual arguments; diamond constructors use the same
+inference before the expected-array check.
+
 ## 2. Ranking
 
 One sort key, evaluated exactly once (rank.rs):
 
-    (match quality, exact, context kind, name, arity, signature length,
-     signature, label)
+    (start match, IDEA matching degree descending, exact, context kind,
+     name, arity, signature length, signature, label)
 
 name is the part before '(' so overloads group; signature length is
 short-first (IDEA PreferShorter): FileInputStream(File file) before

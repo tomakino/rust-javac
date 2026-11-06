@@ -354,7 +354,7 @@ S14  varargs void m(String... a)   → insertText "m();"        光标在 "(" �
 
 ### 10.3 回归
 
-- `completion_spec` 108 项全绿（含 t75 构造器占位）
+- `completion_spec` 126 项全绿（含 t75 构造器占位）
 - `completion_matrix` 14 项
 - LSP 冒烟 12 项
 

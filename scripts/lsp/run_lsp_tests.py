@@ -218,7 +218,7 @@ def main():
     )
     auto_items = read().get("result") or []
     auto_item = next(
-        (item for item in auto_items if item.get("label", "").startswith("ArrayList(")),
+        (item for item in auto_items if item.get("label") == "ArrayList"),
         None,
     )
     auto_edits = (auto_item or {}).get("additionalTextEdits") or []

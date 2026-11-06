@@ -9,7 +9,7 @@
 
 use javac_analysis_api::{CompletionItem, SymbolKind};
 
-use super::search::{match_label, Match};
+use super::search::build_matcher;
 
 /// Completion intent, selected from the parsed insertion context.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,17 +107,21 @@ pub(crate) fn rank_items(
     prefix: &str,
     context: RankContext,
 ) -> Vec<CompletionItem> {
-    let mut scored: Vec<(CompletionItem, Match)> = Vec::with_capacity(items.len());
+    let matcher = build_matcher(prefix);
+    let mut scored: Vec<(CompletionItem, i32, bool)> = Vec::with_capacity(items.len());
     for item in items {
-        if let Some(matched) = match_label(prefix, &item.label) {
-            scored.push((item, matched));
+        if let Some(fragments) = matcher.match_name(&item.label) {
+            let degree = matcher.matching_degree(&item.label, true);
+            let start = fragments.first().map(|f| f.start == 0).unwrap_or(true);
+            scored.push((item, degree, start));
         }
     }
-    scored.sort_by(|(left, left_match), (right, right_match)| {
+    scored.sort_by(|(left, left_degree, left_start), (right, right_degree, right_start)| {
         let left_signature = signature_of(left);
         let right_signature = signature_of(right);
         let left_key = (
-            left_match.rank(),
+            std::cmp::Reverse(*left_start),
+            std::cmp::Reverse(*left_degree),
             exact_rank(left, prefix),
             context_kind_rank(context, left.kind),
             name_of(left),
@@ -127,7 +131,8 @@ pub(crate) fn rank_items(
             left.label.clone(),
         );
         let right_key = (
-            right_match.rank(),
+            std::cmp::Reverse(*right_start),
+            std::cmp::Reverse(*right_degree),
             exact_rank(right, prefix),
             context_kind_rank(context, right.kind),
             name_of(right),
@@ -138,12 +143,13 @@ pub(crate) fn rank_items(
         );
         left_key.cmp(&right_key)
     });
-    scored.into_iter().map(|(item, _)| item).collect()
+    scored.into_iter().map(|(item, _, _)| item).collect()
 }
 
 /// Keep only candidates matching the prefix (no fuzzy fallback).
 pub(crate) fn filter_items(mut items: Vec<CompletionItem>, prefix: &str) -> Vec<CompletionItem> {
-    items.retain(|item| match_label(prefix, &item.label).is_some());
+    let matcher = build_matcher(prefix);
+    items.retain(|item| matcher.match_name(&item.label).is_some());
     items
 }
 
@@ -194,6 +200,16 @@ mod tests {
         assert_eq!(ranked[0].kind, SymbolKind::Field);
         assert_eq!(ranked[1].kind, SymbolKind::Method);
         assert_eq!(ranked[2].kind, SymbolKind::Class);
+    }
+
+    #[test]
+    fn start_camel_beats_middle_camel() {
+        let items = vec![
+            item("FooZiebar", SymbolKind::Class),
+            item("ZipEntry", SymbolKind::Class),
+        ];
+        let ranked = rank_items(items, "zie", RankContext::New);
+        assert_eq!(ranked[0].label, "ZipEntry");
     }
 
     #[test]

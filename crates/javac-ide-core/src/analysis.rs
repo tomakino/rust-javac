@@ -93,6 +93,13 @@ pub struct AnalysisSession {
     /// stable while the buffer is temporarily unparsable.
     pub(crate) inlay_hint_cache:
         HashMap<PathBuf, Vec<(javac_analysis_api::InlayHint, String)>>,
+    /// Lazily built short-name catalog for "new" class completion.
+    pub(crate) class_short_names:
+        Option<std::collections::BTreeMap<String, Vec<crate::ids::SymbolId>>>,
+    /// Whether "new" completion expands public constructors. IDEA exposes this
+    /// as a completion setting; the default keeps the previous behaviour.
+    pub(crate) completion_show_constructors: bool,
+
     /// True when receiver completion consumed the typed prefix as part of a
     /// fully qualified class name ("java.util.Base64"), so the prefix must
     /// not be used for filtering or replacement.
@@ -104,6 +111,11 @@ impl AnalysisSession {
 pub fn config(&self) -> &AnalysisConfig {
     &self.config
 }
+
+    /// Toggle IDEA-style constructor expansion for `new` completion.
+    pub fn set_completion_show_constructors(&mut self, enabled: bool) {
+        self.completion_show_constructors = enabled;
+    }
 
 pub fn new(config: AnalysisConfig) -> Self {
         std::fs::create_dir_all(&config.output_dir)
@@ -125,6 +137,8 @@ pub fn new(config: AnalysisConfig) -> Self {
             index_built: false,
             jdk_docs: None,
             inlay_hint_cache: HashMap::new(),
+            class_short_names: None,
+            completion_show_constructors: false,
             receiver_prefix_consumed: false,
         }
     }
@@ -135,6 +149,7 @@ pub fn new(config: AnalysisConfig) -> Self {
         self.traced.clear();
         self.jdk_docs = None;
         self.inlay_hint_cache.clear();
+        self.class_short_names = None;
     }
 
     /// Analyze one source file with the project class path.
@@ -155,6 +170,7 @@ pub fn new(config: AnalysisConfig) -> Self {
         }
         // Edited file: reuse the compiler and drop the context-dependent type
         // caches, so the next round sees the new symbols.
+        self.class_short_names = None;
         if self.initialized {
             self.compiler.types.reset_caches();
         }

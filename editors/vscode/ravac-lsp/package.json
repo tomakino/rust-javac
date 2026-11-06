@@ -1,0 +1,73 @@
+{
+  "name": "ravac-lsp",
+  "displayName": "Ravac LSP",
+  "description": "VS Code client for the ravac-lsp Java analysis server",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true,
+      "description": "Ravac LSP 读取当前工作区的 Java 文件，并启动配置的 ravac-lsp 可执行文件。"
+    }
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:java"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Ravac LSP",
+      "properties": {
+        "ravacLsp.serverPath": {
+          "type": "string",
+          "default": "${workspaceFolder}/target/debug/ravac-lsp.exe",
+          "description": "ravac-lsp 可执行文件路径。支持 ${workspaceFolder}、${userHome}、${env:NAME}。"
+        },
+        "ravacLsp.classPath": {
+          "type": "string",
+          "default": "${workspaceFolder}/target/tmp/perf/javac",
+          "description": "传给 --class-path 的类路径，Windows 用分号分隔。留空则不传。"
+        },
+        "ravacLsp.projectPath": {
+          "type": "string",
+          "default": "",
+          "description": "传给 --project 的项目目录；设置后服务器会追加 Maven 依赖。留空则不传。"
+        },
+        "ravacLsp.sourceLevel": {
+          "type": "string",
+          "default": "17",
+          "description": "传给 --source 的 Java 源级别。"
+        },
+        "ravacLsp.copyServer": {
+          "type": "boolean",
+          "default": true,
+          "description": "启动前把 ravac-lsp.exe 复制到同目录的临时文件，避免 cargo 重建时文件被占用。"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "ravacLsp.restart",
+        "title": "Ravac: 重启语言服务器"
+      },
+      {
+        "command": "ravacLsp.showOutput",
+        "title": "Ravac: 显示输出"
+      },
+      {
+        "command": "ravacLsp.probeCompletion",
+        "title": "Ravac: 探测当前补全"
+      }
+    ]
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

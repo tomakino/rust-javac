@@ -928,6 +928,7 @@ fn t51_qualified_class_prefix_expands_members() {
 #[test]
 fn t52_new_constructor_completion() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(&mut s, "T52", "class T52 { void f() { new Zip| } }");
     let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
     assert!(labels.iter().any(|l| l.starts_with("ZipFile(")), "labels: {labels:?}");
@@ -939,6 +940,268 @@ fn t52_new_constructor_completion() {
         .expect("ZipFile");
     assert_eq!(zip_file.detail.as_deref(), Some("java.util.zip"));
     assert!(zip_file.insert_text.as_deref().unwrap_or("").starts_with("ZipFile("));
+}
+
+#[test]
+fn t52b_nested_new_uses_array_expected_type_mode() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T52b",
+        "class T52b { void f() { new String(new by|); } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("byte[]"), "labels: {labels:?}");
+    assert!(labels.iter().any(|l| l == "Byte"), "labels: {labels:?}");
+    assert!(
+        !labels.iter().any(|l| l.starts_with("Byte(")),
+        "constructors must not be expanded when an array is expected: {labels:?}"
+    );
+    let byte = labels.iter().position(|l| l == "Byte").expect("Byte");
+    for middle in ["DataBufferByte", "IIOByteBuffer"] {
+        if let Some(index) = labels.iter().position(|l| l == middle) {
+            assert!(byte < index, "{middle} must rank after start matches: {labels:?}");
+        }
+    }
+}
+
+#[test]
+fn t52d_new_prefix_does_not_match_middle_substrings() {
+    let mut s = session();
+    s.set_completion_show_constructors(true);
+    let items = items_with_cursor(&mut s, "T52d", "class T52d { void f() { new byte| } }");
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert!(labels.iter().any(|l| l.starts_with("Byte(")), "labels: {labels:?}");
+    let byte = labels
+        .iter()
+        .position(|l| l.starts_with("Byte("))
+        .expect("Byte constructor");
+    for middle in ["DataBufferByte", "IIOByteBuffer", "InterruptedByTimeoutException"] {
+        if let Some(index) = labels.iter().position(|l| l.starts_with(middle)) {
+            assert!(byte < index, "{middle} must rank after start matches: {labels:?}");
+        }
+    }
+}
+
+#[test]
+fn t52c_new_argument_of_method_uses_expected_array() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T52c",
+        "class T52c { void take(byte[] data) {} void f() { take(new by|); } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("byte[]"), "labels: {labels:?}");
+    assert!(labels.iter().any(|l| l == "Byte"), "labels: {labels:?}");
+    assert!(
+        !labels.iter().any(|l| l.starts_with("Byte(")),
+        "constructors must not be expanded: {labels:?}"
+    );
+}
+
+#[test]
+fn t52e_new_initializer_expected_array() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T52e",
+        "class T52e { void f() { byte[] data = new by|; } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("byte[]"), "labels: {labels:?}");
+    assert!(!labels.iter().any(|l| l.starts_with("Byte(")), "labels: {labels:?}");
+}
+
+#[test]
+fn t52f_new_return_expected_array() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T52f",
+        "class T52f { byte[] f() { return new by|; } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("byte[]"), "labels: {labels:?}");
+    assert!(!labels.iter().any(|l| l.starts_with("Byte(")), "labels: {labels:?}");
+}
+
+#[test]
+fn t52g_new_cast_expected_array() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T52g",
+        "class T52g { void f() { Object o = (byte[]) new by|; } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("byte[]"), "labels: {labels:?}");
+    assert!(!labels.iter().any(|l| l.starts_with("Byte(")), "labels: {labels:?}");
+}
+
+#[test]
+fn t52h_assignment_expected_class_is_prioritized() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T52h",
+        "class T52h { void f() { String s = new Str|; } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("String"), "labels: {labels:?}");
+}
+
+#[test]
+fn t52i_varargs_element_is_not_array_expected() {
+    let mut s = session();
+    s.set_completion_show_constructors(true);
+    let items = items_with_cursor(
+        &mut s,
+        "T52i",
+        "class T52i { void take(byte... values) {} void f() { take(new by|); } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert!(labels.iter().any(|l| l.starts_with("Byte(")), "labels: {labels:?}");
+}
+
+#[test]
+fn t52j_constructor_generic_substitution() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T52j",
+        "class T52j { static class Box<T> { Box(T value) {} } void f() { new Box<byte[]>(new by|); } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("byte[]"), "labels: {labels:?}");
+    assert!(!labels.iter().any(|l| l.starts_with("Byte(")), "labels: {labels:?}");
+}
+
+#[test]
+fn t52k_method_generic_substitution() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T52k",
+        "class T52k { <T> void take(T value) {} void f() { this.<byte[]>take(new by|); } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("byte[]"), "labels: {labels:?}");
+    assert!(!labels.iter().any(|l| l.starts_with("Byte(")), "labels: {labels:?}");
+}
+
+#[test]
+fn t52l_method_overloads_contribute_expected_types() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T52l",
+        "class T52l { void take(String value) {} void take(byte[] value) {} void f() { take(new by|); } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("byte[]"), "labels: {labels:?}");
+    assert!(!labels.iter().any(|l| l.starts_with("Byte(")), "labels: {labels:?}");
+}
+
+#[test]
+fn t52m_generic_inference_from_previous_argument() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T52m",
+        "class T52m { <T> void take(T first, T second) {} void f() { take(new byte[0], new by|); } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("byte[]"), "labels: {labels:?}");
+    assert!(!labels.iter().any(|l| l.starts_with("Byte(")), "labels: {labels:?}");
+}
+
+#[test]
+fn t52n_constructor_generic_inference_from_previous_argument() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T52n",
+        "class T52n { static class Box<T> { Box(T first, T second) {} } void f() { new Box<>(new byte[0], new by|); } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("byte[]"), "labels: {labels:?}");
+    assert!(!labels.iter().any(|l| l.starts_with("Byte(")), "labels: {labels:?}");
+}
+
+#[test]
+fn t52o_plain_type_mode_without_constructor_expansion() {
+    let mut s = session();
+    s.set_completion_show_constructors(false);
+    let items = items_with_cursor(
+        &mut s,
+        "T52o",
+        "class T52o { void f() { new Str| } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert!(labels.iter().any(|l| l == "StringBuilder"), "labels: {labels:?}");
+    assert!(
+        !labels.iter().any(|l| l.starts_with("StringBuilder(")),
+        "constructors must be off: {labels:?}"
+    );
+    let item = items
+        .iter()
+        .find(|item| item.label == "StringBuilder")
+        .expect("StringBuilder");
+    assert_eq!(
+        item.insert_text.as_deref(),
+        Some("StringBuilder($0)"),
+        "plain type insert should add parentheses"
+    );
+}
+
+#[test]
+fn t52p_method_argument_expected_class_is_prioritized() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T52p",
+        "class T52p { static class Target {} void take(Target value) {} void f() { take(new Tar|); } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("Target"), "labels: {labels:?}");
+}
+
+#[test]
+fn t52q_primitive_array_expected() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T52q",
+        "class T52q { void f() { new String(new int|); } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("int[]"), "labels: {labels:?}");
+}
+
+#[test]
+fn t52r_class_candidates_are_unique() {
+    let mut s = session();
+    s.set_completion_show_constructors(false);
+    let items = items_with_cursor(
+        &mut s,
+        "T52r",
+        "class T52r { void f() { new Identity| } }",
+    );
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    let mut unique = labels.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(labels.len(), unique.len(), "duplicate classes: {labels:?}");
+}
+
+#[test]
+fn t52s_primitive_array_without_expected_type() {
+    let mut s = session();
+    let items = items_with_cursor(&mut s, "T52s", "class T52s { void f() { new int| } }");
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("int[]"), "labels: {labels:?}");
+    assert!(!labels.iter().any(|l| l.starts_with("Integer(")), "labels: {labels:?}");
 }
 
 #[test]
@@ -1006,6 +1269,7 @@ fn t57_qualified_class_prefix_inserts_dot_member() {
 #[test]
 fn t58_new_zip_constructors() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(&mut s, "T58", "class T58 { void f() { new Zip| } }");
     let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
     assert!(labels.iter().any(|l| l.starts_with("ZipFile(")), "labels: {labels:?}");
@@ -1023,6 +1287,7 @@ fn t58_new_zip_constructors() {
 #[test]
 fn t59_new_camel_expands_constructors() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(&mut s, "T59", "class T59 { void f() { new zie| } }");
     let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
     assert!(labels.iter().any(|l| l.starts_with("ZipEntry(")), "labels: {labels:?}");
@@ -1034,6 +1299,7 @@ fn t59_new_camel_expands_constructors() {
 #[test]
 fn t60_new_lowercase_prefix_expands_constructors() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(&mut s, "T60", "class T60 { void f() { new zipf| } }");
     let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
     assert!(labels.iter().any(|l| l.starts_with("ZipFile(")), "labels: {labels:?}");
@@ -1047,6 +1313,7 @@ fn t60_new_lowercase_prefix_expands_constructors() {
 #[test]
 fn t60b_new_mixed_case_expands_input_streams() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(&mut s, "T60b", "class T60b { void f() { new Filein| } }");
     let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
     assert!(labels.iter().any(|l| l.starts_with("FileInputStream(")), "labels: {labels:?}");
@@ -1055,6 +1322,7 @@ fn t60b_new_mixed_case_expands_input_streams() {
 #[test]
 fn t61_new_file_constructors() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(&mut s, "T61", "class T61 { void f() { new File| } }");
     let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
     assert!(labels.iter().any(|l| l == "File(String pathname)"), "labels: {labels:?}");
@@ -1092,25 +1360,47 @@ fn t64_field_detail_is_declared_type() {
     assert_eq!(item.detail.as_deref(), Some("PrintStream"));
 }
 
+// IDEA CamelHump matches "Fileinp" as File + I(nput) from ImageInputStream
+// and FileCacheImageInputStream too: the acronym/word boundaries are real
+// match positions, not a custom start-only filter.
 #[test]
-fn t60c_new_fileinp_does_not_leak_other_classes() {
+fn t60c_new_fileinp_matches_idea_camel() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(&mut s, "T60c", "class T60c { void f() { new Fileinp| } }");
     let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
-    assert_eq!(labels.len(), 3, "labels: {labels:?}");
-    assert!(labels.iter().all(|l| l.starts_with("FileInputStream(")), "labels: {labels:?}");
+    assert_eq!(labels.len(), 6, "labels: {labels:?}");
+    for expected in [
+        "FileInputStream",
+        "FileImageInputStream",
+        "FileCacheImageInputStream",
+    ] {
+        assert!(
+            labels.iter().any(|label| label.starts_with(&format!("{expected}("))),
+            "missing {expected}: {labels:?}"
+        );
+    }
     assert!(!labels.iter().any(|l| l.starts_with("File(")), "labels: {labels:?}");
     assert!(!labels.iter().any(|l| l.starts_with("FileHandler(")), "labels: {labels:?}");
-    assert!(!labels.iter().any(|l| l.starts_with("FileCacheImageInputStream(")), "labels: {labels:?}");
 }
 
 #[test]
-fn t60d_new_fileinput_expands_only_file_input_stream() {
+fn t60d_new_fileinput_matches_idea_camel() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(&mut s, "T60d", "class T60d { void f() { new FileInput| } }");
     let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
-    assert_eq!(labels.len(), 3, "labels: {labels:?}");
-    assert!(labels.iter().all(|l| l.starts_with("FileInputStream(")), "labels: {labels:?}");
+    assert_eq!(labels.len(), 6, "labels: {labels:?}");
+    for expected in [
+        "FileInputStream",
+        "FileImageInputStream",
+        "FileCacheImageInputStream",
+    ] {
+        assert!(
+            labels.iter().any(|label| label.starts_with(&format!("{expected}("))),
+            "missing {expected}: {labels:?}"
+        );
+    }
 }
 
 // Module coverage: java.desktop/jdk.compiler packages must participate in
@@ -1118,6 +1408,7 @@ fn t60d_new_fileinput_expands_only_file_input_stream() {
 #[test]
 fn t66_new_fil_covers_all_jdk_modules() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(&mut s, "T66", "class T66 { void f() { new Fil| } }");
     let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
     for expected in [
@@ -1138,6 +1429,7 @@ fn t66_new_fil_covers_all_jdk_modules() {
 #[test]
 fn t75_constructor_insert_is_a_placeholder() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(
         &mut s,
         "T75",
@@ -1158,6 +1450,7 @@ fn t75_constructor_insert_is_a_placeholder() {
 #[test]
 fn t69_completion_adds_import_for_new_type() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(&mut s, "T69", "class T69 { void f() { new ArrayLis| } }");
     let item = items
         .iter()
@@ -1174,6 +1467,7 @@ fn t69_completion_adds_import_for_new_type() {
 #[test]
 fn t70_completion_skips_existing_import() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(
         &mut s,
         "T70",
@@ -1193,6 +1487,7 @@ fn t70_completion_skips_existing_import() {
 #[test]
 fn t71_completion_import_after_import_block() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(
         &mut s,
         "T71",
@@ -1213,6 +1508,7 @@ fn t71_completion_import_after_import_block() {
 #[test]
 fn t72_completion_skips_java_lang_import() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(&mut s, "T72", "class T72 { void f() { new StringBuil| } }");
     let item = items
         .iter()
@@ -1228,6 +1524,7 @@ fn t72_completion_skips_java_lang_import() {
 #[test]
 fn t73_completion_skips_wildcard_import() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(
         &mut s,
         "T73",
@@ -1247,6 +1544,7 @@ fn t73_completion_skips_wildcard_import() {
 #[test]
 fn t74_completion_skips_conflicting_import() {
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(
         &mut s,
         "T74",
@@ -1344,6 +1642,7 @@ fn t68_completion_shows_jdk_javadoc() {
         return;
     }
     let mut s = session();
+    s.set_completion_show_constructors(true);
     let items = items_with_cursor(
         &mut s,
         "T68",

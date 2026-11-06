@@ -21,6 +21,19 @@ pub(crate) fn line_offset(text: &str, line: usize, column: usize) -> usize {
 }
 
 
+/// Byte offset for a UTF-16 offset, or None when the offset splits a
+/// surrogate pair.
+pub(crate) fn utf16_to_byte(text: &str, offset: usize) -> Option<usize> {
+    let mut consumed = 0usize;
+    for (byte, current) in text.char_indices() {
+        if consumed >= offset {
+            return Some(byte);
+        }
+        consumed += current.len_utf16();
+    }
+    (consumed == offset).then_some(text.len())
+}
+
 /// Zero-based line/UTF-16 column of a UTF-16 offset.
 pub(crate) fn offset_to_line_col(text: &str, offset: usize) -> (u32, u32) {
     let mut line = 0u32;

@@ -1,8 +1,9 @@
 //! Completion: spec-driven receiver resolution and member collection.
 
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use super::super::positions::{char_index_for_utf16, prefix_at};
+use super::super::positions::{char_index_for_utf16, prefix_at, utf16_to_byte};
 use super::super::type_names::type_name;
 use super::super::{canonical, AnalysisSession};
 use super::map_kind;
@@ -10,11 +11,15 @@ use super::map_kind;
 use crate::analysis::jdk_docs::JdkDocCache;
 
 use crate::code::type_::TypeKindData;
+use crate::code::type_tag::TypeTag;
+use crate::tree::jc_tree::TreeKind;
+use crate::util::list::List;
 
 mod context;
 mod imports;
 mod insert;
 mod lexer;
+mod matcher;
 mod rank;
 mod search;
 
@@ -121,10 +126,71 @@ impl AnalysisSession {
                     current_package,
                     insertion,
                 };
-                let mut items = self.new_completion(&prefix, &call, &import_context);
+                let expected_type =
+                    self.new_expected_type(&text, cursor_byte, prefix.len());
+                        let array_expected = expected_type
+                    .as_ref()
+                    .filter(|expected| expected.array)
+                    .map(|expected| expected.array_labels.clone())
+                    .unwrap_or_default();
+                let expand_constructors = expected_type.as_ref().is_none_or(|expected| {
+                    !expected.array
+                }) && self.completion_show_constructors;
+                let mut items = self.new_completion(
+                    &prefix,
+                    &call,
+                    &import_context,
+                    expand_constructors,
+                    array_expected.is_empty(),
+                );
                 if !items.is_empty() {
                     items = rank::rank_items(items, &prefix, rank::RankContext::New);
                     items.truncate(100);
+                }
+                for array in array_expected
+                    .iter()
+                    .filter(|array| search::match_label(&prefix, array).is_some())
+                {
+                    let mut item = completion_item(
+                        array.clone(),
+                        javac_analysis_api::SymbolKind::Class,
+                        None,
+                        None,
+                    );
+                    item.insert_text = Some(array.clone());
+                    items.insert(0, item);
+                }
+                for primitive in [
+                    "byte[]", "short[]", "char[]", "int[]", "long[]", "float[]",
+                    "double[]", "boolean[]",
+                ] {
+                    if array_expected.iter().any(|existing| existing == primitive)
+                        || search::match_label(&prefix, primitive).is_none()
+                    {
+                        continue;
+                    }
+                    let mut item = completion_item(
+                        primitive.to_string(),
+                        javac_analysis_api::SymbolKind::Class,
+                        None,
+                        None,
+                    );
+                    item.insert_text = Some(primitive.to_string());
+                    items.insert(0, item);
+                }
+                if let Some(expected) = expected_type.as_ref().filter(|expected| {
+                    expected.class && search::match_label(&prefix, &expected.label).is_some()
+                }) {
+                    let mut item = completion_item(
+                        expected.label.clone(),
+                        javac_analysis_api::SymbolKind::Class,
+                        None,
+                        None,
+                    );
+                    item.insert_text = Some(expected.label.clone());
+                    items.insert(0, item);
+                }
+                if !items.is_empty() {
                     self.apply_prefix_replace(&mut items, prefix_utf16);
                     self.apply_sort_text(&mut items);
                     return items;
@@ -667,6 +733,661 @@ impl AnalysisSession {
         Some(items)
     }
 
+    /// Expected type of a nested `new` expression. Argument positions are
+    /// resolved from the enclosing call; casts, initializers/assignments and
+    /// returns are resolved from the surrounding source when the call form is
+    /// not present.
+    fn new_expected_type(
+        &mut self,
+        text: &str,
+        cursor_byte: usize,
+        prefix_len: usize,
+    ) -> Option<ExpectedNew> {
+        let before = text.get(..cursor_byte.saturating_sub(prefix_len))?;
+        let new_pos = before.rfind("new")?;
+        if new_pos > 0
+            && before[..new_pos]
+                .chars()
+                .next_back()
+                .is_some_and(is_ident_char)
+        {
+            return None;
+        }
+        if let Some(expected) = self.cast_expected_type(text, new_pos) {
+            return Some(expected);
+        }
+        if let Some(expected) = self.call_argument_expected(text, cursor_byte, prefix_len) {
+            return Some(expected);
+        }
+        if let Some(expected) = self.assignment_expected_type(text, new_pos) {
+            return Some(expected);
+        }
+        self.return_expected_type(text, new_pos)
+    }
+
+    fn expected_from_ty(&self, ty: crate::ids::TypeId) -> ExpectedNew {
+        let array = self.compiler.ctx.typ(ty).tag == TypeTag::ARRAY;
+        let label = type_name(&self.compiler.ctx, ty);
+        ExpectedNew {
+            label: label.clone(),
+            array,
+            class: self.compiler.ctx.typ(ty).tag == TypeTag::CLASS,
+            array_labels: if array { vec![label] } else { Vec::new() },
+        }
+    }
+
+    fn expected_from_text(&mut self, text: &str) -> Option<ExpectedNew> {
+        let text = strip_type_arguments(text.trim());
+        let text = text.trim();
+        if text.is_empty() || text == "var" {
+            return None;
+        }
+        let array = text.ends_with("[]");
+        let base = if array {
+            text.trim_end_matches("[]").trim()
+        } else {
+            text
+        };
+        let base = base.split_whitespace().last().unwrap_or(base).trim();
+        if base.is_empty() || base.contains('(') || base.contains(')') {
+            return None;
+        }
+        if array {
+            let label = format!("{base}[]");
+            return Some(ExpectedNew {
+                label: label.clone(),
+                array: true,
+                class: false,
+                array_labels: vec![label],
+            });
+        }
+        if let Some(class) = self.class_by_simple_name(base.rsplit('.').next()?) {
+            if let Some(ty) = self.compiler.ctx.sym(class).ty {
+                return Some(self.expected_from_ty(ty));
+            }
+        }
+        matches!(
+            base,
+            "byte" | "short" | "char" | "int" | "long" | "float" | "double" | "boolean"
+        )
+        .then(|| ExpectedNew {
+            label: base.to_string(),
+            array: false,
+            class: false,
+            array_labels: Vec::new(),
+        })
+    }
+
+    fn cast_expected_type(&mut self, text: &str, new_pos: usize) -> Option<ExpectedNew> {
+        let close = previous_non_ws_byte(text, new_pos)?;
+        if text.as_bytes().get(close) != Some(&b')') {
+            return None;
+        }
+        let mut depth = 0i32;
+        let mut open = None;
+        for (index, ch) in text[..=close].char_indices().rev() {
+            match ch {
+                ')' => depth += 1,
+                '(' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        open = Some(index);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let open = open?;
+        let inner = text[open + 1..close].trim();
+        if inner.is_empty() || inner.contains('=') || inner.contains(',') || inner.contains(';') {
+            return None;
+        }
+        self.expected_from_text(inner)
+    }
+
+    fn assignment_expected_type(&mut self, text: &str, new_pos: usize) -> Option<ExpectedNew> {
+        let start = text[..new_pos]
+            .rfind([';', '{', '}'])
+            .map(|index| index + 1)
+            .unwrap_or(0);
+        let segment = &text[start..new_pos];
+        let equals = segment.rfind('=')?;
+        let before_eq = segment[..equals].chars().next_back();
+        let after_eq = segment[equals + 1..].chars().next();
+        if before_eq.is_some_and(|ch| matches!(ch, '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^'))
+            || after_eq == Some('=')
+        {
+            return None;
+        }
+        let lhs = segment[..equals].trim();
+        if lhs.is_empty() || lhs.contains(';') || lhs.contains('(') || lhs.contains(')') {
+            return None;
+        }
+        let name_start = lhs
+            .rfind(char::is_whitespace)
+            .map(|index| index + 1)
+            .unwrap_or(0);
+        let name = lhs[name_start..].trim();
+        if name.is_empty() || name.contains('.') || name.starts_with('@') {
+            return None;
+        }
+        let type_text = strip_type_arguments(lhs[..name_start].trim());
+        let type_text = type_text.split_whitespace().last().unwrap_or("").trim();
+        if type_text.is_empty() {
+            return self.find_local_var_type(name, new_pos);
+        }
+        if type_text == "var" {
+            return self.find_local_var_type(name, new_pos);
+        }
+        self.expected_from_text(type_text)
+    }
+
+    fn find_local_var_type(&self, name: &str, before: usize) -> Option<ExpectedNew> {
+        let mut best: Option<(i32, ExpectedNew)> = None;
+        for tree in self.compiler.ctx.trees.iter() {
+            let TreeKind::VariableDecl {
+                name: decl_name,
+                sym: Some(sym),
+                decl_pos,
+                ..
+            } = &tree.kind
+            else {
+                continue;
+            };
+            if decl_name.to_java_string().to_string_lossy() != name
+                || *decl_pos < 0
+                || *decl_pos as usize >= before
+            {
+                continue;
+            }
+            let Some(ty) = self.compiler.ctx.sym(*sym).ty else {
+                continue;
+            };
+            let expected = self.expected_from_ty(ty);
+            if best.as_ref().is_none_or(|(pos, _)| *decl_pos > *pos) {
+                best = Some((*decl_pos, expected));
+            }
+        }
+        best.map(|(_, expected)| expected)
+    }
+
+    fn return_expected_type(&mut self, text: &str, new_pos: usize) -> Option<ExpectedNew> {
+        let ret = last_keyword_before(text, new_pos, "return")?;
+        if text[ret + "return".len()..new_pos].contains(';') {
+            return None;
+        }
+        let mut best: Option<(i32, crate::ids::SymbolId)> = None;
+        for tree in self.compiler.ctx.trees.iter() {
+            let TreeKind::MethodDecl { sym: Some(sym), .. } = &tree.kind else {
+                continue;
+            };
+            if tree.pos >= 0
+                && tree.pos as usize <= new_pos
+                && best.as_ref().is_none_or(|(pos, _)| tree.pos > *pos)
+            {
+                best = Some((tree.pos, *sym));
+            }
+        }
+        let (_, method) = best?;
+        let ty = self.compiler.ctx.sym(method).ty?;
+        let restype = match &self.compiler.ctx.typ(ty).kind {
+            TypeKindData::MethodType { restype, .. }
+            | TypeKindData::PartiallyInferredMethodType { restype, .. } => *restype,
+            _ => None,
+        }?;
+        Some(self.expected_from_ty(restype))
+    }
+
+    /// Expected type of a nested `new` expression at an enclosing call
+    /// argument. The enclosing constructor is found lexically, so it still
+    /// works while the inner expression is incomplete.
+    fn call_argument_expected(
+        &mut self,
+        text: &str,
+        cursor_byte: usize,
+        prefix_len: usize,
+    ) -> Option<ExpectedNew> {
+        let before = text.get(..cursor_byte.saturating_sub(prefix_len))?;
+        let new_pos = before.rfind("new")?;
+        if new_pos > 0
+            && before[..new_pos]
+                .chars()
+                .next_back()
+                .is_some_and(is_ident_char)
+        {
+            return None;
+        }
+        let open = last_open_paren_before(text, new_pos)?;
+        let argument = argument_index(text, open, new_pos);
+        let outer_new = self.outer_new_call(text, open);
+        let actuals = outer_new.as_ref().and_then(|call| call.typeargs.as_ref());
+        let argument_types: &[Option<crate::ids::TypeId>] = outer_new
+            .as_ref()
+            .map_or(&[], |call| call.argument_types.as_slice());
+        let arguments = outer_new.as_ref().map_or(0, |call| call.arguments);
+        if let Some(class_name) = outer_constructor_name(text, open) {
+            return self.constructor_expected(
+                &class_name,
+                argument,
+                arguments,
+                actuals,
+                argument_types,
+            );
+        }
+        self.method_argument_expected(text, open, argument)
+    }
+
+    fn class_type_formals(&mut self, class: crate::ids::SymbolId) -> Option<List<crate::ids::TypeId>> {
+        let _ = self
+            .compiler
+            .ctx
+            .complete_symbol(&self.compiler.syms, class);
+        let mut formals = Vec::new();
+        for tree in self.compiler.ctx.trees.iter() {
+            let TreeKind::ClassDecl {
+                sym: Some(declared),
+                typarams,
+                ..
+            } = &tree.kind
+            else {
+                continue;
+            };
+            if *declared != class {
+                continue;
+            }
+            for typaram in typarams.iter() {
+                if let Some(ty) = self.compiler.ctx.tree(typaram).ty {
+                    formals.push(ty);
+                }
+            }
+            break;
+        }
+        if formals.is_empty()
+            && let Some(scope) = self.compiler.ctx.sym(class).members()
+        {
+            let members = self.compiler.ctx.scope_get_symbols(
+                scope,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+            );
+            for member in members {
+                let symbol = self.compiler.ctx.sym(member);
+                if matches!(
+                    symbol.kind_data,
+                    crate::code::symbol::SymbolKind::TypeVariableSymbol
+                ) && let Some(ty) = symbol.ty
+                {
+                    formals.push(ty);
+                }
+            }
+        }
+        (!formals.is_empty()).then(|| List::from_iterable(formals))
+    }
+
+    fn outer_new_call(&self, text: &str, open: usize) -> Option<OuterNewCall> {
+        for tree in self.compiler.ctx.trees.iter() {
+            let TreeKind::NewClass { args, .. } = &tree.kind else {
+                continue;
+            };
+            let Some(start) = utf16_to_byte(text, tree.pos.max(0) as usize) else {
+                continue;
+            };
+            let Some(call_open) = text[start..].find('(').map(|offset| start + offset) else {
+                continue;
+            };
+            if call_open != open {
+                continue;
+            }
+            let typeargs = tree
+                .ty
+                .and_then(|ty| match &self.compiler.ctx.typ(ty).kind {
+                    TypeKindData::ClassType {
+                        typarams_field: Some(params),
+                        ..
+                    } => Some(params.clone()),
+                    _ => None,
+                });
+            return Some(OuterNewCall {
+                typeargs,
+                argument_types: args
+                    .iter()
+                    .map(|arg| self.compiler.ctx.tree(arg).ty)
+                    .collect(),
+                arguments: args.size() as usize,
+            });
+        }
+        None
+    }
+
+    fn constructor_expected(
+        &mut self,
+        class_name: &str,
+        argument: usize,
+        arguments: usize,
+        explicit_actuals: Option<&List<crate::ids::TypeId>>,
+        argument_types: &[Option<crate::ids::TypeId>],
+    ) -> Option<ExpectedNew> {
+        let class = self.class_by_simple_name(class_name)?;
+        let _ = self
+            .compiler
+            .ctx
+            .complete_symbol(&self.compiler.syms, class);
+        let formals = self.class_type_formals(class);
+        let scope = self.compiler.ctx.sym(class).members()?;
+        let members = self.compiler.ctx.scope_get_symbols(
+            scope,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        let mut fallback: Option<ExpectedNew> = None;
+        let mut array_labels: Vec<String> = Vec::new();
+        for member in members {
+            let constructor = self.compiler.ctx.sym(member);
+            if constructor.name.to_java_string().to_string_lossy() != "<init>" {
+                continue;
+            }
+            let params = match &constructor.kind_data {
+                crate::code::symbol::SymbolKind::MethodSymbol { params, .. } => params.clone(),
+                _ => continue,
+            };
+            let varargs = (constructor.flags_field & crate::code::flags::VARARGS) != 0;
+            if argument >= arguments {
+                continue;
+            }
+            let inferred_actuals = if explicit_actuals.is_none() {
+                formals.as_ref().and_then(|formals| {
+                    self.infer_typeargs_from_previous(
+                        formals,
+                        &params,
+                        varargs,
+                        argument,
+                        argument_types,
+                    )
+                })
+            } else {
+                None
+            };
+            let substitutions = explicit_actuals.or(inferred_actuals.as_ref());
+            let param = params.iter().nth(argument).or_else(|| {
+                if varargs && argument + 1 >= params.size() as usize {
+                    params.iter().last()
+                } else {
+                    None
+                }
+            });
+            let Some(param) = param else { continue };
+            let Some(mut ty) = self.compiler.ctx.sym(param).ty else {
+                continue;
+            };
+            if let (Some(formals), Some(actuals)) = (&formals, substitutions)
+                && formals.size() == actuals.size()
+            {
+                let types = &self.compiler.types;
+                let syms = &self.compiler.syms;
+                let ctx = &mut self.compiler.ctx;
+                ty = types.subst_type(ctx, syms, ty, formals, actuals, None);
+            }
+            let expected_ty = if varargs && argument + 1 >= params.size() as usize {
+                match &self.compiler.ctx.typ(ty).kind {
+                    TypeKindData::ArrayType { elemtype, .. } => *elemtype,
+                    _ => Some(ty),
+                }
+            } else {
+                Some(ty)
+            };
+            let Some(expected_ty) = expected_ty else {
+                continue;
+            };
+            let expected = self.expected_from_ty(expected_ty);
+            if expected.array {
+                for label in expected.array_labels {
+                    if !array_labels.contains(&label) {
+                        array_labels.push(label);
+                    }
+                }
+                continue;
+            }
+            if fallback.is_none() {
+                fallback = Some(expected);
+            }
+        }
+        if !array_labels.is_empty() {
+            return Some(ExpectedNew {
+                label: array_labels[0].clone(),
+                array: true,
+                class: false,
+                array_labels,
+            });
+        }
+        fallback
+    }
+
+    fn method_argument_expected(
+        &mut self,
+        text: &str,
+        open: usize,
+        argument: usize,
+    ) -> Option<ExpectedNew> {
+        // Find the outer call and copy everything needed before mutating the
+        // compiler context for generic substitution.
+        let mut outer = None;
+        for tree in self.compiler.ctx.trees.iter() {
+            let TreeKind::MethodInvocation {
+                meth: Some(meth),
+                typeargs,
+                args,
+                ..
+            } = &tree.kind
+            else {
+                continue;
+            };
+            let Some(start) = utf16_to_byte(text, tree.pos.max(0) as usize) else {
+                continue;
+            };
+            let Some(call_open) = text[start..].find('(').map(|offset| start + offset) else {
+                continue;
+            };
+            if call_open != open {
+                continue;
+            }
+            let Some(method) = method_symbol(&self.compiler.ctx, *meth) else {
+                continue;
+            };
+            let argument_types: Vec<Option<crate::ids::TypeId>> = args
+                .iter()
+                .map(|arg| self.compiler.ctx.tree(arg).ty)
+                .collect();
+            outer = Some((
+                method,
+                typeargs.clone(),
+                args.size() as usize,
+                argument_types,
+            ));
+            break;
+        }
+        let (method, typeargs, arguments, argument_types) = outer?;
+        if argument >= arguments {
+            return None;
+        }
+        let selected_name = self.compiler.ctx.sym(method).name.clone();
+        let mut candidates = Vec::new();
+        if let Some(owner) = self.compiler.ctx.sym(method).owner
+            && let Some(scope) = self.compiler.ctx.sym(owner).members()
+        {
+            let members = self.compiler.ctx.scope_get_symbols(
+                scope,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+            );
+            for member in members {
+                let symbol = self.compiler.ctx.sym(member);
+                if symbol.name == selected_name
+                    && matches!(
+                        symbol.kind_data,
+                        crate::code::symbol::SymbolKind::MethodSymbol { .. }
+                    )
+                {
+                    candidates.push(member);
+                }
+            }
+        }
+        if candidates.is_empty() {
+            candidates.push(method);
+        }
+        let explicit_typeargs: Option<List<crate::ids::TypeId>> = {
+            let actuals: Vec<crate::ids::TypeId> = typeargs
+                .iter()
+                .filter_map(|arg| self.compiler.ctx.tree(arg).ty)
+                .collect();
+            (actuals.len() == typeargs.size() as usize && !actuals.is_empty())
+                .then(|| List::from_iterable(actuals))
+        };
+        let mut selected_fallback: Option<ExpectedNew> = None;
+        let mut fallback: Option<ExpectedNew> = None;
+        let mut array_labels: Vec<String> = Vec::new();
+        for candidate in candidates {
+            let params = match &self.compiler.ctx.sym(candidate).kind_data {
+                crate::code::symbol::SymbolKind::MethodSymbol { params, .. } => params.clone(),
+                _ => continue,
+            };
+            let varargs =
+                (self.compiler.ctx.sym(candidate).flags_field & crate::code::flags::VARARGS) != 0;
+            let method_tvars = self.compiler.ctx.sym(candidate).ty.and_then(|ty| {
+                if let TypeKindData::ForAll { tvars, .. } = &self.compiler.ctx.typ(ty).kind {
+                    Some(tvars.clone())
+                } else {
+                    None
+                }
+            });
+            let inferred_typeargs = if explicit_typeargs.is_none() {
+                method_tvars.as_ref().and_then(|tvars| {
+                    self.infer_typeargs_from_previous(
+                        tvars,
+                        &params,
+                        varargs,
+                        argument,
+                        &argument_types,
+                    )
+                })
+            } else {
+                None
+            };
+            let substitutions = explicit_typeargs.as_ref().or(inferred_typeargs.as_ref());
+            let Some(param) = params.iter().nth(argument).or_else(|| {
+                if varargs && argument + 1 >= params.size() as usize {
+                    params.iter().last()
+                } else {
+                    None
+                }
+            }) else {
+                continue;
+            };
+            let Some(mut ty) = self.compiler.ctx.sym(param).ty else {
+                continue;
+            };
+            if let (Some(formals), Some(actuals)) = (&method_tvars, substitutions)
+                && formals.size() == actuals.size()
+            {
+                let types = &self.compiler.types;
+                let syms = &self.compiler.syms;
+                let ctx = &mut self.compiler.ctx;
+                ty = types.subst_type(ctx, syms, ty, formals, actuals, None);
+            }
+            let expected_ty = if varargs && argument + 1 >= params.size() as usize {
+                match &self.compiler.ctx.typ(ty).kind {
+                    TypeKindData::ArrayType { elemtype, .. } => *elemtype,
+                    _ => Some(ty),
+                }
+            } else {
+                Some(ty)
+            };
+            let Some(expected_ty) = expected_ty else {
+                continue;
+            };
+            let expected = self.expected_from_ty(expected_ty);
+            if expected.array {
+                for label in expected.array_labels {
+                    if !array_labels.contains(&label) {
+                        array_labels.push(label);
+                    }
+                }
+                continue;
+            }
+            if candidate == method && selected_fallback.is_none() {
+                selected_fallback = Some(expected);
+            } else if fallback.is_none() {
+                fallback = Some(expected);
+            }
+        }
+        if !array_labels.is_empty() {
+            return Some(ExpectedNew {
+                label: array_labels[0].clone(),
+                array: true,
+                class: false,
+                array_labels,
+            });
+        }
+        selected_fallback.or(fallback)
+    }
+
+    fn infer_typeargs_from_previous(
+        &self,
+        formals: &List<crate::ids::TypeId>,
+        params: &List<crate::ids::SymbolId>,
+        varargs: bool,
+        argument: usize,
+        argument_types: &[Option<crate::ids::TypeId>],
+    ) -> Option<List<crate::ids::TypeId>> {
+        if formals.size() == 0 {
+            return None;
+        }
+        let mut inferred: Vec<Option<crate::ids::TypeId>> = vec![None; formals.size() as usize];
+        for (index, actual) in argument_types.iter().take(argument).enumerate() {
+            let Some(actual) = actual else { continue };
+            if params.size() == 0 {
+                break;
+            }
+            let param_index = index.min(params.size() as usize - 1);
+            let Some(param) = params.iter().nth(param_index) else {
+                break;
+            };
+            let Some(mut param_ty) = self.compiler.ctx.sym(param).ty else {
+                continue;
+            };
+            if varargs && param_index + 1 == params.size() as usize {
+                if let TypeKindData::ArrayType {
+                    elemtype: Some(elem),
+                    ..
+                } = &self.compiler.ctx.typ(param_ty).kind
+                {
+                    param_ty = *elem;
+                }
+            }
+            for (formal_index, formal) in formals.iter().enumerate() {
+                if param_ty == formal {
+                    inferred[formal_index] = Some(*actual);
+                } else if let TypeKindData::ArrayType {
+                    elemtype: Some(elem),
+                    ..
+                } = &self.compiler.ctx.typ(param_ty).kind
+                    && *elem == formal
+                    && let TypeKindData::ArrayType {
+                        elemtype: Some(actual_elem),
+                        ..
+                    } = &self.compiler.ctx.typ(*actual).kind
+                {
+                    inferred[formal_index] = Some(*actual_elem);
+                }
+            }
+        }
+        let mut result = Vec::with_capacity(formals.size() as usize);
+        for (index, formal) in formals.iter().enumerate() {
+            result.push(inferred[index].unwrap_or(formal));
+        }
+        Some(List::from_iterable(result))
+    }
+
     /// Constructor completion after "new": one item per public/protected
     /// constructor, labelled "Class(param types)" with the package as detail.
     fn new_completion(
@@ -674,45 +1395,23 @@ impl AnalysisSession {
         prefix: &str,
         call: &CallContext,
         import_context: &ImportContext,
+        expand_constructors: bool,
+        insert_parentheses: bool,
     ) -> Vec<javac_analysis_api::CompletionItem> {
-        let packages = self
-            .compiler
-            .syms
-            .all_visible_packages(&mut self.compiler.ctx);
+        // IDEA searches classes through the short-name index, not by scanning
+        // every package. The catalog is built once per analysis round and then
+        // reused by every completion request until the file is re-analyzed.
+        let by_name = match self.class_short_names.take() {
+            Some(catalog) => catalog,
+            None => self.build_class_short_names(),
+        };
         let mut items = Vec::new();
-        for (package_name, package) in packages {
-            let package_flat = package_name.to_java_string().to_string_lossy();
-            // Package completion enters the classes of the package.
-            let _ = self
-                .compiler
-                .ctx
-                .complete_symbol(&self.compiler.syms, package);
-            let Some(scope) = self.compiler.ctx.sym(package).members() else {
-                continue;
-            };
-            let classes = self.compiler.ctx.scope_get_symbols(
-                scope,
-                crate::code::scope::LookupKind::NON_RECURSIVE,
-                &|_| true,
-            );
-            for class in classes {
-                let (simple, is_class) = {
-                    let symbol = self.compiler.ctx.sym(class);
-                    (
-                        symbol.name.to_java_string().to_string_lossy(),
-                        matches!(
-                            symbol.kind_data,
-                            crate::code::symbol::SymbolKind::ClassSymbol { .. }
-                        ),
-                    )
-                };
-                if !is_class {
-                    continue;
-                }
+        for (simple, classes) in &by_name {
+            let simple = simple.clone();
+            for class in classes.iter().copied() {
+                let package_flat = self.package_flat(class);
                 // Nested class files are also entered under their flat binary
-                // name by the package scan; they are not "new X" candidates.
-                // Reading them here would rewrite their owner before the outer
-                // class is read (same poisoning as package completion).
+                // name; they are not "new X" candidates.
                 let flat = self.compiler.ctx.sym(class).flat_name().to_string();
                 if flat.contains('$') {
                     continue;
@@ -741,6 +1440,28 @@ impl AnalysisSession {
                     & crate::code::flags::PUBLIC as i64)
                     != 0;
                 let class_flat = format!("{package_flat}.{simple}");
+                if !expand_constructors {
+                    let mut item = completion_item(
+                        simple.clone(),
+                        javac_analysis_api::SymbolKind::Class,
+                        Some(package_flat.clone()),
+                        None,
+                    );
+                    if insert_parentheses {
+                        let snippet = insert::escape_snippet(&simple);
+                        item.insert_text = Some(format!("{snippet}($0)"));
+                        item.insert_text_format =
+                            javac_analysis_api::InsertTextFormat::Snippet;
+                    } else {
+                        item.insert_text = Some(simple.clone());
+                    }
+                    item.documentation = self.class_documentation(&class_flat);
+                    if let Some(edit) = import_context.edit_for(&class_flat, is_public_class) {
+                        item.additional_text_edits.push(edit);
+                    }
+                    items.push(item);
+                    continue;
+                }
                 let Some(class_scope) = self.compiler.ctx.sym(class).members() else {
                     continue;
                 };
@@ -787,7 +1508,48 @@ impl AnalysisSession {
                 }
             }
         }
+        self.class_short_names = Some(by_name);
         items
+    }
+
+    fn build_class_short_names(
+        &mut self,
+    ) -> BTreeMap<String, Vec<crate::ids::SymbolId>> {
+        // Make sure platform packages have entered their classes before the
+        // catalog is built. This is the load boundary; the catalog itself is
+        // reused across completion requests.
+        let packages = self
+            .compiler
+            .syms
+            .all_visible_packages(&mut self.compiler.ctx);
+        for (_, package) in &packages {
+            let _ = self
+                .compiler
+                .ctx
+                .complete_symbol(&self.compiler.syms, *package);
+        }
+        let mut by_name: BTreeMap<String, Vec<crate::ids::SymbolId>> = BTreeMap::new();
+        let mut seen = HashSet::new();
+        for class in self.compiler.syms.get_all_classes() {
+            let symbol = self.compiler.ctx.sym(class);
+            if !matches!(
+                symbol.kind_data,
+                crate::code::symbol::SymbolKind::ClassSymbol { .. }
+            ) {
+                continue;
+            }
+            // The symbol table can contain the same flat class through more
+            // than one module/view; completion must not repeat it.
+            let flat = symbol.flat_name().to_string();
+            if !seen.insert(flat) {
+                continue;
+            }
+            let simple = symbol.name.to_java_string().to_string_lossy();
+            if !simple.is_empty() {
+                by_name.entry(simple).or_default().push(class);
+            }
+        }
+        by_name
     }
 
     /// Members of a fully qualified class ("java.util.Base64") - static only.
@@ -1342,6 +2104,20 @@ struct CallContext {
     insertion: InsertionContext,
 }
 
+#[derive(Clone)]
+struct ExpectedNew {
+    label: String,
+    array: bool,
+    class: bool,
+    array_labels: Vec<String>,
+}
+
+struct OuterNewCall {
+    typeargs: Option<List<crate::ids::TypeId>>,
+    argument_types: Vec<Option<crate::ids::TypeId>>,
+    arguments: usize,
+}
+
 const KEYWORDS: &[&str] = &[
     "public", "private", "protected", "static", "final", "abstract", "native",
     "synchronized", "transient", "volatile", "strictfp", "default", "class",
@@ -1352,6 +2128,208 @@ const KEYWORDS: &[&str] = &[
     "null", "true", "false", "instanceof", "var", "yield", "assert",
 ];
 /// Build a completion item with the minimal fields set.
+/// Byte offset of the last non-whitespace byte before `before`.
+fn previous_non_ws_byte(text: &str, before: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut index = before.min(bytes.len());
+    while index > 0 {
+        index -= 1;
+        if !bytes[index].is_ascii_whitespace() {
+            return Some(index);
+        }
+    }
+    None
+}
+
+/// Last standalone occurrence of `keyword` before `before`.
+fn last_keyword_before(text: &str, before: usize, keyword: &str) -> Option<usize> {
+    let mut search = before;
+    while let Some(position) = text[..search].rfind(keyword) {
+        let before_ok = text[..position]
+            .chars()
+            .next_back()
+            .map(|ch| !is_ident_char(ch))
+            .unwrap_or(true);
+        let after_ok = text[position + keyword.len()..]
+            .chars()
+            .next()
+            .map(|ch| !is_ident_char(ch))
+            .unwrap_or(true);
+        if before_ok && after_ok {
+            return Some(position);
+        }
+        search = position;
+    }
+    None
+}
+
+fn method_symbol(
+    ctx: &crate::compiler_context::CompilerContext,
+    meth: crate::ids::TreeId,
+) -> Option<crate::ids::SymbolId> {
+    match &ctx.tree(meth).kind {
+        TreeKind::Ident { sym, .. } | TreeKind::FieldAccess { sym, .. } => *sym,
+        _ => None,
+    }
+}
+
+fn is_ident_char(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_' || ch == '$'
+}
+
+/// The innermost unmatched `(` before `before_byte`.
+fn last_open_paren_before(text: &str, before_byte: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut stack = Vec::new();
+    let mut index = 0usize;
+    while index < before_byte {
+        match bytes[index] {
+            b'"' | b'\'' => {
+                let quote = bytes[index];
+                index += 1;
+                while index < before_byte {
+                    if bytes[index] == b'\\' {
+                        index += 2;
+                    } else if bytes[index] == quote {
+                        index += 1;
+                        break;
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+            b'/' if index + 1 < before_byte && bytes[index + 1] == b'/' => {
+                index += 2;
+                while index < before_byte && bytes[index] != b'\n' {
+                    index += 1;
+                }
+            }
+            b'/' if index + 1 < before_byte && bytes[index + 1] == b'*' => {
+                index += 2;
+                while index + 1 < before_byte
+                    && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
+                {
+                    index += 1;
+                }
+                index = (index + 2).min(before_byte);
+            }
+            b'(' => {
+                stack.push(index);
+                index += 1;
+            }
+            b')' => {
+                stack.pop();
+                index += 1;
+            }
+            _ => index += 1,
+        }
+    }
+    stack.last().copied()
+}
+
+/// Top-level argument index of `position` inside the call opened at `open`.
+fn argument_index(text: &str, open: usize, position: usize) -> usize {
+    let bytes = text.as_bytes();
+    let mut depth = 0i32;
+    let mut index = open + 1;
+    let mut argument = 0usize;
+    while index < position {
+        match bytes[index] {
+            b'"' | b'\'' => {
+                let quote = bytes[index];
+                index += 1;
+                while index < position {
+                    if bytes[index] == b'\\' {
+                        index += 2;
+                    } else if bytes[index] == quote {
+                        index += 1;
+                        break;
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+            b'/' if index + 1 < position && bytes[index + 1] == b'/' => {
+                index += 2;
+                while index < position && bytes[index] != b'\n' {
+                    index += 1;
+                }
+            }
+            b'/' if index + 1 < position && bytes[index + 1] == b'*' => {
+                index += 2;
+                while index + 1 < position
+                    && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
+                {
+                    index += 1;
+                }
+                index = (index + 2).min(position);
+            }
+            b'(' | b'[' | b'{' => {
+                depth += 1;
+                index += 1;
+            }
+            b')' | b']' | b'}' => {
+                depth = (depth - 1).max(0);
+                index += 1;
+            }
+            b',' if depth == 0 => {
+                argument += 1;
+                index += 1;
+            }
+            _ => index += 1,
+        }
+    }
+    argument
+}
+
+/// Class simple name of `new SomeType` immediately before `open`, if the
+/// enclosing call is a constructor call.
+fn outer_constructor_name(text: &str, open: usize) -> Option<String> {
+    let before = text.get(..open)?.trim_end();
+    let new_pos = before.rfind("new")?;
+    if new_pos > 0
+        && before[..new_pos]
+            .chars()
+            .next_back()
+            .is_some_and(is_ident_char)
+    {
+        return None;
+    }
+    let after = &before[new_pos + 3..];
+    if !after.chars().next().is_some_and(|ch| ch.is_whitespace()) {
+        return None;
+    }
+    let rest = after.trim();
+    if rest.is_empty()
+        || rest.contains('=')
+        || rest.contains(';')
+        || rest.contains(')')
+        || rest.contains('(')
+    {
+        return None;
+    }
+    let simple = strip_type_arguments(rest);
+    let simple = simple.rsplit('.').next()?.trim();
+    if simple.is_empty() || simple.ends_with(']') {
+        return None;
+    }
+    Some(simple.to_string())
+}
+
+fn strip_type_arguments(text: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0i32;
+    for ch in text.chars() {
+        match ch {
+            '<' => depth += 1,
+            '>' => depth = (depth - 1).max(0),
+            _ if depth == 0 => out.push(ch),
+            _ => {}
+        }
+    }
+    out.trim().to_string()
+}
+
 fn completion_item(
     label: String,
     kind: javac_analysis_api::SymbolKind,
