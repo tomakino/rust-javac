@@ -14,6 +14,8 @@ pub(crate) struct IndexEntry {
     pub(crate) kind: &'static str,
     /// Fully qualified names of direct supertypes (extends/implements).
     pub(crate) supertypes: Vec<String>,
+    /// True for public types (auto-import candidates).
+    pub(crate) is_public: bool,
 }
 
 impl AnalysisSession {
@@ -73,6 +75,9 @@ impl AnalysisSession {
                 break;
             }
         }
+        let is_public = (self.compiler.ctx.sym(sym).flags_field
+            & crate::code::flags::PUBLIC as i64)
+            != 0;
         self.index.insert(
             flat.clone(),
             IndexEntry {
@@ -80,6 +85,7 @@ impl AnalysisSession {
                 pos,
                 kind: "class",
                 supertypes,
+                is_public,
             },
         );
         if let Some(scope) = self.compiler.ctx.sym(sym).members() {
@@ -97,6 +103,9 @@ impl AnalysisSession {
                     SymbolKind::ClassSymbol { .. } => "nested",
                     _ => "member",
                 };
+                let is_public = (member_symbol.flags_field
+                    & crate::code::flags::PUBLIC as i64)
+                    != 0;
                 self.index.insert(
                     format!("{flat}.{name}"),
                     IndexEntry {
@@ -104,6 +113,7 @@ impl AnalysisSession {
                         pos: member_symbol.pos.get(),
                         kind,
                         supertypes: Vec::new(),
+                        is_public,
                     },
                 );
             }

@@ -24,6 +24,9 @@ qualified class ("java.util.Ba").
 Every match quality expands constructors of matching classes:
 "new Zip" / "new zie" / "new zipf" / "new Filein" / "new Fileinp".
 Package-private classes and JDK-internal packages are filtered out.
+Constructor items insert `Class($0)` as a snippet; the label carries the real
+parameter names (`StringBuffer(int capacity)`), which are display-only and are
+never inserted into the source.
 
 ## 2. Ranking
 
@@ -56,15 +59,41 @@ FileInputStream(FileDescriptor fdObj).
 
 Do not emulate these with name heuristics.
 
+### Auto-import
+
+A completion item for an unimported top-level public type carries an LSP
+`additionalTextEdits` entry that inserts `import <qualified name>;` after the
+package/import block (imports.rs). No edit is added when:
+
+- the type is in the same package or `java.lang`;
+- the exact type or its package (wildcard) is already imported;
+- another imported type or a type declared in this file has the same simple
+  name (the client would create an ambiguity);
+- the class is not public;
+- completion is on an `import` line, or the candidate came from a
+  package-qualified completion (`java.util.`) that already spells the name.
+
+Nested types are not auto-imported yet.
+
+### Completion documentation
+
+`CompletionItem.documentation` is Markdown, shown in the completion right
+pane. Project declarations use the parser's doc-comment table (the same text as
+hover). Class files carry no Javadoc, so JDK elements are read lazily from
+`JAVA_HOME/lib/src.zip` (`RAVAC_JDK_SRC` overrides the path) and cached per
+class. The source scan associates each `/** ... */` block with the following
+declaration: methods match by name and parameter count, fields and nested types
+by name. Elements without source evidence get no documentation.
+
 ## 4. Known defects
 
-- The resident compiler only enters java.base. Types in java.desktop
-  (javax.imageio, javax.swing), java.awt, jdk.compiler and other modules
-  are not in the candidate pool (e.g. FileImageInputStream, FileSystemView).
-- After a package completion for "java.util.", a later "java.util.Base64"
-  expansion can drop nested types (Decoder/Encoder) because the package
-  completer pre-enters them under their flat name (Base64$Decoder).
-  Independent sessions are unaffected.
+None. Two former defects are fixed and covered by tests:
+
+- Module coverage: the unnamed-module completer now enters every JDK module,
+  so java.desktop/jdk.compiler types take part in "new Fil" (t66).
+- Package completion no longer reads or lists nested class files entered under
+  their flat binary name, so a later "java.util.Base64" expansion keeps
+  Decoder/Encoder (t65).
 
 ## 5. Regression matrix
 
@@ -76,4 +105,6 @@ Fixed prefixes, run after any completion change
     System., System.., java., java.util.
 
 Unit suites: sort/search/rank (matcher + ranking), completion_spec
-(97 end-to-end cases).
+(108 end-to-end cases, including t65 package->qualified regression, t66
+all-module "new Fil" coverage, t67/t68 documentation, t69-t74 auto-import,
+and t75 constructor placeholder insertion).

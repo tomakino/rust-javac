@@ -132,6 +132,9 @@ pub fn run(
             "textDocument/signatureHelp" => {
                 respond(&mut stdout, id, signature_help(host, &message));
             }
+            "textDocument/inlayHint" => {
+                respond(&mut stdout, id, inlay_hints(host, &message));
+            }
             "textDocument/codeAction" => {
                 respond(&mut stdout, id, code_action(host, &message));
             }
@@ -200,6 +203,7 @@ fn capabilities() -> Value {
         "typeDefinitionProvider": true,
         "implementationProvider": true,
         "signatureHelpProvider": { "triggerCharacters": ["(", ","] },
+        "inlayHintProvider": { "resolveProvider": false },
         "codeActionProvider": true,
         "typeHierarchyProvider": true,
         "callHierarchyProvider": true,
@@ -346,6 +350,65 @@ fn range_json(range: Range) -> Value {
     })
 }
 
+fn inlay_hints(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some(params) = message.get("params") else {
+        return Value::Null;
+    };
+    let Some(uri) = params
+        .get("textDocument")
+        .and_then(|document| document.get("uri"))
+        .and_then(Value::as_str)
+    else {
+        return Value::Null;
+    };
+    let Ok(path) = uri_to_path(uri) else {
+        return Value::Null;
+    };
+    let start = params
+        .get("range")
+        .and_then(|range| range.get("start"))
+        .and_then(|position| {
+            Some((
+                position.get("line")?.as_u64()? as u32,
+                position.get("character")?.as_u64()? as u32,
+            ))
+        });
+    let end = params
+        .get("range")
+        .and_then(|range| range.get("end"))
+        .and_then(|position| {
+            Some((
+                position.get("line")?.as_u64()? as u32,
+                position.get("character")?.as_u64()? as u32,
+            ))
+        });
+    let hints: Vec<Value> = host
+        .inlay_hints(&path)
+        .into_iter()
+        .filter(|hint| {
+            let key = (hint.position.line, hint.position.column);
+            start.map_or(true, |start| key >= start) && end.map_or(true, |end| key <= end)
+        })
+        .map(|hint| {
+            let kind = match hint.kind {
+                javac_analysis_api::InlayHintKind::Type => 1,
+                javac_analysis_api::InlayHintKind::Parameter => 2,
+            };
+            json!({
+                "position": {
+                    "line": hint.position.line,
+                    "character": hint.position.column,
+                },
+                "label": hint.label,
+                "kind": kind,
+                "paddingLeft": hint.padding_left,
+                "paddingRight": hint.padding_right,
+            })
+        })
+        .collect();
+    Value::Array(hints)
+}
+
 fn completion(host: &mut dyn AnalysisHost, message: &Value) -> Value {
     let Some((path, position)) = request_position(message) else {
         return Value::Null;
@@ -389,6 +452,16 @@ fn completion(host: &mut dyn AnalysisHost, message: &Value) -> Value {
             }
             if let Some(documentation) = item.documentation {
                 value["documentation"] = json!({ "kind": "markdown", "value": documentation });
+            }
+            if !item.additional_text_edits.is_empty() {
+                value["additionalTextEdits"] = json!(item
+                    .additional_text_edits
+                    .iter()
+                    .map(|edit| json!({
+                        "range": range_json(edit.range),
+                        "newText": edit.new_text,
+                    }))
+                    .collect::<Vec<_>>());
             }
             value
         })

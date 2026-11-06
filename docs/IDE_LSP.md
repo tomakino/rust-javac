@@ -34,11 +34,12 @@ The original compiler crate (crates/javac-core) is untouched.
 | textDocument/didSave | yes | includeText; re-analyzes |
 | textDocument/didClose | yes | clears diagnostics |
 | textDocument/publishDiagnostics | yes | structured JCDiagnostic: line, UTF-16 column, message, severity |
-| textDocument/completion | yes | prefix filter, ranking (class > interface > method > field), project index |
+| textDocument/completion | yes | prefix filter, ranking (class > interface > method > field), project index, Markdown Javadoc (project + JDK src.zip), auto-import additionalTextEdits |
 | textDocument/definition | yes | local declaration, project index, JDK source (JAVA_HOME/lib/src.zip) |
 | textDocument/hover | yes | class name / field / method signature (return and parameter types) |
 | textDocument/references | yes | word-boundary search in current file and indexed project sources |
 | textDocument/documentSymbol | yes | class -> members hierarchy with ranges |
+| textDocument/inlayHint | yes | inferred var types and call parameter names, range-filtered |
 
 ## Running
 
@@ -51,7 +52,8 @@ Start the server (any LSP client can spawn it):
     target/debug/ravac-lsp.exe --class-path <classes> [--source 17]
 
 - --class-path: OS path separator separated list of class directories / jars.
-- JDK source lookup uses JAVA_HOME/lib/src.zip.
+- JDK source lookup (definition and completion documentation) uses
+  JAVA_HOME/lib/src.zip; RAVAC_JDK_SRC overrides the archive path.
 
 ## Tests
 
@@ -59,10 +61,12 @@ End-to-end smoke test (starts the server, exercises every method):
 
     py scripts/lsp/run_lsp_tests.py [class-path]
 
-Expected: 11/11 checks passed.
+Expected: 14/14 checks passed (includes auto-import additionalTextEdits,
+var types and parameter names).
 
 Regression:
 
+    cargo test -p javac-ide-core --test completion_spec   # 108 tests
     cargo test -p javac-core --lib        # 750 tests
     cargo test -p javac-ide-core --lib    # 746 tests
     py scripts/check_gson.py              # 208/208 byte-for-byte
@@ -72,6 +76,19 @@ Regression:
 - completion returns only symbols of the current file and source-backed project classes; inherited members (Object.clone etc.) still leak into empty-prefix results.
 - references are textual word-boundary matches, not attributed symbol references.
 - definition of class-path classes without sources (jars) returns null unless the JDK source archive has the file.
+- completion documentation for JDK elements requires src.zip; without it only
+  project declarations carry Javadoc. The renderer emits a Markdown subset,
+  not HTML.
+- auto-import covers top-level public types only; nested types, package-qualified
+  completions and conflicting simple names get no additional edit.
+- inlay hints cover inferred var types and parameter names. Parameter names
+  are skipped when the symbol has no real name (no p0 fallback), and overload
+  selection relies on the attributed call symbol. Hints are read only from the
+  newest compilation unit; ctx.trees accumulates earlier analysis rounds and
+  reading them made names flap between edits. While a buffer is temporarily
+  unparsable the last valid var hints are reused after checking that the var
+  token still exists. Sublime LSP enables them with show_inlay_hints (false by
+  default).
 - hover for fields falls back to the qualified name when the field type is unresolved.
 - diagnostics carry a single position (line + UTF-16 column), no length range.
 - the analysis session is single-threaded; the LSP loop is synchronous.
@@ -85,5 +102,8 @@ Regression:
     crates/javac-ide-core/src/analysis/positions.rs UTF-16 position helpers
     crates/javac-ide-core/src/analysis/diagnostics.rs JCDiagnostic conversion
     crates/javac-ide-core/src/analysis/jdk_sources.rs JDK src.zip lookup
+    crates/javac-ide-core/src/analysis/jdk_docs.rs   JDK Javadoc scan + cache
+    crates/javac-ide-core/src/analysis/features/completion/imports.rs auto-import edits
+    crates/javac-ide-core/src/analysis/features/inlay_hints.rs var type hints
     crates/javac-ide-core/src/analysis/type_names.rs  type rendering
     crates/ravac-lsp/src/lib.rs                   stdio JSON-RPC + method dispatch

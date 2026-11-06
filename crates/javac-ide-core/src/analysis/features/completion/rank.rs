@@ -164,6 +164,7 @@ mod tests {
             insert_text_format: InsertTextFormat::PlainText,
             replace_prefix_len: None,
             filter_text: None,
+            additional_text_edits: Vec::new(),
         }
     }
 

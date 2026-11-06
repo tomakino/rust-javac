@@ -171,6 +171,10 @@ impl javac_analysis_api::AnalysisHost for AnalysisSession {
         self.signature_help_impl(file, position)
     }
 
+    fn inlay_hints(&mut self, file: &Path) -> Vec<javac_analysis_api::InlayHint> {
+        self.inlay_hints_impl(file)
+    }
+
     fn rename(
         &mut self,
         file: &Path,

@@ -268,7 +268,8 @@ end   = position
 
 | 候选类型 | replace_prefix |
 |---|---|
-| Method（含构造器？构造器不出现） | true |
+| Method | true |
+| Constructor（`new X`） | true |
 | Field | false（Sublime 自己替换词） |
 | Class/Interface/Enum/Record | false |
 | Keyword | false |
@@ -353,9 +354,9 @@ S14  varargs void m(String... a)   → insertText "m();"        光标在 "(" �
 
 ### 10.3 回归
 
-- 现有 37 项 `completion_spec` 全绿（候选/可见性/排序不变）
+- `completion_spec` 108 项全绿（含 t75 构造器占位）
 - `completion_matrix` 14 项
-- `editor_sim` 51 项、LSP 冒烟 11 项
+- LSP 冒烟 12 项
 
 ---
 
@@ -368,7 +369,7 @@ S14  varargs void m(String... a)   → insertText "m();"        光标在 "(" �
 | 方法重载 | 每个候选按自身 `argtypes` 独立生成 |
 | varargs | 视为 ≥1 参数 |
 | 静态导入 / 类名.方法 | 规则相同；textEdit range 只覆盖方法名前缀 |
-| 构造器 | 不出现（候选规格 S3） |
+| 构造器（`new X`） | insertText `X($0)`，Snippet；label 只显示参数名，不插入 `p0` |
 | 注解元素（`@Foo(value = ...`） | Annotation → R11 |
 | 多光标 | 客户端 `_translated_regions` 已处理主光标；range 按主光标计算 |
 | 链式调用 receiver | 只影响候选来源，不影响本方法的插入文本 |

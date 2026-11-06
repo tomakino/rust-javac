@@ -6,6 +6,7 @@ pub(crate) mod completion;
 pub(crate) mod format;
 pub(crate) mod hierarchy;
 pub(crate) mod hover;
+pub(crate) mod inlay_hints;
 pub(crate) mod navigation;
 pub(crate) mod signature;
 

@@ -211,6 +211,50 @@ impl AnalysisSession {
 
 
 impl AnalysisSession {
+    /// Simple names declared in the currently analyzed file (import conflicts).
+    pub(crate) fn traced_class_names(&self) -> Vec<String> {
+        self.traced
+            .iter()
+            .map(|traced| {
+                self.compiler
+                    .ctx
+                    .sym(traced.sym)
+                    .name
+                    .to_java_string()
+                    .to_string_lossy()
+            })
+            .collect()
+    }
+
+    /// Javadoc of a class declared in the currently analyzed file.
+    pub(crate) fn traced_class_doc(&mut self, flat: &str) -> Option<String> {
+        let symbol = self
+            .traced
+            .iter()
+            .find(|traced| traced.flat_name.to_string() == flat)
+            .map(|traced| traced.sym)?;
+        self.doc_comments_for_traced().get(&symbol).cloned()
+    }
+
+    /// Javadoc of a member of a class declared in the currently analyzed file.
+    pub(crate) fn traced_member_doc(&mut self, class_flat: &str, name: &str) -> Option<String> {
+        let class = self
+            .traced
+            .iter()
+            .find(|traced| traced.flat_name.to_string() == class_flat)
+            .map(|traced| traced.sym)?;
+        let scope = self.compiler.ctx.sym(class).members()?;
+        let member = self
+            .compiler
+            .ctx
+            .scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true)
+            .into_iter()
+            .find(|member| {
+                self.compiler.ctx.sym(*member).name.to_java_string().to_string_lossy() == name
+            })?;
+        self.doc_comments_for_traced().get(&member).cloned()
+    }
+
     /// Javadoc text of the declarations of the traced classes, keyed by symbol.
     fn doc_comments_for_traced(&mut self) -> std::collections::HashMap<SymbolId, String> {
         let source_names: Vec<String> = self
@@ -223,20 +267,23 @@ impl AnalysisSession {
                 _ => None,
             })
             .collect();
-        let table = self.compiler.ctx.trees.iter().find_map(|tree| {
+        // Trees accumulate across analysis rounds; keep the newest compilation
+        // unit for this source so the doc table matches the current symbols.
+        let mut table = None;
+        for tree in self.compiler.ctx.trees.iter() {
             if let crate::tree::jc_tree::TreeKind::CompilationUnit {
                 sourcefile,
                 doc_comments,
                 ..
             } = &tree.kind
+                && let Some(file) = sourcefile.as_ref().map(|file| file.get_name().to_string_lossy())
+                && source_names
+                    .iter()
+                    .any(|name| name == &canonical(Path::new(&file)))
             {
-                let file = sourcefile.as_ref()?.get_name().to_string_lossy();
-                if source_names.iter().any(|name| name == &canonical(Path::new(&file))) {
-                    return Some(doc_comments.clone());
-                }
+                table = Some(doc_comments.clone());
             }
-            None
-        });
+        }
         let Some(Some(table)) = table else {
             return std::collections::HashMap::new();
         };

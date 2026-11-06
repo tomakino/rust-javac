@@ -123,6 +123,27 @@ pub struct CompletionItem {
     pub replace_prefix_len: Option<u32>,
     /// Text used for filtering; `None` means the label is used.
     pub filter_text: Option<String>,
+    /// Edits applied together with the completion (e.g. an import statement).
+    pub additional_text_edits: Vec<TextEdit>,
+}
+
+/// Kind of an inlay hint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InlayHintKind {
+    /// An inferred type, shown after a variable name.
+    Type,
+    /// A parameter name, shown before an argument.
+    Parameter,
+}
+
+/// A hint rendered inside the source without changing it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InlayHint {
+    pub position: Position,
+    pub label: String,
+    pub kind: InlayHintKind,
+    pub padding_left: bool,
+    pub padding_right: bool,
 }
 
 /// One node of the call hierarchy.
@@ -204,6 +225,12 @@ pub trait AnalysisHost {
 
     /// Completion candidates at a position.
     fn completion(&mut self, file: &Path, position: Position) -> Vec<CompletionItem>;
+
+    /// Inlay hints for a file (inferred types, parameter names).
+    fn inlay_hints(&mut self, file: &Path) -> Vec<InlayHint> {
+        let _ = file;
+        Vec::new()
+    }
 
     /// The declaration of the symbol at a position.
     fn definition(&mut self, file: &Path, position: Position) -> Option<Location>;

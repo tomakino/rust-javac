@@ -1050,8 +1050,6 @@ fn t60b_new_mixed_case_expands_input_streams() {
     let items = items_with_cursor(&mut s, "T60b", "class T60b { void f() { new Filein| } }");
     let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
     assert!(labels.iter().any(|l| l.starts_with("FileInputStream(")), "labels: {labels:?}");
-    // javax.imageio (java.desktop) is not entered by the resident compiler;
-    // only java.base packages participate today.
 }
 
 #[test]
@@ -1113,4 +1111,279 @@ fn t60d_new_fileinput_expands_only_file_input_stream() {
     let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
     assert_eq!(labels.len(), 3, "labels: {labels:?}");
     assert!(labels.iter().all(|l| l.starts_with("FileInputStream(")), "labels: {labels:?}");
+}
+
+// Module coverage: java.desktop/jdk.compiler packages must participate in
+// "new Fil" completion, not just java.base.
+#[test]
+fn t66_new_fil_covers_all_jdk_modules() {
+    let mut s = session();
+    let items = items_with_cursor(&mut s, "T66", "class T66 { void f() { new Fil| } }");
+    let labels: Vec<String> = items.iter().map(|item| item.label.clone()).collect();
+    for expected in [
+        "FileImageInputStream(",
+        "FileSystemView(",
+        "FileDialog(",
+        "FileTypeDetector(",
+    ] {
+        assert!(
+            labels.iter().any(|label| label.starts_with(expected)),
+            "missing {expected}: {labels:?}"
+        );
+    }
+}
+
+// Constructor completion must not insert synthetic parameter names; the
+// editor places the cursor inside the parentheses instead.
+#[test]
+fn t75_constructor_insert_is_a_placeholder() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T75",
+        "class T75 { void f() { new StringBuffer| } }",
+    );
+    let item = items
+        .iter()
+        .find(|item| item.label == "StringBuffer(int capacity)")
+        .expect("StringBuffer(int capacity)");
+    assert_eq!(item.insert_text.as_deref(), Some("StringBuffer($0)"));
+    assert_eq!(
+        item.insert_text_format,
+        javac_analysis_api::InsertTextFormat::Snippet
+    );
+}
+
+// Auto-import: selecting an unimported type adds the import statement.
+#[test]
+fn t69_completion_adds_import_for_new_type() {
+    let mut s = session();
+    let items = items_with_cursor(&mut s, "T69", "class T69 { void f() { new ArrayLis| } }");
+    let item = items
+        .iter()
+        .find(|item| item.label.starts_with("ArrayList("))
+        .expect("ArrayList constructor");
+    let edit = item
+        .additional_text_edits
+        .first()
+        .expect("auto-import edit");
+    assert_eq!(edit.new_text, "import java.util.ArrayList;\n");
+    assert_eq!(edit.range.start, Position::new(0, 0));
+}
+
+#[test]
+fn t70_completion_skips_existing_import() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T70",
+        "import java.util.ArrayList;\nclass T70 { void f() { new ArrayLis| } }",
+    );
+    let item = items
+        .iter()
+        .find(|item| item.label.starts_with("ArrayList("))
+        .expect("ArrayList constructor");
+    assert!(
+        item.additional_text_edits.is_empty(),
+        "already imported: {:?}",
+        item.additional_text_edits
+    );
+}
+
+#[test]
+fn t71_completion_import_after_import_block() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T71",
+        "package p;\nimport java.util.List;\nclass T71 { void f() { new ArrayDeque| } }",
+    );
+    let item = items
+        .iter()
+        .find(|item| item.label.starts_with("ArrayDeque("))
+        .expect("ArrayDeque constructor");
+    let edit = item
+        .additional_text_edits
+        .first()
+        .expect("auto-import edit");
+    assert_eq!(edit.new_text, "import java.util.ArrayDeque;\n");
+    assert_eq!(edit.range.start, Position::new(2, 0));
+}
+
+#[test]
+fn t72_completion_skips_java_lang_import() {
+    let mut s = session();
+    let items = items_with_cursor(&mut s, "T72", "class T72 { void f() { new StringBuil| } }");
+    let item = items
+        .iter()
+        .find(|item| item.label.starts_with("StringBuilder("))
+        .expect("StringBuilder constructor");
+    assert!(
+        item.additional_text_edits.is_empty(),
+        "java.lang needs no import: {:?}",
+        item.additional_text_edits
+    );
+}
+
+#[test]
+fn t73_completion_skips_wildcard_import() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T73",
+        "import java.util.*;\nclass T73 { void f() { new ArrayLis| } }",
+    );
+    let item = items
+        .iter()
+        .find(|item| item.label.starts_with("ArrayList("))
+        .expect("ArrayList constructor");
+    assert!(
+        item.additional_text_edits.is_empty(),
+        "wildcard import covers ArrayList: {:?}",
+        item.additional_text_edits
+    );
+}
+
+#[test]
+fn t74_completion_skips_conflicting_import() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T74",
+        "import other.ArrayList;\nclass T74 { void f() { new ArrayLis| } }",
+    );
+    let item = items
+        .iter()
+        .find(|item| item.label.starts_with("ArrayList("))
+        .expect("ArrayList constructor");
+    assert!(
+        item.additional_text_edits.is_empty(),
+        "conflicting simple name: {:?}",
+        item.additional_text_edits
+    );
+}
+
+// Regression: a package completion must not poison the package's symbol table
+// for a later qualified-class completion (Base64 nested Decoder/Encoder).
+fn jdk_src_available() -> bool {
+    if let Some(path) = std::env::var_os("RAVAC_JDK_SRC") {
+        return std::path::Path::new(&path).exists();
+    }
+    std::env::var_os("JAVA_HOME")
+        .map(|home| {
+            std::path::Path::new(&home)
+                .join("lib")
+                .join("src.zip")
+                .exists()
+        })
+        .unwrap_or(false)
+}
+
+// Completion right pane: project source Javadoc.
+#[test]
+fn t67_completion_shows_project_javadoc() {
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T67",
+        "/** Greeter docs. */\nclass T67 {\n    /** Adds one. */\n    int plus(int x) { return x + 1; }\n    void f() { this.| }\n}\n",
+    );
+    let plus = items.iter().find(|item| item.label == "plus").expect("plus");
+    assert!(
+        plus.documentation
+            .as_deref()
+            .unwrap_or("")
+            .contains("Adds one."),
+        "member documentation: {:?}",
+        plus.documentation
+    );
+
+    let class_items = items_with_cursor(
+        &mut s,
+        "T67",
+        "/** Greeter docs. */\nclass T67 { void f() { T6| } }\n",
+    );
+    let class_item = class_items
+        .iter()
+        .find(|item| item.label == "T67")
+        .expect("class T67");
+    assert!(
+        class_item
+            .documentation
+            .as_deref()
+            .unwrap_or("")
+            .contains("Greeter docs."),
+        "class documentation: {:?}",
+        class_item.documentation
+    );
+
+    let direct_items = items_with_cursor(
+        &mut s,
+        "T67",
+        "/** Greeter docs. */\nclass T67 {\n    /** Adds one. */\n    int plus(int x) { return x + 1; }\n    void f() { pl| }\n}\n",
+    );
+    let direct = direct_items
+        .iter()
+        .find(|item| item.label == "plus")
+        .expect("direct plus");
+    assert!(
+        direct
+            .documentation
+            .as_deref()
+            .unwrap_or("")
+            .contains("Adds one."),
+        "file method documentation: {:?}",
+        direct.documentation
+    );
+}
+
+// Completion right pane: JDK source Javadoc (src.zip).
+#[test]
+fn t68_completion_shows_jdk_javadoc() {
+    if !jdk_src_available() {
+        return;
+    }
+    let mut s = session();
+    let items = items_with_cursor(
+        &mut s,
+        "T68",
+        "class T68 { void f() { java.util.Base64.| } }",
+    );
+    let decoder = items
+        .iter()
+        .find(|item| item.label == "getDecoder")
+        .expect("getDecoder");
+    let doc = decoder.documentation.as_deref().unwrap_or("");
+    assert!(doc.to_ascii_lowercase().contains("decoder"), "doc: {doc:?}");
+
+    let ctor_items = items_with_cursor(
+        &mut s,
+        "T68",
+        "class T68 { void f() { new ArrayList| } }",
+    );
+    let ctor = ctor_items
+        .iter()
+        .find(|item| item.label.starts_with("ArrayList("))
+        .expect("ArrayList constructor");
+    assert!(
+        ctor.documentation
+            .as_deref()
+            .unwrap_or("")
+            .contains("Resizable-array"),
+        "class documentation: {:?}",
+        ctor.documentation
+    );
+}
+
+#[test]
+fn t65_package_completion_keeps_nested_types() {
+    let mut s = session();
+    // First request: package member completion enters java.util's classes.
+    let first = labels_with_cursor(&mut s, "T65", "class T65 { void f() { java.util.| } }");
+    assert!(has(&first, "Base64"), "package members: {first:?}");
+    // Second request: a qualified class must still expand its nested types.
+    let second = labels_with_cursor(&mut s, "T65", "class T65 { void f() { java.util.Base64| } }");
+    assert!(has(&second, "Decoder"), "nested Decoder lost: {second:?}");
+    assert!(has(&second, "Encoder"), "nested Encoder lost: {second:?}");
+    assert!(has(&second, "getDecoder"), "static member lost: {second:?}");
 }

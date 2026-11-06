@@ -7,15 +7,19 @@ use super::super::type_names::type_name;
 use super::super::{canonical, AnalysisSession};
 use super::map_kind;
 
+use crate::analysis::jdk_docs::JdkDocCache;
+
 use crate::code::type_::TypeKindData;
 
 mod context;
+mod imports;
 mod insert;
 mod lexer;
 mod rank;
 mod search;
 
 use context::InsertionContext;
+use imports::ImportContext;
 
 impl AnalysisSession {
     /// Completion request entry point.
@@ -66,6 +70,11 @@ impl AnalysisSession {
         };
         let scan_utf16 = text[..scan_byte].encode_utf16().count();
         let insertion = context::classify(&text, scan_utf16, &anchors);
+        let import_context = ImportContext::new(
+            &text,
+            self.traced_class_names(),
+            insertion != context::InsertionContext::ImportPackage,
+        );
         // Receiver context: always return its result, including the empty one.
         if let Some(mut items) = self.receiver_completion(file, &text, position, insertion) {
             let filter_prefix = if self.receiver_prefix_consumed {
@@ -112,7 +121,7 @@ impl AnalysisSession {
                     current_package,
                     insertion,
                 };
-                let mut items = self.new_completion(&prefix, &call);
+                let mut items = self.new_completion(&prefix, &call, &import_context);
                 if !items.is_empty() {
                     items = rank::rank_items(items, &prefix, rank::RankContext::New);
                     items.truncate(100);
@@ -129,14 +138,20 @@ impl AnalysisSession {
                 // and parameter count are available for the insert text.
                 continue;
             }
-            items.push(completion_item(
+            let mut item = completion_item(
                 symbol.name,
                 map_kind(symbol.kind),
                 Some(symbol.flat_name),
-                symbol.doc,
-            ));
+                Some(symbol.detail),
+            );
+            item.documentation = symbol.doc;
+            items.push(item);
         }
         let target = canonical(file);
+        let file_class_flat = self
+            .file_class_symbol(file)
+            .map(|class| self.compiler.ctx.sym(class).flat_name().to_string())
+            .unwrap_or_default();
         let file_methods: Vec<(String, crate::ids::SymbolId)> = self
             .compiler
             .ctx
@@ -180,7 +195,7 @@ impl AnalysisSession {
             let (is_void, argument_count) = self.method_shape(symbol);
             let plan = insert::method_plan(&label, is_void, argument_count, insertion);
             let mut item = completion_item(
-                label,
+                label.clone(),
                 javac_analysis_api::SymbolKind::Method,
                 None,
                 None,
@@ -189,25 +204,34 @@ impl AnalysisSession {
             item.insert_text_format = plan.format;
             item.label_detail = self.method_signature(symbol);
             item.detail = self.method_return_type(symbol);
+            item.documentation =
+                self.member_documentation(&file_class_flat, &label, Some(argument_count));
             items.push(item);
         }
         self.ensure_index();
-        let indexed: Vec<(String, &'static str)> = self
+        let indexed: Vec<(String, &'static str, bool)> = self
             .index
             .iter()
-            .map(|(key, entry)| (key.clone(), entry.kind))
+            .map(|(key, entry)| (key.clone(), entry.kind, entry.is_public))
             .collect();
-        for (key, kind) in indexed {
+        for (key, kind, is_public) in indexed {
             if kind != "class" && kind != "nested" {
                 continue;
             }
             let Some(name) = key.rsplit('.').next() else { continue };
-            items.push(completion_item(
+            let mut item = completion_item(
                 name.to_string(),
                 map_kind(kind),
-                Some(key),
+                Some(key.clone()),
                 None,
-            ));
+            );
+            item.documentation = self.class_documentation(&key);
+            if kind == "class"
+                && let Some(edit) = import_context.edit_for(&key, is_public)
+            {
+                item.additional_text_edits.push(edit);
+            }
+            items.push(item);
         }
         for keyword in KEYWORDS {
             if keyword.starts_with(&prefix) {
@@ -329,12 +353,21 @@ impl AnalysisSession {
                 if search::match_label(&prefix, &label).is_none() {
                     continue;
                 }
-                items.push(completion_item(
+                let is_public =
+                    (self.compiler.ctx.sym(sym).flags_field
+                        & crate::code::flags::PUBLIC as i64)
+                        != 0;
+                let mut item = completion_item(
                     label,
                     javac_analysis_api::SymbolKind::Class,
-                    Some(flat),
+                    Some(flat.clone()),
                     None,
-                ));
+                );
+                item.documentation = self.class_documentation(&flat);
+                if let Some(edit) = import_context.edit_for(&flat, is_public) {
+                    item.additional_text_edits.push(edit);
+                }
+                items.push(item);
             }
         }
         let rank_context = match insertion {
@@ -589,12 +622,22 @@ impl AnalysisSession {
             }
             match symbol.kind_data {
                 crate::code::symbol::SymbolKind::ClassSymbol { .. } => {
+                    // The package completer also enters nested class files under
+                    // their flat binary name (Base64$Decoder). They are not
+                    // package members IDEA offers, and completing them here
+                    // rewrites their owner/name before their outer class is
+                    // read, which poisons a later qualified completion
+                    // (java.util.Base64 -> Decoder/Encoder). Skip them.
+                    if symbol.flat_name().to_string().contains('$') {
+                        continue;
+                    }
                     // Class file symbols fill their type parameters during completion.
                     let _ = self
                         .compiler
                         .ctx
                         .complete_symbol(&self.compiler.syms, member);
                     let parameters = self.class_type_parameters(member);
+                    let flat = format!("{name}.{simple}");
                     let mut item = completion_item(
                         format!("{simple}{parameters}"),
                         javac_analysis_api::SymbolKind::Class,
@@ -604,6 +647,7 @@ impl AnalysisSession {
                     // The visible label carries <E>, the inserted text does not.
                     item.insert_text = Some(simple);
                     item.insert_text_format = javac_analysis_api::InsertTextFormat::PlainText;
+                    item.documentation = self.class_documentation(&flat);
                     items.push(item);
                 }
                 crate::code::symbol::SymbolKind::PackageSymbol { .. } => {
@@ -629,6 +673,7 @@ impl AnalysisSession {
         &mut self,
         prefix: &str,
         call: &CallContext,
+        import_context: &ImportContext,
     ) -> Vec<javac_analysis_api::CompletionItem> {
         let packages = self
             .compiler
@@ -664,6 +709,14 @@ impl AnalysisSession {
                 if !is_class {
                     continue;
                 }
+                // Nested class files are also entered under their flat binary
+                // name by the package scan; they are not "new X" candidates.
+                // Reading them here would rewrite their owner before the outer
+                // class is read (same poisoning as package completion).
+                let flat = self.compiler.ctx.sym(class).flat_name().to_string();
+                if flat.contains('$') {
+                    continue;
+                }
                 // Every match quality expands constructors ("new Zip",
                 // "new zie", "new Filein" -> FileInputStream(...)).
                 if search::match_label(prefix, &simple).is_none() {
@@ -684,6 +737,10 @@ impl AnalysisSession {
                 if !is_visible_class {
                     continue;
                 }
+                let is_public_class = (self.compiler.ctx.sym(class).flags_field
+                    & crate::code::flags::PUBLIC as i64)
+                    != 0;
+                let class_flat = format!("{package_flat}.{simple}");
                 let Some(class_scope) = self.compiler.ctx.sym(class).members() else {
                     continue;
                 };
@@ -711,20 +768,21 @@ impl AnalysisSession {
                         continue;
                     }
                     let signature = self.method_signature(member).unwrap_or_default();
-                    let (_, argument_count) = self.method_shape(member);
-                    let arguments = (0..argument_count)
-                        .map(|index| format!("p{index}"))
-                        .collect::<Vec<_>>()
-                        .join(", ");
                     let mut item = completion_item(
                         format!("{simple}{signature}"),
                         javac_analysis_api::SymbolKind::Class,
                         Some(package_flat.clone()),
                         None,
                     );
-                    item.insert_text = Some(format!("{simple}({arguments})"));
-                    item.insert_text_format =
-                        javac_analysis_api::InsertTextFormat::PlainText;
+                    // Constructor arguments are placeholders for the editor, not
+                    // parameter names: never insert p0/p1 into the source.
+                    let snippet = insert::escape_snippet(&simple);
+                    item.insert_text = Some(format!("{snippet}($0)"));
+                    item.insert_text_format = javac_analysis_api::InsertTextFormat::Snippet;
+                    item.documentation = self.class_documentation(&class_flat);
+                    if let Some(edit) = import_context.edit_for(&class_flat, is_public_class) {
+                        item.additional_text_edits.push(edit);
+                    }
                     items.push(item);
                 }
             }
@@ -958,12 +1016,18 @@ impl AnalysisSession {
                     item.insert_text_format = plan.format;
                     item.label_detail = self.method_signature(member);
                     item.detail = self.method_return_type(member);
+                    item.documentation =
+                        self.member_documentation(&class_flat, &name, Some(argument_count));
                 } else if kind == "field" {
                     // Fields show their declared type (PrintStream), not the
                     // declaring class.
                     if let Some(ty) = self.compiler.ctx.sym(member).ty {
                         item.detail = Some(type_name(&self.compiler.ctx, ty));
                     }
+                    item.documentation = self.member_documentation(&class_flat, &name, None);
+                } else {
+                    // Nested types carry their own type comment.
+                    item.documentation = self.member_documentation(&class_flat, &name, None);
                 }
                 items.push(item);
             }
@@ -1115,6 +1179,31 @@ impl AnalysisSession {
             }
         }
         last
+    }
+
+    /// Javadoc of a class: project source first, then the JDK sources.
+    fn class_documentation(&mut self, flat: &str) -> Option<String> {
+        if let Some(doc) = self.traced_class_doc(flat) {
+            return Some(doc);
+        }
+        self.jdk_docs
+            .get_or_insert_with(JdkDocCache::new)
+            .class_doc(flat)
+    }
+
+    /// Javadoc of a member: project source first, then the JDK sources.
+    fn member_documentation(
+        &mut self,
+        class_flat: &str,
+        name: &str,
+        arity: Option<usize>,
+    ) -> Option<String> {
+        if let Some(doc) = self.traced_member_doc(class_flat, name) {
+            return Some(doc);
+        }
+        self.jdk_docs
+            .get_or_insert_with(JdkDocCache::new)
+            .member_doc(class_flat, name, arity)
     }
 
     fn method_shape(&mut self, symbol: crate::ids::SymbolId) -> (bool, usize) {
@@ -1280,6 +1369,7 @@ fn completion_item(
         insert_text_format: javac_analysis_api::InsertTextFormat::PlainText,
         replace_prefix_len: None,
         filter_text: None,
+        additional_text_edits: Vec::new(),
     }
 }
 

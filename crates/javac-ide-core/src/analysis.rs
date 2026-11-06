@@ -17,6 +17,7 @@ mod features;
 mod host;
 mod index;
 mod inspections;
+mod jdk_docs;
 mod jdk_sources;
 mod positions;
 mod symbols;
@@ -86,6 +87,12 @@ pub struct AnalysisSession {
     pub(crate) texts: HashMap<PathBuf, String>,
     pub(crate) index: HashMap<String, IndexEntry>,
     pub(crate) index_built: bool,
+    /// Lazily built Javadoc cache over the JDK src.zip.
+    pub(crate) jdk_docs: Option<jdk_docs::JdkDocCache>,
+    /// Last successfully computed inlay hints per file, used to keep hints
+    /// stable while the buffer is temporarily unparsable.
+    pub(crate) inlay_hint_cache:
+        HashMap<PathBuf, Vec<(javac_analysis_api::InlayHint, String)>>,
     /// True when receiver completion consumed the typed prefix as part of a
     /// fully qualified class name ("java.util.Base64"), so the prefix must
     /// not be used for filtering or replacement.
@@ -116,6 +123,8 @@ pub fn new(config: AnalysisConfig) -> Self {
             texts: HashMap::new(),
             index: HashMap::new(),
             index_built: false,
+            jdk_docs: None,
+            inlay_hint_cache: HashMap::new(),
             receiver_prefix_consumed: false,
         }
     }
@@ -124,6 +133,8 @@ pub fn new(config: AnalysisConfig) -> Self {
         self.compiler = build_compiler(&self.config);
         self.initialized = false;
         self.traced.clear();
+        self.jdk_docs = None;
+        self.inlay_hint_cache.clear();
     }
 
     /// Analyze one source file with the project class path.
