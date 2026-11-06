@@ -143,6 +143,27 @@ pub fn extract_file(
         }
     }
 
+    // Declaration positions point at the declaration tree start (`class`,
+    // modifiers, return type); move them onto the declared name.
+    for declaration in &mut out.declarations {
+        let start =
+            crate::analysis::positions::declared_name_start(text, declaration.range.start, &declaration.name);
+        declaration.range = ByteRange {
+            start,
+            end: start.saturating_add(declaration.name.encode_utf16().count() as u32),
+        };
+    }
+    for occurrence in &mut out.occurrences {
+        if occurrence.role == OccurrenceRole::Declaration {
+            let name = simple_name(&occurrence.identity.flat_name);
+            let start = crate::analysis::positions::declared_name_start(text, occurrence.range.start, name);
+            occurrence.range = ByteRange {
+                start,
+                end: start.saturating_add(name.encode_utf16().count() as u32),
+            };
+        }
+    }
+
     // Type/method/constructor declarations are not emitted by the tree
     // scanner; the builder adds their declaration occurrence itself. Mirror
     // that here so a local FileIndex replacement keeps them.

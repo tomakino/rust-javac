@@ -172,3 +172,20 @@ fn navigation_handles_non_ascii_identifiers() {
         .expect("definition");
     assert_eq!(definition.range.start.column, declaration_column);
 }
+#[test]
+fn call_hierarchy_handles_non_ascii_names() {
+    let root = fixture("hierarchy");
+    let path = root.join("Calls.java");
+    std::fs::write(
+        &path,
+        "class Calls {\n    void 调用者() { 被调用(); }\n    void 被调用() { }\n}\n",
+    )
+    .unwrap();
+    let mut workspace = Workspace::new(config(&root));
+    let item = workspace
+        .prepare_call_hierarchy(&path, Position::new(2, 10))
+        .expect("call hierarchy item");
+    let calls = workspace.incoming_calls(&item);
+    assert_eq!(calls.len(), 1, "incoming calls: {calls:?}");
+    assert_eq!(calls[0].item.name, "调用者");
+}

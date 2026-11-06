@@ -150,6 +150,13 @@ impl FileAnalysis {
         self.class_short_names = None;
     }
 
+    /// Drop the cached diagnostics for the next query, keeping other per-file
+    /// memory (inlay hints) alive.
+    pub(crate) fn invalidate_diagnostics(&mut self) {
+        self.diagnostics_hash = None;
+        self.cache = None;
+    }
+
     /// Analyze one source file with the project class path.
     ///
     /// The first call initializes the module graph through the compiler
@@ -254,6 +261,7 @@ impl FileAnalysis {
             self.compiler.overlay_text = Some((key, text.to_string()));
             self.cache = None;
         }
+        self.compiler.set_overlays(&self.texts);
         self.diagnostics_impl(file)
     }
 

@@ -322,6 +322,11 @@ impl MiniCompiler {
     ///
     /// # Panics
     ///   - a service invariant is violated.
+    /// Register editor overlays so implicit source-path compilation sees them.
+    pub fn set_overlays(&mut self, overlays: &std::collections::HashMap<PathBuf, String>) {
+        self.file_manager.set_overlay_files(overlays);
+    }
+
     pub fn new(out_dir: &Path) -> MiniCompiler {
         MiniCompiler::new_with_options(out_dir, |_| {})
     }

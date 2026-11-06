@@ -83,6 +83,30 @@ pub(crate) fn offset_to_line_col(text: &str, offset: usize) -> (u32, u32) {
 }
 
 
+/// Position of the declared name for a symbol.
+///
+/// Compiler symbol positions point at the declaration tree start (`class`,
+/// modifiers, return type), while the editor should land on the name.
+pub(crate) fn declared_name_start(text: &str, start: u32, name: &str) -> u32 {
+    if name.is_empty() {
+        return start;
+    }
+    let start_byte = utf16_to_byte_snapped(text, start as usize);
+    let Some(tail) = text.get(start_byte..) else {
+        return start;
+    };
+    let mut search = 0usize;
+    while let Some(position) = tail[search..].find(name) {
+        let absolute = start_byte + search + position;
+        if !text[..absolute].trim_end().ends_with('.') {
+            return byte_to_utf16(text, absolute) as u32;
+        }
+        search += position + name.len();
+    }
+    start
+}
+
+
 /// The identifier under a 1-based line/column.
 pub(crate) fn word_at(text: &str, line: usize, column: usize) -> Option<String> {
     let line_text = text.lines().nth(line.saturating_sub(1))?;

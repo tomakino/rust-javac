@@ -7,7 +7,7 @@ use crate::code::scope::LookupKind;
 use crate::code::symbol::{symbol_packge, SymbolKind};
 use crate::ids::{SymbolId, TreeId};
 use crate::util::name::Name;
-use super::positions::{line_offset, word_at};
+use super::positions::{byte_to_utf16, declared_name_start, line_offset, word_at};
 use super::type_names::type_name;
 use super::{canonical, FileAnalysis};
 
@@ -76,6 +76,8 @@ impl FileAnalysis {
             return None;
         }
         let mut col = super::positions::char_index_for_utf16(&chars, column.saturating_sub(1));
+        // A cursor past the end of the line refers to the last character.
+        col = col.min(chars.len().saturating_sub(1));
         let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
         if !is_ident(chars[col]) && col > 0 && is_ident(chars[col - 1]) {
             col -= 1;
@@ -95,7 +97,9 @@ impl FileAnalysis {
         if word.is_empty() {
             return None;
         }
-        let cursor = line_offset(&text, line, start + 1) as i64;
+        // Compiler symbol positions point at the declaration start; move them
+        // onto the declared name for editor locations.
+        let cursor = byte_to_utf16(&text, line_offset(&text, line, column)) as i64;
         self.symbols()
             .into_iter()
             .filter(|symbol| symbol.name == word && symbol.pos >= 0)
@@ -103,9 +107,30 @@ impl FileAnalysis {
             .or_else(|| self.symbols().into_iter().find(|symbol| symbol.name == word))
     }
 
+    /// Source text of the currently analyzed file, when available.
+    fn current_source_text(&self) -> Option<String> {
+        for traced in &self.traced {
+            if let SymbolKind::ClassSymbol {
+                sourcefile: Some(file),
+                ..
+            } = &self.compiler.ctx.sym(traced.sym).kind_data
+            {
+                let path = PathBuf::from(file.get_name().to_string_lossy());
+                let key = PathBuf::from(canonical(&path));
+                return self
+                    .texts
+                    .get(&key)
+                    .cloned()
+                    .or_else(|| std::fs::read_to_string(&path).ok());
+            }
+        }
+        None
+    }
+
     /// Symbols of the analyzed file: its classes and their direct members.
     /// This is the base for completion and go-to-definition.
     pub fn symbols(&mut self) -> Vec<SymbolInfo> {
+        let text = self.current_source_text();
         let docs = self.doc_comments_for_traced();
         let mut decl_trees: std::collections::HashMap<SymbolId, TreeId> =
             std::collections::HashMap::new();
@@ -123,9 +148,10 @@ impl FileAnalysis {
         let mut out = Vec::new();
         for traced in &self.traced {
             let class = &self.compiler.ctx.sym(traced.sym);
-            let class_pos = class.pos.get();
+            let class_name = class.name.to_java_string().to_string_lossy();
+            let class_pos = position_on_name(text.as_deref(), class.pos.get(), &class_name);
             out.push(SymbolInfo {
-                name: class.name.to_java_string().to_string_lossy(),
+                name: class_name,
                 kind: "class",
                 flat_name: traced.flat_name.to_string(),
                 pos: class_pos,
@@ -152,6 +178,7 @@ impl FileAnalysis {
                         continue;
                     }
                     let sym = &self.compiler.ctx.sym(member);
+                    let member_name = sym.name.to_java_string().to_string_lossy();
                     let kind = match sym.kind_data {
                         SymbolKind::MethodSymbol { .. } => "method",
                         SymbolKind::VarSymbol { .. } => "field",
@@ -162,6 +189,7 @@ impl FileAnalysis {
                         SymbolKind::VarSymbol { pos, .. } => *pos,
                         _ => sym.pos.get(),
                     };
+                    let member_pos = position_on_name(text.as_deref(), member_pos, &member_name);
                     let detail = decl_trees
                         .get(&member)
                         .and_then(|tree| match kind {
@@ -179,7 +207,7 @@ impl FileAnalysis {
                             )
                         });
                     out.push(SymbolInfo {
-                        name: sym.name.to_java_string().to_string_lossy(),
+                        name: member_name,
                         kind,
                         flat_name: traced.flat_name.to_string(),
                         pos: member_pos,
@@ -350,5 +378,13 @@ impl FileAnalysis {
             }
             _ => None,
         }
+    }
+}
+
+/// Move a compiler declaration position onto the declared name.
+fn position_on_name(text: Option<&str>, pos: i32, name: &str) -> i32 {
+    match text {
+        Some(text) if pos >= 0 => declared_name_start(text, pos as u32, name) as i32,
+        _ => pos,
     }
 }

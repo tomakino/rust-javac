@@ -263,6 +263,7 @@ impl Container for DirectoryContainer {
                     user_path,
                     relative_path,
                 );
+                let fo = fo.with_overlay_files(Arc::clone(&manager.overlay_files));
                 manager.register(&fo);
                 results.push(fo.clone() as JavaFileObjectRef);
             }
@@ -285,6 +286,7 @@ impl Container for DirectoryContainer {
         }
         let canonical = manager.fs_info.get_canonical_file(&f);
         let fo = PathFileObject::for_simple_path(manager.manager_api(), &canonical, &f);
+        let fo = fo.with_overlay_files(Arc::clone(&manager.overlay_files));
         manager.register(&fo);
         Ok(Some(fo.clone() as JavaFileObjectRef))
     }
@@ -690,6 +692,8 @@ pub struct JavacFileManager {
     this_system_modules: FsPath,
     /// Java: private JRTIndex jrtIndex;
     jrt_index: RefCell<StdOption<Rc<JRTIndex>>>,
+    /// Editor overlays: in-memory content wins over the disk for these paths.
+    overlay_files: Arc<Mutex<HashMap<PathBuf, String>>>,
     /// Java: private final Map<Path, Container> containers.
     containers: Arc<Mutex<HashMap<FsPath, Arc<dyn Container>>>>,
     /// Java: pathsAndContainersByLocationAndRelativeDirectory (two-layer cache).
@@ -771,6 +775,7 @@ impl JavacFileManager {
                 java_home,
                 this_system_modules,
                 jrt_index: RefCell::new(None),
+                overlay_files: Arc::new(Mutex::new(HashMap::new())),
                 containers: Arc::new(Mutex::new(HashMap::new())),
                 paths_and_containers: Arc::new(Mutex::new(HashMap::new())),
                 non_indexing_containers: Arc::new(Mutex::new(HashMap::new())),
@@ -1214,8 +1219,21 @@ impl JavacFileManager {
         let p = FsPath::from_path_buf(path.clone());
         let canonical = self.fs_info.get_canonical_file(&p);
         let fo = PathFileObject::for_simple_path(self.manager_api(), &canonical, &p);
+        let fo = fo.with_overlay_files(Arc::clone(&self.overlay_files));
         self.register(&fo);
         fo as JavaFileObjectRef
+    }
+
+    /// Replace the in-memory overlay content of source files.
+    pub fn set_overlay_files(&self, overlays: &HashMap<PathBuf, String>) {
+        if let Ok(mut guard) = self.overlay_files.lock() {
+            guard.clear();
+            guard.extend(
+                overlays
+                    .iter()
+                    .map(|(path, text)| (path.clone(), text.clone())),
+            );
+        }
     }
 }
 

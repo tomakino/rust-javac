@@ -25,6 +25,8 @@ pub struct Workspace {
     pub(crate) index: IndexStore,
     pub(crate) overlays: HashMap<PathBuf, String>,
     pub(crate) analyses: AnalysisCache,
+    /// Index generation the live analyses were built against.
+    analysis_generation: u64,
     limits: IndexLimits,
     batch_size: usize,
     build: Option<std::thread::JoinHandle<index::IndexBuildResult>>,
@@ -112,6 +114,7 @@ impl Workspace {
             index,
             overlays: HashMap::new(),
             analyses: AnalysisCache::new(),
+            analysis_generation: 0,
             limits,
             batch_size,
             build: None,
@@ -128,6 +131,36 @@ impl Workspace {
         workspace
     }
 
+    /// Whether `file` is an extracted JDK/classpath source under the output
+    /// directory (`jdk-src`, `external-src`).
+    ///
+    /// Those files are read-only reference material; their dependencies are
+    /// not on the project source path, so diagnosing them only produces
+    /// spurious errors.
+    pub fn is_extracted_source(&self, file: &Path) -> bool {
+        let key = PathBuf::from(crate::analysis::canonical(file));
+        let output = PathBuf::from(crate::analysis::canonical(&self.config.output_dir));
+        ["jdk-src", "external-src"]
+            .iter()
+            .any(|dir| key.starts_with(output.join(dir)))
+    }
+    /// True when an open overlay differs from the indexed text.
+    ///
+    /// Write operations such as rename must not use stale occurrence ranges.
+    pub(crate) fn has_unsaved_edits(&self) -> bool {
+        let snapshot = self.index.snapshot();
+        self.overlays.iter().any(|(path, text)| {
+            snapshot
+                .files
+                .iter()
+                .find(|record| record.path == *path)
+                .is_some_and(|record| hash_text(text) != record.hash)
+        })
+    }
+    /// True when the index may lag behind the overlays/disk.
+    pub(crate) fn is_dirty(&self) -> bool {
+        self.dirty
+    }
     pub fn config(&self) -> &AnalysisConfig {
         &self.config
     }
@@ -168,13 +201,26 @@ impl Workspace {
     pub fn set_overlay(&mut self, file: &Path, text: &str) {
         let path = PathBuf::from(crate::analysis::canonical(file));
         self.overlays.insert(path, text.to_string());
+        // The edited file keeps its analysis (inlay-hint memory); analyses of
+        // other files may have compiled against the previous content.
+        self.retain_analysis_for(file);
         self.dirty = true;
     }
 
     pub fn remove_overlay(&mut self, file: &Path) {
         let path = PathBuf::from(crate::analysis::canonical(file));
         if self.overlays.remove(&path).is_some() {
+            self.retain_analysis_for(file);
             self.dirty = true;
+        }
+    }
+
+    /// Keep only the edited file's analysis, invalidating its diagnostics.
+    fn retain_analysis_for(&mut self, file: &Path) {
+        let edited_id = self.analysis_key(file);
+        self.analyses.entries.retain(|(id, _)| *id == edited_id);
+        for (_, analysis) in &mut self.analyses.entries {
+            analysis.invalidate_diagnostics();
         }
     }
 
@@ -583,24 +629,31 @@ impl Workspace {
             Some(text) => text.to_string(),
             None => self.text_of(file)?,
         };
+        let overlays = self.overlays.clone();
         let hash = hash_text(&text);
         let file_id = self.analysis_key(file);
         let key = PathBuf::from(crate::analysis::canonical(file));
         if let Some(mut analysis) = self.analyses.take(file_id) {
             if analysis.text_hash != hash {
+                analysis.texts = overlays.clone();
                 analysis.texts.insert(key.clone(), text.clone());
                 analysis.compiler.overlay_text = Some((key, text));
+                analysis.compiler.set_overlays(&overlays);
                 analysis.cache = None;
                 analysis.attach(file_id, hash);
                 let _ = analysis.analyze(file);
+            } else {
+                analysis.compiler.set_overlays(&overlays);
             }
             self.analyses.insert(file_id, analysis);
             return self.analysis_mut(file_id);
         }
         let mut analysis = FileAnalysis::new(self.config.clone());
         analysis.set_completion_show_constructors(self.completion_show_constructors);
+        analysis.texts = overlays.clone();
         analysis.texts.insert(key.clone(), text.clone());
         analysis.compiler.overlay_text = Some((key, text));
+        analysis.compiler.set_overlays(&overlays);
         analysis.attach(file_id, hash);
         let _ = analysis.analyze(file);
         self.analyses.insert(file_id, analysis);
@@ -642,6 +695,12 @@ impl Workspace {
     ) -> Option<T> {
         self.ensure_index();
         let snapshot = self.index.snapshot();
+        // A new index generation means other files changed: rebuild the
+        // transient analyses so diagnostics/completion see the new state.
+        if snapshot.generation != self.analysis_generation {
+            self.analyses.entries.clear();
+            self.analysis_generation = snapshot.generation;
+        }
         let index = (!snapshot.files.is_empty()).then_some(snapshot.as_ref());
         let analysis = self.analysis(file, text)?;
         Some(run(analysis, index))

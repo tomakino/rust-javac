@@ -14,8 +14,15 @@ use super::state::{empty_index, Workspace};
 
 impl WorkspaceService for Workspace {
     fn diagnostics(&mut self, file: &Path, text: Option<&str>) -> Vec<Diagnostic> {
+        // Register the overlay first: other queries rely on it even when the
+        // file itself is not diagnosed.
         if let Some(text) = text {
             self.set_overlay(file, text);
+        }
+        // Extracted JDK/classpath sources are reference material, not project
+        // sources; do not diagnose them.
+        if self.is_extracted_source(file) {
+            return Vec::new();
         }
         self.with_analysis(file, text, |analysis, _| {
             analysis.diagnostics_impl(file)
@@ -58,7 +65,7 @@ impl WorkspaceService for Workspace {
     fn definition(&mut self, file: &Path, position: Position) -> Option<Location> {
         self.ensure_index();
         let snapshot = self.index.snapshot();
-        if snapshot.is_ready()
+        if !self.is_dirty() && !snapshot.files.is_empty()
             && let Some(text) = self.text_of(file)
             && let Some(file_id) = snapshot.file_id_for_path(file)
             && let Some(location) = query::definition(
@@ -163,7 +170,7 @@ impl WorkspaceService for Workspace {
     fn prepare_rename(&mut self, file: &Path, position: Position) -> Option<Range> {
         self.ensure_index();
         let snapshot = self.index.snapshot();
-        if snapshot.is_ready()
+        if !self.is_dirty() && !snapshot.files.is_empty()
             && let Some(text) = self.text_of(file)
             && let Some(file_id) = snapshot.file_id_for_path(file)
             && let Some(range) = query::prepare_rename_range(&snapshot, file_id, &text, position)
@@ -179,7 +186,7 @@ impl WorkspaceService for Workspace {
     fn references(&mut self, file: &Path, position: Position) -> Vec<Location> {
         self.ensure_index();
         let snapshot = self.index.snapshot();
-        if snapshot.is_ready()
+        if !self.is_dirty() && !snapshot.files.is_empty()
             && let Some(text) = self.text_of(file)
             && let Some(file_id) = snapshot.file_id_for_path(file)
         {
@@ -203,7 +210,7 @@ impl WorkspaceService for Workspace {
     fn hover(&mut self, file: &Path, position: Position) -> Option<String> {
         self.ensure_index();
         let snapshot = self.index.snapshot();
-        if snapshot.is_ready()
+        if !self.is_dirty() && !snapshot.files.is_empty()
             && let Some(text) = self.text_of(file)
             && let Some(file_id) = snapshot.file_id_for_path(file)
             && let Some(symbol) = query::symbol_at(&snapshot, file_id, &text, position)
@@ -238,7 +245,7 @@ impl WorkspaceService for Workspace {
     ) -> Vec<TextDocumentEdit> {
         self.ensure_index();
         let snapshot = self.index.snapshot();
-        if snapshot.is_ready()
+        if !self.has_unsaved_edits() && !snapshot.files.is_empty()
             && let Some(text) = self.text_of(file)
             && let Some(file_id) = snapshot.file_id_for_path(file)
             && let Some(symbol) = query::symbol_at(&snapshot, file_id, &text, position)
@@ -287,7 +294,7 @@ impl WorkspaceService for Workspace {
     fn document_symbols(&mut self, file: &Path) -> Vec<DocumentSymbol> {
         self.ensure_index();
         let snapshot = self.index.snapshot();
-        if snapshot.is_ready()
+        if !self.is_dirty() && !snapshot.files.is_empty()
             && let Some(file_id) = snapshot.file_id_for_path(file)
             && let Some(text) = self.text_of_id(file_id)
         {

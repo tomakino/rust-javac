@@ -7,6 +7,7 @@
 
 pub(crate) mod diagnostics;
 pub(crate) mod doc_render;
+pub(crate) mod external_sources;
 pub(crate) mod features;
 pub(crate) mod host;
 pub(crate) mod inspections;

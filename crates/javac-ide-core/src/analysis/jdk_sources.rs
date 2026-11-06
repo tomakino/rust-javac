@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use javac_zip::ZipArchive;
 
-use super::positions::offset_to_line_col;
+use super::positions::{byte_to_utf16, offset_to_line_col};
 
 /// Find the JDK source declaration of a simple name in the JDK src.zip.
 ///
@@ -53,7 +53,52 @@ pub(crate) fn jdk_source_location(
     }
     std::fs::write(&extracted, &bytes).ok()?;
     // `offset` was accumulated from byte line lengths; LSP columns are UTF-16.
-    let offset = crate::analysis::positions::byte_to_utf16(&text, offset);
+    let offset = byte_to_utf16(&text, offset);
+    let (line, column) = offset_to_line_col(&text, offset);
+    Some(javac_analysis_api::Location {
+        file: PathBuf::from(extracted),
+        range: javac_analysis_api::Range::point(javac_analysis_api::Position::new(line, column)),
+    })
+}
+
+/// Find a member declaration in the JDK src.zip for `class_flat`.
+///
+/// JDK 9+ src.zip entries are prefixed with the module name
+/// (`java.base/java/lang/Object.java`), so match the class path as a suffix.
+pub(crate) fn jdk_member_location(
+    jdk_src: &Path,
+    class_flat: &str,
+    member: &str,
+    output_dir: &Path,
+) -> Option<javac_analysis_api::Location> {
+    if !jdk_src.exists() {
+        return None;
+    }
+    let class_name = class_flat.split('$').next().unwrap_or(class_flat);
+    if class_name.is_empty() {
+        return None;
+    }
+    let relative = format!("{}.java", class_name.replace('.', "/"));
+    let archive = ZipArchive::open(jdk_src).ok()?;
+    let suffix = format!("/{relative}");
+    let entry_name = archive
+        .entries()
+        .iter()
+        .map(|entry| entry.name().to_string())
+        .find(|name| name == &relative || name.ends_with(&suffix))?;
+    let bytes = archive.get_entry(&entry_name)?;
+    let text = String::from_utf8_lossy(&bytes).to_string();
+    let offset = super::external_sources::locate_member(&text, member)?;
+    let extracted = std::env::current_dir()
+        .ok()?
+        .join(output_dir)
+        .join("jdk-src")
+        .join(&entry_name);
+    if let Some(parent) = extracted.parent() {
+        std::fs::create_dir_all(parent).ok()?;
+    }
+    std::fs::write(&extracted, &bytes).ok()?;
+    let offset = byte_to_utf16(&text, offset);
     let (line, column) = offset_to_line_col(&text, offset);
     Some(javac_analysis_api::Location {
         file: PathBuf::from(extracted),

@@ -435,7 +435,9 @@ impl IndexBuilder {
             return Some(id);
         }
 
-        let pos = ctx.sym(symbol).pos.get().max(0) as u32;
+        let text = self.texts.get(&file).cloned().unwrap_or_default();
+        let raw_pos = ctx.sym(symbol).pos.get().max(0) as u32;
+        let pos = crate::analysis::positions::declared_name_start(&text, raw_pos, &name_string);
         let end = pos.saturating_add(name_string.encode_utf16().count() as u32);
         let range = ByteRange { start: pos, end };
         let flat_name = match &ctx.sym(symbol).kind_data {
@@ -551,13 +553,14 @@ impl IndexBuilder {
         let Some(record) = self.symbols.get(id as usize) else {
             return;
         };
-        let name_len = record
-            .flat_name
-            .rsplit('.')
-            .next()
-            .map(|name| name.encode_utf16().count())
-            .unwrap_or(0) as u32;
-        let start = position as u32;
+        let name = record.flat_name.rsplit('.').next().unwrap_or("");
+        let name_len = name.encode_utf16().count() as u32;
+        let text = self.texts.get(&file).cloned().unwrap_or_default();
+        let start = if role == OccurrenceRole::Declaration {
+            crate::analysis::positions::declared_name_start(&text, position as u32, name)
+        } else {
+            position as u32
+        };
         let range = ByteRange {
             start,
             end: start.saturating_add(name_len.max(1)),

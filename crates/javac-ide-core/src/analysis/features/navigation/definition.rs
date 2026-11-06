@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::super::super::positions::{offset_to_line_col, word_at};
+use super::super::super::positions::{declared_name_start, offset_to_line_col, word_at};
 use super::super::super::{canonical, FileAnalysis};
 
 impl FileAnalysis {
@@ -32,6 +32,13 @@ impl FileAnalysis {
                 });
             }
         }
+        // A symbol that resolves through the compiler but is not declared in
+        // project sources may live in a classpath jar; use its sources jar.
+        if let Some((symbol, _)) = self.symbol_id_at(file, position) {
+            if let Some(location) = self.external_symbol_location(symbol) {
+                return Some(location);
+            }
+        }
         let word = word_at(&text, line, column)?;
         if let Some(jdk_src) = super::super::super::jdk_sources::default_jdk_src() {
             return super::super::super::jdk_sources::jdk_source_location(
@@ -39,6 +46,63 @@ impl FileAnalysis {
                 &word,
                 &self.config.output_dir,
             );
+        }
+        None
+    }
+
+    /// Location in a classpath `-sources.jar`, when `symbol` resolves to a
+    /// class outside the project sources.
+    fn external_symbol_location(
+        &self,
+        symbol: crate::ids::SymbolId,
+    ) -> Option<javac_analysis_api::Location> {
+        let mut current = symbol;
+        for _ in 0..16 {
+            let sym = self.compiler.ctx.sym(current);
+            if let crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } = &sym.kind_data
+            {
+                let flat = sym.flat_name().to_string();
+                // The member to locate is the symbol under the cursor (a method,
+                // field, or the class itself), not the enclosing class name.
+                let member = self
+                    .compiler
+                    .ctx
+                    .sym(symbol)
+                    .name
+                    .to_java_string()
+                    .to_string_lossy();
+                let in_project = sourcefile.as_ref().is_some_and(|file| {
+                    let name = file.get_name().to_string_lossy();
+                    self.config
+                        .source_path
+                        .iter()
+                        .any(|root| name.contains(&root.to_string_lossy().to_string()))
+                });
+                if in_project {
+                    return None;
+                }
+                // JDK classes come from src.zip; other jars from their
+                // `-sources.jar` on the class path.
+                if let Some(jdk_src) = super::super::super::jdk_sources::default_jdk_src() {
+                    if let Some(location) =
+                        super::super::super::jdk_sources::jdk_member_location(
+                            &jdk_src,
+                            &flat,
+                            &member,
+                            &self.config.output_dir,
+                        )
+                    {
+                        return Some(location);
+                    }
+                }
+                return crate::analysis::external_sources::external_source_location(
+                    &flat,
+                    &member,
+                    &self.config.class_path,
+                    &self.config.output_dir,
+                );
+            }
+            current = sym.owner?;
         }
         None
     }
@@ -83,6 +147,14 @@ impl FileAnalysis {
             _ => None,
         }?;
         let class_pos = self.compiler.ctx.sym(class).pos.get();
+        let class_name = self
+            .compiler
+            .ctx
+            .sym(class)
+            .name
+            .to_java_string()
+            .to_string_lossy()
+            .to_string();
         let sourcefile = match &self.compiler.ctx.sym(class).kind_data {
             crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile
                 .as_ref()
@@ -91,7 +163,19 @@ impl FileAnalysis {
         };
         if let Some(path) = sourcefile {
             if class_pos >= 0 {
-                return self.location_for(&path, class_pos);
+                let key = PathBuf::from(canonical(&path));
+                let text = self
+                    .texts
+                    .get(&key)
+                    .cloned()
+                    .or_else(|| std::fs::read_to_string(&path).ok());
+                let pos = match text {
+                    Some(text) => {
+                        declared_name_start(&text, class_pos as u32, &class_name) as i32
+                    }
+                    None => class_pos,
+                };
+                return self.location_for(&path, pos);
             }
         }
         if let Some(jdk_src) = super::super::super::jdk_sources::default_jdk_src() {
@@ -175,6 +259,11 @@ impl FileAnalysis {
                 continue;
             }
             let class = self.compiler.ctx.sym(sym);
+            let class_name = class
+                .name
+                .to_java_string()
+                .to_string_lossy()
+                .to_string();
             let pos = class.pos.get();
             let sourcefile = match &class.kind_data {
                 crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile
@@ -183,6 +272,18 @@ impl FileAnalysis {
                 _ => None,
             };
             if let (Some(path), true) = (sourcefile, pos >= 0) {
+                let key = PathBuf::from(canonical(&path));
+                let text = self
+                    .texts
+                    .get(&key)
+                    .cloned()
+                    .or_else(|| std::fs::read_to_string(&path).ok());
+                let pos = match text {
+                    Some(text) => {
+                        declared_name_start(&text, pos as u32, &class_name) as i32
+                    }
+                    None => pos,
+                };
                 if let Some(location) = self.location_for(&path, pos) {
                     locations.push(location);
                 }

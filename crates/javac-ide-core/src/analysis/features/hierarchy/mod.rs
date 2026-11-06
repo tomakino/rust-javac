@@ -98,10 +98,13 @@ impl FileAnalysis {
             if call_name != item.name {
                 continue;
             }
-            if pos < 0 || pos as usize >= text.len() {
+            if pos < 0 {
                 continue;
             }
-            if !text[pos as usize..].starts_with(&call_name) {
+            let Some(byte) = crate::analysis::positions::utf16_to_byte(&text, pos as usize) else {
+                continue;
+            };
+            if !text[byte..].starts_with(&call_name) {
                 continue;
             }
             let from = methods
@@ -166,7 +169,13 @@ impl FileAnalysis {
             if pos < range_start || pos >= range_end {
                 continue;
             }
-            if pos < 0 || pos as usize >= text.len() || !text[pos as usize..].starts_with(&name) {
+            if pos < 0 {
+                continue;
+            }
+            let Some(byte) = crate::analysis::positions::utf16_to_byte(&text, pos as usize) else {
+                continue;
+            };
+            if !text[byte..].starts_with(&name) {
                 continue;
             }
             let Some(to_item) = self.method_item(&name) else {

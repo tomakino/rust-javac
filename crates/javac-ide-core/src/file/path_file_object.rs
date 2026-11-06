@@ -44,10 +44,13 @@ use javac_tools::lang::model::element::nesting_kind::NestingKind;
 use javac_tools::tools::file_object::FileObject;
 use javac_tools::tools::java_file_object::{JavaFileObject, Kind};
 use javac_tools::uri::URI;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::rc::Rc;
 
 /// The upstream nested subclasses (Java: DirectoryFileObject, JarFileObject,
@@ -74,6 +77,8 @@ pub struct PathFileObject {
     /// Java: private boolean hasParents;
     has_parents: Cell<bool>,
     kind: PathFileObjectKind,
+    /// Editor overlays: in-memory content wins over the disk for these paths.
+    overlay_files: RefCell<Option<Arc<Mutex<HashMap<PathBuf, String>>>>>,
 }
 
 impl Clone for PathFileObject {
@@ -86,6 +91,7 @@ impl Clone for PathFileObject {
             path: self.path.clone(),
             has_parents: Cell::new(self.has_parents.get()),
             kind: self.kind.clone(),
+            overlay_files: RefCell::new(self.overlay_files.borrow().clone()),
         }
     }
 }
@@ -107,7 +113,28 @@ impl PathFileObject {
             path,
             has_parents: Cell::new(false),
             kind,
+            overlay_files: RefCell::new(None),
         }
+    }
+
+    /// Attach the editor-overlay map; source content is then read from memory.
+    pub fn with_overlay_files(
+        self: &Rc<Self>,
+        overlays: Arc<Mutex<HashMap<PathBuf, String>>>,
+    ) -> Rc<Self> {
+        *self.overlay_files.borrow_mut() = Some(overlays);
+        Rc::clone(self)
+    }
+
+    /// Overlay content for this file, when the buffer has unsaved text.
+    fn overlay_content(&self) -> Option<String> {
+        let overlays = self.overlay_files.borrow().as_ref().cloned()?;
+        let key = std::fs::canonicalize(self.path.to_path_buf())
+            .ok()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.path.to_path_buf());
+        let guard = overlays.lock().ok()?;
+        guard.get(&key).cloned()
     }
 
     /// Java: static PathFileObject forDirectoryPath(BaseFileManager, Path,
@@ -507,6 +534,9 @@ impl FileObject for PathFileObject {
     /// (registered adapter, same bytes).
     fn open_input_stream(&self) -> Result<Box<dyn Read>, Error> {
         self.file_manager.update_last_used_time();
+        if let Some(text) = self.overlay_content() {
+            return Ok(Box::new(std::io::Cursor::new(text.into_bytes())));
+        }
         if self.is_jrt() {
             let bytes = self
                 .file_manager
@@ -575,6 +605,10 @@ impl FileObject for PathFileObject {
     /// Java: public CharSequence getCharContent(boolean ignoreEncodingErrors)
     /// throws IOException (PathFileObject.java:478-497).
     fn get_char_content(&self, ignore_encoding_errors: bool) -> Result<Option<JavaString>, Error> {
+        // Editor overlays must win over the content cache.
+        if let Some(text) = self.overlay_content() {
+            return Ok(Some(JavaString::from(text.as_str())));
+        }
         if let Some(cached) = self.file_manager.get_cached_content(self) {
             return Ok(Some(cached));
         }
