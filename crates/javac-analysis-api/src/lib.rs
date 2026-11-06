@@ -221,16 +221,28 @@ pub struct Location {
     pub range: Range,
 }
 
+/// The configuration a workspace was created with.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WorkspaceConfiguration {
+    pub class_path: Vec<PathBuf>,
+    pub source_path: Vec<PathBuf>,
+    pub source_level: String,
+    pub output_dir: PathBuf,
+}
+
 /// The analysis backend an editor talks to.
 ///
-/// Implementations may keep state across calls (a resident session); callers
-/// must treat them as single-threaded.
-pub trait AnalysisHost {
+/// Implementations keep the workspace state across calls (index snapshots,
+/// overlays, transient per-file analyses); callers must treat them as
+/// single-threaded.
+///
+/// Replaces the old `AnalysisHost`; there is no compatibility layer.
+pub trait WorkspaceService {
     /// Analyze a file and return its diagnostics.
     ///
     /// When text is provided it overrides the file content on disk (unsaved
     /// editor buffers).
-    fn analyze(&mut self, file: &Path, text: Option<&str>) -> Vec<Diagnostic>;
+    fn diagnostics(&mut self, file: &Path, text: Option<&str>) -> Vec<Diagnostic>;
 
     /// Symbols declared in the file.
     fn symbols(&mut self, file: &Path) -> Vec<Symbol>;
@@ -242,84 +254,46 @@ pub trait AnalysisHost {
     fn completion(&mut self, file: &Path, position: Position) -> Vec<CompletionItem>;
 
     /// Inlay hints for a file (inferred types, parameter names).
-    fn inlay_hints(&mut self, file: &Path) -> Vec<InlayHint> {
-        let _ = file;
-        Vec::new()
-    }
+    fn inlay_hints(&mut self, file: &Path) -> Vec<InlayHint>;
 
     /// The declaration of the symbol at a position.
     fn definition(&mut self, file: &Path, position: Position) -> Option<Location>;
 
     /// The declaration of the type of the symbol at a position.
-    fn type_definition(&mut self, file: &Path, position: Position) -> Option<Location> {
-        self.definition(file, position)
-    }
+    fn type_definition(&mut self, file: &Path, position: Position) -> Option<Location>;
 
     /// All implementations/subclasses of the type at a position.
-    fn implementation(&mut self, file: &Path, position: Position) -> Vec<Location> {
-        let _ = (file, position);
-        Vec::new()
-    }
+    fn implementation(&mut self, file: &Path, position: Position) -> Vec<Location>;
 
     /// Signature help for the call at a position.
-    fn signature_help(&mut self, file: &Path, position: Position) -> Option<SignatureHelp> {
-        let _ = (file, position);
-        None
-    }
+    fn signature_help(&mut self, file: &Path, position: Position) -> Option<SignatureHelp>;
 
     /// Format the whole document (external formatter).
-    fn format(&mut self, file: &Path, text: &str) -> Option<String> {
-        let _ = (file, text);
-        None
-    }
+    fn format(&mut self, file: &Path, text: &str) -> Option<String>;
 
     /// Quick fixes available at a position.
-    fn code_actions(&mut self, file: &Path, position: Position) -> Vec<CodeAction> {
-        let _ = (file, position);
-        Vec::new()
-    }
+    fn code_actions(&mut self, file: &Path, position: Position) -> Vec<CodeAction>;
 
     /// Prepare the type hierarchy for the type at a position.
-    fn prepare_type_hierarchy(&mut self, file: &Path, position: Position) -> Option<TypeHierarchyItem> {
-        let _ = (file, position);
-        None
-    }
+    fn prepare_type_hierarchy(&mut self, file: &Path, position: Position) -> Option<TypeHierarchyItem>;
 
     /// Supertypes of a type hierarchy item.
-    fn supertypes(&mut self, item: &TypeHierarchyItem) -> Vec<TypeHierarchyItem> {
-        let _ = item;
-        Vec::new()
-    }
+    fn supertypes(&mut self, item: &TypeHierarchyItem) -> Vec<TypeHierarchyItem>;
 
     /// Subtypes of a type hierarchy item.
-    fn subtypes(&mut self, item: &TypeHierarchyItem) -> Vec<TypeHierarchyItem> {
-        let _ = item;
-        Vec::new()
-    }
+    fn subtypes(&mut self, item: &TypeHierarchyItem) -> Vec<TypeHierarchyItem>;
 
     /// Prepare the call hierarchy for the method at a position.
-    fn prepare_call_hierarchy(&mut self, file: &Path, position: Position) -> Option<CallHierarchyItem> {
-        let _ = (file, position);
-        None
-    }
+    fn prepare_call_hierarchy(&mut self, file: &Path, position: Position) -> Option<CallHierarchyItem>;
 
     /// Incoming calls of a call hierarchy item.
-    fn incoming_calls(&mut self, item: &CallHierarchyItem) -> Vec<CallHierarchyCall> {
-        let _ = item;
-        Vec::new()
-    }
+    fn incoming_calls(&mut self, item: &CallHierarchyItem) -> Vec<CallHierarchyCall>;
 
     /// Outgoing calls of a call hierarchy item.
-    fn outgoing_calls(&mut self, item: &CallHierarchyItem) -> Vec<CallHierarchyCall> {
-        let _ = item;
-        Vec::new()
-    }
+    fn outgoing_calls(&mut self, item: &CallHierarchyItem) -> Vec<CallHierarchyCall>;
 
     /// Range that a rename at this position would edit, if any.
-    fn prepare_rename(&mut self, file: &Path, position: Position) -> Option<Range> {
-        let _ = (file, position);
-        None
-    }
+    fn prepare_rename(&mut self, file: &Path, position: Position) -> Option<Range>;
 
     /// References to the symbol at a position.
     fn references(&mut self, file: &Path, position: Position) -> Vec<Location>;
@@ -333,28 +307,28 @@ pub trait AnalysisHost {
         file: &Path,
         position: Position,
         new_name: &str,
-    ) -> Vec<TextDocumentEdit> {
-        self.rename(file, position, new_name)
-            .into_iter()
-            .map(|edit| TextDocumentEdit {
-                file: file.to_path_buf(),
-                edit,
-            })
-            .collect()
-    }
-
-    /// Rename the symbol at a position; returns the edits to apply.
-    fn rename(&mut self, file: &Path, position: Position, new_name: &str) -> Vec<TextEdit> {
-        let _ = (file, position, new_name);
-        Vec::new()
-    }
+    ) -> Vec<TextDocumentEdit>;
 
     /// Project-wide symbol search.
     fn workspace_symbols(&mut self, query: &str) -> Vec<WorkspaceSymbol>;
 
     /// Hierarchical symbols of a file (outline view).
-    fn document_symbols(&mut self, file: &Path) -> Vec<DocumentSymbol> {
-        let _ = file;
-        Vec::new()
-    }
+    fn document_symbols(&mut self, file: &Path) -> Vec<DocumentSymbol>;
+
+    /// Invalidate cached state for the given paths (didChangeWatchedFiles).
+    fn invalidate(&mut self, paths: &[PathBuf]);
+
+    /// Generation of the published index snapshot (0 before the first build).
+    ///
+    /// Used by smoke tests to prove that a repeated query served the same
+    /// snapshot instead of rebuilding the project.
+    fn index_generation(&self) -> u64;
+
+    /// Current workspace configuration.
+    fn configuration(&self) -> WorkspaceConfiguration;
+
+    /// Replace the workspace configuration (class path / source roots).
+    ///
+    /// A change that affects indexing invalidates the index.
+    fn reconfigure(&mut self, configuration: WorkspaceConfiguration);
 }

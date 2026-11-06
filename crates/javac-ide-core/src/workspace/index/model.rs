@@ -1,12 +1,9 @@
-//! Compact, compiler-independent project index model.
+//! Immutable project index snapshot and its plain-data records.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-pub type FileId = u32;
-pub type SymbolId = u32;
-pub type NameId = u32;
-pub type SignatureId = u32;
+use super::key::{FileId, NameId, SignatureId, StringInterner, SymbolId, SymbolKey};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ByteRange {
@@ -27,43 +24,6 @@ impl ByteRange {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum IndexSymbolKind {
-    Class,
-    Interface,
-    Enum,
-    Annotation,
-    Record,
-    Field,
-    Method,
-    Constructor,
-    Local,
-    Parameter,
-    TypeParameter,
-    Other,
-}
-
-impl IndexSymbolKind {
-    pub fn is_type(self) -> bool {
-        matches!(
-            self,
-            Self::Class | Self::Interface | Self::Enum | Self::Annotation | Self::Record
-        )
-    }
-
-    pub fn is_member(self) -> bool {
-        matches!(self, Self::Field | Self::Method | Self::Constructor)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SymbolKey {
-    pub owner: Option<SymbolId>,
-    pub name: NameId,
-    pub kind: IndexSymbolKind,
-    pub signature: SignatureId,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeRef {
     Project(SymbolId),
@@ -79,6 +39,30 @@ pub enum OccurrenceRole {
     Override,
 }
 
+impl OccurrenceRole {
+    /// Stable on-disk tag.
+    pub fn tag(self) -> u8 {
+        match self {
+            Self::Declaration => 1,
+            Self::Reference => 2,
+            Self::Import => 3,
+            Self::TypeUse => 4,
+            Self::Override => 5,
+        }
+    }
+
+    pub fn from_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            1 => Self::Declaration,
+            2 => Self::Reference,
+            3 => Self::Import,
+            4 => Self::TypeUse,
+            5 => Self::Override,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Occurrence {
     pub file: FileId,
@@ -90,11 +74,12 @@ pub struct Occurrence {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SymbolRecord {
     pub key: SymbolKey,
-    pub kind: IndexSymbolKind,
+    pub kind: super::key::IndexSymbolKind,
     pub file: FileId,
     pub range: ByteRange,
     pub detail: String,
     pub modifiers: u32,
+    /// Fully qualified name, display-only. It is never used as an index key.
     pub flat_name: String,
     pub supertypes: Vec<TypeRef>,
     pub return_type: Option<TypeRef>,
@@ -107,12 +92,44 @@ pub enum SourceSetKind {
     Generated,
 }
 
+impl SourceSetKind {
+    pub fn tag(self) -> u8 {
+        match self {
+            Self::Main => 1,
+            Self::Test => 2,
+            Self::Generated => 3,
+        }
+    }
+
+    pub fn from_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            1 => Self::Main,
+            2 => Self::Test,
+            3 => Self::Generated,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileStatus {
+    Indexed,
+    Failed,
+    Skipped,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileRecord {
     pub path: PathBuf,
     pub hash: u64,
     pub source_set: SourceSetKind,
-    pub failed: bool,
+    pub status: FileStatus,
+}
+
+impl FileRecord {
+    pub fn failed(&self) -> bool {
+        matches!(self.status, FileStatus::Failed)
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -138,35 +155,30 @@ impl Default for IndexStatus {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct StringInterner {
-    strings: Vec<String>,
-    pub(crate) ids: HashMap<String, u32>,
-}
-
-impl StringInterner {
-    pub fn intern(&mut self, value: &str) -> u32 {
-        if let Some(id) = self.ids.get(value) {
-            return *id;
-        }
-        let id = self.strings.len() as u32;
-        let owned = value.to_string();
-        self.strings.push(owned.clone());
-        self.ids.insert(owned, id);
-        id
-    }
-
-    pub fn get(&self, id: u32) -> &str {
-        self.strings
-            .get(id as usize)
-            .map(String::as_str)
-            .unwrap_or("")
+impl IndexStatus {
+    /// Only a fully-built index may answer queries; `Partial` is explicit.
+    pub fn is_ready(&self) -> bool {
+        matches!(self, Self::Ready)
     }
 }
 
+/// Everything that must stay equal for a disk index to be reused.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct WorkspaceFingerprint {
+    pub root: PathBuf,
+    pub classpath_hash: u64,
+    pub toolchain_hash: u64,
+    pub source_level: String,
+    pub jdk_home: Option<PathBuf>,
+    pub platform_dir: Option<PathBuf>,
+}
+
+/// Read-only snapshot of the whole project. `Arc<ProjectIndex>` is the unit of
+/// publication; queries clone the `Arc` and never observe a partial mutation.
 #[derive(Debug)]
 pub struct ProjectIndex {
     pub generation: u64,
+    pub workspace: WorkspaceFingerprint,
     pub strings: StringInterner,
     pub symbols: Vec<SymbolRecord>,
     pub by_key: HashMap<SymbolKey, SymbolId>,
@@ -203,8 +215,12 @@ impl ProjectIndex {
         self.strings.get(id)
     }
 
+    pub fn signature(&self, id: SignatureId) -> &str {
+        self.strings.get(id)
+    }
+
     pub fn symbols_named(&self, name: &str) -> Vec<&SymbolRecord> {
-        let Some(id) = self.strings.ids.get(name).copied() else {
+        let Some(id) = self.strings.find(name) else {
             return Vec::new();
         };
         self.by_name
@@ -244,38 +260,32 @@ impl ProjectIndex {
     }
 
     pub fn is_ready(&self) -> bool {
-        matches!(self.status, IndexStatus::Ready)
+        self.status.is_ready()
+    }
+
+    pub fn symbols(&self) -> impl Iterator<Item = &SymbolRecord> {
+        self.symbols.iter()
+    }
+
+    /// Look up a declaration by its fully qualified name (display identity).
+    pub fn symbol_by_flat(&self, flat_name: &str) -> Option<SymbolId> {
+        self.symbols
+            .iter()
+            .position(|record| record.flat_name == flat_name)
+            .map(|index| index as SymbolId)
+    }
+
+    /// The short name an editor shows for a declaration.
+    pub fn display_name(&self, record: &SymbolRecord) -> String {
+        simple_name(&record.flat_name)
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct WorkspaceModel {
-    pub root: PathBuf,
-    pub source_path: Vec<PathBuf>,
-    pub class_path: Vec<PathBuf>,
-    pub source_level: String,
-    pub classpath_hash: u64,
-    pub generation: u64,
-}
-impl WorkspaceModel {
-    pub fn from_config(config: &crate::analysis::AnalysisConfig) -> Self {
-        use std::hash::{Hash, Hasher};
-        let mut classpath_hasher = std::collections::hash_map::DefaultHasher::new();
-        for entry in &config.class_path {
-            entry.to_string_lossy().hash(&mut classpath_hasher);
-        }
-        let classpath_hash = classpath_hasher.finish();
-        Self {
-            root: config
-                .source_path
-                .first()
-                .cloned()
-                .unwrap_or_else(|| config.output_dir.clone()),
-            source_path: config.source_path.clone(),
-            class_path: config.class_path.clone(),
-            source_level: config.source_level.clone(),
-            classpath_hash,
-            generation: 0,
-        }
-    }
+/// `p1.A` -> `A`, `Outer.Inner` -> `Inner`.
+pub fn simple_name(flat_name: &str) -> String {
+    flat_name
+        .rsplit(['.', '$'])
+        .next()
+        .unwrap_or(flat_name)
+        .to_string()
 }

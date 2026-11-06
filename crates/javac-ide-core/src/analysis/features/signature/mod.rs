@@ -2,9 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use super::super::{canonical, AnalysisSession};
+use super::super::{canonical, FileAnalysis};
 
-impl AnalysisSession {
+impl FileAnalysis {
     /// Signature help for the call at a position.
     pub(crate) fn signature_help_impl(
         &mut self,

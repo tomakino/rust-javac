@@ -3,9 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use super::super::positions::offset_to_line_col;
-use super::super::{canonical, AnalysisSession};
+use super::super::{canonical, FileAnalysis};
 
-impl AnalysisSession {
+impl FileAnalysis {
     /// Prepare the call hierarchy for a method at a position.
     pub(crate) fn prepare_call_hierarchy_impl(
         &mut self,

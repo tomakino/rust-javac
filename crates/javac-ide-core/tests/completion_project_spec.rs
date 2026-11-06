@@ -2,8 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use javac_analysis_api::{AnalysisHost, Position};
-use javac_ide_core::analysis::{AnalysisConfig, AnalysisSession};
+use javac_analysis_api::{WorkspaceService, Position};
+use javac_ide_core::analysis::AnalysisConfig;
+use javac_ide_core::workspace::Workspace;
 
 fn platform_dir() -> PathBuf {
     if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
@@ -42,7 +43,7 @@ fn config(source: &Path, output: &Path) -> AnalysisConfig {
     }
 }
 
-fn labels_at(session: &mut AnalysisSession, name: &str, source: &str) -> Vec<String> {
+fn labels_at(session: &mut Workspace, name: &str, source: &str) -> Vec<String> {
     let cursor = source.find('|').expect("cursor marker");
     let text = source.replacen('|', "", 1);
     let before = &text[..cursor];
@@ -57,7 +58,7 @@ fn labels_at(session: &mut AnalysisSession, name: &str, source: &str) -> Vec<Str
     let root = session.config().source_path[0].clone();
     let path = root.join(format!("{name}.java"));
     std::fs::write(&path, &text).unwrap();
-    AnalysisHost::analyze(session, &path, Some(&text));
+    WorkspaceService::diagnostics(session, &path, Some(&text));
     session
         .completion(&path, Position::new(line, column))
         .into_iter()
@@ -70,7 +71,7 @@ fn project_index_supplies_class_candidates() {
     let root = fixture("classes");
     std::fs::write(root.join("ProjectThing.java"), "class ProjectThing { ProjectThing() {} }").unwrap();
     let output = root.join("out");
-    let mut session = AnalysisSession::new(config(&root, &output));
+    let mut session = Workspace::new(config(&root, &output));
     let labels = labels_at(
         &mut session,
         "A",

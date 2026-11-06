@@ -3,8 +3,9 @@
 
 use std::path::PathBuf;
 
-use javac_analysis_api::{AnalysisHost, Position};
-use javac_ide_core::analysis::{AnalysisConfig, AnalysisSession};
+use javac_analysis_api::{WorkspaceService, Position};
+use javac_ide_core::analysis::AnalysisConfig;
+use javac_ide_core::workspace::Workspace;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -12,16 +13,16 @@ fn main() {
         eprintln!("usage: host_spike <class-dir> <source> <out-dir>");
         std::process::exit(2);
     }
-    let mut session = AnalysisSession::new(AnalysisConfig {
+    let mut session = Workspace::new(AnalysisConfig {
         class_path: vec![PathBuf::from(&args[1])],
         output_dir: PathBuf::from(&args[3]),
         source_level: "17".to_string(),
         source_path: Vec::new(),
     });
     let file = PathBuf::from(&args[2]);
-    let host: &mut dyn AnalysisHost = &mut session;
+    let host: &mut dyn WorkspaceService = &mut session;
 
-    let diagnostics = host.analyze(&file, None);
+    let diagnostics = host.diagnostics(&file, None);
     println!("diagnostics: {}", diagnostics.len());
 
     let symbols = host.symbols(&file);

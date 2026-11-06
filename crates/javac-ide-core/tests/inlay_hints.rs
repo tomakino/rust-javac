@@ -2,11 +2,12 @@
 
 use std::path::PathBuf;
 
-use javac_analysis_api::{AnalysisHost, InlayHintKind};
+use javac_analysis_api::{WorkspaceService, InlayHintKind};
 
-use javac_ide_core::analysis::{AnalysisConfig, AnalysisSession};
+use javac_ide_core::analysis::AnalysisConfig;
+use javac_ide_core::workspace::Workspace;
 
-fn session() -> AnalysisSession {
+fn session() -> Workspace {
     if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -23,7 +24,7 @@ fn session() -> AnalysisSession {
         .join("target")
         .join("tmp")
         .join("inlay-hints");
-    AnalysisSession::new(AnalysisConfig {
+    Workspace::new(AnalysisConfig {
         class_path: Vec::new(),
         output_dir: output,
         source_level: "17".to_string(),
@@ -32,15 +33,15 @@ fn session() -> AnalysisSession {
 }
 
 fn hints_for(
-    session: &mut AnalysisSession,
+    session: &mut Workspace,
     name: &str,
     text: &str,
 ) -> (PathBuf, Vec<javac_analysis_api::InlayHint>) {
     let path = PathBuf::from(format!("target/tmp/inlay-hints/{name}.java"));
     let _ = std::fs::create_dir_all("target/tmp/inlay-hints");
     std::fs::write(&path, text).ok();
-    AnalysisHost::analyze(session, &path, Some(text));
-    let hints = AnalysisHost::inlay_hints(session, &path);
+    WorkspaceService::diagnostics(session, &path, Some(text));
+    let hints = WorkspaceService::inlay_hints(session, &path);
     (path, hints)
 }
 
@@ -154,7 +155,7 @@ fn hints_remain_available_for_an_earlier_analyzed_file() {
     assert!(one.iter().any(|hint| hint.label == ": int"), "{one:?}");
     let (_, two) = hints_for(&mut session, "LaterTwo", "class LaterTwo { void f() { var b = \"s\"; } }\n");
     assert!(two.iter().any(|hint| hint.label == ": String"), "{two:?}");
-    let again = AnalysisHost::inlay_hints(&mut session, &one_path);
+    let again = WorkspaceService::inlay_hints(&mut session, &one_path);
     assert!(
         again.iter().any(|hint| hint.label == ": int"),
         "earlier file lost hints after analyzing another file: {again:?}"
@@ -230,10 +231,10 @@ fn repeated_analysis_does_not_duplicate_hints() {
     let path = PathBuf::from("target/tmp/inlay-hints/Again.java");
     let _ = std::fs::create_dir_all("target/tmp/inlay-hints");
     std::fs::write(&path, text).ok();
-    AnalysisHost::analyze(&mut session, &path, Some(text));
-    let first = AnalysisHost::inlay_hints(&mut session, &path);
-    AnalysisHost::analyze(&mut session, &path, Some(text));
-    let second = AnalysisHost::inlay_hints(&mut session, &path);
+    WorkspaceService::diagnostics(&mut session, &path, Some(text));
+    let first = WorkspaceService::inlay_hints(&mut session, &path);
+    WorkspaceService::diagnostics(&mut session, &path, Some(text));
+    let second = WorkspaceService::inlay_hints(&mut session, &path);
     assert_eq!(first.len(), second.len(), "{first:?} != {second:?}");
     let mut keys: Vec<(u32, u32, String)> = second
         .iter()
@@ -249,7 +250,7 @@ fn repeated_analysis_does_not_duplicate_hints() {
 fn hints_before_analysis_and_for_unknown_file_are_empty() {
     let mut session = session();
     let path = PathBuf::from("target/tmp/inlay-hints/NeverAnalyzed.java");
-    assert!(AnalysisHost::inlay_hints(&mut session, &path).is_empty());
+    assert!(WorkspaceService::inlay_hints(&mut session, &path).is_empty());
 }
 
 #[test]
@@ -327,9 +328,9 @@ fn call_arguments_get_parameter_names() {
     let _ = std::fs::create_dir_all("target/tmp/inlay-hints");
     let text = "class Parameters { void f() { new StringBuffer(16); String s = new String(\"x\"); } }\n";
     std::fs::write(&path, text).ok();
-    AnalysisHost::analyze(&mut session, &path, Some(text));
+    WorkspaceService::diagnostics(&mut session, &path, Some(text));
 
-    let hints = AnalysisHost::inlay_hints(&mut session, &path);
+    let hints = WorkspaceService::inlay_hints(&mut session, &path);
     let after = |needle: &str| (text.find(needle).expect(needle)) as u32;
     let capacity = hints
         .iter()
@@ -348,8 +349,8 @@ fn call_arguments_get_parameter_names() {
     // cached parameter hint is rebound by its argument snippet.
     let shifted = "class Parameters {\n\n    void f() {\n        int broken = ;\n        new StringBuffer();\n        new StringBuffer(16);\n    }\n}\n";
     std::fs::write(&path, shifted).ok();
-    AnalysisHost::analyze(&mut session, &path, Some(shifted));
-    let hints = AnalysisHost::inlay_hints(&mut session, &path);
+    WorkspaceService::diagnostics(&mut session, &path, Some(shifted));
+    let hints = WorkspaceService::inlay_hints(&mut session, &path);
     assert!(
         hints
             .iter()
@@ -365,15 +366,15 @@ fn last_hints_survive_a_temporary_parse_failure() {
     let _ = std::fs::create_dir_all("target/tmp/inlay-hints");
     let valid = "class Stable { void f() { var s = \"x\"; } }\n";
     std::fs::write(&path, valid).ok();
-    AnalysisHost::analyze(&mut session, &path, Some(valid));
-    assert_eq!(AnalysisHost::inlay_hints(&mut session, &path).len(), 1);
+    WorkspaceService::diagnostics(&mut session, &path, Some(valid));
+    assert_eq!(WorkspaceService::inlay_hints(&mut session, &path).len(), 1);
 
     // A line inserted above moves the declaration; the cached hint must be
     // rebound by the var token, not by its old line/column.
     let broken = "class Stable {\n    void f() {\n        var s = ;\n    }\n}\n";
     std::fs::write(&path, broken).ok();
-    AnalysisHost::analyze(&mut session, &path, Some(broken));
-    let hints = AnalysisHost::inlay_hints(&mut session, &path);
+    WorkspaceService::diagnostics(&mut session, &path, Some(broken));
+    let hints = WorkspaceService::inlay_hints(&mut session, &path);
     assert!(
         hints
             .iter()
@@ -383,9 +384,9 @@ fn last_hints_survive_a_temporary_parse_failure() {
 
     let without_var = "class Stable { void f() { int s = 1; } }\n";
     std::fs::write(&path, without_var).ok();
-    AnalysisHost::analyze(&mut session, &path, Some(without_var));
+    WorkspaceService::diagnostics(&mut session, &path, Some(without_var));
     assert!(
-        AnalysisHost::inlay_hints(&mut session, &path).is_empty(),
+        WorkspaceService::inlay_hints(&mut session, &path).is_empty(),
         "stale hints survived after var removal"
     );
 }
@@ -397,14 +398,14 @@ fn old_analysis_rounds_do_not_leak_parameter_names() {
     let _ = std::fs::create_dir_all("target/tmp/inlay-hints");
     let first = "class Rounds { int add(int first, int second) { return 0; } void f() { add(1, 2); } }\n";
     std::fs::write(&path, first).ok();
-    AnalysisHost::analyze(&mut session, &path, Some(first));
-    let hints = AnalysisHost::inlay_hints(&mut session, &path);
+    WorkspaceService::diagnostics(&mut session, &path, Some(first));
+    let hints = WorkspaceService::inlay_hints(&mut session, &path);
     assert!(hints.iter().any(|hint| hint.label == "first:"), "{hints:?}");
 
     let second = first.replace("first", "left").replace("second", "right");
     std::fs::write(&path, &second).ok();
-    AnalysisHost::analyze(&mut session, &path, Some(&second));
-    let hints = AnalysisHost::inlay_hints(&mut session, &path);
+    WorkspaceService::diagnostics(&mut session, &path, Some(&second));
+    let hints = WorkspaceService::inlay_hints(&mut session, &path);
     assert!(hints.iter().any(|hint| hint.label == "left:"), "{hints:?}");
     assert!(hints.iter().any(|hint| hint.label == "right:"), "{hints:?}");
     assert!(
@@ -420,9 +421,9 @@ fn enhanced_for_var_gets_type_hint() {
     let _ = std::fs::create_dir_all("target/tmp/inlay-hints");
     let text = "class Enhanced { void f(java.util.List<String> names) { for (var name : names) { } } }\n";
     std::fs::write(&path, text).ok();
-    AnalysisHost::analyze(&mut session, &path, Some(text));
+    WorkspaceService::diagnostics(&mut session, &path, Some(text));
 
-    let hints = AnalysisHost::inlay_hints(&mut session, &path);
+    let hints = WorkspaceService::inlay_hints(&mut session, &path);
     let after = (text.find("var name").expect("var name") + "var name".len()) as u32;
     assert!(
         hints.iter().any(|hint| hint.label == ": String" && hint.position.column == after),
@@ -437,9 +438,9 @@ fn var_in_try_and_lambda_gets_type_hint() {
     let _ = std::fs::create_dir_all("target/tmp/inlay-hints");
     let text = "class TryLambda { void f() { try (var reader = new java.io.StringReader(\"x\")) { } java.util.function.Consumer<String> c = (var value) -> { }; } }\n";
     std::fs::write(&path, text).ok();
-    AnalysisHost::analyze(&mut session, &path, Some(text));
+    WorkspaceService::diagnostics(&mut session, &path, Some(text));
 
-    let hints = AnalysisHost::inlay_hints(&mut session, &path);
+    let hints = WorkspaceService::inlay_hints(&mut session, &path);
     let reader = (text.find("var reader").expect("reader") + "var reader".len()) as u32;
     let value = (text.find("var value").expect("value") + "var value".len()) as u32;
     assert!(
@@ -459,14 +460,14 @@ fn collection_type_change_does_not_reuse_old_label() {
     let _ = std::fs::create_dir_all("target/tmp/inlay-hints");
     let first = "class Capture { void f(java.util.List<String> names) { for (var name : names) { } } }\n";
     std::fs::write(&path, first).ok();
-    AnalysisHost::analyze(&mut session, &path, Some(first));
-    let hints = AnalysisHost::inlay_hints(&mut session, &path);
+    WorkspaceService::diagnostics(&mut session, &path, Some(first));
+    let hints = WorkspaceService::inlay_hints(&mut session, &path);
     assert!(hints.iter().any(|hint| hint.label == ": String"), "{hints:?}");
 
     let second = "class Capture { void f(java.util.List<?> names) { for (var name : names) { } } }\n";
     std::fs::write(&path, second).ok();
-    AnalysisHost::analyze(&mut session, &path, Some(second));
-    let hints = AnalysisHost::inlay_hints(&mut session, &path);
+    WorkspaceService::diagnostics(&mut session, &path, Some(second));
+    let hints = WorkspaceService::inlay_hints(&mut session, &path);
     assert!(
         hints.iter().all(|hint| hint.label != ": String"),
         "stale String hint after type change: {hints:?}"
@@ -480,9 +481,9 @@ fn nested_call_arguments_get_distinct_positions() {
     let _ = std::fs::create_dir_all("target/tmp/inlay-hints");
     let text = "class Nested { int add(int left, int right) { return 0; } void f() { System.out.println(add(1, 2)); } }\n";
     std::fs::write(&path, text).ok();
-    AnalysisHost::analyze(&mut session, &path, Some(text));
+    WorkspaceService::diagnostics(&mut session, &path, Some(text));
 
-    let hints = AnalysisHost::inlay_hints(&mut session, &path);
+    let hints = WorkspaceService::inlay_hints(&mut session, &path);
     let outer = text.rfind("add(1").expect("inner call") as u32;
     let first = text.find("1, 2").expect("first arg") as u32;
     let second = text.find("2)").expect("second arg") as u32;
@@ -513,8 +514,8 @@ fn whitespace_edits_keep_all_hints() {
     ];
     for (index, text) in variants.iter().enumerate() {
         std::fs::write(&path, text).ok();
-        AnalysisHost::analyze(&mut session, &path, Some(text));
-        let hints = AnalysisHost::inlay_hints(&mut session, &path);
+        WorkspaceService::diagnostics(&mut session, &path, Some(text));
+        let hints = WorkspaceService::inlay_hints(&mut session, &path);
         let labels: Vec<&str> = hints.iter().map(|hint| hint.label.as_str()).collect();
         assert!(
             labels.iter().filter(|label| **label == ": long").count() == 2,
@@ -534,9 +535,9 @@ fn var_hints_land_after_the_variable_name_only() {
     let _ = std::fs::create_dir_all("target/tmp/inlay-hints");
     let text = "class Inferred { void f() { int x = 1; var s = \"x\"; var n = x; } }\n";
     std::fs::write(&path, text).ok();
-    AnalysisHost::analyze(&mut session, &path, Some(text));
+    WorkspaceService::diagnostics(&mut session, &path, Some(text));
 
-    let hints = AnalysisHost::inlay_hints(&mut session, &path);
+    let hints = WorkspaceService::inlay_hints(&mut session, &path);
     assert_eq!(hints.len(), 2, "hints: {hints:?}");
     assert!(hints.iter().all(|hint| hint.kind == InlayHintKind::Type));
 

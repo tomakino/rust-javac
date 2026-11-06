@@ -9,7 +9,7 @@ use crate::ids::{SymbolId, TreeId};
 use crate::util::name::Name;
 use super::positions::{line_offset, word_at};
 use super::type_names::type_name;
-use super::{canonical, AnalysisSession};
+use super::{canonical, FileAnalysis};
 
 /// One symbol of the analyzed file (classes and their direct members).
 #[derive(Debug, Clone)]
@@ -32,7 +32,7 @@ pub(crate) struct TracedClass {
     package: Option<SymbolId>,
 }
 
-impl AnalysisSession {
+impl FileAnalysis {
     pub(crate) fn trace_classes_for(&mut self, source: &Path) {
         self.traced.clear();
         let source_name = canonical(source);
@@ -210,7 +210,7 @@ impl AnalysisSession {
 }
 
 
-impl AnalysisSession {
+impl FileAnalysis {
     /// Simple names declared in the currently analyzed file (import conflicts).
     pub(crate) fn traced_class_names(&self) -> Vec<String> {
         self.traced
@@ -319,7 +319,7 @@ impl AnalysisSession {
 }
 
 
-impl AnalysisSession {
+impl FileAnalysis {
     /// Type text of a member declaration tree (field type or method signature).
     fn member_type_text(&self, tree: TreeId) -> Option<String> {
         let ctx = &self.compiler.ctx;

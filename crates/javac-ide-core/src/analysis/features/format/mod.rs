@@ -1,8 +1,8 @@
 //! Formatting through google-java-format.
 
-use super::super::AnalysisSession;
+use super::super::FileAnalysis;
 
-impl AnalysisSession {
+impl FileAnalysis {
     /// Format the whole document with google-java-format.
     pub(crate) fn format_impl(&mut self, _file: &std::path::Path, text: &str) -> Option<String> {
         format_with_google_java_format(text)

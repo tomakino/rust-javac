@@ -6,216 +6,36 @@ use super::diagnostics::convert_diagnostic;
 use super::type_names::type_name;
 use super::positions::{indexed_location, occurrences, offset_to_line_col, prefix_at, symbol_range, word_at};
 use super::features::map_kind;
-use super::{canonical, AnalysisSession};
+use super::{canonical, FileAnalysis};
 
-impl javac_analysis_api::AnalysisHost for AnalysisSession {
-    fn analyze(
-        &mut self,
-        file: &Path,
-        text: Option<&str>,
-    ) -> Vec<javac_analysis_api::Diagnostic> {
-        if let Some(text) = text {
-            self.texts
-                .insert(PathBuf::from(canonical(file)), text.to_string());
-            self.compiler.overlay_text = Some((PathBuf::from(canonical(file)), text.to_string()));
-            self.cache = None;
-            self.project_index = None;
-        } else {
-            self.compiler.overlay_text = None;
-        }
-        let _ = self.analyze(file);
-        self.compiler.overlay_text = None;
+impl FileAnalysis {
+    /// Analyze a file and return its diagnostics (overlay text supported).
+    pub(crate) fn diagnostics_impl(&mut self, file: &Path) -> Vec<javac_analysis_api::Diagnostic> {
         let text = self
             .texts
             .get(&PathBuf::from(canonical(file)))
             .cloned()
+            .or_else(|| std::fs::read_to_string(file).ok())
             .unwrap_or_default();
+        let hash = crate::workspace::model::hash_text(&text);
+        // Repeated requests for the same version answer from the stored result:
+        // the compiler log is drained by the first caller.
+        if self.diagnostics_hash == Some(hash) {
+            return self.diagnostics.clone();
+        }
+        // The workspace pre-analyzes the file when it creates the slot; a
+        // second `analyze` here is a cache hit and keeps the diagnostics.
+        let _ = self.analyze(file);
+        self.compiler.overlay_text = None;
         let diagnostics = self.compiler.log.take_diagnostics();
         let mut result: Vec<javac_analysis_api::Diagnostic> = diagnostics
             .iter()
             .map(|diag| convert_diagnostic(diag, &text))
             .collect();
         result.extend(super::inspections::unused_imports(&text));
+        self.diagnostics = result.clone();
+        self.diagnostics_hash = Some(hash);
         result
-    }
-
-    fn symbols(&mut self, _file: &Path) -> Vec<javac_analysis_api::Symbol> {
-        self.symbols()
-            .into_iter()
-            .map(|symbol| javac_analysis_api::Symbol {
-                name: symbol.name,
-                kind: map_kind(symbol.kind),
-                range: None,
-                qualified_name: Some(symbol.flat_name),
-            })
-            .collect()
-    }
-
-    fn symbol_at(
-        &mut self,
-        file: &Path,
-        position: javac_analysis_api::Position,
-    ) -> Option<javac_analysis_api::Symbol> {
-        self.symbol_at(file, position.line as usize + 1, position.column as usize + 1)
-            .map(|symbol| javac_analysis_api::Symbol {
-                name: symbol.name,
-                kind: map_kind(symbol.kind),
-                range: None,
-                qualified_name: Some(symbol.flat_name),
-            })
-    }
-
-    fn completion(
-        &mut self,
-        file: &Path,
-        position: javac_analysis_api::Position,
-    ) -> Vec<javac_analysis_api::CompletionItem> {
-        self.completion_impl(file, position)
-    }
-
-    fn definition(
-        &mut self,
-        file: &Path,
-        position: javac_analysis_api::Position,
-    ) -> Option<javac_analysis_api::Location> {
-        self.definition_impl(file, position)
-    }
-
-    fn type_definition(
-        &mut self,
-        file: &Path,
-        position: javac_analysis_api::Position,
-    ) -> Option<javac_analysis_api::Location> {
-        self.type_definition_impl(file, position)
-    }
-
-    fn prepare_call_hierarchy(
-        &mut self,
-        file: &Path,
-        position: javac_analysis_api::Position,
-    ) -> Option<javac_analysis_api::CallHierarchyItem> {
-        self.prepare_call_hierarchy_impl(file, position)
-    }
-
-    fn incoming_calls(
-        &mut self,
-        item: &javac_analysis_api::CallHierarchyItem,
-    ) -> Vec<javac_analysis_api::CallHierarchyCall> {
-        self.incoming_calls_impl(item)
-    }
-
-    fn outgoing_calls(
-        &mut self,
-        item: &javac_analysis_api::CallHierarchyItem,
-    ) -> Vec<javac_analysis_api::CallHierarchyCall> {
-        self.outgoing_calls_impl(item)
-    }
-
-    fn prepare_type_hierarchy(
-        &mut self,
-        file: &Path,
-        position: javac_analysis_api::Position,
-    ) -> Option<javac_analysis_api::TypeHierarchyItem> {
-        self.prepare_type_hierarchy_impl(file, position)
-    }
-
-    fn supertypes(
-        &mut self,
-        item: &javac_analysis_api::TypeHierarchyItem,
-    ) -> Vec<javac_analysis_api::TypeHierarchyItem> {
-        self.supertypes_impl(item)
-    }
-
-    fn subtypes(
-        &mut self,
-        item: &javac_analysis_api::TypeHierarchyItem,
-    ) -> Vec<javac_analysis_api::TypeHierarchyItem> {
-        self.subtypes_impl(item)
-    }
-
-    fn implementation(
-        &mut self,
-        file: &Path,
-        position: javac_analysis_api::Position,
-    ) -> Vec<javac_analysis_api::Location> {
-        self.implementation_impl(file, position)
-    }
-
-    fn prepare_rename(
-        &mut self,
-        file: &Path,
-        position: javac_analysis_api::Position,
-    ) -> Option<javac_analysis_api::Range> {
-        self.prepare_rename_impl(file, position)
-    }
-
-    fn references(
-        &mut self,
-        file: &Path,
-        position: javac_analysis_api::Position,
-    ) -> Vec<javac_analysis_api::Location> {
-        self.references_impl(file, position)
-    }
-
-    fn document_symbols(
-        &mut self,
-        file: &Path,
-    ) -> Vec<javac_analysis_api::DocumentSymbol> {
-        self.document_symbols_impl(file)
-    }
-
-    fn workspace_symbols(&mut self, query: &str) -> Vec<javac_analysis_api::WorkspaceSymbol> {
-        self.workspace_symbols_impl(query)
-    }
-
-    fn code_actions(
-        &mut self,
-        file: &Path,
-        position: javac_analysis_api::Position,
-    ) -> Vec<javac_analysis_api::CodeAction> {
-        self.code_actions_impl(file, position)
-    }
-
-    fn signature_help(
-        &mut self,
-        file: &Path,
-        position: javac_analysis_api::Position,
-    ) -> Option<javac_analysis_api::SignatureHelp> {
-        self.signature_help_impl(file, position)
-    }
-
-    fn inlay_hints(&mut self, file: &Path) -> Vec<javac_analysis_api::InlayHint> {
-        self.inlay_hints_impl(file)
-    }
-
-    fn rename_workspace(
-        &mut self,
-        file: &Path,
-        position: javac_analysis_api::Position,
-        new_name: &str,
-    ) -> Vec<javac_analysis_api::TextDocumentEdit> {
-        self.rename_workspace_impl(file, position, new_name)
-    }
-
-    fn rename(
-        &mut self,
-        file: &Path,
-        position: javac_analysis_api::Position,
-        new_name: &str,
-    ) -> Vec<javac_analysis_api::TextEdit> {
-        self.rename_impl(file, position, new_name)
-    }
-
-    fn format(&mut self, file: &Path, text: &str) -> Option<String> {
-        self.format_impl(file, text)
-    }
-
-    fn hover(
-        &mut self,
-        file: &Path,
-        position: javac_analysis_api::Position,
-    ) -> Option<String> {
-        self.hover_impl(file, position)
     }
 }
 
@@ -226,7 +46,7 @@ impl javac_analysis_api::AnalysisHost for AnalysisSession {
 
 
 
-impl AnalysisSession {
+impl FileAnalysis {
     /// Location of a declaration, using the session text when available
     /// (unsaved files have no content on disk).
     pub(crate) fn location_for(&self, file: &Path, pos: i32) -> Option<javac_analysis_api::Location> {
@@ -264,7 +84,7 @@ pub(crate) fn location_at(
 }
 
 
-impl AnalysisSession {
+impl FileAnalysis {
     /// The class symbol with the given simple name (any of the compiler's
     /// source-backed classes).
     pub(crate) fn class_symbol_named(&self, name: &str) -> Option<crate::ids::SymbolId> {
@@ -289,7 +109,7 @@ impl AnalysisSession {
 }
 
 
-impl AnalysisSession {
+impl FileAnalysis {
     /// Type hierarchy node for a class symbol.
     pub(crate) fn type_hierarchy_item(
         &self,
@@ -320,7 +140,7 @@ impl AnalysisSession {
 }
 
 
-impl AnalysisSession {
+impl FileAnalysis {
     /// Call hierarchy node for a method declared in an analyzed file.
     pub(crate) fn method_item(
         &self,
@@ -380,7 +200,7 @@ impl AnalysisSession {
 }
 
 
-impl AnalysisSession {
+impl FileAnalysis {
     /// Method bodies of one file as (name, start, end) byte ranges.
     pub(crate) fn method_ranges(&self, file: &Path) -> Vec<(String, i32, i32)> {
         let file_name = canonical(file);

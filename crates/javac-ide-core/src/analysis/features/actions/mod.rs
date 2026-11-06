@@ -3,9 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use super::super::positions::word_at;
-use super::super::{canonical, AnalysisSession};
+use super::super::{canonical, FileAnalysis};
 
-impl AnalysisSession {
+impl FileAnalysis {
     /// Quick fixes at a position.
     pub(crate) fn code_actions_impl(
         &mut self,

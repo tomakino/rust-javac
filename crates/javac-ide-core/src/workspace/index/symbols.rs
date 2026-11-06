@@ -2,7 +2,7 @@
 
 use javac_analysis_api::SymbolKind;
 
-use super::model::IndexSymbolKind;
+use super::key::IndexSymbolKind;
 
 pub(crate) fn api_symbol_kind(kind: IndexSymbolKind) -> SymbolKind {
     match kind {

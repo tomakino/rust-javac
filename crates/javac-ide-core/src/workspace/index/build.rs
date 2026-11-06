@@ -1,4 +1,8 @@
-//! Build a ProjectIndex from a temporary compiler pass.
+//! Build a [`ProjectIndex`] from a temporary compiler pass.
+//!
+//! Files are compiled in batches with a throw-away compiler; only the batch's
+//! own compilation units are indexed. The compiler is dropped after every
+//! batch, so the index never owns a compiler session.
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
@@ -13,30 +17,60 @@ use crate::ids::{SymbolId as CompilerSymbolId, TreeId};
 use crate::tree::jc_tree::TreeKind;
 use crate::tree::tree_scanner::TreeScannerVisitor;
 
-use super::super::type_names::type_name;
-use super::super::{canonical, AnalysisConfig, AnalysisSession};
+use super::super::analysis::FileAnalysis;
+use super::super::model::WorkspaceModel;
+use super::key::*;
 use super::model::*;
 
-/// Build a complete index from the project source roots.
-pub fn build_project_index(config: &AnalysisConfig, batch_size: usize) -> ProjectIndex {
-    IndexBuilder::new(config).build(batch_size)
+/// Default number of files compiled in one temporary compiler session.
+pub const DEFAULT_BATCH_SIZE: usize = 128;
+/// Files above this count are skipped and the index reports `Partial`.
+pub const DEFAULT_MAX_INDEXED_FILES: usize = 200_000;
+/// Occurrence storage above this many bytes stops growing and reports `Partial`.
+pub const DEFAULT_MAX_OCCURRENCE_BYTES: usize = 256 * 1024 * 1024;
+
+#[derive(Debug, Default, Clone)]
+pub struct IndexLimits {
+    pub max_indexed_files: usize,
+    pub max_occurrence_bytes: usize,
 }
 
-pub fn build_project_index_with_overlays(
-    config: &AnalysisConfig,
-    batch_size: usize,
+impl IndexLimits {
+    pub fn new(max_indexed_files: usize, max_occurrence_bytes: usize) -> Self {
+        Self {
+            max_indexed_files,
+            max_occurrence_bytes,
+        }
+    }
+
+    pub fn defaults() -> Self {
+        Self::new(DEFAULT_MAX_INDEXED_FILES, DEFAULT_MAX_OCCURRENCE_BYTES)
+    }
+}
+
+#[derive(Debug)]
+pub struct IndexBuildResult {
+    pub index: ProjectIndex,
+    pub skipped_files: Vec<PathBuf>,
+    pub failed_files: Vec<PathBuf>,
+    pub occurrence_bytes: usize,
+}
+
+/// Build a complete index from the workspace model.
+pub fn build(
+    model: &WorkspaceModel,
+    config: &crate::analysis::AnalysisConfig,
     overlays: &HashMap<PathBuf, String>,
-) -> ProjectIndex {
-    IndexBuilder::new_with_overlays(config, overlays).build(batch_size)
-}
-
-/// Build the workspace fingerprint without touching source files.
-pub fn build_workspace_model(config: &AnalysisConfig) -> WorkspaceModel {
-    WorkspaceModel::from_config(config)
+    batch_size: usize,
+    limits: &IndexLimits,
+) -> IndexBuildResult {
+    IndexBuilder::new(model, config, limits).build(overlays, batch_size)
 }
 
 pub struct IndexBuilder {
-    config: AnalysisConfig,
+    model: WorkspaceModel,
+    config: crate::analysis::AnalysisConfig,
+    limits: IndexLimits,
     files: Vec<PathBuf>,
     file_ids: HashMap<PathBuf, FileId>,
     records: Vec<FileRecord>,
@@ -49,44 +83,50 @@ pub struct IndexBuilder {
     by_file: HashMap<FileId, FileIndex>,
     occurrences: HashMap<SymbolId, Vec<Occurrence>>,
     occurrence_seen: HashSet<(FileId, u32, u32, SymbolId, OccurrenceRole)>,
+    occurrence_bytes: usize,
+    occurrences_full: bool,
     pending_supertypes: Vec<(SymbolId, Vec<String>)>,
     failed_files: Vec<PathBuf>,
+    skipped_files: Vec<PathBuf>,
+    status_reason: Option<String>,
     overlays: HashMap<PathBuf, String>,
     strings: StringInterner,
 }
 
 impl IndexBuilder {
-    pub fn new(config: &AnalysisConfig) -> Self {
-        Self::new_with_overlays(config, &HashMap::new())
-    }
-
-    pub fn new_with_overlays(
-        config: &AnalysisConfig,
-        overlays: &HashMap<PathBuf, String>,
+    pub fn new(
+        model: &WorkspaceModel,
+        config: &crate::analysis::AnalysisConfig,
+        limits: &IndexLimits,
     ) -> Self {
-        let files = collect_java_files(&config.source_path);
+        let all_files = collect_java_files(&model.source_roots());
+        let (files, skipped_files) = if all_files.len() > limits.max_indexed_files {
+            let files = all_files[..limits.max_indexed_files].to_vec();
+            let skipped = all_files[limits.max_indexed_files..].to_vec();
+            (files, skipped)
+        } else {
+            (all_files, Vec::new())
+        };
         let mut file_ids = HashMap::new();
         let mut records = Vec::with_capacity(files.len());
         let mut texts = HashMap::new();
         for (index, path) in files.iter().enumerate() {
             let id = index as FileId;
             file_ids.insert(path.clone(), id);
-            let text = overlays
-                .get(path)
-                .cloned()
-                .or_else(|| std::fs::read_to_string(path).ok())
-                .unwrap_or_default();
-            let hash = hash_text(&text);
             records.push(FileRecord {
                 path: path.clone(),
-                hash,
-                source_set: SourceSetKind::Main,
-                failed: false,
+                hash: 0,
+                source_set: model
+                    .source_set_for(path)
+                    .unwrap_or(SourceSetKind::Main),
+                status: FileStatus::Skipped,
             });
-            texts.insert(id, text);
+            texts.insert(id, String::new());
         }
         Self {
+            model: model.clone(),
             config: config.clone(),
+            limits: limits.clone(),
             files,
             file_ids,
             records,
@@ -99,13 +139,69 @@ impl IndexBuilder {
             by_file: HashMap::new(),
             occurrences: HashMap::new(),
             occurrence_seen: HashSet::new(),
+            occurrence_bytes: 0,
+            occurrences_full: false,
             pending_supertypes: Vec::new(),
             failed_files: Vec::new(),
-            overlays: overlays.clone(),
+            skipped_files,
+            status_reason: None,
+            overlays: HashMap::new(),
             strings: StringInterner::default(),
         }
     }
 
+    pub fn build(
+        mut self,
+        overlays: &HashMap<PathBuf, String>,
+        batch_size: usize,
+    ) -> IndexBuildResult {
+        self.overlays = overlays.clone();
+        self.load_texts(overlays);
+        if self.files.is_empty() {
+            return self.finish(IndexStatus::Ready);
+        }
+        let batch_size = batch_size.max(1);
+        let batches = self.batches(batch_size);
+        for batch in batches {
+            self.build_batch(&batch);
+        }
+        let mut status = if self.failed_files.is_empty() && self.skipped_files.is_empty() {
+            IndexStatus::Ready
+        } else {
+            IndexStatus::Partial {
+                failed_files: self.failed_files.clone(),
+                reason: self
+                    .status_reason
+                    .clone()
+                    .unwrap_or_else(|| "some project files failed to compile".to_string()),
+            }
+        };
+        if !self.occurrences_full {
+            // Nothing to do: every occurrence fit within the byte budget.
+        } else if let IndexStatus::Ready = status {
+            status = IndexStatus::Partial {
+                failed_files: Vec::new(),
+                reason: "occurrence byte budget exhausted".to_string(),
+            };
+        }
+        self.finish(status)
+    }
+
+    fn load_texts(&mut self, overlays: &HashMap<PathBuf, String>) {
+        for (index, path) in self.files.iter().enumerate() {
+            let id = index as FileId;
+            let text = overlays
+                .get(path)
+                .cloned()
+                .or_else(|| std::fs::read_to_string(path).ok())
+                .unwrap_or_default();
+            let hash = hash_text(&text);
+            if let Some(record) = self.records.get_mut(id as usize) {
+                record.hash = hash;
+            }
+            self.texts.insert(id, text);
+        }
+    }
 
     fn batches(&self, batch_size: usize) -> Vec<Vec<PathBuf>> {
         if self.overlays.is_empty() {
@@ -119,7 +215,7 @@ impl IndexBuilder {
         let mut normal = Vec::new();
         for path in &self.files {
             if self.overlays.contains_key(path) {
-                // overlay_text carries one buffer; only overlay files get their own batch.
+                // A batch has one overlay buffer; only overlay files get their own batch.
                 batches.push(vec![path.clone()]);
             } else {
                 normal.push(path.clone());
@@ -134,27 +230,7 @@ impl IndexBuilder {
         batches
     }
 
-    pub fn build(mut self, batch_size: usize) -> ProjectIndex {
-        if self.files.is_empty() {
-            return self.finish(IndexStatus::Ready);
-        }
-        let batch_size = batch_size.max(1);
-        let batches = self.batches(batch_size);
-        for batch in batches {
-            self.build_batch(&batch);
-        }
-        let status = if self.failed_files.is_empty() {
-            IndexStatus::Ready
-        } else {
-            IndexStatus::Partial {
-                failed_files: self.failed_files.clone(),
-                reason: "some project files failed to compile".to_string(),
-            }
-        };
-        self.finish(status)
-    }
-
-    fn finish(mut self, status: IndexStatus) -> ProjectIndex {
+    fn finish(mut self, status: IndexStatus) -> IndexBuildResult {
         for (id, names) in self.pending_supertypes.drain(..) {
             let mut supertypes = Vec::new();
             for name in names {
@@ -169,24 +245,32 @@ impl IndexBuilder {
                 record.supertypes = supertypes;
             }
         }
-        ProjectIndex {
-            generation: 1,
-            strings: self.strings,
-            symbols: self.symbols,
-            by_key: self.by_key,
-            by_name: self.by_name,
-            by_file: self.by_file,
-            by_supertype: self.by_supertype,
-            occurrences: self.occurrences,
-            files: self.records,
-            status,
-        }
+        let failed_files = self.failed_files.clone();
+        let result = IndexBuildResult {
+            index: ProjectIndex {
+                generation: 1,
+                workspace: self.model.fingerprint(),
+                strings: self.strings,
+                symbols: self.symbols,
+                by_key: self.by_key,
+                by_name: self.by_name,
+                by_file: self.by_file,
+                by_supertype: self.by_supertype,
+                occurrences: self.occurrences,
+                files: self.records,
+                status,
+            },
+            skipped_files: self.skipped_files,
+            failed_files,
+            occurrence_bytes: self.occurrence_bytes,
+        };
+        result
     }
 
     fn build_batch(&mut self, batch: &[PathBuf]) {
         let batch_set: HashSet<PathBuf> = batch.iter().cloned().collect();
         let config = self.config.clone();
-        let mut session = AnalysisSession::new(config);
+        let mut session = FileAnalysis::new(config);
         for path in batch {
             if let Some(text) = self.overlays.get(path) {
                 session.texts.insert(path.clone(), text.clone());
@@ -200,7 +284,15 @@ impl IndexBuilder {
                 self.failed_files.push(path.clone());
                 if let Some(id) = self.file_ids.get(path).copied() {
                     if let Some(record) = self.records.get_mut(id as usize) {
-                        record.failed = true;
+                        record.status = FileStatus::Failed;
+                    }
+                }
+            }
+        } else {
+            for path in batch {
+                if let Some(id) = self.file_ids.get(path).copied() {
+                    if let Some(record) = self.records.get_mut(id as usize) {
+                        record.status = FileStatus::Indexed;
                     }
                 }
             }
@@ -223,12 +315,11 @@ impl IndexBuilder {
 
             for index in 0..compiler.ctx.trees.len() {
                 let unit = TreeId::new(index as u32);
-                let (source, defs) = match &compiler.ctx.tree(unit).kind {
+                let source = match &compiler.ctx.tree(unit).kind {
                     TreeKind::CompilationUnit {
                         sourcefile: Some(source),
-                        defs,
                         ..
-                    } => (source.get_name().to_string_lossy().to_string(), defs.clone()),
+                    } => source.get_name().to_string_lossy().to_string(),
                     _ => continue,
                 };
                 let path = PathBuf::from(canonical(Path::new(&source)));
@@ -252,7 +343,6 @@ impl IndexBuilder {
                         occurrence.role,
                     );
                 }
-                let _ = defs;
             }
         }
     }
@@ -315,7 +405,15 @@ impl IndexBuilder {
             .to_string();
         let owner = self.owner_id(ctx, symbol, local);
         let signature = self.signature(ctx, symbol, kind, file);
-        let name = self.strings.intern(&name_string);
+        // A top-level type's simple name is not unique across packages; its
+        // key uses the fully qualified flat name. Every other symbol is scoped
+        // by its owner, so the simple name is enough.
+        let key_name = if owner.is_none() && kind.is_type() {
+            ctx.sym(symbol).flat_name().to_string()
+        } else {
+            name_string.clone()
+        };
+        let name = self.strings.intern(&key_name);
         let key = SymbolKey {
             owner,
             name,
@@ -407,7 +505,7 @@ impl IndexBuilder {
                             signature.push(',');
                         }
                         if let Some(ty) = ctx.sym(param).ty {
-                            signature.push_str(&type_name(ctx, ty));
+                            signature.push_str(&crate::analysis::type_name(ctx, ty));
                         } else {
                             signature.push('?');
                         }
@@ -433,7 +531,7 @@ impl IndexBuilder {
         position: i32,
         role: OccurrenceRole,
     ) {
-        if position < 0 {
+        if position < 0 || self.occurrences_full {
             return;
         }
         let Some(id) = self.resolve_symbol(ctx, symbol, local) else {
@@ -472,6 +570,14 @@ impl IndexBuilder {
         if !self.occurrence_seen.insert(key) {
             return;
         }
+        // `Occurrence` is 20 bytes today (two u32 offsets, two ids, role).
+        let bytes = std::mem::size_of::<Occurrence>();
+        if self.occurrence_bytes + bytes > self.limits.max_occurrence_bytes {
+            self.occurrences_full = true;
+            self.status_reason = Some("occurrence byte budget exhausted".to_string());
+            return;
+        }
+        self.occurrence_bytes += bytes;
         let occurrence = Occurrence {
             file,
             range,
@@ -683,7 +789,7 @@ pub(crate) fn hash_text(text: &str) -> u64 {
     hasher.finish()
 }
 
-pub(crate) fn collect_java_files(roots: &[PathBuf]) -> Vec<PathBuf> {
+pub fn collect_java_files(roots: &[PathBuf]) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for root in roots {
         collect_java_files_in(root, &mut files);
@@ -709,4 +815,24 @@ fn collect_java_files_in(root: &Path, files: &mut Vec<PathBuf>) {
             files.push(path);
         }
     }
+}
+
+/// Canonical path used as the identity of a source file.
+pub(crate) fn canonical(path: &Path) -> String {
+    if let Ok(resolved) = std::fs::canonicalize(path) {
+        return resolved.to_string_lossy().into_owned();
+    }
+    if path.is_absolute() {
+        return path.to_string_lossy().into_owned();
+    }
+    std::env::current_dir()
+        .map(|cwd| cwd.join(path).to_string_lossy().into_owned())
+        .unwrap_or_else(|_| path.to_string_lossy().into_owned())
+}
+
+#[allow(dead_code)]
+fn _assert_hasher_is_stable() {
+    // `DefaultHasher` is documented as not stable across releases; the disk
+    // index therefore records the toolchain hash and rebuilds on mismatch.
+    let _ = DefaultHasher::new();
 }

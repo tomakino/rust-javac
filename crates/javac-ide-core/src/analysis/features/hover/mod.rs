@@ -2,16 +2,16 @@
 
 use std::path::Path;
 
-use super::super::AnalysisSession;
+use super::super::FileAnalysis;
 
-impl AnalysisSession {
+impl FileAnalysis {
     /// Hover contents for a position.
     pub(crate) fn hover_impl(
         &mut self,
         file: &Path,
         position: javac_analysis_api::Position,
     ) -> Option<String> {
-        let symbol = AnalysisSession::symbol_at(
+        let symbol = FileAnalysis::symbol_at(
             self,
             file,
             position.line as usize + 1,

@@ -4,7 +4,9 @@
 use std::io::{self, BufReader};
 use std::path::PathBuf;
 
-use javac_ide_core::analysis::{AnalysisConfig, AnalysisSession};
+use javac_analysis_api::WorkspaceService;
+use javac_ide_core::analysis::AnalysisConfig;
+use javac_ide_core::workspace::Workspace;
 
 fn main() {
     std::panic::set_hook(Box::new(|info| {
@@ -52,14 +54,14 @@ fn main() {
             }
         }
     }
-    let mut session = AnalysisSession::new(AnalysisConfig {
+    let mut workspace: Box<dyn WorkspaceService> = Box::new(Workspace::new(AnalysisConfig {
         class_path,
         output_dir: output_dir.clone(),
         source_level,
         source_path: Vec::new(),
-    });
+    }));
     let stdin = BufReader::new(io::stdin());
     let stdout = io::stdout();
-    ravac_lsp::run(&mut session, stdin, stdout);
+    ravac_lsp::run(&mut workspace, stdin, stdout);
     let _ = output_dir;
 }

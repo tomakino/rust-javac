@@ -5,10 +5,11 @@
 
 use std::path::PathBuf;
 
-use javac_analysis_api::{AnalysisHost, Position};
-use javac_ide_core::analysis::{AnalysisConfig, AnalysisSession};
+use javac_analysis_api::{WorkspaceService, Position};
+use javac_ide_core::analysis::AnalysisConfig;
+use javac_ide_core::workspace::Workspace;
 
-fn session() -> AnalysisSession {
+fn session() -> Workspace {
     if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -25,7 +26,7 @@ fn session() -> AnalysisSession {
         .join("target")
         .join("tmp")
         .join("completion-spec");
-    AnalysisSession::new(AnalysisConfig {
+    Workspace::new(AnalysisConfig {
         class_path: Vec::new(),
         output_dir: output,
         source_level: "17".to_string(),
@@ -34,7 +35,7 @@ fn session() -> AnalysisSession {
 }
 
 /// Complete at the position of the marker "|" (removed from the text).
-fn labels_with_cursor(session: &mut dyn AnalysisHost, name: &str, source: &str) -> Vec<String> {
+fn labels_with_cursor(session: &mut dyn WorkspaceService, name: &str, source: &str) -> Vec<String> {
     let cursor = source.find('|').expect("cursor marker");
     let text = source.replacen('|', "", 1);
     let before = &text[..cursor];
@@ -43,7 +44,7 @@ fn labels_with_cursor(session: &mut dyn AnalysisHost, name: &str, source: &str) 
     let path = PathBuf::from(format!("target/tmp/completion-spec/{name}.java"));
     let _ = std::fs::create_dir_all("target/tmp/completion-spec");
     std::fs::write(&path, &text).ok();
-    session.analyze(&path, Some(&text));
+    WorkspaceService::diagnostics(session, &path, Some(&text));
     session
         .completion(&path, Position::new(line, column))
         .into_iter()
@@ -431,7 +432,7 @@ fn rc_var_prefix_receiver() {
 use javac_analysis_api::{CompletionItem, InsertTextFormat};
 
 fn items_with_cursor(
-    session: &mut dyn AnalysisHost,
+    session: &mut dyn WorkspaceService,
     name: &str,
     source: &str,
 ) -> Vec<CompletionItem> {
@@ -449,7 +450,7 @@ fn items_with_cursor(
     let path = PathBuf::from(format!("target/tmp/completion-spec/{name}.java"));
     let _ = std::fs::create_dir_all("target/tmp/completion-spec");
     std::fs::write(&path, &text).ok();
-    session.analyze(&path, Some(&text));
+    WorkspaceService::diagnostics(session, &path, Some(&text));
     session.completion(&path, Position::new(line, column))
 }
 

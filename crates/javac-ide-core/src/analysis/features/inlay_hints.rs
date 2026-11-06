@@ -17,9 +17,9 @@ use crate::ids::{SymbolId, TreeId};
 use crate::tree::jc_tree::TreeKind;
 use crate::tree::tree_scanner::{TreeScannerVisitor, tree_scanner_visitor_delegate};
 
-use super::super::{canonical, AnalysisSession};
+use super::super::{canonical, FileAnalysis};
 
-impl AnalysisSession {
+impl FileAnalysis {
     /// Inlay hints for the current file.
     pub(crate) fn inlay_hints_impl(&mut self, file: &Path) -> Vec<InlayHint> {
         let key = PathBuf::from(canonical(file));

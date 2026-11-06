@@ -385,3 +385,31 @@ ravac-lsp：
 - 批编译可能按 sourcepath 解析依赖；只索引批内编译单元，避免重复声明。
 - 增量声明变化可能影响很多文件；宁可标记 dirty/重建，不返回错误结果。
 - 磁盘格式必须版本化；不兼容直接丢弃，不做迁移。
+
+## 15. 实施记录（2026-11-06）
+
+本次按第 11 节顺序完成 M2 遗留清理、M3、M4 的主体实现；门禁全部通过。
+
+完成：
+
+- M2 结构清理：`analysis/project_index` 迁移为 `workspace/index/{key,model,build,store,query,update,dump}.rs`；`AnalysisHost` 删除并由 `WorkspaceService` 取代；prepareRename 改走索引 occurrence；`completion/mod.rs`（2400 行）与 `navigation/mod.rs`（550 行）按职责拆分，模块根文件只保留声明。
+- M3：`Workspace` 持有 `IndexStore`（`RwLock<Arc<ProjectIndex>>`）与最多 4 项 `FileAnalysis` LRU；overlay 文本参与索引与查询；磁盘文件用 mtime/len + hash 检测变更并后台重建；`workspace/didChangeWatchedFiles` 与 `invalidate` 接入；Partial 状态显式化，索引查询在 Partial 时拒绝。
+- M4：`dump.rs` 实现版本化紧凑二进制（varint + 字符串表）、原子写与加载校验（fingerprint + 逐文件 hash）；`IndexLimits` 支持 `max_indexed_files`/`max_occurrence_bytes` 降级；completion 项目候选改由索引提供。
+
+测试：
+
+- 新增 `tests/index_spec.rs`（12 项）：声明/occurrence/supertype、重载键、注释/字符串/遮蔽、跨包同名类、接口/外部 supertype、workspace/symbol、增删改文件、overlay、磁盘 roundtrip 与 hash 不匹配回退、文件数阈值 Partial。
+- `navigation_spec`、`diagnostics_spec`、`completion_spec`、`completion_project_spec` 改走 `WorkspaceService`/`FileAnalysis`，行为保持。
+- LSP 冒烟新增 workspace/symbol、跨文件 rename、index generation 缓存计数，17/17 通过。
+
+偏差（显式记录）：
+
+- 索引符号类型名保留 `IndexSymbolKind`，避免与编译器 `code::symbol::SymbolKind` 冲突。
+- `ProjectIndex` 新增 `workspace: WorkspaceFingerprint`；`FileRecord` 用 `status: FileStatus` 替代 `failed: bool`。
+- `IndexStatus::is_ready` 只认 `Ready`；Partial 时不返回索引结果，回退单文件分析。
+- 细粒度增量仅做到“检测 + 分类”：声明/签名/supertype 未变时可替换文件索引，当前实现仍通过后台全量重建保证一致性；真正的单文件 FileIndex 局部替换与反向依赖表未实现。
+- 后台构建在“没有可用快照”或“overlay 与快照不一致”时仍会等待构建完成，优先保证查询正确性。
+- hover 的项目符号走索引 detail；Javadoc 仍通过 `FileAnalysis` 取得。
+- `WorkspaceService` 除第 9 节列出的方法外，保留 LSP 必需的 type/call hierarchy、implementation、format、symbols/symbol_at、invalidate、configuration/reconfigure、index_generation。
+- 未做基准型性能/内存测试；仅有 occurrence 字节阈值的行为测试。
+

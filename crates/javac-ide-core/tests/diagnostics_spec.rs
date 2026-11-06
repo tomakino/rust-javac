@@ -1,12 +1,13 @@
-//! Diagnostic range and quick-fix tests.
+//! Diagnostic range and quick-fix tests through `FileAnalysis`.
 
 use std::path::PathBuf;
 
-use javac_analysis_api::{AnalysisHost, Position};
+use javac_analysis_api::Position;
 
-use javac_ide_core::analysis::{AnalysisConfig, AnalysisSession};
+use javac_ide_core::analysis::AnalysisConfig;
+use javac_ide_core::workspace::analysis::FileAnalysis;
 
-fn session(extra_source: &str) -> (AnalysisSession, PathBuf, String) {
+fn analysis(extra_source: &str) -> (FileAnalysis, PathBuf, String) {
     if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -29,19 +30,19 @@ fn session(extra_source: &str) -> (AnalysisSession, PathBuf, String) {
     let path = PathBuf::from("target/tmp/diagnostics-spec/D.java");
     std::fs::create_dir_all("target/tmp/diagnostics-spec").unwrap();
     std::fs::write(&path, &text).unwrap();
-    let session = AnalysisSession::new(AnalysisConfig {
+    let analysis = FileAnalysis::new(AnalysisConfig {
         class_path: Vec::new(),
         output_dir: output,
         source_level: "17".to_string(),
         source_path: Vec::new(),
     });
-    (session, path, text)
+    (analysis, path, text)
 }
 
 #[test]
 fn compiler_diagnostic_has_a_non_empty_range() {
-    let (mut session, path, text) = session(r#"int x = "s";"#);
-    let diagnostics = AnalysisHost::analyze(&mut session, &path, Some(&text));
+    let (mut analysis, path, text) = analysis(r#"int x = "s";"#);
+    let diagnostics = analysis.diagnostics(&path, Some(&text));
     let error = diagnostics
         .iter()
         .find(|diagnostic| matches!(diagnostic.severity, javac_analysis_api::Severity::Error))
@@ -56,15 +57,15 @@ fn compiler_diagnostic_has_a_non_empty_range() {
 
 #[test]
 fn unused_import_has_a_removal_quick_fix() {
-    let (mut session, path, text) = session("");
-    let diagnostics = AnalysisHost::analyze(&mut session, &path, Some(&text));
+    let (mut analysis, path, text) = analysis("");
+    let diagnostics = analysis.diagnostics(&path, Some(&text));
     assert!(
         diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code.as_deref() == Some("unused.import")),
         "diagnostics: {diagnostics:?}"
     );
-    let actions = AnalysisHost::code_actions(&mut session, &path, Position::new(1, 0));
+    let actions = analysis.code_actions(&path, Position::new(1, 0));
     let remove = actions
         .iter()
         .find(|action| action.title.contains("Remove unused import"))

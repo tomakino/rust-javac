@@ -28,6 +28,25 @@ def check(name, ok, detail=""):
 def main():
     class_path = sys.argv[1] if len(sys.argv) > 1 else str(DEFAULT_CLASS_PATH)
     (ROOT / "target" / "ravac-lsp").mkdir(parents=True, exist_ok=True)
+
+    # A tiny Maven project gives the server a real source_path, so the
+    # index-backed queries (workspace/symbol, cross-file rename) are exercised.
+    project = ROOT / "target" / "tmp" / "lsp-project"
+    sources = project / "src" / "main" / "java"
+    sources.mkdir(parents=True, exist_ok=True)
+    (project / "pom.xml").write_text(
+        "<project><modelVersion>4.0.0</modelVersion>"
+        "<groupId>com.example</groupId><artifactId>lsp-fixture</artifactId>"
+        "<version>1.0</version></project>\n",
+        encoding="utf-8",
+    )
+    a_path = sources / "A.java"
+    b_path = sources / "B.java"
+    a_text = "class A { B b; void f() { b.value = 1; b.value++; } }\n"
+    b_text = "class B { int value; }\n"
+    a_path.write_text(a_text, encoding="utf-8")
+    b_path.write_text(b_text, encoding="utf-8")
+
     proc = subprocess.Popen(
         [str(EXE), "--class-path", class_path],
         stdin=subprocess.PIPE,
@@ -50,7 +69,14 @@ def main():
         length = int(headers.split(b"Content-Length: ")[1].split(b"\r\n")[0])
         return json.loads(proc.stdout.read(length))
 
-    send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    send(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"rootUri": project.as_uri()},
+        }
+    )
     init = read()
     capabilities = init["result"]["capabilities"]
     check(
@@ -185,6 +211,73 @@ def main():
         }
     )
     check("didClose clears diagnostics", len(read()["params"]["diagnostics"]) == 0)
+
+    # workspace/symbol is served by the project index.
+    send(
+        {
+            "jsonrpc": "2.0",
+            "id": 15,
+            "method": "workspace/symbol",
+            "params": {"query": "B"},
+        }
+    )
+    ws_symbols = read().get("result") or []
+    check(
+        "workspace/symbol",
+        any(symbol.get("name") == "B" for symbol in ws_symbols),
+        str([symbol.get("name") for symbol in ws_symbols])[:120],
+    )
+
+    # Cross-file rename: the field is declared in B.java and used from A.java.
+    value_position = b_text.index("value") + 2
+    send(
+        {
+            "jsonrpc": "2.0",
+            "id": 16,
+            "method": "textDocument/rename",
+            "params": {
+                "textDocument": {"uri": b_path.as_uri()},
+                "position": {"line": 0, "character": value_position},
+                "newName": "renamed",
+            },
+        }
+    )
+    changes = (read().get("result") or {}).get("changes") or {}
+    files = list(changes.keys())
+    check(
+        "rename cross-file",
+        len(files) >= 2
+        and all(
+            any(edit.get("newText") == "renamed" for edit in edits)
+            for edits in changes.values()
+        ),
+        str(len(files)) + " files",
+    )
+
+    # Cache accounting: a repeated index query must not rebuild the project.
+    send({"jsonrpc": "2.0", "id": 17, "method": "ravac/indexStats", "params": {}})
+    generation_before = (read().get("result") or {}).get("generation", 0)
+    for request_id in (18, 19):
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "method": "textDocument/references",
+                "params": {
+                    "textDocument": {"uri": b_path.as_uri()},
+                    "position": {"line": 0, "character": value_position},
+                    "context": {"includeDeclaration": True},
+                },
+            }
+        )
+        read()
+    send({"jsonrpc": "2.0", "id": 20, "method": "ravac/indexStats", "params": {}})
+    generation_after = (read().get("result") or {}).get("generation", 0)
+    check(
+        "index cache stable",
+        generation_before > 0 and generation_before == generation_after,
+        str(generation_before) + " -> " + str(generation_after),
+    )
 
     # Auto-import: completing an unimported JDK type carries additionalTextEdits.
     import_uri = (ROOT / "target" / "tmp" / "AutoImportSmoke.java").as_uri()
