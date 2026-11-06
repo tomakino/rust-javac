@@ -461,5 +461,5 @@ fn hover_reads_javadoc_from_the_index() {
     workspace.wait_for_index();
     let hover = workspace.hover(&path, Position::new(3, 8)).expect("hover");
     assert!(hover.contains("value doc"), "hover: {hover}");
-    assert!(hover.contains("field value"), "hover: {hover}");
+    assert!(hover.contains("int value"), "hover: {hover}");
 }

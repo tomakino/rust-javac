@@ -326,7 +326,16 @@ impl ProjectIndex {
 
     /// The short name an editor shows for a declaration.
     pub fn display_name(&self, record: &SymbolRecord) -> String {
-        simple_name(&record.flat_name)
+        let name = simple_name(&record.flat_name);
+        if name == "<init>" {
+            // Constructors are named after their class, not "<init>".
+            return record
+                .flat_name
+                .rsplit_once('.')
+                .map(|(owner, _)| simple_name(owner).to_string())
+                .unwrap_or_else(|| name.to_string());
+        }
+        name.to_string()
     }
 
     /// Rough resident-memory estimate of this snapshot, in bytes.

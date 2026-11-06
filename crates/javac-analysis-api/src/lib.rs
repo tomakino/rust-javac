@@ -221,6 +221,37 @@ pub struct Location {
     pub range: Range,
 }
 
+/// A span the editor highlights for the symbol under the cursor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocumentHighlight {
+    pub range: Range,
+    pub kind: Option<DocumentHighlightKind>,
+}
+
+/// How a highlighted span is used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocumentHighlightKind {
+    Text,
+    Read,
+    Write,
+}
+
+/// A foldable region in a document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FoldingRange {
+    pub start_line: u32,
+    pub end_line: u32,
+    pub kind: Option<FoldingRangeKind>,
+}
+
+/// The kind of a foldable region.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FoldingRangeKind {
+    Comment,
+    Imports,
+    Region,
+}
+
 /// The configuration a workspace was created with.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WorkspaceConfiguration {
@@ -256,8 +287,17 @@ pub trait WorkspaceService {
     /// Inlay hints for a file (inferred types, parameter names).
     fn inlay_hints(&mut self, file: &Path) -> Vec<InlayHint>;
 
+    /// Spans of the symbol under the cursor (editor highlight).
+    fn document_highlight(&mut self, file: &Path, position: Position) -> Vec<DocumentHighlight>;
+
+    /// Foldable regions of a file.
+    fn folding_ranges(&mut self, file: &Path) -> Vec<FoldingRange>;
+
     /// The declaration of the symbol at a position.
     fn definition(&mut self, file: &Path, position: Position) -> Option<Location>;
+
+    /// The overridden methods of the method at a position.
+    fn super_methods(&mut self, file: &Path, position: Position) -> Vec<Location>;
 
     /// The declaration of the type of the symbol at a position.
     fn type_definition(&mut self, file: &Path, position: Position) -> Option<Location>;

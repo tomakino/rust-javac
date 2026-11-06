@@ -25,6 +25,17 @@ impl FileAnalysis {
             .cloned()
             .or_else(|| std::fs::read_to_string(file).ok())
             .unwrap_or_default();
+        // Strings and comments are not code: do not offer code completions.
+        if super::super::super::positions::in_literal_or_comment(
+            &text,
+            super::super::super::positions::line_offset(
+                &text,
+                position.line as usize + 1,
+                position.column as usize + 1,
+            ),
+        ) {
+            return Vec::new();
+        }
         let prefix = prefix_at(
             &text,
             position.line as usize + 1,

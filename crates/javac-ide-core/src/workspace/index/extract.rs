@@ -21,7 +21,7 @@ use super::build::{
     OccurrenceCollector,
 };
 use super::key::{FileId, IndexSymbolKind};
-use super::model::{ByteRange, OccurrenceRole};
+use super::model::{ByteRange, OccurrenceRole, TypeRef};
 
 /// Index identity of one declaration, independent of compiler internals.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -55,6 +55,7 @@ pub struct ExtractedDeclaration {
     pub detail: String,
     pub modifiers: u32,
     pub supertypes: Vec<String>,
+    pub return_type: Option<TypeRef>,
     pub javadoc: Option<String>,
 }
 
@@ -216,6 +217,9 @@ fn collect_class(
         .ctx
         .scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true);
     for member in members {
+        if (compiler.ctx.sym(member).flags_field & crate::code::flags::GENERATEDCONSTR) != 0 {
+            continue;
+        }
         let is_class = matches!(
             compiler.ctx.sym(member).kind_data,
             SymbolKind::ClassSymbol { .. }
@@ -260,7 +264,42 @@ fn declaration_of(
         start: pos,
         end: pos.saturating_add(name.encode_utf16().count() as u32),
     };
-    let detail = format!("{} {}", kind_name(kind), name);
+    let detail = match &ctx.sym(symbol).kind_data {
+        SymbolKind::VarSymbol { .. } => {
+            let ty = ctx
+                .sym(symbol)
+                .ty
+                .map(|ty| crate::analysis::type_names::type_name(ctx, ty));
+            match ty {
+                Some(ty) => format!("{ty} {name}"),
+                None => format!("{} {}", kind_name(kind), name),
+            }
+        }
+        _ if matches!(
+            kind,
+            IndexSymbolKind::Method | IndexSymbolKind::Constructor
+        ) =>
+        {
+            format!("{name}{signature}")
+        }
+        _ => format!("{} {}", kind_name(kind), name),
+    };
+    let return_type = if matches!(
+        kind,
+        IndexSymbolKind::Method | IndexSymbolKind::Constructor
+    ) {
+        ctx.sym(symbol)
+            .ty
+            .and_then(|ty| match &ctx.typ(ty).kind {
+                crate::code::type_::TypeKindData::MethodType { restype, .. } => *restype,
+                _ => None,
+            })
+            .map(|restype| {
+                TypeRef::External(crate::analysis::type_names::type_name(ctx, restype))
+            })
+    } else {
+        None
+    };
     let supertypes = if kind.is_type() {
         class_supertypes(ctx, symbol)
     } else {
@@ -278,6 +317,7 @@ fn declaration_of(
         detail,
         modifiers: ctx.sym(symbol).flags_field as u32,
         supertypes,
+        return_type,
         javadoc: javadocs.get(&symbol).cloned(),
     })
 }

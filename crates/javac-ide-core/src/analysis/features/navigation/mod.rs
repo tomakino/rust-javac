@@ -11,4 +11,5 @@
 mod definition;
 mod references;
 mod source;
+mod super_methods;
 mod symbols;

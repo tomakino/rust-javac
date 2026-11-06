@@ -185,22 +185,42 @@ impl FileAnalysis {
                 _ => continue,
             };
             let Some(callee) = callee else { continue };
-            let params = match &self.compiler.ctx.sym(callee).kind_data {
-                crate::code::symbol::SymbolKind::MethodSymbol { params, .. } => params,
-                _ => continue,
-            };
-            if params.is_empty() || params.size() != args.size() {
+            let args = args.clone();
+            if args.is_empty() {
                 continue;
             }
-            for (param, argument) in params.iter().zip(args.iter()) {
-                let name = self
-                    .compiler
-                    .ctx
-                    .sym(param)
-                    .name
-                    .to_java_string()
-                    .to_string_lossy();
-                if name.is_empty() || name.starts_with('<') || is_synthetic_parameter(&name) {
+            let method_name = self
+                .compiler
+                .ctx
+                .sym(callee)
+                .name
+                .to_java_string()
+                .to_string_lossy();
+            // The resolved symbol can belong to a previous analysis round
+            // (empty params); fall back to the local declaration.
+            let params: Vec<String> = match &self.compiler.ctx.sym(callee).kind_data {
+                SymbolKind::MethodSymbol { params, .. }
+                    if !params.is_empty() && params.size() == args.size() =>
+                {
+                    params
+                        .iter()
+                        .map(|param| {
+                            self.compiler
+                                .ctx
+                                .sym(param)
+                                .name
+                                .to_java_string()
+                                .to_string_lossy()
+                        })
+                        .collect()
+                }
+                _ => self.local_parameter_names(&method_name, args.size() as usize),
+            };
+            if params.len() != args.size() as usize {
+                continue;
+            }
+            for (name, argument) in params.iter().zip(args.iter()) {
+                if name.is_empty() || name.starts_with('<') || is_synthetic_parameter(name) {
                     continue;
                 }
                 let pos = crate::tree::tree_info::get_start_pos(&self.compiler.ctx, argument);
@@ -226,6 +246,33 @@ impl FileAnalysis {
         let mut hints: Vec<InlayHint> = hints.into_values().collect();
         hints.sort_by_key(|hint| (hint.position.line, hint.position.column));
         hints
+    }
+
+    /// Parameter names of the local declaration of `name` with `count` params.
+    fn local_parameter_names(&self, name: &str, count: usize) -> Vec<String> {
+        for tree in self.compiler.ctx.trees.iter() {
+            if let TreeKind::MethodDecl {
+                name: method_name,
+                params,
+                ..
+            } = &tree.kind
+            {
+                if method_name.to_java_string().to_string_lossy() == name
+                    && params.size() as usize == count
+                {
+                    return params
+                        .iter()
+                        .filter_map(|param| match &self.compiler.ctx.tree(param).kind {
+                            TreeKind::VariableDecl { name, .. } => {
+                                Some(name.to_java_string().to_string_lossy())
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                }
+            }
+        }
+        Vec::new()
     }
 
     /// Index range of the newest CompilationUnit for this file. The parser

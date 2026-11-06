@@ -3,6 +3,7 @@
 
 pub(crate) mod actions;
 pub(crate) mod completion;
+pub(crate) mod folding;
 pub(crate) mod format;
 pub(crate) mod hierarchy;
 pub(crate) mod hover;

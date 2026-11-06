@@ -107,6 +107,16 @@ pub(crate) fn declared_name_start(text: &str, start: u32, name: &str) -> u32 {
 }
 
 
+/// Whether the byte offset is inside a string/character literal or a comment.
+pub(crate) fn in_literal_or_comment(text: &str, byte: usize) -> bool {
+    let byte = byte.min(text.len());
+    let char_index = text[..byte].chars().count();
+    let masked = crate::analysis::inspections::mask_non_code(text);
+    let original = text.chars().nth(char_index);
+    let masked_char = masked.chars().nth(char_index);
+    matches!((original, masked_char), (Some(original), Some(masked)) if !original.is_whitespace() && masked == ' ')
+}
+
 /// The identifier under a 1-based line/column.
 pub(crate) fn word_at(text: &str, line: usize, column: usize) -> Option<String> {
     let line_text = text.lines().nth(line.saturating_sub(1))?;

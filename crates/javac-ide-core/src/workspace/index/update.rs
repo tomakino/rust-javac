@@ -277,7 +277,7 @@ fn apply_update(
             modifiers: declaration.modifiers,
             flat_name: declaration.identity.flat_name.clone(),
             supertypes: Vec::new(),
-            return_type: None,
+            return_type: declaration.return_type.clone(),
             javadoc: declaration.javadoc.clone(),
         });
         next.by_key.insert(symbol_key, id);

@@ -4,7 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use javac_analysis_api::{
-    CallHierarchyCall, CallHierarchyItem, CodeAction, CompletionItem, Diagnostic, DocumentSymbol,
+    CallHierarchyCall, CallHierarchyItem, CodeAction, CompletionItem, Diagnostic, DocumentHighlight,
+    DocumentSymbol, FoldingRange,
     InlayHint, Location, Position, Range, SignatureHelp, Symbol, SymbolKind, TextDocumentEdit,
     TextEdit, TypeHierarchyItem, WorkspaceConfiguration, WorkspaceService, WorkspaceSymbol,
 };
@@ -62,6 +63,23 @@ impl WorkspaceService for Workspace {
             .unwrap_or_default()
     }
 
+    fn document_highlight(&mut self, file: &Path, position: Position) -> Vec<DocumentHighlight> {
+        let key = PathBuf::from(crate::analysis::canonical(file));
+        self.references(file, position)
+            .into_iter()
+            .filter(|location| PathBuf::from(crate::analysis::canonical(&location.file)) == key)
+            .map(|location| DocumentHighlight {
+                range: location.range,
+                kind: None,
+            })
+            .collect()
+    }
+
+    fn folding_ranges(&mut self, file: &Path) -> Vec<FoldingRange> {
+        self.with_analysis(file, None, |analysis, _| analysis.folding_ranges_impl(file))
+            .unwrap_or_default()
+    }
+
     fn definition(&mut self, file: &Path, position: Position) -> Option<Location> {
         self.ensure_index();
         let snapshot = self.index.snapshot();
@@ -96,6 +114,13 @@ impl WorkspaceService for Workspace {
     fn implementation(&mut self, file: &Path, position: Position) -> Vec<Location> {
         self.with_analysis(file, None, |analysis, _| {
             analysis.implementation_impl(file, position)
+        })
+        .unwrap_or_default()
+    }
+
+    fn super_methods(&mut self, file: &Path, position: Position) -> Vec<Location> {
+        self.with_analysis(file, None, |analysis, _| {
+            analysis.super_methods_impl(file, position)
         })
         .unwrap_or_default()
     }
@@ -230,6 +255,20 @@ impl WorkspaceService for Workspace {
             if let Some(javadoc) = &record.javadoc {
                 detail.push_str("\n\n");
                 detail.push_str(javadoc);
+            }
+            if matches!(record.kind, index::IndexSymbolKind::Method)
+                && let Some(supers) = self.with_analysis(file, None, |analysis, _| {
+                    analysis.super_methods_with_names_impl(file, position)
+                })
+                && !supers.is_empty()
+            {
+                detail.push_str("\n\n---\n\n**Overrides:**");
+                for (_, name) in supers.iter().take(5) {
+                    detail.push_str(&format!("\n- `{name}`"));
+                }
+                if supers.len() > 5 {
+                    detail.push_str(&format!("\n- … (+{} more)", supers.len() - 5));
+                }
             }
             return Some(detail);
         }

@@ -19,6 +19,12 @@ impl FileAnalysis {
         let text = self.source_text(file)?;
         let line = position.line as usize + 1;
         let column = position.column as usize + 1;
+        if super::super::super::positions::in_literal_or_comment(
+            &text,
+            super::super::super::positions::line_offset(&text, line, column),
+        ) {
+            return None;
+        }
         let word = super::super::super::positions::word_at(&text, line, column)?;
         let (_, start) = self.symbol_id_at(file, position)?;
         let (line, column) = offset_to_line_col(&text, start);

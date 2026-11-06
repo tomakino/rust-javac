@@ -386,6 +386,10 @@ impl IndexBuilder {
         };
         let members = ctx.scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true);
         for member in members {
+            // Compiler-generated constructors are not part of the outline.
+            if (ctx.sym(member).flags_field & crate::code::flags::GENERATEDCONSTR) != 0 {
+                continue;
+            }
             let is_class = matches!(ctx.sym(member).kind_data, SymbolKind::ClassSymbol { .. });
             self.resolve_symbol(ctx, member, local);
             if is_class {
@@ -447,7 +451,45 @@ impl IndexBuilder {
                 .map(|record| format!("{}.{}", record.flat_name, name_string))
                 .unwrap_or_else(|| name_string.clone()),
         };
-        let detail = format!("{} {}", kind_name(kind), name_string);
+        let signature_text = self.strings.get(signature).to_string();
+        let detail = match &ctx.sym(symbol).kind_data {
+            SymbolKind::VarSymbol { .. } => {
+                let ty = ctx
+                    .sym(symbol)
+                    .ty
+                    .map(|ty| crate::analysis::type_names::type_name(ctx, ty));
+                match ty {
+                    Some(ty) => format!("{ty} {name_string}"),
+                    None => format!("{} {}", kind_name(kind), name_string),
+                }
+            }
+            _ if matches!(
+                kind,
+                IndexSymbolKind::Method | IndexSymbolKind::Constructor
+            ) =>
+            {
+                format!("{name_string}{signature_text}")
+            }
+            _ => format!("{} {}", kind_name(kind), name_string),
+        };
+        let return_type = if matches!(
+            kind,
+            IndexSymbolKind::Method | IndexSymbolKind::Constructor
+        ) {
+            ctx.sym(symbol)
+                .ty
+                .and_then(|ty| match &ctx.typ(ty).kind {
+                    crate::code::type_::TypeKindData::MethodType { restype, .. } => *restype,
+                    _ => None,
+                })
+                .map(|restype| {
+                    crate::workspace::index::model::TypeRef::External(
+                        crate::analysis::type_names::type_name(ctx, restype),
+                    )
+                })
+        } else {
+            None
+        };
         let id = self.symbols.len() as SymbolId;
         self.symbols.push(SymbolRecord {
             key,
@@ -458,7 +500,7 @@ impl IndexBuilder {
             modifiers: ctx.sym(symbol).flags_field as u32,
             flat_name: flat_name.clone(),
             supertypes: Vec::new(),
-            return_type: None,
+            return_type,
             javadoc: self.javadocs.get(&symbol).cloned(),
         });
         self.by_key.insert(key, id);

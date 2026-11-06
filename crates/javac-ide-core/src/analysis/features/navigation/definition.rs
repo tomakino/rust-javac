@@ -2,7 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use super::super::super::positions::{declared_name_start, offset_to_line_col, word_at};
+use super::super::super::positions::{
+    declared_name_start, in_literal_or_comment, line_offset, offset_to_line_col, word_at,
+};
 use super::super::super::{canonical, FileAnalysis};
 
 impl FileAnalysis {
@@ -20,6 +22,10 @@ impl FileAnalysis {
             .or_else(|| std::fs::read_to_string(file).ok())?;
         let line = position.line as usize + 1;
         let column = position.column as usize + 1;
+        // Strings and comments are not code: no navigation from there.
+        if in_literal_or_comment(&text, line_offset(&text, line, column)) {
+            return None;
+        }
         if let Some(symbol) = FileAnalysis::symbol_at(self, file, line, column) {
             if symbol.pos >= 0 {
                 let (symbol_line, symbol_column) =
@@ -114,34 +120,10 @@ impl FileAnalysis {
         position: javac_analysis_api::Position,
     ) -> Option<javac_analysis_api::Location> {
         use crate::code::type_::TypeKindData;
-        let symbol = FileAnalysis::symbol_at(
-            self,
-            file,
-            position.line as usize + 1,
-            position.column as usize + 1,
-        )?;
-        let mut decl_tree = None;
-        for tree in self.compiler.ctx.trees.iter() {
-            let sym = match &tree.kind {
-                crate::tree::jc_tree::TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
-                crate::tree::jc_tree::TreeKind::MethodDecl { sym: Some(sym), .. } => *sym,
-                crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
-                _ => continue,
-            };
-            if self.compiler.ctx.sym(sym).name.to_java_string().to_string_lossy() == symbol.name {
-                decl_tree = Some(tree);
-                break;
-            }
-        }
-        let ty = decl_tree.and_then(|tree| match &tree.kind {
-            crate::tree::jc_tree::TreeKind::VariableDecl { vartype, .. } => {
-                vartype.and_then(|v| self.compiler.ctx.tree(v).ty)
-            }
-            crate::tree::jc_tree::TreeKind::MethodDecl { restype, .. } => {
-                restype.and_then(|r| self.compiler.ctx.tree(r).ty)
-            }
-            _ => None,
-        })?;
+        // The compiler symbol works for locals and parameters too, which are
+        // not part of `symbols()` (declared members only).
+        let (symbol, _) = self.symbol_id_at(file, position)?;
+        let ty = self.compiler.ctx.sym(symbol).ty?;
         let class = match &self.compiler.ctx.typ(ty).kind {
             TypeKindData::ClassType { .. } => self.compiler.ctx.typ(ty).tsym,
             _ => None,

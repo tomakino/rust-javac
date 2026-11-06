@@ -10,7 +10,8 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 use javac_analysis_api::{
-    Diagnostic, Position, Range, Severity, SymbolKind, WorkspaceService,
+    Diagnostic, DocumentHighlightKind, FoldingRangeKind, Position, Range, Severity, SymbolKind,
+    WorkspaceService,
 };
 use lsp_types::Url;
 use serde_json::{json, Value};
@@ -152,6 +153,15 @@ pub fn run(
             "textDocument/inlayHint" => {
                 respond(&mut stdout, id, inlay_hints(host.as_mut(), &message));
             }
+            "ravac/superMethods" => {
+                respond(&mut stdout, id, super_methods_request(host.as_mut(), &message));
+            }
+            "textDocument/documentHighlight" => {
+                respond(&mut stdout, id, document_highlight(host.as_mut(), &message));
+            }
+            "textDocument/foldingRange" => {
+                respond(&mut stdout, id, folding_ranges(host.as_mut(), &message));
+            }
             "textDocument/codeAction" => {
                 respond(&mut stdout, id, code_action(host.as_mut(), &message));
             }
@@ -241,6 +251,8 @@ fn capabilities() -> Value {
         "typeHierarchyProvider": true,
         "callHierarchyProvider": true,
         "hoverProvider": true,
+        "documentHighlightProvider": true,
+        "foldingRangeProvider": true,
         "documentSymbolProvider": true,
         "workspaceSymbolProvider": true,
         "referencesProvider": true,
@@ -831,6 +843,83 @@ fn prepare_rename(host: &mut dyn WorkspaceService, message: &Value) -> Value {
         Some(range) => json!({ "range": range_json(range) }),
         None => Value::Null,
     }
+}
+
+fn document_highlight(host: &mut dyn WorkspaceService, message: &Value) -> Value {
+    let Some((path, position)) = request_position(message) else {
+        return Value::Null;
+    };
+    let highlights = host.document_highlight(&path, position);
+    Value::Array(
+        highlights
+            .iter()
+            .map(|highlight| {
+                let mut value = json!({ "range": range_json(highlight.range) });
+                if let Some(kind) = highlight.kind {
+                    value["kind"] = json!(match kind {
+                        DocumentHighlightKind::Text => 1,
+                        DocumentHighlightKind::Read => 2,
+                        DocumentHighlightKind::Write => 3,
+                    });
+                }
+                value
+            })
+            .collect(),
+    )
+}
+
+fn folding_ranges(host: &mut dyn WorkspaceService, message: &Value) -> Value {
+    let Some(params) = message.get("params") else {
+        return Value::Array(Vec::new());
+    };
+    let Some(uri) = params
+        .get("textDocument")
+        .and_then(|doc| doc.get("uri"))
+        .and_then(Value::as_str)
+    else {
+        return Value::Array(Vec::new());
+    };
+    let Ok(path) = uri_to_path(uri) else {
+        return Value::Array(Vec::new());
+    };
+    let ranges = host.folding_ranges(&path);
+    Value::Array(
+        ranges
+            .iter()
+            .map(|range| {
+                let mut value = json!({
+                    "startLine": range.start_line,
+                    "endLine": range.end_line,
+                });
+                if let Some(kind) = range.kind {
+                    value["kind"] = json!(match kind {
+                        FoldingRangeKind::Comment => "comment",
+                        FoldingRangeKind::Imports => "imports",
+                        FoldingRangeKind::Region => "region",
+                    });
+                }
+                value
+            })
+            .collect(),
+    )
+}
+
+fn super_methods_request(host: &mut dyn WorkspaceService, message: &Value) -> Value {
+    let Some((path, position)) = request_position(message) else {
+        return Value::Null;
+    };
+    let locations = host.super_methods(&path, position);
+    Value::Array(
+        locations
+            .iter()
+            .map(|location| {
+                let uri = Url::from_file_path(&location.file)
+                    .map(|url| url.to_string())
+                    .unwrap_or_default();
+                json!({ "uri": uri, "range": range_json(location.range) })
+            })
+            .collect(),
+    )
 }
 
 fn references(host: &mut dyn WorkspaceService, message: &Value) -> Value {
