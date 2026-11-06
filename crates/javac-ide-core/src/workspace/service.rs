@@ -4,8 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use javac_analysis_api::{
-    CallHierarchyCall, CallHierarchyItem, CodeAction, CompletionItem, Diagnostic, DocumentHighlight,
-    DocumentLink, DocumentSymbol, FoldingRange, SelectionRange,
+    CallHierarchyCall, CallHierarchyItem, CodeAction, CodeLens, CompletionItem, Diagnostic,
+    DocumentHighlight, DocumentLink, DocumentSymbol, FoldingRange, SelectionRange,
     InlayHint, Location, Position, Range, SignatureHelp, Symbol, SymbolKind, TextDocumentEdit,
     TextEdit, TypeHierarchyItem, WorkspaceConfiguration, WorkspaceService, WorkspaceSymbol,
 };
@@ -113,6 +113,85 @@ impl WorkspaceService for Workspace {
             .into_iter()
             .filter_map(|file| snapshot.file(file).map(|record| record.path.clone()))
             .collect()
+    }
+
+    fn organize_imports(&mut self, file: &Path) -> Vec<TextEdit> {
+        self.with_analysis(file, None, |analysis, _| analysis.organize_imports_impl(file))
+            .unwrap_or_default()
+    }
+
+    fn semantic_tokens(&mut self, file: &Path) -> Vec<u32> {
+        self.with_analysis(file, None, |analysis, _| analysis.semantic_tokens_impl(file))
+            .unwrap_or_default()
+    }
+
+    fn code_lenses(&mut self, file: &Path) -> Vec<CodeLens> {
+        let snapshot = self.index.snapshot();
+        if !matches!(
+            snapshot.status,
+            crate::workspace::index::model::IndexStatus::Ready
+        ) {
+            return Vec::new();
+        }
+        let Some(file_id) = snapshot.file_id_for_path(file) else {
+            return Vec::new();
+        };
+        let Some(file_index) = snapshot.by_file.get(&file_id) else {
+            return Vec::new();
+        };
+        let text = std::fs::read_to_string(file).unwrap_or_default();
+        let uri = file_uri(file);
+        let mut lenses = Vec::new();
+        for symbol in &file_index.declarations {
+            let Some(occurrences) = snapshot.occurrences.get(symbol) else {
+                continue;
+            };
+            let Some(declaration) = occurrences.iter().find(|occurrence| {
+                occurrence.file == file_id
+                    && occurrence.role == crate::workspace::index::model::OccurrenceRole::Declaration
+            }) else {
+                continue;
+            };
+            let references = occurrences
+                .iter()
+                .filter(|occurrence| {
+                    occurrence.role != crate::workspace::index::model::OccurrenceRole::Declaration
+                })
+                .count();
+            let implementations = snapshot
+                .by_supertype
+                .get(symbol)
+                .map(|subtypes| subtypes.len())
+                .unwrap_or(0);
+            let start =
+                crate::analysis::positions::byte_to_utf16(&text, declaration.range.start as usize);
+            let end =
+                crate::analysis::positions::byte_to_utf16(&text, declaration.range.end as usize);
+            let (line, column) = crate::analysis::positions::offset_to_line_col(&text, start);
+            let range = Range::new(
+                Position::new(line, column),
+                Position::new(line, column + (end.saturating_sub(start)) as u32),
+            );
+            lenses.push(CodeLens {
+                range,
+                title: format!("{references} references"),
+                command: "ravac.showReferences".to_string(),
+                uri: uri.clone(),
+                line,
+                character: column,
+            });
+            if implementations > 0 {
+                lenses.push(CodeLens {
+                    range,
+                    title: format!("{implementations} implementations"),
+                    command: "ravac.showReferences".to_string(),
+                    uri: uri.clone(),
+                    line,
+                    character: column,
+                });
+            }
+        }
+        lenses
     }
 
     fn on_type_formatting(

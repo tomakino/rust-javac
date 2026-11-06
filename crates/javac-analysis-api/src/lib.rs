@@ -210,6 +210,58 @@ pub struct DocumentLink {
     pub target: String,
 }
 
+/// A code lens: a title and the range it annotates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodeLens {
+    pub range: Range,
+    pub title: String,
+    pub command: String,
+    pub uri: String,
+    pub line: u32,
+    pub character: u32,
+}
+
+/// LSP semantic token legend (tokenTypes), shared with the LSP capabilities.
+pub const SEMANTIC_TOKEN_TYPES: [&str; 23] = [
+    "namespace",
+    "type",
+    "class",
+    "enum",
+    "interface",
+    "struct",
+    "typeParameter",
+    "parameter",
+    "variable",
+    "property",
+    "enumMember",
+    "event",
+    "function",
+    "method",
+    "macro",
+    "keyword",
+    "modifier",
+    "comment",
+    "string",
+    "number",
+    "regexp",
+    "operator",
+    "decorator",
+];
+
+/// LSP semantic token legend (tokenModifiers), shared with the LSP capabilities.
+pub const SEMANTIC_TOKEN_MODIFIERS: [&str; 10] = [
+    "declaration",
+    "definition",
+    "readonly",
+    "static",
+    "deprecated",
+    "abstract",
+    "async",
+    "modification",
+    "documentation",
+    "defaultLibrary",
+];
+
 /// A text replacement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextDocumentEdit {
@@ -336,6 +388,21 @@ pub trait WorkspaceService {
 
     /// Links from import statements and http(s) URLs.
     fn document_links(&mut self, _file: &Path) -> Vec<DocumentLink> {
+        Vec::new()
+    }
+
+    /// LSP `semanticTokens/full` data (5 integers per token, see legend).
+    fn semantic_tokens(&mut self, _file: &Path) -> Vec<u32> {
+        Vec::new()
+    }
+
+    /// Code lenses (reference and implementation counts) for one file.
+    fn code_lenses(&mut self, _file: &Path) -> Vec<CodeLens> {
+        Vec::new()
+    }
+
+    /// Organize the import block; empty when nothing changes.
+    fn organize_imports(&mut self, _file: &Path) -> Vec<TextEdit> {
         Vec::new()
     }
 

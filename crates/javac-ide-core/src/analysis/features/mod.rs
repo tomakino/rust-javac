@@ -11,6 +11,8 @@ pub(crate) mod inlay_hints;
 pub(crate) mod navigation;
 pub(crate) mod on_type_formatting;
 pub(crate) mod selection_range;
+pub(crate) mod semantic_tokens;
+pub(crate) mod organize_imports;
 pub(crate) mod signature;
 
 /// Map an internal symbol kind string to the public kind.

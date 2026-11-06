@@ -783,6 +783,9 @@ pub(crate) fn symbol_kind(ctx: &CompilerContext, symbol: CompilerSymbolId) -> Op
         SymbolKind::VarSymbol { .. }
         | SymbolKind::BindingSymbol { .. }
         | SymbolKind::RecordComponent { .. } => {
+            if ctx.sym(symbol).flags_field & flags::PARAMETER != 0 {
+                return Some(IndexSymbolKind::Parameter);
+            }
             if let Some(owner) = ctx.sym(symbol).owner {
                 match ctx.sym(owner).kind_data {
                     SymbolKind::ClassSymbol { .. } => Some(IndexSymbolKind::Field),

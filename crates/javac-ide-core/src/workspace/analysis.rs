@@ -95,6 +95,8 @@ pub struct FileAnalysis {
     pub declarations: Vec<SymbolKey>,
     /// Occurrence facts extracted for the incremental updater.
     pub occurrences: Vec<Occurrence>,
+    /// Cached LSP semantic-token data keyed by text hash.
+    pub(crate) semantic_tokens_cache: Option<(u64, Vec<u32>)>,
 }
 
 impl FileAnalysis {
@@ -134,6 +136,7 @@ impl FileAnalysis {
             diagnostics: Vec::new(),
             diagnostics_hash: None,
             declarations: Vec::new(),
+            semantic_tokens_cache: None,
             occurrences: Vec::new(),
         }
     }
@@ -182,6 +185,7 @@ impl FileAnalysis {
         // Edited file: reuse the compiler and drop the context-dependent type
         // caches, so the next round sees the new symbols.
         self.class_short_names = None;
+        self.semantic_tokens_cache = None;
         if self.initialized {
             self.compiler.types.reset_caches();
         }
@@ -294,6 +298,14 @@ impl FileAnalysis {
         position: javac_analysis_api::Position,
     ) -> Vec<javac_analysis_api::CodeAction> {
         self.code_actions_impl(file, position)
+    }
+
+    pub fn organize_imports(&mut self, file: &Path) -> Vec<javac_analysis_api::TextEdit> {
+        self.organize_imports_impl(file)
+    }
+
+    pub fn semantic_tokens(&mut self, file: &Path) -> Vec<u32> {
+        self.semantic_tokens_impl(file)
     }
 
     pub fn on_type_formatting(

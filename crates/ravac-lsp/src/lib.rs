@@ -203,6 +203,15 @@ pub fn run(
             "textDocument/documentLink" => {
                 respond(&mut stdout, id, document_links(host.as_mut(), &message));
             }
+            "textDocument/semanticTokens/full" => {
+                respond(&mut stdout, id, semantic_tokens(host.as_mut(), &message));
+            }
+            "textDocument/codeLens" => {
+                respond(&mut stdout, id, code_lens(host.as_mut(), &message));
+            }
+            "workspace/executeCommand" => {
+                respond(&mut stdout, id, execute_command(host.as_mut(), &message));
+            }
             "textDocument/definition" => {
                 respond(&mut stdout, id, definition(host.as_mut(), &message));
             }
@@ -328,6 +337,17 @@ fn capabilities() -> Value {
             "moreTriggerCharacter": [";", "\n"]
         },
         "documentLinkProvider": { "resolveProvider": false },
+        "semanticTokensProvider": {
+            "legend": {
+                "tokenTypes": javac_analysis_api::SEMANTIC_TOKEN_TYPES.to_vec(),
+                "tokenModifiers": javac_analysis_api::SEMANTIC_TOKEN_MODIFIERS.to_vec()
+            },
+            "full": { "delta": false }
+        },
+        "codeLensProvider": { "resolveProvider": false },
+        "executeCommandProvider": {
+            "commands": ["ravac.organizeImports", "ravac.showReferences"]
+        },
         "definitionProvider": true,
         "typeDefinitionProvider": true,
         "implementationProvider": true,
@@ -753,7 +773,14 @@ fn code_action(host: &mut dyn WorkspaceService, message: &Value) -> Value {
     let line = start.get("line").and_then(Value::as_u64).unwrap_or(0) as u32;
     let character = start.get("character").and_then(Value::as_u64).unwrap_or(0) as u32;
     let position = javac_analysis_api::Position::new(line, character);
-    let actions = host.code_actions(&path, position);
+    let mut actions = host.code_actions(&path, position);
+    if let Some(edit) = host.organize_imports(&path).first() {
+        actions.push(javac_analysis_api::CodeAction {
+            title: "Organize imports".to_string(),
+            edits: vec![edit.clone()],
+            diagnostics: Vec::new(),
+        });
+    }
     let uri = Url::from_file_path(&path)
         .map(|url| url.to_string())
         .unwrap_or_default();
@@ -773,7 +800,11 @@ fn code_action(host: &mut dyn WorkspaceService, message: &Value) -> Value {
                     .collect();
                 json!({
                     "title": action.title,
-                    "kind": "quickfix",
+                    "kind": if action.title == "Organize imports" {
+                        "source.organizeImports"
+                    } else {
+                        "quickfix"
+                    },
                     "diagnostics": action
                         .diagnostics
                         .iter()
@@ -791,6 +822,79 @@ fn code_action(host: &mut dyn WorkspaceService, message: &Value) -> Value {
             })
             .collect(),
     )
+}
+
+fn semantic_tokens(host: &mut dyn WorkspaceService, message: &Value) -> Value {
+    let Some(path) = message
+        .get("params")
+        .and_then(|params| params.get("textDocument"))
+        .and_then(|doc| doc.get("uri"))
+        .and_then(Value::as_str)
+        .and_then(|uri| uri_to_path(uri).ok())
+    else {
+        return Value::Null;
+    };
+    json!({ "data": host.semantic_tokens(&path) })
+}
+
+fn code_lens(host: &mut dyn WorkspaceService, message: &Value) -> Value {
+    let Some(path) = message
+        .get("params")
+        .and_then(|params| params.get("textDocument"))
+        .and_then(|doc| doc.get("uri"))
+        .and_then(Value::as_str)
+        .and_then(|uri| uri_to_path(uri).ok())
+    else {
+        return Value::Null;
+    };
+    let lenses = host.code_lenses(&path);
+    Value::Array(
+        lenses
+            .iter()
+            .map(|lens| {
+                json!({
+                    "range": range_json(lens.range),
+                    "command": {
+                        "title": lens.title,
+                        "command": lens.command,
+                        "arguments": [lens.uri, { "line": lens.line, "character": lens.character }],
+                    }
+                })
+            })
+            .collect(),
+    )
+}
+
+fn execute_command(host: &mut dyn WorkspaceService, message: &Value) -> Value {
+    let Some(params) = message.get("params") else {
+        return Value::Null;
+    };
+    let Some(command) = params.get("command").and_then(Value::as_str) else {
+        return Value::Null;
+    };
+    let Some(uri) = params
+        .get("arguments")
+        .and_then(Value::as_array)
+        .and_then(|arguments| arguments.first())
+        .and_then(Value::as_str)
+    else {
+        return Value::Null;
+    };
+    let Ok(path) = uri_to_path(uri) else {
+        return Value::Null;
+    };
+    match command {
+        "ravac.organizeImports" => {
+            let edits = host.organize_imports(&path);
+            Value::Array(
+                edits
+                    .iter()
+                    .map(|edit| json!({ "range": range_json(edit.range), "newText": edit.new_text }))
+                    .collect(),
+            )
+        }
+        _ => Value::Null,
+    }
 }
 
 fn on_type_formatting(host: &mut dyn WorkspaceService, message: &Value) -> Value {
