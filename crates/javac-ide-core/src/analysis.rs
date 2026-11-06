@@ -15,7 +15,6 @@ mod diagnostics;
 mod doc_render;
 mod features;
 mod host;
-mod index;
 mod inspections;
 mod jdk_docs;
 mod jdk_sources;
@@ -26,7 +25,6 @@ mod signatures;
 mod type_names;
 
 pub use host::*;
-pub use index::*;
 pub use positions::*;
 pub use symbols::*;
 
@@ -78,14 +76,6 @@ struct CachedFile {
     result: AnalysisResult,
 }
 
-/// Cached project-wide session for cross-file references.
-pub(crate) struct ProjectCache {
-    pub(crate) session: AnalysisSession,
-    pub(crate) source_paths: Vec<PathBuf>,
-    pub(crate) files: Vec<(PathBuf, Option<std::time::SystemTime>, u64)>,
-    pub(crate) overlay: Option<(PathBuf, u64)>,
-}
-
 /// A resident analysis session.
 pub struct AnalysisSession {
     pub(crate) config: AnalysisConfig,
@@ -93,11 +83,9 @@ pub struct AnalysisSession {
     pub(crate) initialized: bool,
     pub(crate) traced: Vec<TracedClass>,
     pub(crate) cache: Option<CachedFile>,
-    /// Project-wide compilation used by cross-file references and rename.
-    pub(crate) project_cache: Option<Box<ProjectCache>>,
+    /// Independent project index; never contains a compiler session.
+    pub(crate) project_index: Option<project_index::ProjectIndex>,
     pub(crate) texts: HashMap<PathBuf, String>,
-    pub(crate) index: HashMap<String, IndexEntry>,
-    pub(crate) index_built: bool,
     /// Lazily built Javadoc cache over the JDK src.zip.
     pub(crate) jdk_docs: Option<jdk_docs::JdkDocCache>,
     /// Last successfully computed inlay hints per file, used to keep hints
@@ -143,10 +131,8 @@ pub fn new(config: AnalysisConfig) -> Self {
             initialized: false,
             traced: Vec::new(),
             cache: None,
-            project_cache: None,
+            project_index: None,
             texts: HashMap::new(),
-            index: HashMap::new(),
-            index_built: false,
             jdk_docs: None,
             inlay_hint_cache: HashMap::new(),
             class_short_names: None,
@@ -159,7 +145,7 @@ pub fn new(config: AnalysisConfig) -> Self {
         self.compiler = build_compiler(&self.config);
         self.initialized = false;
         self.traced.clear();
-        self.project_cache = None;
+        self.project_index = None;
         self.jdk_docs = None;
         self.inlay_hint_cache.clear();
         self.class_short_names = None;
@@ -191,10 +177,6 @@ pub fn new(config: AnalysisConfig) -> Self {
             let _ = self.compiler.compile_files(&[source.to_path_buf()]);
             self.initialized = true;
             self.trace_classes_for(source);
-            if !self.index_built {
-                self.build_index();
-                self.index_built = true;
-            }
             self.trace_classes_for(source);
             let result = self.result();
             self.cache = Some(CachedFile {
@@ -245,7 +227,6 @@ pub fn new(config: AnalysisConfig) -> Self {
                 .attrib(&mut self.compiler.ctx, syms_ref, &env);
         }
         self.trace_classes_for(source);
-        self.update_index_for(source);
         let result = self.result();
         self.cache = Some(CachedFile {
             path: source.to_path_buf(),

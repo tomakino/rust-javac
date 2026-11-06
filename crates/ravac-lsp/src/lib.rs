@@ -162,6 +162,9 @@ pub fn run(
             "textDocument/documentSymbol" => {
                 respond(&mut stdout, id, document_symbols(host, &message));
             }
+            "workspace/symbol" => {
+                respond(&mut stdout, id, workspace_symbols(host, &message));
+            }
             "textDocument/references" => {
                 respond(&mut stdout, id, references(host, &message));
             }
@@ -212,6 +215,7 @@ fn capabilities() -> Value {
         "callHierarchyProvider": true,
         "hoverProvider": true,
         "documentSymbolProvider": true,
+        "workspaceSymbolProvider": true,
         "referencesProvider": true,
         "renameProvider": { "prepareProvider": true }
     })
@@ -815,6 +819,32 @@ fn references(host: &mut dyn AnalysisHost, message: &Value) -> Value {
                     .map(|url| url.to_string())
                     .unwrap_or_default();
                 json!({ "uri": uri, "range": range_json(location.range) })
+            })
+            .collect(),
+    )
+}
+
+
+fn workspace_symbols(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let query = message
+        .get("params")
+        .and_then(|params| params.get("query"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let symbols = host.workspace_symbols(query);
+    Value::Array(
+        symbols
+            .iter()
+            .map(|symbol| {
+                let uri = Url::from_file_path(&symbol.location.file)
+                    .map(|url| url.to_string())
+                    .unwrap_or_default();
+                json!({
+                    "name": symbol.name,
+                    "kind": symbol_kind_number(symbol.kind),
+                    "location": { "uri": uri, "range": range_json(symbol.location.range) },
+                    "containerName": symbol.container_name,
+                })
             })
             .collect(),
     )

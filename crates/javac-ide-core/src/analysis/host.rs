@@ -19,6 +19,7 @@ impl javac_analysis_api::AnalysisHost for AnalysisSession {
                 .insert(PathBuf::from(canonical(file)), text.to_string());
             self.compiler.overlay_text = Some((PathBuf::from(canonical(file)), text.to_string()));
             self.cache = None;
+            self.project_index = None;
         } else {
             self.compiler.overlay_text = None;
         }
@@ -161,6 +162,10 @@ impl javac_analysis_api::AnalysisHost for AnalysisSession {
         file: &Path,
     ) -> Vec<javac_analysis_api::DocumentSymbol> {
         self.document_symbols_impl(file)
+    }
+
+    fn workspace_symbols(&mut self, query: &str) -> Vec<javac_analysis_api::WorkspaceSymbol> {
+        self.workspace_symbols_impl(query)
     }
 
     fn code_actions(
@@ -426,6 +431,5 @@ impl AnalysisSession {
         methods
     }
 }
-
 
 

@@ -9,6 +9,7 @@ use super::super::{canonical, AnalysisSession};
 use super::map_kind;
 
 use crate::analysis::jdk_docs::JdkDocCache;
+use crate::analysis::project_index::IndexSymbolKind;
 
 use crate::code::type_::TypeKindData;
 use crate::code::type_tag::TypeTag;
@@ -274,25 +275,37 @@ impl AnalysisSession {
                 self.member_documentation(&file_class_flat, &label, Some(argument_count));
             items.push(item);
         }
-        self.ensure_index();
-        let indexed: Vec<(String, &'static str, bool)> = self
-            .index
-            .iter()
-            .map(|(key, entry)| (key.clone(), entry.kind, entry.is_public))
-            .collect();
-        for (key, kind, is_public) in indexed {
-            if kind != "class" && kind != "nested" {
-                continue;
-            }
-            let Some(name) = key.rsplit('.').next() else { continue };
+        if self.project_index.is_none() && !self.config.source_path.is_empty() {
+            self.ensure_project_index();
+        }
+        let indexed: Vec<(String, String, IndexSymbolKind, bool)> = self
+            .project_index
+            .as_ref()
+            .map(|index| {
+                index
+                    .symbols
+                    .iter()
+                    .filter(|record| record.kind.is_type())
+                    .map(|record| {
+                        (
+                            record.flat_name.clone(),
+                            index.name(record.key.name).to_string(),
+                            record.kind,
+                            (record.modifiers & crate::code::flags::PUBLIC as u32) != 0,
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        for (key, name, kind, is_public) in indexed {
             let mut item = completion_item(
-                name.to_string(),
-                map_kind(kind),
+                name,
+                map_kind(index_kind_name(kind)),
                 Some(key.clone()),
                 None,
             );
             item.documentation = self.class_documentation(&key);
-            if kind == "class"
+            if kind.is_type()
                 && let Some(edit) = import_context.edit_for(&key, is_public)
             {
                 item.additional_text_edits.push(edit);
@@ -2402,4 +2415,13 @@ fn is_internal_package(flat: &str) -> bool {
         || package.contains(".internal")
         || package.starts_with("jdk.internal.")
         || package.starts_with("jdk.nio.zipfs")
+}
+
+fn index_kind_name(kind: IndexSymbolKind) -> &'static str {
+    match kind {
+        IndexSymbolKind::Interface => "interface",
+        IndexSymbolKind::Enum => "enum",
+        IndexSymbolKind::Record => "record",
+        _ => "class",
+    }
 }

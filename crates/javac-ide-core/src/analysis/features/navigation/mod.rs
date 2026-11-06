@@ -1,8 +1,6 @@
 //! Navigation: definition, type definition, implementations, references,
 //! document symbols.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use super::super::host::location_at;
@@ -19,6 +17,9 @@ impl AnalysisSession {
         file: &Path,
         position: javac_analysis_api::Position,
     ) -> Option<javac_analysis_api::Location> {
+        if let Some(location) = self.project_definition(file, position) {
+            return Some(location);
+        }
         let key = PathBuf::from(canonical(file));
         let text = self
             .texts
@@ -39,27 +40,7 @@ impl AnalysisSession {
                 });
             }
         }
-        self.ensure_index();
         let word = word_at(&text, line, column)?;
-        // Prefer the symbol's own key, then the word suffix.
-        if let Some(symbol) = AnalysisSession::symbol_at(self, file, line, column) {
-            let key = if symbol.kind == "class" {
-                symbol.flat_name.clone()
-            } else {
-                format!("{}.{}", symbol.flat_name, symbol.name)
-            };
-            if let Some((indexed_file, pos)) = self.index_lookup(&key) {
-                return self.location_for(&indexed_file, pos);
-            }
-        }
-        let indexed_hit = self
-            .index
-            .iter()
-            .find(|(key, _)| *key == &word || key.ends_with(&format!(".{word}")))
-            .map(|(_, entry)| (entry.file.clone(), entry.pos));
-        if let Some((file, pos)) = indexed_hit {
-            return self.location_for(&file, pos);
-        }
         if let Some(jdk_src) = super::super::jdk_sources::default_jdk_src() {
             return super::super::jdk_sources::jdk_source_location(
                 &jdk_src,
@@ -335,19 +316,10 @@ impl AnalysisSession {
         file: &Path,
         position: javac_analysis_api::Position,
     ) -> Vec<javac_analysis_api::Location> {
-        // A project-wide pass keeps symbols for every source file. The resident
-        // session only keeps one active file, which is enough for navigation but
-        // not for cross-file references.
-        let project_locations = if let Some(project) = self.project_session(file) {
-            if let Some((target, _)) = project.symbol_id_at(file, position) {
-                Some(project.collect_references(target))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        if let Some(locations) = project_locations {
+        // The project index is the primary reference source; the resident
+        // project compiler remains only as a fallback for an unsaved buffer.
+        if let Some(symbol) = self.project_symbol_at(file, position) {
+            let locations = self.project_references(symbol);
             if !locations.is_empty() {
                 return locations;
             }
@@ -356,75 +328,6 @@ impl AnalysisSession {
             return Vec::new();
         };
         self.collect_references(target)
-    }
-
-    fn project_source_files(&self) -> Vec<PathBuf> {
-        let mut files = Vec::new();
-        let mut pending: Vec<PathBuf> = self.config().source_path.clone();
-        let mut seen = std::collections::HashSet::new();
-        while let Some(directory) = pending.pop() {
-            if !seen.insert(directory.clone()) {
-                continue;
-            }
-            let Ok(entries) = std::fs::read_dir(&directory) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    pending.push(path);
-                } else if path.extension().is_some_and(|extension| extension == "java") {
-                    files.push(path);
-                }
-            }
-        }
-        files.sort();
-        files
-    }
-
-    fn project_session(&mut self, file: &Path) -> Option<&mut AnalysisSession> {
-        let files = self.project_source_files();
-        if files.is_empty() {
-            return None;
-        }
-        let mut stamps = Vec::with_capacity(files.len());
-        for path in &files {
-            let (mtime, len) = std::fs::metadata(path)
-                .map(|metadata| (metadata.modified().ok(), metadata.len()))
-                .unwrap_or((None, 0));
-            stamps.push((path.clone(), mtime, len));
-        }
-        let key = PathBuf::from(canonical(file));
-        let overlay_text = self.texts.get(&key).cloned().filter(|text| {
-            std::fs::read_to_string(file)
-                .map(|disk| &disk != text)
-                .unwrap_or(true)
-        });
-        let overlay = overlay_text.as_ref().map(|text| {
-            let mut hasher = DefaultHasher::new();
-            text.hash(&mut hasher);
-            (key.clone(), hasher.finish())
-        });
-        let valid = self.project_cache.as_ref().is_some_and(|cache| {
-            cache.source_paths == self.config.source_path
-                && cache.files == stamps
-                && cache.overlay == overlay
-        });
-        if !valid {
-            let mut project = AnalysisSession::new(self.config.clone());
-            if let Some(text) = &overlay_text {
-                project.texts.insert(key.clone(), text.clone());
-                project.compiler.overlay_text = Some((key.clone(), text.clone()));
-            }
-            let _ = project.compiler.compile_files(&files);
-            self.project_cache = Some(Box::new(crate::analysis::ProjectCache {
-                session: project,
-                source_paths: self.config.source_path.clone(),
-                files: stamps,
-                overlay,
-            }));
-        }
-        self.project_cache.as_mut().map(|cache| &mut cache.session)
     }
 
     fn symbol_declaration_location(
@@ -497,6 +400,9 @@ impl AnalysisSession {
         &mut self,
         file: &Path,
     ) -> Vec<javac_analysis_api::DocumentSymbol> {
+        if let Some(symbols) = self.project_document_symbols(file) {
+            return symbols;
+        }
         let text = self
             .texts
             .get(&PathBuf::from(canonical(file)))

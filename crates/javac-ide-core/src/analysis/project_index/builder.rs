@@ -22,6 +22,14 @@ pub fn build_project_index(config: &AnalysisConfig, batch_size: usize) -> Projec
     IndexBuilder::new(config).build(batch_size)
 }
 
+pub fn build_project_index_with_overlays(
+    config: &AnalysisConfig,
+    batch_size: usize,
+    overlays: &HashMap<PathBuf, String>,
+) -> ProjectIndex {
+    IndexBuilder::new_with_overlays(config, overlays).build(batch_size)
+}
+
 /// Build the workspace fingerprint without touching source files.
 pub fn build_workspace_model(config: &AnalysisConfig) -> WorkspaceModel {
     WorkspaceModel::from_config(config)
@@ -43,11 +51,19 @@ pub struct IndexBuilder {
     occurrence_seen: HashSet<(FileId, u32, u32, SymbolId, OccurrenceRole)>,
     pending_supertypes: Vec<(SymbolId, Vec<String>)>,
     failed_files: Vec<PathBuf>,
+    overlays: HashMap<PathBuf, String>,
     strings: StringInterner,
 }
 
 impl IndexBuilder {
     pub fn new(config: &AnalysisConfig) -> Self {
+        Self::new_with_overlays(config, &HashMap::new())
+    }
+
+    pub fn new_with_overlays(
+        config: &AnalysisConfig,
+        overlays: &HashMap<PathBuf, String>,
+    ) -> Self {
         let files = collect_java_files(&config.source_path);
         let mut file_ids = HashMap::new();
         let mut records = Vec::with_capacity(files.len());
@@ -55,7 +71,11 @@ impl IndexBuilder {
         for (index, path) in files.iter().enumerate() {
             let id = index as FileId;
             file_ids.insert(path.clone(), id);
-            let text = std::fs::read_to_string(path).unwrap_or_default();
+            let text = overlays
+                .get(path)
+                .cloned()
+                .or_else(|| std::fs::read_to_string(path).ok())
+                .unwrap_or_default();
             let hash = hash_text(&text);
             records.push(FileRecord {
                 path: path.clone(),
@@ -81,6 +101,7 @@ impl IndexBuilder {
             occurrence_seen: HashSet::new(),
             pending_supertypes: Vec::new(),
             failed_files: Vec::new(),
+            overlays: overlays.clone(),
             strings: StringInterner::default(),
         }
     }
@@ -90,11 +111,15 @@ impl IndexBuilder {
             return self.finish(IndexStatus::Ready);
         }
         let batch_size = batch_size.max(1);
-        let batches: Vec<Vec<PathBuf>> = self
-            .files
-            .chunks(batch_size)
-            .map(|batch| batch.to_vec())
-            .collect();
+        let batches: Vec<Vec<PathBuf>> = if self.overlays.is_empty() {
+            self.files
+                .chunks(batch_size)
+                .map(|batch| batch.to_vec())
+                .collect()
+        } else {
+            // overlay_text carries one buffer; compile each overlay file alone.
+            self.files.iter().map(|path| vec![path.clone()]).collect()
+        };
         for batch in batches {
             self.build_batch(&batch);
         }
@@ -142,6 +167,12 @@ impl IndexBuilder {
         let batch_set: HashSet<PathBuf> = batch.iter().cloned().collect();
         let config = self.config.clone();
         let mut session = AnalysisSession::new(config);
+        for path in batch {
+            if let Some(text) = self.overlays.get(path) {
+                session.texts.insert(path.clone(), text.clone());
+                session.compiler.overlay_text = Some((path.clone(), text.clone()));
+            }
+        }
         let compiled = session.compiler.compile_files(batch);
         if compiled.is_err() {
             for path in batch {

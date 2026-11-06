@@ -84,6 +84,15 @@ pub struct Symbol {
     pub qualified_name: Option<String>,
 }
 
+/// A symbol returned by workspace/symbol.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceSymbol {
+    pub name: String,
+    pub kind: SymbolKind,
+    pub location: Location,
+    pub container_name: Option<String>,
+}
+
 /// A symbol shown in the outline view.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentSymbol {
@@ -339,6 +348,9 @@ pub trait AnalysisHost {
         let _ = (file, position, new_name);
         Vec::new()
     }
+
+    /// Project-wide symbol search.
+    fn workspace_symbols(&mut self, query: &str) -> Vec<WorkspaceSymbol>;
 
     /// Hierarchical symbols of a file (outline view).
     fn document_symbols(&mut self, file: &Path) -> Vec<DocumentSymbol> {

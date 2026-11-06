@@ -2,8 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
+use javac_analysis_api::AnalysisHost;
 use javac_ide_core::analysis::project_index::{build_project_index, IndexSymbolKind, TypeRef};
-use javac_ide_core::analysis::AnalysisConfig;
+use javac_ide_core::analysis::{AnalysisConfig, AnalysisSession};
 
 fn platform_dir() -> PathBuf {
     if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
@@ -136,4 +137,19 @@ fn workspace_model_captures_source_and_classpath_fingerprint() {
     assert_eq!(model.source_level, "17");
     assert_eq!(model.classpath_hash, model.classpath_hash);
     assert_eq!(model.root, root);
+}
+#[test]
+fn workspace_symbols_read_the_project_index() {
+    let root = fixture("workspace-symbols");
+    std::fs::write(root.join("A.java"), "class A { B b; void call() { b.value++; } }").unwrap();
+    std::fs::write(root.join("B.java"), "class B { int value; void run() {} }").unwrap();
+    let output = root.join("out");
+    let mut session = AnalysisSession::new(config(&root, &output));
+    let symbols = session.workspace_symbols("B");
+    assert!(symbols.iter().any(|symbol| symbol.name == "B"), "symbols: {symbols:?}");
+    assert!(symbols.iter().all(|symbol| symbol.location.file.exists()), "locations: {symbols:?}");
+    let value = session.workspace_symbols("value");
+    assert!(value.iter().any(|symbol| symbol.name == "value"), "symbols: {value:?}");
+    let all = session.workspace_symbols("");
+    assert!(all.len() >= 4, "all symbols: {all:?}");
 }

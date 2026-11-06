@@ -187,6 +187,14 @@ impl ProjectIndex {
         self.files.get(id as usize)
     }
 
+    pub fn file_id_for_path(&self, path: &std::path::Path) -> Option<FileId> {
+        let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        self.files
+            .iter()
+            .position(|file| file.path == canonical)
+            .map(|index| index as FileId)
+    }
+
     pub fn file_index(&self, id: FileId) -> Option<&FileIndex> {
         self.by_file.get(&id)
     }
