@@ -77,6 +77,14 @@ struct CachedFile {
     result: AnalysisResult,
 }
 
+/// Cached project-wide session for cross-file references.
+pub(crate) struct ProjectCache {
+    pub(crate) session: AnalysisSession,
+    pub(crate) source_paths: Vec<PathBuf>,
+    pub(crate) files: Vec<(PathBuf, Option<std::time::SystemTime>, u64)>,
+    pub(crate) overlay: Option<(PathBuf, u64)>,
+}
+
 /// A resident analysis session.
 pub struct AnalysisSession {
     pub(crate) config: AnalysisConfig,
@@ -84,6 +92,8 @@ pub struct AnalysisSession {
     pub(crate) initialized: bool,
     pub(crate) traced: Vec<TracedClass>,
     pub(crate) cache: Option<CachedFile>,
+    /// Project-wide compilation used by cross-file references and rename.
+    pub(crate) project_cache: Option<Box<ProjectCache>>,
     pub(crate) texts: HashMap<PathBuf, String>,
     pub(crate) index: HashMap<String, IndexEntry>,
     pub(crate) index_built: bool,
@@ -132,6 +142,7 @@ pub fn new(config: AnalysisConfig) -> Self {
             initialized: false,
             traced: Vec::new(),
             cache: None,
+            project_cache: None,
             texts: HashMap::new(),
             index: HashMap::new(),
             index_built: false,
@@ -147,6 +158,7 @@ pub fn new(config: AnalysisConfig) -> Self {
         self.compiler = build_compiler(&self.config);
         self.initialized = false;
         self.traced.clear();
+        self.project_cache = None;
         self.jdk_docs = None;
         self.inlay_hint_cache.clear();
         self.class_short_names = None;

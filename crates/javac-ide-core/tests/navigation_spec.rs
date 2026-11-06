@@ -130,4 +130,9 @@ fn references_cross_files_with_project_source_path() {
     let a_edits = edits.iter().filter(|edit| edit.file.ends_with("A.java")).count();
     let b_edits = edits.iter().filter(|edit| edit.file.ends_with("B.java")).count();
     assert_eq!((a_edits, b_edits), (2, 1), "edits: {edits:?}");
+
+    let unsaved = a_text.replace("b.value++;", "b.value++;\n        b.value += 2;");
+    AnalysisHost::analyze(&mut session, &a_path, Some(&unsaved));
+    let refreshed = AnalysisHost::references(&mut session, &a_path, Position::new(2, 10));
+    assert_eq!(refreshed.len(), 4, "overlay cache stale: {refreshed:?}");
 }

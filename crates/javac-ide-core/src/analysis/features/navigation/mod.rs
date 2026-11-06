@@ -1,6 +1,8 @@
 //! Navigation: definition, type definition, implementations, references,
 //! document symbols.
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use super::super::host::location_at;
@@ -336,12 +338,18 @@ impl AnalysisSession {
         // A project-wide pass keeps symbols for every source file. The resident
         // session only keeps one active file, which is enough for navigation but
         // not for cross-file references.
-        if let Some(mut project) = self.project_session() {
+        let project_locations = if let Some(project) = self.project_session(file) {
             if let Some((target, _)) = project.symbol_id_at(file, position) {
-                let locations = project.collect_references(target);
-                if !locations.is_empty() {
-                    return locations;
-                }
+                Some(project.collect_references(target))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if let Some(locations) = project_locations {
+            if !locations.is_empty() {
+                return locations;
             }
         }
         let Some((target, _)) = self.symbol_id_at(file, position) else {
@@ -374,14 +382,49 @@ impl AnalysisSession {
         files
     }
 
-    fn project_session(&self) -> Option<AnalysisSession> {
+    fn project_session(&mut self, file: &Path) -> Option<&mut AnalysisSession> {
         let files = self.project_source_files();
         if files.is_empty() {
             return None;
         }
-        let mut project = AnalysisSession::new(self.config().clone());
-        let _ = project.compiler.compile_files(&files);
-        Some(project)
+        let mut stamps = Vec::with_capacity(files.len());
+        for path in &files {
+            let (mtime, len) = std::fs::metadata(path)
+                .map(|metadata| (metadata.modified().ok(), metadata.len()))
+                .unwrap_or((None, 0));
+            stamps.push((path.clone(), mtime, len));
+        }
+        let key = PathBuf::from(canonical(file));
+        let overlay_text = self.texts.get(&key).cloned().filter(|text| {
+            std::fs::read_to_string(file)
+                .map(|disk| &disk != text)
+                .unwrap_or(true)
+        });
+        let overlay = overlay_text.as_ref().map(|text| {
+            let mut hasher = DefaultHasher::new();
+            text.hash(&mut hasher);
+            (key.clone(), hasher.finish())
+        });
+        let valid = self.project_cache.as_ref().is_some_and(|cache| {
+            cache.source_paths == self.config.source_path
+                && cache.files == stamps
+                && cache.overlay == overlay
+        });
+        if !valid {
+            let mut project = AnalysisSession::new(self.config.clone());
+            if let Some(text) = &overlay_text {
+                project.texts.insert(key.clone(), text.clone());
+                project.compiler.overlay_text = Some((key.clone(), text.clone()));
+            }
+            let _ = project.compiler.compile_files(&files);
+            self.project_cache = Some(Box::new(crate::analysis::ProjectCache {
+                session: project,
+                source_paths: self.config.source_path.clone(),
+                files: stamps,
+                overlay,
+            }));
+        }
+        self.project_cache.as_mut().map(|cache| &mut cache.session)
     }
 
     fn symbol_declaration_location(

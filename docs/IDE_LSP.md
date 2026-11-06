@@ -94,9 +94,10 @@ Regression:
 
 - completion returns only symbols of the current file and source-backed project classes; inherited members (Object.clone etc.) still leak into empty-prefix results.
 - references and rename are symbol-level. Cross-file queries compile the files
-  under the configured source_path once per request; files outside source_path and
-  unsaved buffers in other files are not covered yet. Caching this project pass is
-  required before large projects feel responsive.
+  under the configured source_path once and cache that project session; the cache
+  is invalidated by source-file mtime/length and by the current file's overlay
+  hash. pom/classpath changes still require re-initializing the language server,
+  and files outside source_path are not covered.
 - definition of class-path classes without sources (jars) returns null unless the JDK source archive has the file.
 - completion documentation for JDK elements requires src.zip; without it only
   project declarations carry Javadoc. The renderer emits a Markdown subset,
