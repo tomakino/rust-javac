@@ -250,6 +250,54 @@ fn i4_object_methods() {
     assert!(has(&labels, "toString"), "labels: {:?}", labels);
 }
 
+// I3: inherited field
+#[test]
+fn i3_inherited_field() {
+    let mut s = session();
+    let labels = labels_with_cursor(
+        &mut s,
+        "I3",
+        "class I3p { protected int inheritedValue; } class I3 extends I3p { void f() { this.| } }",
+    );
+    assert!(has(&labels, "inheritedValue"), "labels: {:?}", labels);
+}
+
+// I5: interface inheritance chain
+#[test]
+fn i5_interface_inheritance_chain() {
+    let mut s = session();
+    let labels = labels_with_cursor(
+        &mut s,
+        "I5",
+        "interface I5a { default int fromParent() { return 1; } } interface I5b extends I5a { } class I5 implements I5b { void f() { this.| } }",
+    );
+    assert!(has(&labels, "fromParent"), "labels: {:?}", labels);
+}
+
+// R14: generic method-chain return type
+#[test]
+fn r14_generic_chain_return_type() {
+    let mut s = session();
+    let labels = labels_with_cursor(
+        &mut s,
+        "R14",
+        "import java.util.List; class R14 { void f(List<String> list) { list.get(0).| } }",
+    );
+    assert!(has(&labels, "length"), "generic chain lost String: {:?}", labels);
+}
+
+// R15: user method chain
+#[test]
+fn r15_user_method_chain() {
+    let mut s = session();
+    let labels = labels_with_cursor(
+        &mut s,
+        "R15",
+        "class R15 { int field; R15 self() { return this; } void f() { self().| } }",
+    );
+    assert!(has(&labels, "field"), "labels: {:?}", labels);
+}
+
 // K1: receiver context has no keywords
 #[test]
 fn k1_no_keywords_in_receiver() {
