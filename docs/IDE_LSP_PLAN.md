@@ -67,7 +67,7 @@ P2 是补齐和优化，不阻塞 P0/P1。
   - 版本冲突采用最近优先；同层冲突按声明顺序。
   - 读取 sourceDirectory/testSourceDirectory，替代固定 src/main/java。
   - 只读本地 ~/.m2；缺失 artifact 记录警告，不访问网络。
-- 把 test_source_roots 加入分析 source path，或单独维护 test classpath/source path。
+- test_source_roots 的独立 classpath/source path 留到 P1-3；当前不混入主 source path。
 - initialize 的 Maven 发现结果缓存，didChangeWatchedFiles 时失效。
 
 验收：
@@ -259,7 +259,7 @@ P2 是补齐和优化，不阻塞 P0/P1。
 
 | ID | 项目 | 优先级 | 状态 | 验收信号 |
 |---|---|---|---|---|
-| P0-1 | Maven 传递依赖/parent/BOM | P0 | 进行中（核心完成，6 tests） | 真实 fixture 无未解析类型 |
+| P0-1 | Maven 传递依赖/parent/BOM | P0 | 完成（核心；test roots 在 P1-3） | 6 tests + 本地 JUnit/Hamcrest 传输依赖探针 |
 | P0-2 | 符号级 references/rename | P0 | 未开始 | 同名/注释/字符串不误改 |
 | P0-3 | 诊断范围 + quick fix | P0 | 未开始 | Problems 可一键修 |
 | P0-4 | 继承成员/方法链补全 | P0 | 未开始 | completion_spec 新增用例通过 |
