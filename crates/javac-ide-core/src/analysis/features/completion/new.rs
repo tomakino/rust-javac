@@ -131,7 +131,7 @@ impl FileAnalysis {
         items
     }
 
-    pub(super) fn build_class_short_names(
+    pub(crate) fn build_class_short_names(
         &mut self,
     ) -> BTreeMap<String, Vec<crate::ids::SymbolId>> {
         // Make sure platform packages have entered their classes before the

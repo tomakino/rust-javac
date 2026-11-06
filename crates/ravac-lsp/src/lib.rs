@@ -763,6 +763,18 @@ fn code_action(host: &mut dyn WorkspaceService, message: &Value) -> Value {
                 json!({
                     "title": action.title,
                     "kind": "quickfix",
+                    "diagnostics": action
+                        .diagnostics
+                        .iter()
+                        .map(|diagnostic| {
+                            json!({
+                                "range": range_json(diagnostic.range),
+                                "severity": severity_number(diagnostic.severity),
+                                "message": diagnostic.message,
+                                "code": diagnostic.code,
+                            })
+                        })
+                        .collect::<Vec<Value>>(),
                     "edit": { "changes": { uri.clone(): edits } },
                 })
             })

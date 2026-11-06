@@ -184,6 +184,8 @@ pub struct TypeHierarchyItem {
 pub struct CodeAction {
     pub title: String,
     pub edits: Vec<TextEdit>,
+    /// Diagnostics this action fixes (LSP `CodeAction.diagnostics`).
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 /// One callable signature shown by signature help.
