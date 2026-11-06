@@ -261,3 +261,35 @@ fn item10_crlf_import_and_url() {
     assert!(links.iter().any(|link| link.target.ends_with("p/Foo.java")), "{links:?}");
     assert!(links.iter().any(|link| link.target == "https://crlf.example"), "{links:?}");
 }
+
+#[test]
+fn item11_overlay_import_positions() {
+    let Some((root, jar, _sources)) = fixture_with_sources("item11") else {
+        return;
+    };
+    let mut workspace = Workspace::new(config(&root, vec![jar]));
+    let path = root.join("Test.java");
+    std::fs::write(&path, "class Test {}\n").unwrap();
+    // Unsaved buffer: the import is only in the overlay.
+    let overlay = "// 中文注释\nimport p.Foo;\nclass Test {}\n";
+    workspace.set_overlay(&path, overlay);
+    let links = workspace.document_links(&path);
+    assert_eq!(links.len(), 1, "{links:?}");
+    assert_eq!(links[0].range.start.line, 1, "{links:?}");
+    assert!(links[0].target.ends_with("p/Foo.java"), "{links:?}");
+}
+
+#[test]
+fn item12_same_named_classes_in_different_packages() {
+    let Some((root, jar, _sources)) = fixture_with_sources("item12") else {
+        return;
+    };
+    std::fs::create_dir_all(root.join("src/a")).unwrap();
+    std::fs::create_dir_all(root.join("src/b")).unwrap();
+    std::fs::write(root.join("src/a/Foo.java"), "package a; public class Foo {}\n").unwrap();
+    std::fs::write(root.join("src/b/Foo.java"), "package b; public class Foo {}\n").unwrap();
+    let mut workspace = Workspace::new(config(&root, vec![jar]));
+    let links = links(&mut workspace, &root, "import a.Foo;\n\nclass Test {}\n");
+    assert_eq!(links.len(), 1, "{links:?}");
+    assert!(links[0].target.ends_with("a/Foo.java"), "{links:?}");
+}

@@ -132,3 +132,23 @@ fn item06_class_and_method_lenses() {
     assert!(lenses.iter().any(|lens| lens.title.ends_with("references")), "{lenses:?}");
     assert!(lenses.iter().any(|lens| lens.title.ends_with("implementations")), "{lenses:?}");
 }
+
+#[test]
+fn item07_lens_positions_with_chinese_and_emoji() {
+    let root = fixture("item07");
+    std::fs::write(
+        root.join("A.java"),
+        "// 中文注释 😀\nclass A {\n  int 变量;\n}\n",
+    )
+    .unwrap();
+    let mut workspace = Workspace::new(config(&root));
+    workspace.wait_for_index();
+    let lenses = workspace.code_lenses(&root.join("A.java"));
+    // The field declaration is on line 2, UTF-16 column 6.
+    assert!(
+        lenses
+            .iter()
+            .any(|lens| lens.range.start.line == 2 && lens.range.start.column == 6),
+        "{lenses:?}"
+    );
+}

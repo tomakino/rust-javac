@@ -105,7 +105,12 @@ impl FileAnalysis {
         }
         if !context.fields.is_empty() && (!context.has_equals || !context.has_hash_code) {
             let mut edits = Vec::new();
-            let imports_objects = text.contains("import java.util.Objects;");
+            // Reuse the Add-import exclusion helper: exact imports and
+            // wildcard imports (java.util.*) both make Objects available.
+            let (exact_imports, wildcard_imports) =
+                crate::analysis::features::actions::imports_of(&text);
+            let imports_objects = exact_imports.contains("java.util.Objects")
+                || wildcard_imports.contains("java.util");
             if !imports_objects {
                 let (import_line, import_newline, _) =
                     crate::analysis::features::actions::import_insert_point(&text);
@@ -167,49 +172,71 @@ impl FileAnalysis {
         position: Position,
     ) -> Option<ClassContext> {
         let target = PathBuf::from(canonical(file));
-        let mut classes: Vec<(crate::ids::TreeId, usize, usize)> = Vec::new();
+        // Class ranges come from the parser's end-position table (AST), not
+        // from text scanning. Each entry is (tree, class start byte, class end
+        // byte, class end UTF-16).
+        let mut classes: Vec<(crate::ids::TreeId, usize, usize, i32)> = Vec::new();
         for index in 0..self.compiler.ctx.trees.len() {
             let unit = crate::ids::TreeId::new(index as u32);
-            let (source, defs) = match &self.compiler.ctx.tree(unit).kind {
+            let (source, defs, end_positions) = match &self.compiler.ctx.tree(unit).kind {
                 TreeKind::CompilationUnit {
                     sourcefile: Some(source),
                     defs,
+                    end_positions,
                     ..
-                } => (source.get_name().to_string_lossy().to_string(), defs.clone()),
+                } => (
+                    source.get_name().to_string_lossy().to_string(),
+                    defs.clone(),
+                    end_positions.clone(),
+                ),
                 _ => continue,
             };
             if PathBuf::from(canonical(Path::new(&source))) != target {
                 continue;
             }
+            let Some(end_positions) = end_positions else {
+                continue;
+            };
             for def in defs.iter() {
                 if let TreeKind::ClassDecl { .. } = &self.compiler.ctx.tree(def).kind {
-                    // Tree positions are UTF-16 offsets; text scanning is bytes.
-                    let pos_utf16 = self.compiler.ctx.tree(def).pos.max(0) as usize;
-                    let pos = crate::analysis::positions::utf16_to_byte_snapped(text, pos_utf16);
-                    let close = find_char(text, pos, '{')
-                        .and_then(|open| matching_brace(text, open))
-                        .unwrap_or(pos);
-                    classes.push((def, pos, close));
+                    let class_pos_value = self.compiler.ctx.tree(def).pos;
+                    let class_pos_utf16 = class_pos_value.max(0) as usize;
+                    let class_end_utf16 = crate::tree::end_position::end_position(
+                        &self.compiler.ctx,
+                        text,
+                        def,
+                        Some(end_positions.as_ref()),
+                    );
+                    if class_end_utf16 <= 0 {
+                        continue;
+                    }
+                    let class_pos_byte = crate::analysis::positions::utf16_to_byte_snapped(
+                        text,
+                        class_pos_utf16,
+                    );
+                    let class_end_byte = crate::analysis::positions::utf16_to_byte_snapped(
+                        text,
+                        class_end_utf16 as usize,
+                    );
+                    classes.push((def, class_pos_byte, class_end_byte, class_end_utf16));
                 }
             }
         }
-        // The class containing the cursor (structure only).
+        // The class containing the cursor (AST ranges, not text braces).
         let cursor = crate::analysis::positions::line_offset(
             text,
             position.line as usize + 1,
             position.column as usize + 1,
         );
-        let class_tree = classes
+        let (class_tree, class_end_utf16) = classes
             .iter()
-            .find(|(_, pos, close)| *pos <= cursor && cursor <= *close)
-            .map(|(tree, _, _)| *tree)?;
+            .find(|(_, pos, end, _)| *pos <= cursor && cursor <= *end)
+            .map(|(tree, _, _, end)| (*tree, *end))?;
         let class = match &self.compiler.ctx.tree(class_tree).kind {
             TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
             _ => return None,
         };
-        let class_pos_utf16 = self.compiler.ctx.tree(class_tree).pos.max(0);
-        let class_pos = crate::analysis::positions::utf16_to_byte_snapped(text, class_pos_utf16 as usize);
-        // Declaration order comes from the AST (VariableDecl children).
+        let class_pos_utf16 = self.compiler.ctx.tree(class_tree).pos.max(0);        // Declaration order comes from the AST (VariableDecl children).
         let (defs, field_order) = match &self.compiler.ctx.tree(class_tree).kind {
             TreeKind::ClassDecl { defs, .. } => {
                 let order = defs
@@ -266,21 +293,56 @@ impl FileAnalysis {
                     let display = type_name(&self.compiler.ctx, ty);
                     field_symbols.push((field_name, ty, display));
                 }
-                SymbolKind::MethodSymbol { .. } => {
-                    let method_name = symbol_ref
-                        .name
-                        .to_java_string()
-                        .to_string_lossy()
-                        .to_string();
-                    if method_name == "toString" {
-                        has_to_string = true;
-                    } else if method_name == "equals" {
-                        has_equals = true;
-                    } else if method_name == "hashCode" {
-                        has_hash_code = true;
-                    }
-                }
+                SymbolKind::MethodSymbol { .. } => {}
                 _ => {}
+            }
+        }
+        // Existing methods are matched by erased parameter types (not names):
+        // a `toString(int)` or `equals(String)` overload does not conflict.
+        for def in defs.iter() {
+            let (method_name, method_sym) = match &self.compiler.ctx.tree(def).kind {
+                TreeKind::MethodDecl { name, sym, .. } => (
+                    name.to_java_string().to_string_lossy().to_string(),
+                    *sym,
+                ),
+                _ => continue,
+            };
+            if !(method_name == "toString" || method_name == "equals" || method_name == "hashCode")
+            {
+                continue;
+            }
+            let Some(method_sym) = method_sym else {
+                continue;
+            };
+            let Some(ty) = self.compiler.ctx.sym(method_sym).ty else {
+                continue;
+            };
+            let params: Vec<crate::ids::TypeId> =
+                crate::code::types::get_parameter_types(&self.compiler.ctx, ty)
+                    .iter()
+                    .collect();
+            let mut erased = Vec::new();
+            for param in params {
+                let erasure = {
+                    let compiler = &mut self.compiler;
+                    let types = &compiler.types;
+                    let ctx = &mut compiler.ctx;
+                    let syms = &compiler.syms;
+                    types.erasure(ctx, syms, param)
+                };
+                erased.push(type_name(&self.compiler.ctx, erasure));
+            }
+            let matches = match method_name.as_str() {
+                "toString" | "hashCode" => erased.is_empty(),
+                "equals" => erased.len() == 1 && erased[0] == "Object",
+                _ => false,
+            };
+            if matches {
+                match method_name.as_str() {
+                    "toString" => has_to_string = true,
+                    "equals" => has_equals = true,
+                    _ => has_hash_code = true,
+                }
             }
         }
         field_symbols.sort_by_key(|(field_name, _, _)| {
@@ -348,7 +410,7 @@ impl FileAnalysis {
             }
         }
         let super_ok = self.super_has_no_arg_constructor(class);
-        let insert = insert_point(text, class_pos)?;
+        let insert = insert_point(text, class_end_utf16)?;
         Some(ClassContext {
             class,
             name,
@@ -410,16 +472,26 @@ impl InsertPoint {
     }
 }
 
-fn insert_point(text: &str, class_pos: usize) -> Option<InsertPoint> {
-    let open = find_char(text, class_pos, '{')?;
-    let close = matching_brace(text, open)?;
-    let line_start = text[..close].rfind('\n').map(|index| index + 1).unwrap_or(0);
+fn insert_point(text: &str, class_end_utf16: i32) -> Option<InsertPoint> {
+    if class_end_utf16 <= 0 {
+        return None;
+    }
+    // The class end is just past its closing brace (AST end position).
+    let brace_utf16 = (class_end_utf16 - 1) as usize;
+    let brace_byte = crate::analysis::positions::utf16_to_byte_snapped(text, brace_utf16);
+    if text.as_bytes().get(brace_byte) != Some(&b'}') {
+        return None;
+    }
+    let line_start = text[..brace_byte]
+        .rfind('\n')
+        .map(|index| index + 1)
+        .unwrap_or(0);
     let line = text[..line_start].matches('\n').count() as u32;
-    let column = text[line_start..close]
+    let column = text[line_start..brace_byte]
         .chars()
         .map(|character| character.len_utf16() as u32)
         .sum();
-    let brace_indent: String = text[line_start..close].to_string();
+    let brace_indent: String = text[line_start..brace_byte].to_string();
     let indent = format!("{brace_indent}    ");
     let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
     Some(InsertPoint {
@@ -429,73 +501,4 @@ fn insert_point(text: &str, class_pos: usize) -> Option<InsertPoint> {
         brace_indent,
         newline,
     })
-}
-
-/// Scan for `needle` from `start`, skipping comments and string literals.
-/// The class body opener: the first `{` after the declaration (the text
-/// between the class keyword and its body has no comments or literals).
-fn find_char(text: &str, start: usize, needle: char) -> Option<usize> {
-    text[start..]
-        .char_indices()
-        .find(|(_, character)| *character == needle)
-        .map(|(index, _)| start + index)
-}
-
-/// Matching `}` for the `{` at `open`, skipping comments and literals.
-fn matching_brace(text: &str, open: usize) -> Option<usize> {
-    let chars: Vec<(usize, char)> = text[open..].char_indices().collect();
-    let mut depth = 0usize;
-    let mut index = 0usize;
-    while index < chars.len() {
-        let (offset, character) = chars[index];
-        let position = open + offset;
-        if character == '/' && index + 1 < chars.len() {
-            let next = chars[index + 1].1;
-            if next == '/' {
-                index += 2;
-                while index < chars.len() && chars[index].1 != '\n' {
-                    index += 1;
-                }
-                continue;
-            }
-            if next == '*' {
-                index += 2;
-                while index < chars.len() {
-                    if chars[index].1 == '*' && index + 1 < chars.len() && chars[index + 1].1 == '/' {
-                        index += 2;
-                        break;
-                    }
-                    index += 1;
-                }
-                continue;
-            }
-        }
-        if character == '"' || character == '\'' {
-            let quote = character;
-            index += 1;
-            let mut escaped = false;
-            while index < chars.len() {
-                let value = chars[index].1;
-                index += 1;
-                if escaped {
-                    escaped = false;
-                } else if value == '\\' {
-                    escaped = true;
-                } else if value == quote {
-                    break;
-                }
-            }
-            continue;
-        }
-        if character == '{' {
-            depth += 1;
-        } else if character == '}' {
-            depth = depth.saturating_sub(1);
-            if depth == 0 {
-                return Some(position);
-            }
-        }
-        index += 1;
-    }
-    None
 }

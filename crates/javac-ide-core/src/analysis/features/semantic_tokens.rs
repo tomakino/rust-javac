@@ -155,19 +155,28 @@ impl FileAnalysis {
             if flags_value & flags::DEPRECATED as i64 != 0 {
                 modifiers |= modifier_bit("deprecated");
             }
-            let start = skip_whitespace(
+            // `declared_name_start` already returns the exact name start.
+            let start = crate::analysis::positions::declared_name_start(
                 &text,
-                crate::analysis::positions::declared_name_start(
-                    &text,
-                    declaration.range.start,
-                    &declaration.name,
-                ),
+                declaration.range.start,
+                &declaration.name,
             );
             let length = declaration.name.encode_utf16().count() as u32;
             push_range(&text, start, length, token_type, modifiers, &mut raw);
         }
         for occurrence in &extracted.occurrences {
             if occurrence.role == OccurrenceRole::Import {
+                // Import prefix -> namespace (plan 11.3).
+                if occurrence.range.end > occurrence.range.start {
+                    push_range(
+                        &text,
+                        occurrence.range.start,
+                        occurrence.range.end - occurrence.range.start,
+                        type_index("namespace"),
+                        0,
+                        &mut raw,
+                    );
+                }
                 continue;
             }
             if occurrence.identity.flat_name.contains('<') {
@@ -186,13 +195,10 @@ impl FileAnalysis {
             let mut modifiers = 0;
             let start = if occurrence.role == OccurrenceRole::Declaration {
                 modifiers |= modifier_bit("declaration");
-                skip_whitespace(
+                crate::analysis::positions::declared_name_start(
                     &text,
-                    crate::analysis::positions::declared_name_start(
-                        &text,
-                        occurrence.range.start,
-                        &simple,
-                    ),
+                    occurrence.range.start,
+                    &simple,
                 )
             } else {
                 occurrence.range.start
@@ -200,7 +206,41 @@ impl FileAnalysis {
             let length = simple.encode_utf16().count() as u32;
             push_range(&text, start, length, token_type, modifiers, &mut raw);
         }
-        raw.extend(lexical_tokens(&text));
+        // Import prefixes -> namespace (plan 11.3). Import lines are
+        // structural text (10.2): only the package prefix is tokenized; the
+        // imported type keeps its normal class token.
+        for (line_index, line) in text.lines().enumerate() {
+            let trimmed = line.trim_start();
+            let Some(rest) = trimmed.strip_prefix("import ") else {
+                continue;
+            };
+            let path = rest
+                .strip_prefix("static ")
+                .unwrap_or(rest)
+                .trim_end_matches(';')
+                .trim();
+            let path = path.trim_end_matches(".*");
+            let Some((prefix, _)) = path.rsplit_once('.') else {
+                continue;
+            };
+            let indent = line.len() - trimmed.len();
+            let start_byte = crate::analysis::positions::line_offset(
+                &text,
+                line_index + 1,
+                indent + 8,
+            );
+            let start =
+                crate::analysis::positions::byte_to_utf16(&text, start_byte) as u32;
+            let length = prefix.encode_utf16().count() as u32;
+            push_range(
+                &text,
+                start,
+                length,
+                type_index("namespace"),
+                0,
+                &mut raw,
+            );
+        }        raw.extend(lexical_tokens(&text));
         let data = encode(raw);
         self.semantic_tokens_cache = Some((hash, data.clone()));
         data
@@ -224,15 +264,6 @@ fn kind_token(kind: crate::workspace::index::key::IndexSymbolKind) -> Option<u32
     })
 }
 
-fn skip_whitespace(text: &str, start: u32) -> u32 {
-    let bytes = text.as_bytes();
-    let mut index = start as usize;
-    while index < bytes.len() && (bytes[index] == b' ' || bytes[index] == b'\t') {
-        index += 1;
-    }
-    index as u32
-}
-
 fn push_range(
     text: &str,
     start: u32,
@@ -244,8 +275,8 @@ fn push_range(
     if length == 0 {
         return;
     }
-    let start = byte_to_utf16(text, start as usize);
-    let (line, column) = offset_to_line_col(text, start);
+    // Occurrence ranges are UTF-16 offsets; positions use UTF-16 columns.
+    let (line, column) = offset_to_line_col(text, start as usize);
     raw.push(RawToken {
         line,
         column,

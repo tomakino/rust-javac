@@ -262,7 +262,9 @@ impl ChainCollector {
                     .max()
             })
             .unwrap_or(-1);
-        let known = end_pos(ctx, tree);
+        // Authoritative end via `get_end_pos` (no text fallback here: the
+        // selection walk has its own children/token end).
+        let known = crate::tree::tree_info::get_end_pos(ctx, Some(tree), None);
         if known > start {
             end = end.max(known);
         }

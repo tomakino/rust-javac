@@ -226,3 +226,12 @@ fn item15_empty_file_and_comment_only() {
     assert!(has(&comment_only, "comment", None, Some(0), Some(0)), "{comment_only:?}");
     assert!(!has(&comment_only, "class", None, None, None), "{comment_only:?}");
 }
+
+#[test]
+fn item16_import_prefix_is_namespace() {
+    let tokens = tokens(
+        "import java.util.List;\n\nclass A {\n  List value;\n}\n",
+        "item16",
+    );
+    assert!(has(&tokens, "namespace", None, Some(0), None), "{tokens:?}");
+}

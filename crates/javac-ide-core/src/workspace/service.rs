@@ -139,7 +139,7 @@ impl WorkspaceService for Workspace {
         let Some(file_index) = snapshot.by_file.get(&file_id) else {
             return Vec::new();
         };
-        let text = std::fs::read_to_string(file).unwrap_or_default();
+        let text = self.text_of(file).unwrap_or_default();
         let uri = file_uri(file);
         let mut lenses = Vec::new();
         for symbol in &file_index.declarations {
@@ -163,10 +163,9 @@ impl WorkspaceService for Workspace {
                 .get(symbol)
                 .map(|subtypes| subtypes.len())
                 .unwrap_or(0);
-            let start =
-                crate::analysis::positions::byte_to_utf16(&text, declaration.range.start as usize);
-            let end =
-                crate::analysis::positions::byte_to_utf16(&text, declaration.range.end as usize);
+            // Occurrence ranges are UTF-16 offsets already.
+            let start = declaration.range.start as usize;
+            let end = declaration.range.end as usize;
             let (line, column) = crate::analysis::positions::offset_to_line_col(&text, start);
             let range = Range::new(
                 Position::new(line, column),
@@ -207,7 +206,7 @@ impl WorkspaceService for Workspace {
     }
 
     fn document_links(&mut self, file: &Path) -> Vec<DocumentLink> {
-        let text = std::fs::read_to_string(file).unwrap_or_default();
+        let text = self.text_of(file).unwrap_or_default();
         let mut links = Vec::new();
         for (line_index, line) in text.lines().enumerate() {
             let trimmed = line.trim_start();
@@ -226,7 +225,8 @@ impl WorkspaceService for Workspace {
                 path.trim_end_matches(".*")
             };
             // Project sources: workspace model roots first (independent of the
-            // index build state), then the published index.
+            // index build state), then the published index (symbol lookup, not
+            // path suffix matching).
             let relative = format!("{}.java", class.replace('.', "/"));
             let project = self
                 .model
@@ -234,14 +234,7 @@ impl WorkspaceService for Workspace {
                 .into_iter()
                 .map(|root| root.join(&relative))
                 .find(|candidate| candidate.is_file());
-            let indexed = self.index.snapshot().files.iter().find_map(|record| {
-                let path = record.path.to_string_lossy().replace('\\', "/");
-                if path.ends_with(&relative) {
-                    Some(record.path.clone())
-                } else {
-                    None
-                }
-            });
+            let indexed = indexed_source(&self.index.snapshot(), class);
             let target = if let Some(path) = project {
                 file_uri(&path)
             } else if let Some(path) = indexed {
@@ -744,4 +737,45 @@ fn url_links(text: &str) -> Vec<DocumentLink> {
         }
     }
     links
+}
+
+/// Source file of a project class, resolved through the published index
+/// symbols (not by path suffix).
+fn indexed_source(
+    snapshot: &crate::workspace::index::model::ProjectIndex,
+    fqcn: &str,
+) -> Option<PathBuf> {
+    let (_package, simple) = fqcn.rsplit_once('.')?;
+    let name_id = snapshot.strings.find(simple)?;
+    for symbol in snapshot.by_name.get(&name_id)? {
+        let record = snapshot.symbols.get(*symbol as usize)?;
+        if !record.kind.is_type() {
+            continue;
+        }
+        if flat_name(snapshot, *symbol).as_deref() == Some(fqcn) {
+            return snapshot
+                .files
+                .get(record.file as usize)
+                .map(|file| file.path.clone());
+        }
+    }
+    None
+}
+
+fn flat_name(
+    snapshot: &crate::workspace::index::model::ProjectIndex,
+    symbol: u32,
+) -> Option<String> {
+    let mut parts = Vec::new();
+    let mut current = symbol;
+    loop {
+        let record = snapshot.symbols.get(current as usize)?;
+        parts.push(snapshot.strings.get(record.key.name).to_string());
+        match record.key.owner {
+            Some(owner) => current = owner,
+            None => break,
+        }
+    }
+    parts.reverse();
+    Some(parts.join("."))
 }

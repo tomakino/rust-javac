@@ -2,22 +2,18 @@
 // Dependency/phase: tree (tree nodes/scanners for the corresponding upstream feature).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: getTree (TreeInfo.java:663)
-// - NOT PORTED: getStartPosition (TreeInfo.java:664)
 // - NOT PORTED: getPreferredPosition (TreeInfo.java:665)
-// - NOT PORTED: getEndPosition (TreeInfo.java:666)
 // - NOT PORTED: visitIdent (TreeInfo.java:721)
 // - NOT PORTED: visitSelect (TreeInfo.java:725)
-// - NOT PORTED: scan (TreeInfo.java:749)
-// - NOT PORTED: visitTopLevel (TreeInfo.java:753)
-// - NOT PORTED: visitModuleDef (TreeInfo.java:757)
-// - NOT PORTED: visitPackageDef (TreeInfo.java:761)
-// - NOT PORTED: visitClassDef (TreeInfo.java:765)
-// - NOT PORTED: visitMethodDef (TreeInfo.java:769)
-// - NOT PORTED: visitVarDef (TreeInfo.java:773)
-// - NOT PORTED: visitTypeParameter (TreeInfo.java:777)
-// - NOT PORTED: scan (TreeInfo.java:810)
-// - NOT PORTED: scan (TreeInfo.java:1308)
-// - NOT PORTED: visitAnnotation (TreeInfo.java:1314)
+//
+// Ported since this list was first written (the upstream line numbers shifted
+// between JDK revisions, so entries are matched by behavior):
+// - getStartPosition -> get_start_pos
+// - getEndPosition   -> get_end_pos (full coverage needs an EndPosTable; without
+//   one it falls back to end_pos for Block/Switch/Try only)
+// - scan / visitTopLevel / visitModuleDef / visitPackageDef / visitClassDef /
+//   visitMethodDef / visitVarDef / visitTypeParameter / visitAnnotation ->
+//   see the TreeInfo scanner implementation below
 // End of Gap registration.
 
 //! Utility class containing inspector methods for trees.
@@ -39,16 +35,13 @@
 //!   name may live in different name tables in the adapter tests; the upstream
 //!   compares table-interned Name identities (registered section 9).
 //!
-//! NOT PORTED IN THIS STEP (dependencies are not ported yet; no placeholder
-//! logic is written, tracked in docs/STATUS.md):
-//! - Env/AttrContext-dependent: isInAnnotation, getCommentText,
-//!   getCommentTree, scopeFor, pathFor, declarationFor, positionFor,
-//!   diagnosticPositionFor (they need Env/AttrContext, TreeScanner,
-//!   DiagnosticPosition and DCTree);
-//! - diagEndPos (returns a DiagnosticPosition anonymous class; the
-//!   JCDiagnostic/DiagnosticPosition layer is not ported yet);
-//! - containsTypeAnnotation (needs the internal TreeScanner);
-//! - flagNames (Flags.toString is not ported yet).
+//! Still not ported in this file (Env/AttrContext dependent; no substitute
+//! logic is written here):
+//! - getCommentText, getCommentTree, scopeFor, pathFor, positionFor.
+//!
+//! Ported since this note was first written: isInAnnotation, declarationFor,
+//! diagnosticPositionFor (including the with-flag form), diagEndPos,
+//! containsTypeAnnotation and flagNames.
 
 // The upstream algorithms are copied with their exact if/match nesting; the
 // clippy style suggestions to collapse them are not applied (registered in

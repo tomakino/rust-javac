@@ -260,7 +260,7 @@ fn file_class_name(text: &str) -> Option<String> {
 }
 
 /// Import statements of one file: (exact classes, wildcard packages).
-fn imports_of(text: &str) -> (HashSet<String>, HashSet<String>) {
+pub(crate) fn imports_of(text: &str) -> (HashSet<String>, HashSet<String>) {
     let mut exact = HashSet::new();
     let mut wildcards = HashSet::new();
     for line in text.lines() {
@@ -373,7 +373,7 @@ fn name_of_diagnostic(text: &str, diagnostic: &Diagnostic) -> Option<String> {
         diagnostic.range.end.line as usize + 1,
         diagnostic.range.end.column as usize + 1,
     );
-    let slice = text.get(start..end)?.trim();
+    let slice = text.get(start..end).map(str::trim).unwrap_or("");
     if !slice.is_empty() && !slice.contains('<') && !slice.contains('(') {
         let last = slice.rsplit('.').next().unwrap_or(slice).trim();
         if is_type_identifier(last) {
@@ -381,24 +381,17 @@ fn name_of_diagnostic(text: &str, diagnostic: &Diagnostic) -> Option<String> {
         }
         return None;
     }
-    // The diagnostic range may be zero width: fall back to its message
-    // ("符号: 类 X" / "symbol: class X").
-    let marker = if diagnostic.message.contains("符号: 类") {
-        "符号: 类"
-    } else if diagnostic.message.contains("symbol: class") {
-        "symbol: class"
+    // Locale-independent fallback: the identifier at the diagnostic start
+    // (`word_at` is lexical; diagnostics may be localized arbitrarily).
+    let word = word_at(
+        text,
+        diagnostic.range.start.line as usize + 1,
+        diagnostic.range.start.column as usize + 1,
+    )?;
+    if is_type_identifier(&word) {
+        Some(word)
     } else {
-        return None;
-    };
-    let rest = diagnostic.message.split(marker).nth(1)?.trim_start();
-    let name: String = rest
-        .chars()
-        .take_while(|character| character.is_alphanumeric() || *character == '_' || *character == '$')
-        .collect();
-    if name.is_empty() {
         None
-    } else {
-        Some(name)
     }
 }
 
@@ -630,5 +623,35 @@ impl FileAnalysis {
                 }
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn name_of_diagnostic_is_locale_independent() {
+        let text = "class A {\n  List value;\n}\n";
+        // A zero-width diagnostic with an arbitrary (localized) message: the
+        // fallback must use the source identifier at the position, not text
+        // from the message.
+        let localized = javac_analysis_api::Diagnostic {
+            range: Range::new(Position::new(1, 2), Position::new(1, 2)),
+            severity: javac_analysis_api::Severity::Error,
+            message: "任意语言，没有任何标记".to_string(),
+            code: Some("compiler.err.cant.resolve.location".to_string()),
+        };
+        assert_eq!(
+            name_of_diagnostic(text, &localized).as_deref(),
+            Some("List")
+        );
+        let ranged = javac_analysis_api::Diagnostic {
+            range: Range::new(Position::new(1, 2), Position::new(1, 6)),
+            severity: javac_analysis_api::Severity::Error,
+            message: "anything".to_string(),
+            code: Some("compiler.err.cant.resolve.location".to_string()),
+        };
+        assert_eq!(name_of_diagnostic(text, &ranged).as_deref(), Some("List"));
     }
 }

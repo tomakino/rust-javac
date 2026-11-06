@@ -200,3 +200,31 @@ fn item10_chinese_offsets_do_not_mix_units() {
         "    public Foo(int 变量) {\n        this.变量 = 变量;\n    }\n"
     );
 }
+#[test]
+fn item11_wildcard_import_covers_objects() {
+    let text = "import java.util.*;\n\nclass Foo {\n  int a;\n}\n";
+    let actions = generate_actions_at(text, "item11", Position::new(3, 2));
+    let equals = find(&actions, "Generate equals() and hashCode()").expect("equals action");
+    // java.util.* already makes Objects visible: no import edit.
+    assert_eq!(equals.edits.len(), 1, "{equals:?}");
+}
+
+#[test]
+fn item12_overloads_do_not_conflict() {
+    let text = "class Foo {\n  int a;\n  public String toString(int x) { return \"\"; }\n  public boolean equals(String s) { return false; }\n  public int hashCode(int x) { return 0; }\n}\n";
+    let actions = generate_actions_at(text, "item12", Position::new(3, 2));
+    assert!(find(&actions, "Generate toString()").is_some(), "{actions:?}");
+    assert!(find(&actions, "Generate equals() and hashCode()").is_some(), "{actions:?}");
+}
+
+#[test]
+fn item13_annotation_with_braces_before_class() {
+    let text = "@SuppressWarnings({\"unchecked\"})\nclass Foo {\n  int a;\n}\n";
+    let actions = generate_actions_at(text, "item13", Position::new(2, 2));
+    let constructor = find(&actions, "Generate constructor").expect("constructor action");
+    assert_eq!(
+        constructor.edits[0].new_text,
+        "    public Foo(int a) {\n        this.a = a;\n    }\n"
+    );
+    assert_eq!(constructor.edits[0].range.start.line, 3, "{constructor:?}");
+}

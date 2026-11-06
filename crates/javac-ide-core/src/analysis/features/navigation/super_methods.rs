@@ -289,11 +289,12 @@ impl FileAnalysis {
                 });
             }
         }
-        let is_jdk = flat_name.starts_with("java.")
-            || flat_name.starts_with("javax.")
-            || flat_name.starts_with("jdk.")
-            || flat_name.starts_with("sun.")
-            || flat_name.starts_with("com.sun.");
+        // JDK classes belong to a system module (java.* / jdk.*), unlike jar
+        // or project classes (unnamed module). Do not judge by name prefixes.
+        let owner_class = self.compiler.ctx.sym(method).owner;
+        let is_jdk = owner_class
+            .map(|class| is_system_module_class(&mut self.compiler.ctx, class))
+            .unwrap_or(false);
         if is_jdk {
             let jdk_src = super::super::super::jdk_sources::default_jdk_src()?;
             return super::super::super::jdk_sources::jdk_member_location(
@@ -309,5 +310,33 @@ impl FileAnalysis {
             &self.config.class_path,
             &self.config.output_dir,
         )
+    }
+}
+
+/// Whether `class` is declared in a JDK system module (ct.sym / platform
+/// modules), judged from the module of its package rather than a name prefix.
+fn is_system_module_class(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    class: crate::ids::SymbolId,
+) -> bool {
+    let mut current = class;
+    loop {
+        let symbol = ctx.sym(current);
+        if let crate::code::symbol::SymbolKind::PackageSymbol { modle, .. } = &symbol.kind_data {
+            let Some(module) = *modle else {
+                return false;
+            };
+            let name = ctx
+                .sym(module)
+                .name
+                .to_java_string()
+                .to_string_lossy()
+                .to_string();
+            return name.starts_with("java.") || name.starts_with("jdk.");
+        }
+        match symbol.owner {
+            Some(owner) => current = owner,
+            None => return false,
+        }
     }
 }
