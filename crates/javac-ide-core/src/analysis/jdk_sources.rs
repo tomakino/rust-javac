@@ -52,6 +52,8 @@ pub(crate) fn jdk_source_location(
         std::fs::create_dir_all(parent).ok()?;
     }
     std::fs::write(&extracted, &bytes).ok()?;
+    // `offset` was accumulated from byte line lengths; LSP columns are UTF-16.
+    let offset = crate::analysis::positions::byte_to_utf16(&text, offset);
     let (line, column) = offset_to_line_col(&text, offset);
     Some(javac_analysis_api::Location {
         file: PathBuf::from(extracted),

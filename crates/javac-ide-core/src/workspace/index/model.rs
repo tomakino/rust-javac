@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use super::key::{FileId, NameId, SignatureId, StringInterner, SymbolId, SymbolKey};
 
+/// A range stored in Java `char` (UTF-16) offsets, matching compiler positions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ByteRange {
     pub start: u32,

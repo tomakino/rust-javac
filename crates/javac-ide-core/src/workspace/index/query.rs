@@ -7,20 +7,38 @@ use std::path::Path;
 
 use javac_analysis_api::{DocumentSymbol, Location, Position, Range, WorkspaceSymbol};
 
-use crate::analysis::positions::{line_offset, offset_to_line_col};
+use crate::analysis::positions::offset_to_line_col;
 
 use super::key::{FileId, IndexSymbolKind, SymbolId};
 use super::model::{ProjectIndex, SymbolRecord};
 use super::symbols::api_symbol_kind;
 
-/// Byte offset of an LSP position in `text`.
-pub fn byte_offset(text: &str, position: Position) -> usize {
-    line_offset(text, position.line as usize + 1, position.column as usize + 1)
+/// UTF-16 (Java char) offset of an LSP position.
+///
+/// [`super::model::ByteRange`] stores Java char offsets, so position lookups
+/// must be converted to the same unit here.
+pub fn offset_utf16(text: &str, position: Position) -> usize {
+    let mut line = 0u32;
+    let mut column = 0u32;
+    let mut offset = 0usize;
+    for ch in text.chars() {
+        if line == position.line && column >= position.column {
+            return offset;
+        }
+        if ch == '\n' {
+            line += 1;
+            column = 0;
+        } else {
+            column += ch.len_utf16() as u32;
+        }
+        offset += ch.len_utf16();
+    }
+    offset
 }
 
 /// The symbol referenced or declared at a position.
 pub fn symbol_at(index: &ProjectIndex, file: FileId, text: &str, position: Position) -> Option<SymbolId> {
-    let offset = byte_offset(text, position) as u32;
+    let offset = offset_utf16(text, position) as u32;
     index
         .occurrence_at(file, offset)
         .map(|occurrence| occurrence.symbol)
@@ -99,7 +117,7 @@ pub fn prepare_rename_range(
     text: &str,
     position: Position,
 ) -> Option<Range> {
-    let offset = byte_offset(text, position) as u32;
+    let offset = offset_utf16(text, position) as u32;
     let occurrence = index.occurrence_at(file, offset)?;
     let (start_line, start_col) = offset_to_line_col(text, occurrence.range.start as usize);
     let (end_line, end_col) = offset_to_line_col(text, occurrence.range.end as usize);

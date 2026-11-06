@@ -436,7 +436,7 @@ impl IndexBuilder {
         }
 
         let pos = ctx.sym(symbol).pos.get().max(0) as u32;
-        let end = pos.saturating_add(name_string.len() as u32);
+        let end = pos.saturating_add(name_string.encode_utf16().count() as u32);
         let range = ByteRange { start: pos, end };
         let flat_name = match &ctx.sym(symbol).kind_data {
             SymbolKind::ClassSymbol { flatname, .. } => flatname.to_string(),
@@ -555,7 +555,7 @@ impl IndexBuilder {
             .flat_name
             .rsplit('.')
             .next()
-            .map(str::len)
+            .map(|name| name.encode_utf16().count())
             .unwrap_or(0) as u32;
         let start = position as u32;
         let range = ByteRange {

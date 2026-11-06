@@ -16,7 +16,7 @@ use super::model::*;
 use super::build::hash_text;
 
 pub const MAGIC: &[u8; 4] = b"RAVI";
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// Directory that holds persisted indexes.
 pub fn cache_dir() -> Option<PathBuf> {

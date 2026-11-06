@@ -2797,10 +2797,18 @@ impl Attr {
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) -> TypeId {
-        let qualid = import_qualid(ctx, tree).expect("import qualid");
+        let Some(qualid) = import_qualid(ctx, tree) else {
+            return self.no_type(ctx);
+        };
+        // A simple-name import (`import Foo;`) has no select tree; the caller
+        // handles it separately. Return no-type instead of panicking if this
+        // entry point is ever reached with such a tree.
         let selected = match &ctx.tree(qualid).kind {
-            TreeKind::FieldAccess { selected, .. } => selected.expect("import selected"),
-            _ => panic!("ClassCastException: JCFieldAccess expected"),
+            TreeKind::FieldAccess {
+                selected: Some(selected),
+                ..
+            } => *selected,
+            _ => return self.no_type(ctx),
         };
         let static_import = import_static_import(ctx, tree);
         let pkind = if static_import {

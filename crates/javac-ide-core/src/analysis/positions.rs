@@ -22,16 +22,44 @@ pub(crate) fn line_offset(text: &str, line: usize, column: usize) -> usize {
 
 
 /// Byte offset for a UTF-16 offset, or None when the offset splits a
-/// surrogate pair.
+/// surrogate pair (or lies past the end of the text).
 pub(crate) fn utf16_to_byte(text: &str, offset: usize) -> Option<usize> {
     let mut consumed = 0usize;
     for (byte, current) in text.char_indices() {
-        if consumed >= offset {
+        if consumed == offset {
             return Some(byte);
+        }
+        if consumed > offset {
+            return None;
         }
         consumed += current.len_utf16();
     }
     (consumed == offset).then_some(text.len())
+}
+
+/// Byte offset for a UTF-16 offset, snapping down to the nearest char boundary
+/// when the offset splits a surrogate pair.
+pub(crate) fn utf16_to_byte_snapped(text: &str, offset: usize) -> usize {
+    if let Some(byte) = utf16_to_byte(text, offset) {
+        return byte;
+    }
+    let mut consumed = 0usize;
+    for (byte, current) in text.char_indices() {
+        if consumed + current.len_utf16() > offset {
+            return byte;
+        }
+        consumed += current.len_utf16();
+    }
+    text.len()
+}
+
+/// UTF-16 offset of a byte offset, snapping down to a char boundary.
+pub(crate) fn byte_to_utf16(text: &str, byte: usize) -> usize {
+    let mut byte = byte.min(text.len());
+    while byte > 0 && !text.is_char_boundary(byte) {
+        byte -= 1;
+    }
+    text[..byte].chars().map(char::len_utf16).sum()
 }
 
 /// Zero-based line/UTF-16 column of a UTF-16 offset.
@@ -115,9 +143,11 @@ pub(crate) fn symbol_range(
     name: &str,
 ) -> javac_analysis_api::Range {
     let (line, column) = offset_to_line_col(text, pos.max(0) as usize);
+    // Columns are UTF-16 code units, not UTF-8 bytes.
+    let width = name.encode_utf16().count() as u32;
     javac_analysis_api::Range::new(
         javac_analysis_api::Position::new(line, column),
-        javac_analysis_api::Position::new(line, column + name.len() as u32),
+        javac_analysis_api::Position::new(line, column + width),
     )
 }
 
@@ -185,4 +215,44 @@ fn utf16_column(chars: &[char], char_index: usize) -> u32 {
         .take(char_index)
         .map(|current| current.len_utf16() as u32)
         .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn utf16_to_byte_snaps_inside_a_surrogate_pair() {
+        let text = "a😀b"; // UTF-16: a=0, emoji=1..3, b=3; bytes: a=0, emoji=1..5, b=5
+        assert_eq!(utf16_to_byte(text, 0), Some(0));
+        assert_eq!(utf16_to_byte(text, 1), Some(1));
+        assert_eq!(utf16_to_byte(text, 2), None, "inside the surrogate pair");
+        assert_eq!(utf16_to_byte_snapped(text, 2), 1);
+        assert_eq!(utf16_to_byte(text, 3), Some(5));
+    }
+
+    #[test]
+    fn byte_to_utf16_snaps_down_to_char_boundaries() {
+        let text = "中文，😀"; // UTF-16 length 5, UTF-8 length 13
+        assert_eq!(byte_to_utf16(text, 0), 0);
+        assert_eq!(byte_to_utf16(text, 3), 1);
+        assert_eq!(byte_to_utf16(text, 4), 1, "inside 文");
+        assert_eq!(byte_to_utf16(text, 6), 2);
+        assert_eq!(byte_to_utf16(text, 9), 3);
+        assert_eq!(byte_to_utf16(text, 10), 3, "inside the emoji");
+        assert_eq!(byte_to_utf16(text, text.len()), 5);
+    }
+
+    #[test]
+    fn symbol_range_counts_utf16_units() {
+        let text = "int 数值;";
+        let range = symbol_range(text, 4, "数值");
+        assert_eq!(range.start.column, 4);
+        assert_eq!(range.end.column, 6, "name width must be UTF-16 code units");
+
+        let text = "int a😀b;";
+        let range = symbol_range(text, 4, "a😀b");
+        assert_eq!(range.start.column, 4);
+        assert_eq!(range.end.column, 8, "emoji is two UTF-16 code units");
+    }
 }

@@ -131,7 +131,7 @@ pub fn extract_file(
             let Some(identity) = identity_of(&mut analysis.compiler.ctx, raw.symbol, file) else {
                 continue;
             };
-            let name_len = simple_name(&identity.flat_name).len() as u32;
+            let name_len = simple_name(&identity.flat_name).encode_utf16().count() as u32;
             out.occurrences.push(ExtractedOccurrence {
                 identity,
                 range: ByteRange {
@@ -237,7 +237,7 @@ fn declaration_of(
     let pos = ctx.sym(symbol).pos.get().max(0) as u32;
     let range = ByteRange {
         start: pos,
-        end: pos.saturating_add(name.len() as u32),
+        end: pos.saturating_add(name.encode_utf16().count() as u32),
     };
     let detail = format!("{} {}", kind_name(kind), name);
     let supertypes = if kind.is_type() {

@@ -56,7 +56,9 @@ impl ImportContext {
             }
             offset = end;
         }
-        let (line, column) = crate::analysis::positions::offset_to_line_col(text, insert_at);
+        // `insert_at` is a byte offset; LSP positions use UTF-16 columns.
+        let insert_utf16 = crate::analysis::positions::byte_to_utf16(text, insert_at);
+        let (line, column) = crate::analysis::positions::offset_to_line_col(text, insert_utf16);
         Self {
             package,
             imports,

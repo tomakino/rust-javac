@@ -308,8 +308,9 @@ impl FileAnalysis {
             if pos < 0 {
                 return false;
             }
-            let pos = pos as usize;
-            match text.get(pos..) {
+            // Declaration positions are Java char (UTF-16) offsets.
+            let byte = crate::analysis::positions::utf16_to_byte_snapped(&text, pos as usize);
+            match text.get(byte..) {
                 Some(rest) => rest.starts_with(&prefix) || prefix.is_empty(),
                 None => false,
             }

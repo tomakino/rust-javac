@@ -1039,18 +1039,50 @@ impl TypeEnter {
         tree: TreeId,
         attr: &mut crate::comp::attr::Attr,
     ) {
-        let qualid = import_qualid(ctx, tree).expect("import qualid");
-        let field_access = match &ctx.tree(qualid).kind {
-            TreeKind::FieldAccess { selected, name, .. } => (*selected, name.clone()),
-            _ => panic!("ClassCastException: JCFieldAccess expected"),
+        let Some(qualid) = import_qualid(ctx, tree) else {
+            debug_skip_import(ctx, tree, "import tree has no qualifier");
+            return;
         };
-        let (selected, name) = field_access;
         let env = self.imports_env.borrow().clone().expect("imports env");
         // Create a local environment pointing to this tree to disable effects of
         // other imports in Resolve.findGlobalType
         let local_env = Env::dup_shared(&env, Some(tree));
+        // Java: `JCFieldAccess imp = (JCFieldAccess)tree.qualid;` assumes the
+        // parser produced a select tree. A simple-name import (`import Foo;`)
+        // has an Ident qualid and is legal syntax, so handle it explicitly
+        // instead of panicking.
+        let (selected, name): (Option<TreeId>, crate::util::name::Name) =
+            match &ctx.tree(qualid).kind {
+                TreeKind::FieldAccess { selected, name, .. } => (*selected, name.clone()),
+                TreeKind::Ident { name, .. } => {
+                    // `import Foo;` — attribute the simple name as a type; an
+                    // unresolved name is reported by attribution as usual.
+                    self.import_simple_qualid(
+                        ctx,
+                        syms,
+                        tree,
+                        qualid,
+                        &env,
+                        &local_env,
+                        name.clone(),
+                        attr,
+                    );
+                    return;
+                }
+                _ => {
+                    debug_skip_import(
+                        ctx,
+                        tree,
+                        "import qualifier is neither a select nor an identifier",
+                    );
+                    return;
+                }
+            };
         // Java: TypeSymbol p = attr.attribImportQualifier(tree, localEnv).tsym;
-        let p = self.attrib_import_qualifier(ctx, syms, tree, &local_env, attr);
+        let Some(p) = self.attrib_import_qualifier(ctx, syms, tree, &local_env, attr) else {
+            debug_skip_import(ctx, tree, "import qualifier did not resolve to a symbol");
+            return;
+        };
         if name.to_java_string() == self.names.asterisk.to_java_string() {
             // Import on demand.
             if let Some(selected) = selected {
@@ -1127,9 +1159,44 @@ impl TypeEnter {
         tree: TreeId,
         local_env: &Rc<Env<AttrContext>>,
         attr: &mut crate::comp::attr::Attr,
-    ) -> SymbolId {
+    ) -> Option<SymbolId> {
         let imported = attr.attrib_import_qualifier(ctx, syms, tree, local_env);
-        ctx.typ(imported).tsym.expect("import qualifier symbol")
+        ctx.typ(imported).tsym
+    }
+
+    /// Attribute a simple-name import (`import Foo;`).
+    ///
+    /// The parser produces an `Ident` qualid for these, so there is no
+    /// qualifier symbol to resolve. The imported type is attributed directly;
+    /// an unresolved name produces the ordinary "cannot find symbol" error.
+    fn import_simple_qualid(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        tree: TreeId,
+        qualid: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        local_env: &Rc<Env<AttrContext>>,
+        _name: crate::util::name::Name,
+        attr: &mut crate::comp::attr::Attr,
+    ) {
+        // `import static Foo;` has no member name; attribute the name as a
+        // type so the unresolved-symbol diagnostic is reported, then stop.
+        if import_static_import(ctx, tree) {
+            let _ = self.attrib_import_type(ctx, syms, qualid, local_env, attr);
+            return;
+        }
+        let imported_type = self.attrib_import_type(ctx, syms, qualid, local_env, attr);
+        let original_type = original_type(ctx, imported_type);
+        let c = if ctx.typ(original_type).has_tag(TypeTag::CLASS) {
+            ctx.typ(original_type).tsym
+        } else {
+            ctx.typ(imported_type).tsym
+        };
+        self.chk.check_canonical(ctx, qualid);
+        if let Some(c) = c {
+            self.import_named(ctx, syms, ctx.tree(tree).pos, c, env, tree, attr);
+        }
     }
 
     /// Java: ImportsPhase.importAll(JCImport imp, TypeSymbol tsym,
@@ -3224,6 +3291,17 @@ fn import_qualid(ctx: &CompilerContext, tree: TreeId) -> Option<TreeId> {
     match &ctx.tree(tree).kind {
         TreeKind::Import { qualid, .. } => *qualid,
         _ => None,
+    }
+}
+
+/// Log (debug builds only) why an import was skipped instead of panicking.
+fn debug_skip_import(_ctx: &CompilerContext, _tree: TreeId, _reason: &str) {
+    #[cfg(debug_assertions)]
+    {
+        eprintln!(
+            "type-enter: skipping malformed import at {}: {_reason}",
+            _ctx.tree(_tree).pos
+        );
     }
 }
 

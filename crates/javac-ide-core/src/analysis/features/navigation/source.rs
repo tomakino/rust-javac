@@ -17,7 +17,7 @@ impl FileAnalysis {
             .or_else(|| std::fs::read_to_string(file).ok())
     }
 
-    /// Symbol attributed at a source position, plus the identifier's byte start.
+    /// Symbol attributed at a source position, plus the identifier's UTF-16 start.
     pub(super) fn symbol_id_at(
         &mut self,
         file: &Path,
@@ -30,8 +30,11 @@ impl FileAnalysis {
         if word.is_empty() {
             return None;
         }
+        // `line_offset`/`word_start_offset` work in bytes; compiler tree
+        // positions are Java char (UTF-16) offsets.
         let cursor = line_offset(&text, line, column);
-        let start = word_start_offset(&text, cursor);
+        let start_byte = word_start_offset(&text, cursor);
+        let start = crate::analysis::positions::byte_to_utf16(&text, start_byte);
         let Some(root) = self.latest_root_for(file) else {
             return None;
         };
