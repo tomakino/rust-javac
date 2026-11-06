@@ -615,84 +615,38 @@ fn resolve_import_source(
         }
     }
     for entry in &config.class_path {
-        let Some(sources) = sources_jar(entry) else {
+        let Some(sources) = crate::analysis::source_files::sources_jar(entry) else {
             continue;
         };
         let Ok(archive) = javac_zip::ZipArchive::open(&sources) else {
             continue;
         };
-        let Some(bytes) = find_entry(&archive, &relative) else {
+        let Some(entry_name) = crate::analysis::source_files::zip_entry(&archive, &relative) else {
             continue;
         };
-        let target = extract_source(&bytes, &sources, &relative, &config.output_dir)?;
+        let Some(bytes) = archive.get_entry(&entry_name) else {
+            continue;
+        };
+        let stem = sources.file_stem()?.to_string_lossy();
+        let target = crate::analysis::source_files::extract(
+            &bytes,
+            &format!("external-src/{stem}"),
+            &relative,
+            &config.output_dir,
+        )?;
         return Some(file_uri(&target));
     }
-    let jdk = jdk_src_zip()?;
+    let jdk = crate::analysis::source_files::jdk_src_zip()?;
     let archive = javac_zip::ZipArchive::open(&jdk).ok()?;
-    let bytes = find_entry(&archive, &relative)?;
-    let target = extract_source(&bytes, &jdk, &relative, &config.output_dir)?;
+    let entry_name = crate::analysis::source_files::zip_entry(&archive, &relative)?;
+    let bytes = archive.get_entry(&entry_name)?;
+    let target =
+        crate::analysis::source_files::extract(&bytes, "jdk-src", &entry_name, &config.output_dir)?;
     Some(file_uri(&target))
-}
-
-/// The `-sources.jar` next to a class-path jar.
-fn sources_jar(entry: &Path) -> Option<PathBuf> {
-    let name = entry.to_string_lossy();
-    let stem = name.strip_suffix(".jar")?;
-    let sources = PathBuf::from(format!("{stem}-sources.jar"));
-    sources.is_file().then_some(sources)
-}
-
-/// Find a zip entry by relative path; JDK `src.zip` entries carry a module
-/// prefix (`java.base/java/util/List.java`).
-fn find_entry(archive: &javac_zip::ZipArchive, relative: &str) -> Option<Vec<u8>> {
-    if let Some(bytes) = archive.get_entry(relative) {
-        return Some(bytes);
-    }
-    let suffix = format!("/{relative}");
-    let name = archive
-        .entries()
-        .iter()
-        .map(|entry| entry.name().to_string())
-        .find(|name| name.ends_with(&suffix))?;
-    archive.get_entry(&name)
-}
-
-fn extract_source(
-    bytes: &[u8],
-    archive_path: &Path,
-    relative: &str,
-    output_dir: &Path,
-) -> Option<PathBuf> {
-    let key = format!("{}:{}", archive_path.display(), relative);
-    let hash = crate::workspace::model::hash_text(&key);
-    let target = output_dir
-        .join("doclink")
-        .join(format!("{hash:016x}"))
-        .join(relative);
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent).ok()?;
-    }
-    if !target.exists() {
-        std::fs::write(&target, bytes).ok()?;
-    }
-    Some(target)
 }
 
 fn file_uri(path: &Path) -> String {
     format!("file:///{}", path.to_string_lossy().replace('\\', "/"))
-}
-
-/// The JDK sources archive: the platform directory first, then `JAVA_HOME`.
-fn jdk_src_zip() -> Option<PathBuf> {
-    if let Some(platform) = std::env::var_os("RAVAC_PLATFORM_DIR") {
-        let candidate = PathBuf::from(platform).join("src.zip");
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    let home = std::env::var_os("JAVA_HOME")?;
-    let candidate = PathBuf::from(home).join("lib").join("src.zip");
-    candidate.is_file().then_some(candidate)
 }
 
 /// `http(s)://` links. Scanning text is intentional and unambiguous here

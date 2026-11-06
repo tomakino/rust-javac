@@ -24,24 +24,29 @@ pub(crate) fn external_source_location(
     }
     let relative = format!("{}.java", class_name.replace('.', "/"));
     for entry in class_path {
-        let Some(sources) = sources_jar(entry) else {
+        let Some(sources) = super::source_files::sources_jar(entry) else {
             continue;
         };
         let Ok(archive) = ZipArchive::open(&sources) else {
             continue;
         };
-        let Some(bytes) = archive.get_entry(&relative) else {
+        let Some(entry_name) = super::source_files::zip_entry(&archive, &relative) else {
+            continue;
+        };
+        let Some(bytes) = archive.get_entry(&entry_name) else {
             continue;
         };
         let text = String::from_utf8_lossy(&bytes).to_string();
         let Some(offset) = locate_member(&text, member) else {
             continue;
         };
-        let extracted = extracted_path(output_dir, &sources, &relative)?;
-        if let Some(parent) = extracted.parent() {
-            std::fs::create_dir_all(parent).ok()?;
-        }
-        std::fs::write(&extracted, &bytes).ok()?;
+        let stem = sources.file_stem()?.to_string_lossy();
+        let extracted = super::source_files::extract(
+            &bytes,
+            &format!("external-src/{stem}"),
+            &relative,
+            output_dir,
+        )?;
         let offset = byte_to_utf16(&text, offset);
         let (line, column) = offset_to_line_col(&text, offset);
         return Some(javac_analysis_api::Location {
@@ -52,23 +57,6 @@ pub(crate) fn external_source_location(
         });
     }
     None
-}
-
-/// The `-sources.jar` next to a binary jar, when it exists.
-pub(crate) fn sources_jar(entry: &Path) -> Option<PathBuf> {
-    let name = entry.file_name()?.to_string_lossy();
-    if !name.ends_with(".jar") || name.ends_with("-sources.jar") {
-        return None;
-    }
-    let stem = name.strip_suffix(".jar")?;
-    let candidate = entry.with_file_name(format!("{stem}-sources.jar"));
-    candidate.is_file().then_some(candidate)
-}
-
-fn extracted_path(output_dir: &Path, sources: &Path, relative: &str) -> Option<PathBuf> {
-    let stem = sources.file_stem()?.to_string_lossy();
-    let base = std::env::current_dir().ok()?.join(output_dir);
-    Some(base.join("external-src").join(stem.as_ref()).join(relative))
 }
 
 /// Byte offset of the declaration name of `member` in `text`.
@@ -183,8 +171,8 @@ mod tests {
         let sources = root.join("lib-1.0-sources.jar");
         std::fs::write(&jar, b"").unwrap();
         std::fs::write(&sources, b"").unwrap();
-        assert_eq!(sources_jar(&jar), Some(sources));
-        assert_eq!(sources_jar(&root.join("other.jar")), None);
+        assert_eq!(super::super::source_files::sources_jar(&jar), Some(sources));
+        assert_eq!(super::super::source_files::sources_jar(&root.join("other.jar")), None);
     }
 }
 

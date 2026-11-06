@@ -106,15 +106,9 @@ pub(crate) fn jdk_member_location(
     })
 }
 
-/// The default JDK src.zip location (JAVA_HOME/lib/src.zip).
-///
-/// RAVAC_JDK_SRC overrides the location for tests and non-standard layouts.
+/// The default JDK src.zip location. Delegates to the single locator in
+/// [`super::source_files`] (union of RAVAC_PLATFORM_DIR / RAVAC_JDK_SRC /
+/// JAVA_HOME); no second locator is kept here.
 pub(crate) fn default_jdk_src() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("RAVAC_JDK_SRC") {
-        let path = PathBuf::from(path);
-        return path.exists().then_some(path);
-    }
-    let home = std::env::var_os("JAVA_HOME")?;
-    let path = PathBuf::from(home).join("lib").join("src.zip");
-    path.exists().then_some(path)
+    super::source_files::jdk_src_zip()
 }

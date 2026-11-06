@@ -239,39 +239,63 @@ fn package_name(text: &str) -> Option<String> {
     })
 }
 
-/// Name of the file's first top-level type declaration (syntax only; the
-/// candidate/usage decisions stay symbol based).
-fn file_class_name(text: &str) -> Option<String> {
-    let masked = crate::analysis::inspections::mask_non_code(text);
-    let mut tokens = masked.split(|character: char| character.is_whitespace() || character == '{');
-    while let Some(token) = tokens.next() {
-        if matches!(token, "class" | "interface" | "enum" | "record") {
-            let next = tokens.next()?;
-            let name: String = next
-                .chars()
-                .take_while(|character| character.is_alphanumeric() || *character == '_' || *character == '$')
-                .collect();
-            if !name.is_empty() {
-                return Some(name);
+/// Top-level class/interface/enum/record names of `file`, from the AST.
+fn file_class_names(
+    ctx: &crate::compiler_context::CompilerContext,
+    file: &Path,
+) -> Vec<String> {
+    let target = PathBuf::from(canonical(file));
+    let mut names = Vec::new();
+    for index in 0..ctx.trees.len() {
+        let unit = crate::ids::TreeId::new(index as u32);
+        let (source, defs) = match &ctx.tree(unit).kind {
+            crate::tree::jc_tree::TreeKind::CompilationUnit {
+                sourcefile: Some(source),
+                defs,
+                ..
+            } => (source.get_name().to_string_lossy().to_string(), defs.clone()),
+            _ => continue,
+        };
+        if PathBuf::from(canonical(Path::new(&source))) != target {
+            continue;
+        }
+        for def in defs.iter() {
+            if let crate::tree::jc_tree::TreeKind::ClassDecl { name, .. } = &ctx.tree(def).kind {
+                names.push(name.to_java_string().to_string_lossy().to_string());
             }
         }
     }
-    None
+    names
 }
 
+/// Import statements of one file: (line index, path, is_static).
+pub(crate) fn import_lines(text: &str) -> Vec<(usize, String, bool)> {
+    let mut lines = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let trimmed = line.trim();
+        let Some(rest) = trimmed.strip_prefix("import ") else {
+            continue;
+        };
+        let (path, is_static) = if let Some(rest) = rest.strip_prefix("static ") {
+            (rest.trim_end_matches(';').trim(), true)
+        } else {
+            (rest.trim_end_matches(';').trim(), false)
+        };
+        if !path.is_empty() {
+            lines.push((index, path.to_string(), is_static));
+        }
+    }
+    lines
+}
 /// Import statements of one file: (exact classes, wildcard packages).
 pub(crate) fn imports_of(text: &str) -> (HashSet<String>, HashSet<String>) {
     let mut exact = HashSet::new();
     let mut wildcards = HashSet::new();
-    for line in text.lines() {
-        let line = line.trim();
-        let Some(rest) = line.strip_prefix("import ") else {
-            continue;
-        };
-        if rest.starts_with("static ") {
+    for (_line, path, is_static) in import_lines(text) {
+        if is_static {
             continue;
         }
-        let path = rest.trim_end_matches(';').trim();
+        let path = path.as_str();
         if path.is_empty() {
             continue;
         }
@@ -410,13 +434,15 @@ impl FileAnalysis {
             for class in classes {
                 let symbol = self.compiler.ctx.sym(*class);
                 let flat = symbol.flat_name().to_string();
-                // Only importable top-level names. The symbol table does not
-                // expose reliable access flags for platform classes, so the
-                // filter is name based; non-public matches are pruned by the
-                // javac diagnostics that follow.
+                // Only importable top-level names (plan 8.2). Platform
+                // class access flags are unavailable (see the note below).
                 if !is_importable_flat(&flat) {
                     continue;
                 }
+                // Access flags are not reliable for platform classes
+                // (evidence: java.util.List flags=33554432, no ACC_PUBLIC):
+                // degrade to top-level names + javac diagnostic pruning.
+                let _ = symbol.flags_field;
                 if seen.insert(flat.clone()) {
                     candidates.push(ImportCandidate {
                         simple: simple.clone(),
@@ -454,7 +480,7 @@ impl FileAnalysis {
             .unwrap_or_default();
         let diagnostics = self.diagnostics(file, None);
         let mut actions = self.remove_unused_import_actions(&text, position, &diagnostics);
-        actions.extend(self.add_import_actions(&text, position, &diagnostics));
+        actions.extend(self.add_import_actions(file, &text, position, &diagnostics));
         actions.extend(self.generate_actions(file, position));
         actions
     }
@@ -511,6 +537,7 @@ impl FileAnalysis {
     /// Add an import for the unresolved simple name at the cursor.
     fn add_import_actions(
         &mut self,
+        file: &Path,
         text: &str,
         position: Position,
         diagnostics: &[Diagnostic],
@@ -518,7 +545,7 @@ impl FileAnalysis {
         let Some((simple, diagnostic)) = add_import_target(text, position, diagnostics) else {
             return Vec::new();
         };
-        if file_class_name(text).as_deref() == Some(simple.as_str()) {
+        if file_class_names(&self.compiler.ctx, file).iter().any(|name| name == &simple) {
             return Vec::new();
         }
         let candidates = self.import_candidates();
