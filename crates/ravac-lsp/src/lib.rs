@@ -10,10 +10,19 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 use javac_analysis_api::{
-    Diagnostic, Position, Range, Severity, SymbolKind, WorkspaceConfiguration, WorkspaceService,
+    Diagnostic, Position, Range, Severity, SymbolKind, WorkspaceService,
 };
 use lsp_types::Url;
 use serde_json::{json, Value};
+
+/// Build-system registry used by the server: concrete build systems first,
+/// the core directory-scan fallback last.
+pub fn project_registry() -> Vec<Box<dyn javac_ide_core::project::BuildSystemProvider>> {
+    vec![
+        Box::new(javac_build_maven::MavenProvider::new()),
+        Box::new(javac_ide_core::project::DirScanProvider),
+    ]
+}
 
 pub fn run(
     host: &mut Box<dyn WorkspaceService>,
@@ -27,23 +36,20 @@ pub fn run(
         let id = message.get("id").cloned();
         match method {
             "initialize" => {
-                // A Maven project root on the client side contributes its
-                // compile classpath (local repository only, no network).
+                // Resolve the build system through the project layer and
+                // rebuild the workspace. Initialization has no state to keep.
                 if let Some(root) = initialize_root(&message) {
-                    let mut configuration = host.configuration();
-                    for project in javac_ide_core::project::maven::discover_all(&root) {
-                        for jar in project.classpath {
-                            if !configuration.class_path.contains(&jar) {
-                                configuration.class_path.push(jar);
-                            }
-                        }
-                        for source in project.source_roots {
-                            if !configuration.source_path.contains(&source) {
-                                configuration.source_path.push(source);
-                            }
-                        }
-                    }
-                    host.reconfigure(configuration);
+                    let output_dir = host.configuration().output_dir;
+                    let model = javac_ide_core::project::load_with(
+                        &project_registry(),
+                        &root,
+                        &javac_ide_core::project::LoadContext::default(),
+                    );
+                    *host = Box::new(javac_ide_core::workspace::Workspace::new_from_project(
+                        &model,
+                        output_dir,
+                        None,
+                    ));
                 }
                 respond(&mut stdout, id, json!({ "capabilities": capabilities() }));
             }

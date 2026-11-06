@@ -1,6 +1,6 @@
 //! Maven project model tests.
 
-use javac_ide_core::project::maven;
+use javac_build_maven::maven;
 
 fn write(path: &std::path::Path, text: &str) {
     if let Some(parent) = path.parent() {

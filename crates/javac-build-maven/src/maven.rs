@@ -16,7 +16,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
-use super::xml;
+use crate::xml;
 
 const MAX_DEPTH: usize = 32;
 
@@ -646,4 +646,96 @@ fn substitute(raw: &str, properties: &HashMap<String, String>) -> String {
         current.replace_range(start..start + end + 1, value);
     }
     current
+}
+
+/// `BuildSystemProvider` adapter over the Maven discovery functions.
+pub struct MavenProvider;
+
+impl MavenProvider {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for MavenProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl javac_project_api::provider::BuildSystemProvider for MavenProvider {
+    fn id(&self) -> javac_project_api::provider::BuildSystemId {
+        javac_project_api::provider::BuildSystemId::MAVEN
+    }
+
+    fn detect(&self, root: &Path) -> bool {
+        root.join("pom.xml").is_file()
+    }
+
+    fn load(
+        &self,
+        root: &Path,
+        ctx: &javac_project_api::provider::LoadContext,
+    ) -> Result<javac_project_api::model::ProjectModel, javac_project_api::provider::LoadError> {
+        if ctx.cancel.is_cancelled() {
+            return Err(javac_project_api::provider::LoadError::Timeout);
+        }
+        let projects = discover_all(root);
+        if projects.is_empty() {
+            return Err(javac_project_api::provider::LoadError::NotDetected);
+        }
+        let mut modules = Vec::new();
+        for project in projects {
+            let mut source_sets = Vec::new();
+            if !project.source_roots.is_empty() {
+                source_sets.push(javac_project_api::model::BuildSourceSet::new(
+                    javac_project_api::model::SourceSetKind::Main,
+                    project.source_roots.clone(),
+                    project.classpath.clone(),
+                    Some(project.output_dir.clone()),
+                ));
+            }
+            if !project.test_source_roots.is_empty() {
+                source_sets.push(javac_project_api::model::BuildSourceSet::new(
+                    javac_project_api::model::SourceSetKind::Test,
+                    project.test_source_roots.clone(),
+                    project.classpath.clone(),
+                    Some(project.test_output_dir.clone()),
+                ));
+            }
+            modules.push(javac_project_api::model::Module {
+                root: project.root.clone(),
+                name: format!("{}:{}", project.group_id, project.artifact_id),
+                source_sets,
+                jdk_home: None,
+                source_level: None,
+            });
+        }
+        let inputs: Vec<(PathBuf, u64)> = modules
+            .iter()
+            .map(|module| module.root.join("pom.xml"))
+            .map(|pom| {
+                let hash = javac_project_api::model::hash_file(&pom);
+                (pom, hash)
+            })
+            .collect();
+        let model_hash = javac_project_api::model::hash_modules(&modules);
+        Ok(javac_project_api::model::ProjectModel {
+            root: root.to_path_buf(),
+            provider: javac_project_api::provider::BuildSystemId::MAVEN,
+            modules,
+            fingerprint: javac_project_api::model::BuildFingerprint {
+                provider: javac_project_api::provider::BuildSystemId::MAVEN,
+                inputs,
+                model_hash,
+            },
+        })
+    }
+
+    fn watch_paths(&self, root: &Path) -> Vec<PathBuf> {
+        discover_all(root)
+            .into_iter()
+            .map(|project| project.root.join("pom.xml"))
+            .collect()
+    }
 }

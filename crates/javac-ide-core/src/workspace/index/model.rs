@@ -87,31 +87,9 @@ pub struct SymbolRecord {
     pub javadoc: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SourceSetKind {
-    Main,
-    Test,
-    Generated,
-}
-
-impl SourceSetKind {
-    pub fn tag(self) -> u8 {
-        match self {
-            Self::Main => 1,
-            Self::Test => 2,
-            Self::Generated => 3,
-        }
-    }
-
-    pub fn from_tag(tag: u8) -> Option<Self> {
-        Some(match tag {
-            1 => Self::Main,
-            2 => Self::Test,
-            3 => Self::Generated,
-            _ => return None,
-        })
-    }
-}
+/// Source-set kind now lives in the build-system layer; re-exported here so
+/// the index keeps its previous public path.
+pub use crate::project::model::SourceSetKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileStatus {

@@ -149,6 +149,14 @@ name = "javac-analysis-api"
 version = "0.1.0"
 
 [[package]]
+name = "javac-build-maven"
+version = "0.1.0"
+dependencies = [
+ "javac-project-api",
+ "quick-xml",
+]
+
+[[package]]
 name = "javac-charset"
 version = "0.1.0"
 dependencies = [
@@ -211,12 +219,12 @@ dependencies = [
  "javac-floating",
  "javac-fs",
  "javac-jimage",
+ "javac-project-api",
  "javac-source",
  "javac-strings",
  "javac-tools",
  "javac-unicode",
  "javac-zip",
- "quick-xml",
  "sys-locale",
  "unic-langid",
 ]
@@ -230,6 +238,14 @@ name = "javac-jmod"
 version = "0.1.0"
 dependencies = [
  "javac-zip",
+]
+
+[[package]]
+name = "javac-project-api"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -353,6 +369,7 @@ name = "ravac-lsp"
 version = "0.1.0"
 dependencies = [
  "javac-analysis-api",
+ "javac-build-maven",
  "javac-ide-core",
  "lsp-types",
  "serde_json",

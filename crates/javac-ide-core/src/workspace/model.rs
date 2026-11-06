@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use super::index::key::FileId;
 use super::index::model::{SourceSetKind, WorkspaceFingerprint};
+use crate::project::model::ProjectModel;
 
 /// One logical group of sources (main/test/generated) with its own class path.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +62,61 @@ impl WorkspaceModel {
             sources,
             classpath_hash: hash_paths(&config.class_path),
             source_level: config.source_level.clone(),
+            jdk_home: std::env::var_os("JAVA_HOME").map(PathBuf::from),
+            platform_dir: std::env::var_os("RAVAC_PLATFORM_DIR").map(PathBuf::from),
+            generation: 0,
+        }
+    }
+
+    /// Build the workspace model from a build-system-neutral project model.
+    ///
+    /// Source sets with the same kind are merged (roots and class path in
+    /// discovery order, deduplicated). The class-path hash is computed over
+    /// the merged, sorted class path.
+    pub fn from_project(project: &ProjectModel) -> Self {
+        let mut sources: Vec<SourceSet> = Vec::new();
+        for module in &project.modules {
+            for set in &module.source_sets {
+                if let Some(existing) = sources
+                    .iter_mut()
+                    .find(|existing| existing.kind == set.kind)
+                {
+                    for root in &set.roots {
+                        if !existing.roots.contains(root) {
+                            existing.roots.push(root.clone());
+                        }
+                    }
+                    for entry in &set.classpath {
+                        if !existing.classpath.contains(entry) {
+                            existing.classpath.push(entry.clone());
+                        }
+                    }
+                } else {
+                    sources.push(SourceSet::new(
+                        set.kind,
+                        set.roots.clone(),
+                        set.classpath.clone(),
+                    ));
+                }
+            }
+        }
+        let mut class_path: Vec<PathBuf> = Vec::new();
+        for set in &sources {
+            for entry in &set.classpath {
+                if !class_path.contains(entry) {
+                    class_path.push(entry.clone());
+                }
+            }
+        }
+        class_path.sort();
+        let source_level = project
+            .source_level()
+            .unwrap_or_else(|| "17".to_string());
+        Self {
+            root: project.root.clone(),
+            sources,
+            classpath_hash: hash_paths(&class_path),
+            source_level,
             jdk_home: std::env::var_os("JAVA_HOME").map(PathBuf::from),
             platform_dir: std::env::var_os("RAVAC_PLATFORM_DIR").map(PathBuf::from),
             generation: 0,

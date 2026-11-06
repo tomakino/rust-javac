@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 javac-analysis-api = { path = "../javac-analysis-api" }
+javac-project-api = { path = "../javac-project-api" }
 javac-strings.workspace = true
 javac-charset.workspace = true
 javac-floating.workspace = true
@@ -18,7 +19,6 @@ javac-zip.workspace = true
 javac-unicode.workspace = true
 sys-locale.workspace = true
 unic-langid.workspace = true
-quick-xml = "0.42.0"
 
 [dev-dependencies]
 # Baseline JDK class bytes for the PoolReader/ModuleNameReader tests.

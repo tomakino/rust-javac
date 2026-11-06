@@ -17,6 +17,7 @@ use super::index::model::{IndexStatus, ProjectIndex, SourceSetKind};
 use super::index::update::UpdateTask;
 use super::index::{self, dump, IndexStore};
 use super::model::{hash_text, WorkspaceModel};
+use crate::project::model::ProjectModel;
 
 pub struct Workspace {
     pub(crate) config: AnalysisConfig,
@@ -62,6 +63,42 @@ impl Workspace {
 
     pub fn with_limits(config: AnalysisConfig, limits: IndexLimits, batch_size: usize) -> Self {
         let model = WorkspaceModel::from_config(&config);
+        Self::from_parts(config, model, limits, batch_size)
+    }
+
+    /// Build a workspace from a build-system-neutral project model.
+    ///
+    /// The analysis configuration is derived from the merged class path and
+    /// source roots; `source_level_override` wins over the provider value.
+    pub fn new_from_project(
+        project: &ProjectModel,
+        output_dir: PathBuf,
+        source_level_override: Option<String>,
+    ) -> Self {
+        let mut model = WorkspaceModel::from_project(project);
+        if let Some(level) = source_level_override {
+            model.source_level = level;
+        }
+        let config = AnalysisConfig {
+            class_path: model.class_path(),
+            output_dir,
+            source_level: model.source_level.clone(),
+            source_path: model.source_roots(),
+        };
+        Self::from_parts(
+            config,
+            model,
+            IndexLimits::defaults(),
+            index::DEFAULT_BATCH_SIZE,
+        )
+    }
+
+    fn from_parts(
+        config: AnalysisConfig,
+        model: WorkspaceModel,
+        limits: IndexLimits,
+        batch_size: usize,
+    ) -> Self {
         let index = if model.source_roots().is_empty() {
             IndexStore::empty(IndexStatus::Ready)
         } else if let Some(loaded) = dump::load(&model) {
