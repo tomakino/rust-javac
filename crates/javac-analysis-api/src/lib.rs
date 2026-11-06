@@ -203,6 +203,13 @@ pub struct SignatureHelp {
     pub active_parameter: u32,
 }
 
+/// A document link: a range that opens `target` (file URI or http(s) URL).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocumentLink {
+    pub range: Range,
+    pub target: String,
+}
+
 /// A text replacement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextDocumentEdit {
@@ -316,6 +323,21 @@ pub trait WorkspaceService {
 
     /// Drop the transient analysis for one file (its class files changed).
     fn invalidate_analysis(&mut self, _file: &Path) {}
+
+    /// Reindent the current line after a trigger character (`}`, `;`, newline).
+    fn on_type_formatting(
+        &mut self,
+        _file: &Path,
+        _position: Position,
+        _character: char,
+    ) -> Vec<TextEdit> {
+        Vec::new()
+    }
+
+    /// Links from import statements and http(s) URLs.
+    fn document_links(&mut self, _file: &Path) -> Vec<DocumentLink> {
+        Vec::new()
+    }
 
     /// The declaration of the symbol at a position.
     fn definition(&mut self, file: &Path, position: Position) -> Option<Location>;

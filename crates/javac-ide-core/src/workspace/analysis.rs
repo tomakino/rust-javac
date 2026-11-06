@@ -296,6 +296,15 @@ impl FileAnalysis {
         self.code_actions_impl(file, position)
     }
 
+    pub fn on_type_formatting(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+        character: char,
+    ) -> Vec<javac_analysis_api::TextEdit> {
+        self.on_type_formatting_impl(file, position, character)
+    }
+
     pub fn signature_help(
         &mut self,
         file: &Path,

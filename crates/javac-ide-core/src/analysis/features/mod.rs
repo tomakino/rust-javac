@@ -9,6 +9,7 @@ pub(crate) mod hierarchy;
 pub(crate) mod hover;
 pub(crate) mod inlay_hints;
 pub(crate) mod navigation;
+pub(crate) mod on_type_formatting;
 pub(crate) mod selection_range;
 pub(crate) mod signature;
 

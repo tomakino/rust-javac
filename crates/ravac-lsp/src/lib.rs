@@ -197,6 +197,12 @@ pub fn run(
             "textDocument/formatting" => {
                 respond(&mut stdout, id, formatting(host.as_mut(), &message, &docs));
             }
+            "textDocument/onTypeFormatting" => {
+                respond(&mut stdout, id, on_type_formatting(host.as_mut(), &message));
+            }
+            "textDocument/documentLink" => {
+                respond(&mut stdout, id, document_links(host.as_mut(), &message));
+            }
             "textDocument/definition" => {
                 respond(&mut stdout, id, definition(host.as_mut(), &message));
             }
@@ -317,6 +323,11 @@ fn capabilities() -> Value {
         "textDocumentSync": { "openClose": true, "change": 1, "save": { "includeText": true } },
         "completionProvider": { "triggerCharacters": [".", ":"] },
             "documentFormattingProvider": true,
+        "documentOnTypeFormattingProvider": {
+            "firstTriggerCharacter": "}",
+            "moreTriggerCharacter": [";", "\n"]
+        },
+        "documentLinkProvider": { "resolveProvider": false },
         "definitionProvider": true,
         "typeDefinitionProvider": true,
         "implementationProvider": true,
@@ -778,6 +789,61 @@ fn code_action(host: &mut dyn WorkspaceService, message: &Value) -> Value {
                     "edit": { "changes": { uri.clone(): edits } },
                 })
             })
+            .collect(),
+    )
+}
+
+fn on_type_formatting(host: &mut dyn WorkspaceService, message: &Value) -> Value {
+    let Some(path) = message
+        .get("params")
+        .and_then(|params| params.get("textDocument"))
+        .and_then(|doc| doc.get("uri"))
+        .and_then(Value::as_str)
+        .and_then(|uri| uri_to_path(uri).ok())
+    else {
+        return Value::Null;
+    };
+    let Some(position) = message.get("params").and_then(|params| params.get("position")) else {
+        return Value::Null;
+    };
+    let line = position.get("line").and_then(Value::as_u64).unwrap_or(0) as u32;
+    let column = position.get("character").and_then(Value::as_u64).unwrap_or(0) as u32;
+    let Some(ch) = message
+        .get("params")
+        .and_then(|params| params.get("ch"))
+        .and_then(Value::as_str)
+        .and_then(|ch| ch.chars().next())
+    else {
+        return Value::Null;
+    };
+    let edits = host.on_type_formatting(
+        &path,
+        javac_analysis_api::Position::new(line, column),
+        ch,
+    );
+    Value::Array(
+        edits
+            .iter()
+            .map(|edit| json!({ "range": range_json(edit.range), "newText": edit.new_text }))
+            .collect(),
+    )
+}
+
+fn document_links(host: &mut dyn WorkspaceService, message: &Value) -> Value {
+    let Some(path) = message
+        .get("params")
+        .and_then(|params| params.get("textDocument"))
+        .and_then(|doc| doc.get("uri"))
+        .and_then(Value::as_str)
+        .and_then(|uri| uri_to_path(uri).ok())
+    else {
+        return Value::Null;
+    };
+    let links = host.document_links(&path);
+    Value::Array(
+        links
+            .iter()
+            .map(|link| json!({ "range": range_json(link.range), "target": link.target }))
             .collect(),
     )
 }

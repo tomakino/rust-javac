@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use javac_analysis_api::{
     CallHierarchyCall, CallHierarchyItem, CodeAction, CompletionItem, Diagnostic, DocumentHighlight,
-    DocumentSymbol, FoldingRange, SelectionRange,
+    DocumentLink, DocumentSymbol, FoldingRange, SelectionRange,
     InlayHint, Location, Position, Range, SignatureHelp, Symbol, SymbolKind, TextDocumentEdit,
     TextEdit, TypeHierarchyItem, WorkspaceConfiguration, WorkspaceService, WorkspaceSymbol,
 };
@@ -113,6 +113,77 @@ impl WorkspaceService for Workspace {
             .into_iter()
             .filter_map(|file| snapshot.file(file).map(|record| record.path.clone()))
             .collect()
+    }
+
+    fn on_type_formatting(
+        &mut self,
+        file: &Path,
+        position: Position,
+        character: char,
+    ) -> Vec<TextEdit> {
+        self.with_analysis(file, None, |analysis, _| {
+            analysis.on_type_formatting_impl(file, position, character)
+        })
+        .unwrap_or_default()
+    }
+
+    fn document_links(&mut self, file: &Path) -> Vec<DocumentLink> {
+        let text = std::fs::read_to_string(file).unwrap_or_default();
+        let mut links = Vec::new();
+        for (line_index, line) in text.lines().enumerate() {
+            let trimmed = line.trim_start();
+            let Some(rest) = trimmed.strip_prefix("import ") else {
+                continue;
+            };
+            let path = rest.strip_prefix("static ").unwrap_or(rest);
+            let path = path.trim_end_matches(';').trim();
+            if path.is_empty() {
+                continue;
+            }
+            let class = if rest.starts_with("static ") {
+                let base = path.trim_end_matches(".*");
+                base.rsplit_once('.').map(|(class, _)| class).unwrap_or(base)
+            } else {
+                path.trim_end_matches(".*")
+            };
+            // Project sources: workspace model roots first (independent of the
+            // index build state), then the published index.
+            let relative = format!("{}.java", class.replace('.', "/"));
+            let project = self
+                .model
+                .source_roots()
+                .into_iter()
+                .map(|root| root.join(&relative))
+                .find(|candidate| candidate.is_file());
+            let indexed = self.index.snapshot().files.iter().find_map(|record| {
+                let path = record.path.to_string_lossy().replace('\\', "/");
+                if path.ends_with(&relative) {
+                    Some(record.path.clone())
+                } else {
+                    None
+                }
+            });
+            let target = if let Some(path) = project {
+                file_uri(&path)
+            } else if let Some(path) = indexed {
+                file_uri(&path)
+            } else {
+                match resolve_import_source(&self.config, class) {
+                    Some(target) => target,
+                    None => continue,
+                }
+            };
+            let end: u32 = line.chars().map(|character| character.len_utf16() as u32).sum();
+            links.push(DocumentLink {
+                range: Range::new(
+                    Position::new(line_index as u32, 0),
+                    Position::new(line_index as u32, end),
+                ),
+                target,
+            });
+        }
+        links.extend(url_links(&text));
+        links
     }
 
     fn update_analysis_config(&mut self, class_path: Vec<PathBuf>, source_path: Vec<PathBuf>) {
@@ -456,4 +527,142 @@ fn symbol_kind(kind: &str) -> SymbolKind {
         "parameter" => SymbolKind::Parameter,
         _ => SymbolKind::Class,
     }
+}
+
+/// Resolve an import target to an openable source file (project root,
+/// class-path sources jar, then the JDK `src.zip`).
+fn resolve_import_source(
+    config: &crate::workspace::analysis::AnalysisConfig,
+    class: &str,
+) -> Option<String> {
+    let relative = format!("{}.java", class.replace('.', "/"));
+    for root in &config.source_path {
+        let candidate = root.join(&relative);
+        if candidate.is_file() {
+            return Some(file_uri(&candidate));
+        }
+    }
+    for entry in &config.class_path {
+        let Some(sources) = sources_jar(entry) else {
+            continue;
+        };
+        let Ok(archive) = javac_zip::ZipArchive::open(&sources) else {
+            continue;
+        };
+        let Some(bytes) = find_entry(&archive, &relative) else {
+            continue;
+        };
+        let target = extract_source(&bytes, &sources, &relative, &config.output_dir)?;
+        return Some(file_uri(&target));
+    }
+    let jdk = jdk_src_zip()?;
+    let archive = javac_zip::ZipArchive::open(&jdk).ok()?;
+    let bytes = find_entry(&archive, &relative)?;
+    let target = extract_source(&bytes, &jdk, &relative, &config.output_dir)?;
+    Some(file_uri(&target))
+}
+
+/// The `-sources.jar` next to a class-path jar.
+fn sources_jar(entry: &Path) -> Option<PathBuf> {
+    let name = entry.to_string_lossy();
+    let stem = name.strip_suffix(".jar")?;
+    let sources = PathBuf::from(format!("{stem}-sources.jar"));
+    sources.is_file().then_some(sources)
+}
+
+/// Find a zip entry by relative path; JDK `src.zip` entries carry a module
+/// prefix (`java.base/java/util/List.java`).
+fn find_entry(archive: &javac_zip::ZipArchive, relative: &str) -> Option<Vec<u8>> {
+    if let Some(bytes) = archive.get_entry(relative) {
+        return Some(bytes);
+    }
+    let suffix = format!("/{relative}");
+    let name = archive
+        .entries()
+        .iter()
+        .map(|entry| entry.name().to_string())
+        .find(|name| name.ends_with(&suffix))?;
+    archive.get_entry(&name)
+}
+
+fn extract_source(
+    bytes: &[u8],
+    archive_path: &Path,
+    relative: &str,
+    output_dir: &Path,
+) -> Option<PathBuf> {
+    let key = format!("{}:{}", archive_path.display(), relative);
+    let hash = crate::workspace::model::hash_text(&key);
+    let target = output_dir
+        .join("doclink")
+        .join(format!("{hash:016x}"))
+        .join(relative);
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).ok()?;
+    }
+    if !target.exists() {
+        std::fs::write(&target, bytes).ok()?;
+    }
+    Some(target)
+}
+
+fn file_uri(path: &Path) -> String {
+    format!("file:///{}", path.to_string_lossy().replace('\\', "/"))
+}
+
+/// The JDK sources archive: the platform directory first, then `JAVA_HOME`.
+fn jdk_src_zip() -> Option<PathBuf> {
+    if let Some(platform) = std::env::var_os("RAVAC_PLATFORM_DIR") {
+        let candidate = PathBuf::from(platform).join("src.zip");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    let home = std::env::var_os("JAVA_HOME")?;
+    let candidate = PathBuf::from(home).join("lib").join("src.zip");
+    candidate.is_file().then_some(candidate)
+}
+
+/// `http(s)://` links. Scanning text is intentional and unambiguous here
+/// (a URL has no compiler representation, unlike the semantic decisions).
+fn url_links(text: &str) -> Vec<DocumentLink> {
+    let mut links = Vec::new();
+    for (line_index, line) in text.lines().enumerate() {
+        let mut search = 0;
+        while search < line.len() {
+            let Some(offset) = line[search..].find("http") else {
+                break;
+            };
+            let start = search + offset;
+            let rest = &line[start..];
+            if !(rest.starts_with("http://") || rest.starts_with("https://")) {
+                search = start + 4;
+                continue;
+            }
+            let end = rest
+                .find(|character: char| {
+                    character.is_whitespace()
+                        || matches!(character, '"' | '\'' | '>' | '<' | ')' | ']' | '}')
+                })
+                .unwrap_or(rest.len());
+            let url = &rest[..end];
+            let start_column: u32 = line[..start]
+                .chars()
+                .map(|character| character.len_utf16() as u32)
+                .sum();
+            let end_column: u32 = line[..start + end]
+                .chars()
+                .map(|character| character.len_utf16() as u32)
+                .sum();
+            links.push(DocumentLink {
+                range: Range::new(
+                    Position::new(line_index as u32, start_column),
+                    Position::new(line_index as u32, end_column),
+                ),
+                target: url.to_string(),
+            });
+            search = start + end.max(1);
+        }
+    }
+    links
 }
