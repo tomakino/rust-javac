@@ -128,7 +128,11 @@ fn actions_at(
     pos: Position,
 ) -> Vec<javac_analysis_api::CodeAction> {
     analysis.diagnostics(path, None);
-    analysis.code_actions(path, pos)
+    analysis
+        .code_actions(path, pos)
+        .into_iter()
+        .filter(|action| !action.title.starts_with("Generate"))
+        .collect()
 }
 
 fn add_actions(actions: &[javac_analysis_api::CodeAction]) -> Vec<&javac_analysis_api::CodeAction> {

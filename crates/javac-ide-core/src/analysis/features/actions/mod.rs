@@ -54,7 +54,7 @@ fn delete_line_edit(line: u32, lines: &[&str]) -> TextEdit {
 /// Insert position for a new import and the file's newline style.
 ///
 /// Returns `(line, newline, needs_leading_newline)`.
-fn import_insert_point(text: &str) -> (u32, &'static str, bool) {
+pub(crate) fn import_insert_point(text: &str) -> (u32, &'static str, bool) {
     let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
     let lines: Vec<&str> = text.lines().collect();
     let last_import = lines
@@ -462,6 +462,7 @@ impl FileAnalysis {
         let diagnostics = self.diagnostics(file, None);
         let mut actions = self.remove_unused_import_actions(&text, position, &diagnostics);
         actions.extend(self.add_import_actions(&text, position, &diagnostics));
+        actions.extend(self.generate_actions(file, position));
         actions
     }
 

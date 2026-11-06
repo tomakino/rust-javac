@@ -802,6 +802,8 @@ fn code_action(host: &mut dyn WorkspaceService, message: &Value) -> Value {
                     "title": action.title,
                     "kind": if action.title == "Organize imports" {
                         "source.organizeImports"
+                    } else if action.title.starts_with("Generate") {
+                        "refactor"
                     } else {
                         "quickfix"
                     },
