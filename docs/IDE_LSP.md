@@ -55,6 +55,22 @@ Start the server (any LSP client can spawn it):
 - JDK source lookup (definition and completion documentation) uses
   JAVA_HOME/lib/src.zip; RAVAC_JDK_SRC overrides the archive path.
 
+## Maven projects
+
+When initialize carries a Maven root, the server reads pom.xml and builds the
+analysis classpath without network access:
+
+- follows the parent POM chain through relativePath or ~/.m2;
+- inherits parent properties and dependencyManagement;
+- expands dependencyManagement BOM imports from ~/.m2;
+- resolves transitive dependencies breadth-first (nearest declaration wins);
+- applies exclusions, optional and compile/runtime scopes;
+- uses build/sourceDirectory and build/testSourceDirectory when present.
+
+Only artifacts already present in ~/.m2/repository are used. Missing artifacts
+are skipped; the server never downloads. Test source roots are parsed but are
+not added to the analysis source path yet.
+
 ## Tests
 
 End-to-end smoke test (starts the server, exercises every method):
@@ -91,6 +107,9 @@ Regression:
   default).
 - hover for fields falls back to the qualified name when the field type is unresolved.
 - diagnostics carry a single position (line + UTF-16 column), no length range.
+- Maven resolution is offline: no Gradle, no Maven profiles, no annotation
+  processing/Lombok/generated sources, and no network. dependencyManagement
+  scope is not applied yet; test source roots are parsed but not analyzed.
 - the analysis session is single-threaded; the LSP loop is synchronous.
 
 ## Layout
