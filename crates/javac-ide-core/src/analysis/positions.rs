@@ -87,7 +87,7 @@ pub(crate) fn offset_to_line_col(text: &str, offset: usize) -> (u32, u32) {
 ///
 /// Compiler symbol positions point at the declaration tree start (`class`,
 /// modifiers, return type), while the editor should land on the name.
-pub(crate) fn declared_name_start(text: &str, start: u32, name: &str) -> u32 {
+fn name_start_in(text: &str, start: u32, name: &str, reject_qualified: bool) -> u32 {
     if name.is_empty() {
         return start;
     }
@@ -96,14 +96,34 @@ pub(crate) fn declared_name_start(text: &str, start: u32, name: &str) -> u32 {
         return start;
     };
     let mut search = 0usize;
+    let is_ident = |ch: char| ch.is_alphanumeric() || ch == '_' || ch == '$';
     while let Some(position) = tail[search..].find(name) {
         let absolute = start_byte + search + position;
-        if !text[..absolute].trim_end().ends_with('.') {
+        let after = absolute + name.len();
+        let before_ok = text[..absolute]
+            .chars()
+            .next_back()
+            .map_or(true, |ch| !is_ident(ch));
+        let after_ok = text[after..]
+            .chars()
+            .next()
+            .map_or(true, |ch| !is_ident(ch));
+        let qualified = reject_qualified && text[..absolute].trim_end().ends_with('.');
+        if before_ok && after_ok && !qualified {
             return byte_to_utf16(text, absolute) as u32;
         }
         search += position + name.len();
     }
     start
+}
+
+pub(crate) fn declared_name_start(text: &str, start: u32, name: &str) -> u32 {
+    name_start_in(text, start, name, true)
+}
+
+/// Start of a member name (`a.b`): the qualifier dot is expected here.
+pub(crate) fn member_name_start(text: &str, start: u32, name: &str) -> u32 {
+    name_start_in(text, start, name, false)
 }
 
 

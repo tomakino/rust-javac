@@ -9,6 +9,7 @@ pub(crate) mod hierarchy;
 pub(crate) mod hover;
 pub(crate) mod inlay_hints;
 pub(crate) mod navigation;
+pub(crate) mod selection_range;
 pub(crate) mod signature;
 
 /// Map an internal symbol kind string to the public kind.

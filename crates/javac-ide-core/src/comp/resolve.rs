@@ -2118,7 +2118,7 @@ impl Resolve {
             bound_steps += 1;
             if bound_steps > 1000 {
                 let nm = crate::comp::resolve::symbol_display_name(ctx, c);
-                eprintln!("[FLOOP] steps={} c={:?} name={}", bound_steps, c, nm);
+                crate::debug_eprintln!("[FLOOP] steps={} c={:?} name={}", bound_steps, c, nm);
                 if bound_steps > 1200 {
                     panic!("type variable upper bound cycle");
                 }

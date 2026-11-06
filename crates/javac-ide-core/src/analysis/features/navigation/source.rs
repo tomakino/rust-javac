@@ -70,7 +70,7 @@ impl FileAnalysis {
         None
     }
 
-    pub(super) fn latest_root_for(&self, file: &Path) -> Option<crate::ids::TreeId> {
+    pub(crate) fn latest_root_for(&self, file: &Path) -> Option<crate::ids::TreeId> {
         let key = canonical(file);
         let mut root = None;
         for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {

@@ -6425,7 +6425,7 @@ impl Types {
                         if c >= 50 && c % 50 == 0 {
                             let du = crate::comp::attr::type_display_of(ctx, upper);
                             let dt = crate::comp::attr::type_display_of(ctx, t);
-                            eprintln!(
+                            crate::debug_eprintln!(
                                 "[TVR] n={} contained={} upper={} t={}",
                                 c, contained, du, dt
                             );

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use javac_analysis_api::{
     CallHierarchyCall, CallHierarchyItem, CodeAction, CompletionItem, Diagnostic, DocumentHighlight,
-    DocumentSymbol, FoldingRange,
+    DocumentSymbol, FoldingRange, SelectionRange,
     InlayHint, Location, Position, Range, SignatureHelp, Symbol, SymbolKind, TextDocumentEdit,
     TextEdit, TypeHierarchyItem, WorkspaceConfiguration, WorkspaceService, WorkspaceSymbol,
 };
@@ -78,6 +78,13 @@ impl WorkspaceService for Workspace {
     fn folding_ranges(&mut self, file: &Path) -> Vec<FoldingRange> {
         self.with_analysis(file, None, |analysis, _| analysis.folding_ranges_impl(file))
             .unwrap_or_default()
+    }
+
+    fn selection_ranges(&mut self, file: &Path, positions: &[Position]) -> Vec<SelectionRange> {
+        self.with_analysis(file, None, |analysis, _| {
+            analysis.selection_ranges_impl(file, positions)
+        })
+        .unwrap_or_default()
     }
 
     fn definition(&mut self, file: &Path, position: Position) -> Option<Location> {

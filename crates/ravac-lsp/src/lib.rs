@@ -10,8 +10,8 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 use javac_analysis_api::{
-    Diagnostic, DocumentHighlightKind, FoldingRangeKind, Position, Range, Severity, SymbolKind,
-    WorkspaceService,
+    Diagnostic, DocumentHighlightKind, FoldingRangeKind, Position, Range, SelectionRange, Severity,
+    SymbolKind, WorkspaceService,
 };
 use lsp_types::Url;
 use serde_json::{json, Value};
@@ -162,6 +162,9 @@ pub fn run(
             "textDocument/foldingRange" => {
                 respond(&mut stdout, id, folding_ranges(host.as_mut(), &message));
             }
+            "textDocument/selectionRange" => {
+                respond(&mut stdout, id, selection_range(host.as_mut(), &message));
+            }
             "textDocument/codeAction" => {
                 respond(&mut stdout, id, code_action(host.as_mut(), &message));
             }
@@ -253,6 +256,7 @@ fn capabilities() -> Value {
         "hoverProvider": true,
         "documentHighlightProvider": true,
         "foldingRangeProvider": true,
+        "selectionRangeProvider": true,
         "documentSymbolProvider": true,
         "workspaceSymbolProvider": true,
         "referencesProvider": true,
@@ -920,6 +924,59 @@ fn super_methods_request(host: &mut dyn WorkspaceService, message: &Value) -> Va
             })
             .collect(),
     )
+}
+
+fn selection_range(host: &mut dyn WorkspaceService, message: &Value) -> Value {
+    let Some(params) = message.get("params") else {
+        return Value::Array(Vec::new());
+    };
+    let Some(uri) = params
+        .get("textDocument")
+        .and_then(|doc| doc.get("uri"))
+        .and_then(Value::as_str)
+    else {
+        return Value::Array(Vec::new());
+    };
+    let Ok(path) = uri_to_path(uri) else {
+        return Value::Array(Vec::new());
+    };
+    let positions: Vec<Position> = params
+        .get("positions")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|value| {
+                    Some(Position::new(
+                        value.get("line")?.as_u64()? as u32,
+                        value.get("character")?.as_u64()? as u32,
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if positions.is_empty() {
+        return Value::Array(Vec::new());
+    }
+    let ranges = host.selection_ranges(&path, &positions);
+    Value::Array(
+        ranges
+            .iter()
+            .map(selection_range_json)
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn selection_range_json(range: &SelectionRange) -> Value {
+    let parent = range
+        .parent
+        .as_ref()
+        .map(|parent| selection_range_json(parent))
+        .unwrap_or(Value::Null);
+    json!({
+        "range": range_json(range.range),
+        "parent": parent,
+    })
 }
 
 fn references(host: &mut dyn WorkspaceService, message: &Value) -> Value {

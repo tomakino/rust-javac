@@ -33,3 +33,13 @@ pub fn debug_enabled(name: &str) -> bool {
         })
         .contains(name)
 }
+
+/// `eprintln!` gated by the `DSH_DEBUG_ALL` switch.
+#[macro_export]
+macro_rules! debug_eprintln {
+    ($($arg:tt)*) => {
+        if $crate::util::debug_flags::debug_enabled("DSH_DEBUG_ALL") {
+            eprintln!($($arg)*);
+        }
+    };
+}

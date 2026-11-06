@@ -244,6 +244,13 @@ pub struct FoldingRange {
     pub kind: Option<FoldingRangeKind>,
 }
 
+/// A selection range: the range itself plus the next outer range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectionRange {
+    pub range: Range,
+    pub parent: Option<Box<SelectionRange>>,
+}
+
 /// The kind of a foldable region.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FoldingRangeKind {
@@ -292,6 +299,9 @@ pub trait WorkspaceService {
 
     /// Foldable regions of a file.
     fn folding_ranges(&mut self, file: &Path) -> Vec<FoldingRange>;
+
+    /// Selection ranges for each position (inner to outer).
+    fn selection_ranges(&mut self, file: &Path, positions: &[Position]) -> Vec<SelectionRange>;
 
     /// The declaration of the symbol at a position.
     fn definition(&mut self, file: &Path, position: Position) -> Option<Location>;

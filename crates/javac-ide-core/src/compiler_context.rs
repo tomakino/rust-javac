@@ -934,7 +934,7 @@ impl CompilerContext {
                 .to_java_string()
                 .to_string_lossy()
                 .to_string();
-            eprintln!("[CCSD] depth={} name={}", _ccs_guard.0, nm);
+            crate::debug_eprintln!("[CCSD] depth={} name={}", _ccs_guard.0, nm);
         }
         let orig_completer = self.sym(symbol).completer.clone();
         match self.complete_symbol(syms, symbol) {

@@ -824,7 +824,7 @@ impl<'a, 'b> TreeScannerVisitor for TypeAnnotationPositions<'a, 'b> {
                     .to_string_lossy()
                     .to_string();
                 let kk = ctx.sym(sym).kind;
-                eprintln!("[VA] unhandled kind={:?} name={} symkind={:?}", element_kind, nm, kk);
+                crate::debug_eprintln!("[VA] unhandled kind={:?} name={} symkind={:?}", element_kind, nm, kk);
                 panic!("AssertionError: Unhandled variable kind");
             }
         }

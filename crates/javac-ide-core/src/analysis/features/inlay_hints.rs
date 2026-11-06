@@ -35,7 +35,7 @@ impl FileAnalysis {
         // Only the latest compilation unit for this file may contribute
         // hints. ctx.trees accumulates every analysis round; using old trees
         // makes parameter names flap between rounds.
-        let Some(root) = self.latest_unit_root(&key) else {
+        let Some(root) = self.latest_root_for(&key) else {
             return Vec::new();
         };
         let mut collector = HintCollector::default();
@@ -273,23 +273,6 @@ impl FileAnalysis {
             }
         }
         Vec::new()
-    }
-
-    /// Index range of the newest CompilationUnit for this file. The parser
-    /// appends a subtree at a time, so all nodes of that unit are contiguous.
-    fn latest_unit_root(&self, key: &Path) -> Option<TreeId> {
-        let mut root = None;
-        for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {
-            if let TreeKind::CompilationUnit { sourcefile, .. } = &tree.kind
-                && let Some(file) = sourcefile.as_ref()
-                && crate::analysis::canonical(std::path::Path::new(
-                    &file.get_name().to_string_lossy(),
-                )) == key.to_string_lossy().as_ref()
-            {
-                root = Some(TreeId::new(index as u32));
-            }
-        }
-        root
     }
 
     fn cached_inlay_hints(

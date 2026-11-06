@@ -69,6 +69,9 @@ pub struct FileAnalysis {
     /// stable while the buffer is temporarily unparsable.
     pub(crate) inlay_hint_cache:
         HashMap<PathBuf, Vec<(javac_analysis_api::InlayHint, String)>>,
+    /// Cached AST parent links/ranges for selection ranges.
+    pub(crate) selection_cache:
+        HashMap<PathBuf, crate::analysis::features::selection_range::SelectionCache>,
     /// Lazily built short-name catalog for "new" class completion.
     pub(crate) class_short_names: Option<std::collections::BTreeMap<String, Vec<SymbolId>>>,
     /// Whether "new" completion expands public constructors. IDEA exposes this
@@ -122,6 +125,7 @@ impl FileAnalysis {
             texts: HashMap::new(),
             jdk_docs: None,
             inlay_hint_cache: HashMap::new(),
+            selection_cache: HashMap::new(),
             class_short_names: None,
             completion_show_constructors: false,
             receiver_prefix_consumed: false,
@@ -147,6 +151,7 @@ impl FileAnalysis {
         self.cache = None;
         self.jdk_docs = None;
         self.inlay_hint_cache.clear();
+        self.selection_cache.clear();
         self.class_short_names = None;
     }
 

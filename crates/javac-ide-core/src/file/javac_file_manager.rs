@@ -1204,13 +1204,15 @@ impl JavacFileManager {
     }
 
     /// Java: Path asPath(FileObject) (with the IllegalArgumentException of the upstream).
+    ///
+    /// IDE note: file objects created by the compiler driver (module files,
+    /// source-path listings, other threads) may not be registered in this
+    /// manager's `CREATED_FILE_OBJECTS`; their `name` is still the absolute
+    /// path, so use it instead of panicking.
     fn as_path_or_panic(&self, file: &FileObjectRef) -> PathBuf {
         match self.lookup_path_file_object(file) {
             Some(path_file_object) => path_file_object.get_path().to_path_buf(),
-            None => panic!(
-                "IllegalArgumentException: not a PathFileObject: {}",
-                file.get_name().to_string_lossy()
-            ),
+            None => PathBuf::from(file.get_name().to_string_lossy()),
         }
     }
 
