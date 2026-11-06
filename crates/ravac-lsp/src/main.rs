@@ -5,7 +5,6 @@ use std::path::PathBuf;
 
 use javac_analysis_api::WorkspaceService;
 use javac_ide_core::analysis::AnalysisConfig;
-use javac_ide_core::project::{self, LoadContext};
 use javac_ide_core::workspace::Workspace;
 
 fn main() {
@@ -46,16 +45,19 @@ fn main() {
     }
     let mut workspace: Box<dyn WorkspaceService> = match project_dir {
         Some(project_dir) => {
-            let model = project::load_with(
-                &ravac_lsp::project_registry(),
-                &project_dir,
-                &LoadContext::default(),
-            );
-            Box::new(Workspace::new_from_project(
-                &model,
-                output_dir.clone(),
-                source_level,
-            ))
+            // The real workspace is created by `initialize` after the artifact
+            // build. Keep the pre-initialize host empty: starting the index
+            // compiler here raced with the artifact compiler on the shared
+            // platform image (spurious module errors / panics).
+            let _ = project_dir;
+            Box::new(Workspace::new(AnalysisConfig {
+                class_path: Vec::new(),
+                output_dir: output_dir.clone(),
+                source_level: source_level
+                    .clone()
+                    .unwrap_or_else(|| "17".to_string()),
+                source_path: Vec::new(),
+            }))
         }
         None => Box::new(Workspace::new(AnalysisConfig {
             class_path,

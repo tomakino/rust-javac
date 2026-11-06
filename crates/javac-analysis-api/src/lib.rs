@@ -303,6 +303,18 @@ pub trait WorkspaceService {
     /// Selection ranges for each position (inner to outer).
     fn selection_ranges(&mut self, file: &Path, positions: &[Position]) -> Vec<SelectionRange>;
 
+    /// Files that transitively depend on `file` (including `file`).
+    fn dependent_closure(&mut self, _file: &Path) -> Vec<PathBuf> {
+        Vec::new()
+    }
+
+    /// Replace the analysis class/source path (for example when build
+    /// artifacts become available).
+    fn update_analysis_config(&mut self, _class_path: Vec<PathBuf>, _source_path: Vec<PathBuf>) {}
+
+    /// Drop the transient analysis for one file (its class files changed).
+    fn invalidate_analysis(&mut self, _file: &Path) {}
+
     /// The declaration of the symbol at a position.
     fn definition(&mut self, file: &Path, position: Position) -> Option<Location>;
 

@@ -1,6 +1,17 @@
 //! LSP position conversions (UTF-16 columns).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Platform-tolerant comparison key for a file path.
+///
+/// Index records hold `canonicalize`d paths (`\\?\C:\...` on Windows); editor
+/// paths are plain absolute paths. `canonicalize` is slow on Windows, so
+/// compare the normalized text instead (prefix, separators and case).
+pub(crate) fn normalized_path_key(path: &Path) -> String {
+    let text = path.to_string_lossy().replace('/', "\\");
+    let text = text.strip_prefix(r"\\?\").unwrap_or(&text);
+    text.to_lowercase()
+}
 
 /// UTF-16 offset of a 1-based line/column (LSP coordinates).
 pub(crate) fn line_offset(text: &str, line: usize, column: usize) -> usize {

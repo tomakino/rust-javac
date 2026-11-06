@@ -241,6 +241,42 @@ impl Workspace {
         self.analyses.entries.retain(|(id, _)| *id == edited_id);
     }
 
+    /// Replace the analysis class/source path (for example when build
+    /// artifacts become available). Transient analyses are dropped so the
+    /// next query uses the new configuration; the index is unaffected.
+    pub fn update_analysis_config(&mut self, class_path: Vec<PathBuf>, source_path: Vec<PathBuf>) {
+        if self.config.class_path == class_path && self.config.source_path == source_path {
+            return;
+        }
+        self.config.class_path = class_path;
+        self.config.source_path = source_path;
+        self.analyses.entries.clear();
+    }
+
+    /// Drop the transient analysis for one file (its class files changed).
+    ///
+    /// The closure files come from the published snapshot, so match their
+    /// canonical paths directly and only fall back to `canonicalize` for
+    /// unknown paths (it is expensive to call per file on Windows).
+    pub fn invalidate_analysis(&mut self, file: &Path) {
+        let id = {
+            let snapshot = self.index.snapshot();
+            snapshot
+                .files
+                .iter()
+                .position(|record| record.path == file)
+                .map(|index| index as FileId)
+        };
+        let id = match id {
+            Some(id) => Some(id),
+            None => self.file_id(file),
+        };
+        let Some(id) = id else {
+            return;
+        };
+        self.analyses.entries.retain(|(entry, _)| *entry != id);
+    }
+
     /// Text the workspace currently associates with a file.
     pub fn text_of(&self, file: &Path) -> Option<String> {
         let path = PathBuf::from(crate::analysis::canonical(file));

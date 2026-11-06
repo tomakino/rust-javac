@@ -87,6 +87,42 @@ impl WorkspaceService for Workspace {
         .unwrap_or_default()
     }
 
+    fn dependent_closure(&mut self, file: &Path) -> Vec<PathBuf> {
+        // Use the published snapshot without triggering an index update: the
+        // closure only decides which files to recompile, and a stale edge set
+        // is corrected by the next index round. Compare normalized path text
+        // (`canonicalize` is very slow on Windows). Only build the index when
+        // nothing has been published yet.
+        if self.index.snapshot().generation == 0 {
+            self.ensure_index();
+        }
+        let snapshot = self.index.snapshot();
+        let key = crate::analysis::positions::normalized_path_key(file);
+        let Some(id) = snapshot
+            .files
+            .iter()
+            .position(|record| {
+                crate::analysis::positions::normalized_path_key(&record.path) == key
+            })
+            .map(|index| index as u32)
+        else {
+            return Vec::new();
+        };
+        snapshot
+            .dependent_closure(id)
+            .into_iter()
+            .filter_map(|file| snapshot.file(file).map(|record| record.path.clone()))
+            .collect()
+    }
+
+    fn update_analysis_config(&mut self, class_path: Vec<PathBuf>, source_path: Vec<PathBuf>) {
+        Workspace::update_analysis_config(self, class_path, source_path);
+    }
+
+    fn invalidate_analysis(&mut self, file: &Path) {
+        Workspace::invalidate_analysis(self, file);
+    }
+
     fn definition(&mut self, file: &Path, position: Position) -> Option<Location> {
         self.ensure_index();
         let snapshot = self.index.snapshot();

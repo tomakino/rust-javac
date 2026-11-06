@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use javac_analysis_api::{
     Diagnostic, DocumentHighlightKind, FoldingRangeKind, Position, Range, SelectionRange, Severity,
@@ -15,6 +15,8 @@ use javac_analysis_api::{
 };
 use lsp_types::Url;
 use serde_json::{json, Value};
+
+pub mod artifacts;
 
 /// Build-system registry used by the server: concrete build systems first,
 /// the core directory-scan fallback last.
@@ -31,8 +33,17 @@ pub fn run(
     mut stdout: impl Write,
 ) {
     let mut docs: HashMap<PathBuf, String> = HashMap::new();
+    let mut artifacts: Option<artifacts::ArtifactBuilder> = None;
     loop {
         let Some(message) = read_message(&mut stdin) else { break };
+        // Apply a finished artifact build exactly once, before serving the
+        // next request: the analysis switches from source fallback to classes.
+        if let Some(builder) = &artifacts
+            && let Some(class_path) = builder.take_completion()
+        {
+            host.update_analysis_config(class_path, Vec::new());
+            log_line("artifacts ready: analysis switched to the artifact class path");
+        }
         let method = message.get("method").and_then(Value::as_str).unwrap_or("");
         let id = message.get("id").cloned();
         match method {
@@ -51,6 +62,20 @@ pub fn run(
                         output_dir,
                         None,
                     ));
+                    let source_level = host.configuration().source_level;
+                    let (sources, class_path, has_output, level) =
+                        artifact_inputs(&model, &source_level);
+                    let builder = artifacts::ArtifactBuilder::new(artifacts::ArtifactInput {
+                        root: root.clone(),
+                        sources: sources.clone(),
+                        class_path,
+                        source_level: level,
+                        has_project_output: has_output,
+                    });
+                    if !has_output {
+                        builder.start_full_build(sources);
+                    }
+                    artifacts = Some(builder);
                 }
                 respond(&mut stdout, id, json!({ "capabilities": capabilities() }));
             }
@@ -102,6 +127,28 @@ pub fn run(
             "textDocument/didSave" => {
                 if let Some(uri) = document_uri(&message) {
                     if let Ok(path) = uri_to_path(&uri) {
+                        // Recompile the saved file and its dependent closure so
+                        // referrers see the new classes; didChange never builds.
+                        if let Some(builder) = &artifacts {
+                            let t0 = std::time::Instant::now();
+                            let mut files = host.dependent_closure(&path);
+                            log_line(&format!("didSave: closure {}ms", t0.elapsed().as_millis()));
+                            if files.is_empty() {
+                                files.push(path.clone());
+                            }
+                            let started = std::time::Instant::now();
+                            let ok = builder.build_files(&files);
+                            log_line(&format!("didSave: build {}ms", started.elapsed().as_millis()));
+                            for file in &files {
+                                host.invalidate_analysis(file);
+                            }
+                            log_line(&format!("didSave: invalidate {}ms", started.elapsed().as_millis()));
+                            log_line(&format!(
+                                "artifacts: rebuilt {} file(s) after save, ok={ok}, {}ms",
+                                files.len(),
+                                started.elapsed().as_millis()
+                            ));
+                        }
                         let text = message
                             .get("params")
                             .and_then(|params| params.get("text"))
@@ -109,8 +156,20 @@ pub fn run(
                             .map(str::to_string)
                             .or_else(|| docs.get(&path).cloned());
                         if let Some(text) = text {
-                            docs.insert(path.clone(), text.clone());
-                            publish_diagnostics(&mut stdout, host.as_mut(), &uri, &path, &text);
+                            let t2 = std::time::Instant::now();
+                            // didChange already published diagnostics for this
+                            // text; re-diagnosing on save would recompute the
+                            // same result (and re-run the index update).
+                            let on_disk = std::fs::read_to_string(&path).ok();
+                            log_line(&format!(
+                                "didSave: text-check {}ms same={}",
+                                t2.elapsed().as_millis(),
+                                on_disk.as_deref() == Some(text.as_str())
+                            ));
+                            if on_disk.as_deref() != Some(text.as_str()) {
+                                docs.insert(path.clone(), text.clone());
+                                publish_diagnostics(&mut stdout, host.as_mut(), &uri, &path, &text);
+                            }
                         }
                     }
                 }
@@ -204,6 +263,19 @@ pub fn run(
                         "building": host.is_index_building(),
                     }),
                 );
+            }
+            "ravac/artifactStats" => {
+                let value = match &artifacts {
+                    Some(builder) => builder.stats().to_json(),
+                    None => json!({
+                        "status": "skipped",
+                        "dir": "",
+                        "files": 0,
+                        "classes": 0,
+                        "error": Value::Null,
+                    }),
+                };
+                respond(&mut stdout, id, value);
             }
             "textDocument/references" => {
                 respond(&mut stdout, id, references(host.as_mut(), &message));
@@ -1129,4 +1201,78 @@ fn send(stdout: &mut impl Write, message: Value) {
     let body = serde_json::to_string(&message).unwrap_or_else(|_| "{}".to_string());
     let _ = write!(stdout, "Content-Length: {}\r\n\r\n{}", body.len(), body);
     let _ = stdout.flush();
+}
+
+/// Recursively collect `.java` files under `roots`.
+fn collect_java_sources(roots: &[PathBuf], out: &mut Vec<PathBuf>) {
+    for root in roots {
+        let Ok(entries) = std::fs::read_dir(root) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_java_sources(std::slice::from_ref(&path), out);
+            } else if path.extension().is_some_and(|extension| extension == "java") {
+                out.push(path);
+            }
+        }
+    }
+}
+
+/// Files and class path for artifact maintenance plus the project-output flag.
+fn artifact_inputs(
+    model: &javac_ide_core::project::model::ProjectModel,
+    fallback_source_level: &str,
+) -> (Vec<PathBuf>, Vec<PathBuf>, bool, String) {
+    let mut sources = Vec::new();
+    let mut class_path = Vec::new();
+    let mut has_output = false;
+    for module in &model.modules {
+        for set in &module.source_sets {
+            collect_java_sources(&set.roots, &mut sources);
+            for entry in &set.classpath {
+                if !class_path.contains(entry) {
+                    class_path.push(entry.clone());
+                }
+            }
+            if let Some(output) = &set.output
+                && output.is_dir()
+                && contains_class_file(output)
+            {
+                has_output = true;
+                if !class_path.contains(output) {
+                    class_path.push(output.clone());
+                }
+            }
+        }
+    }
+    sources.sort();
+    sources.dedup();
+    class_path.sort();
+    class_path.dedup();
+    let level = model
+        .modules
+        .iter()
+        .find_map(|module| module.source_level.clone())
+        .unwrap_or_else(|| fallback_source_level.to_string());
+    (sources, class_path, has_output, level)
+}
+
+/// Whether `dir` contains any compiled class (recursively).
+fn contains_class_file(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if contains_class_file(&path) {
+                return true;
+            }
+        } else if path.extension().is_some_and(|extension| extension == "class") {
+            return true;
+        }
+    }
+    false
 }

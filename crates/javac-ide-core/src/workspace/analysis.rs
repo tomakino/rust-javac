@@ -401,20 +401,20 @@ impl FileAnalysis {
     }
 }
 
+/// Join class-path entries with the platform separator.
+pub fn join_class_path(entries: &[PathBuf]) -> String {
+    let separator = if cfg!(windows) { ";" } else { ":" };
+    entries
+        .iter()
+        .map(|entry| entry.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join(separator)
+}
+
 pub(crate) fn build_compiler(config: &AnalysisConfig) -> MiniCompiler {
-    let class_path = config
-        .class_path
-        .iter()
-        .map(|entry| entry.to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join(";");
+    let class_path = join_class_path(&config.class_path);
     let source_level = config.source_level.clone();
-    let source_path = config
-        .source_path
-        .iter()
-        .map(|entry| entry.to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join(";");
+    let source_path = join_class_path(&config.source_path);
     MiniCompiler::new_with_options(&config.output_dir, |options| {
         if !class_path.is_empty() {
             options.put("--class-path", class_path.clone());
