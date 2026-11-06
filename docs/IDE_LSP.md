@@ -90,7 +90,10 @@ Regression:
 ## Known limitations
 
 - completion returns only symbols of the current file and source-backed project classes; inherited members (Object.clone etc.) still leak into empty-prefix results.
-- references are textual word-boundary matches, not attributed symbol references.
+- references and rename are symbol-level for compilation units already analyzed by
+  the session, including the declaration. Cross-file coverage is incomplete: the
+  session keeps one active file at a time, so references in files that have not
+  been analyzed are not found yet.
 - definition of class-path classes without sources (jars) returns null unless the JDK source archive has the file.
 - completion documentation for JDK elements requires src.zip; without it only
   project declarations carry Javadoc. The renderer emits a Markdown subset,

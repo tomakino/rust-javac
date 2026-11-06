@@ -140,6 +140,14 @@ impl javac_analysis_api::AnalysisHost for AnalysisSession {
         self.implementation_impl(file, position)
     }
 
+    fn prepare_rename(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+    ) -> Option<javac_analysis_api::Range> {
+        self.prepare_rename_impl(file, position)
+    }
+
     fn references(
         &mut self,
         file: &Path,

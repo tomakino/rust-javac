@@ -4,7 +4,10 @@
 use std::path::{Path, PathBuf};
 
 use super::super::host::location_at;
-use super::super::positions::{occurrences, offset_to_line_col, symbol_range, word_at};
+use super::super::positions::{line_offset, offset_to_line_col, symbol_range, word_at};
+use crate::compiler_context::CompilerContext;
+use crate::ids::{SymbolId, TreeId};
+use crate::tree::tree_scanner::TreeScannerVisitor;
 use super::super::{canonical, AnalysisSession};
 
 impl AnalysisSession {
@@ -214,62 +217,184 @@ impl AnalysisSession {
         locations
     }
 
+
+    fn source_text(&self, file: &Path) -> Option<String> {
+        let key = PathBuf::from(canonical(file));
+        self.texts
+            .get(&key)
+            .cloned()
+            .or_else(|| std::fs::read_to_string(file).ok())
+    }
+
+    /// The source file that owns each tree arena slot. The parser appends one
+    /// compilation unit at a time, so a unit owns the slots up to the next unit.
+    fn tree_files(&self) -> Vec<Option<PathBuf>> {
+        let mut files = vec![None; self.compiler.ctx.trees.len()];
+        let mut current = None;
+        for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {
+            if let crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } = &tree.kind {
+                current = sourcefile.as_ref().map(|file| {
+                    PathBuf::from(canonical(Path::new(&file.get_name().to_string_lossy())))
+                });
+            }
+            files[index] = current.clone();
+        }
+        files
+    }
+
+    /// Symbol attributed at a source position, plus the identifier's byte start.
+    fn symbol_id_at(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+    ) -> Option<(SymbolId, usize)> {
+        let text = self.source_text(file)?;
+        let line = position.line as usize + 1;
+        let column = position.column as usize + 1;
+        let word = word_at(&text, line, column)?;
+        if word.is_empty() {
+            return None;
+        }
+        let cursor = line_offset(&text, line, column);
+        let start = word_start_offset(&text, cursor);
+        let Some(root) = self.latest_root_for(file) else {
+            return None;
+        };
+        let mut collector = ReferenceCollector::new(
+            text.clone(),
+            file.to_path_buf(),
+            None,
+            Some(start as i32),
+        );
+        collector.scan(&mut self.compiler.ctx, Some(root));
+        if let Some(symbol) = collector.query {
+            return Some((symbol, start));
+        }
+        // Declarations have exact symbol positions even when their tree has no
+        // reliable token position (for example a field access node).
+        for tree in self.compiler.ctx.trees.iter() {
+            let symbol = match &tree.kind {
+                crate::tree::jc_tree::TreeKind::VariableDecl {
+                    sym: Some(sym),
+                    decl_pos,
+                    ..
+                } if *decl_pos == start as i32 => Some(*sym),
+                crate::tree::jc_tree::TreeKind::MethodDecl { sym: Some(sym), .. }
+                | crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. } => {
+                    (self.compiler.ctx.sym(*sym).pos.get() == start as i32).then_some(*sym)
+                }
+                _ => None,
+            };
+            if let Some(symbol) = symbol {
+                return Some((symbol, start));
+            }
+        }
+        None
+    }
+
+    fn latest_root_for(&self, file: &Path) -> Option<crate::ids::TreeId> {
+        let key = canonical(file);
+        let mut root = None;
+        for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {
+            if let crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } = &tree.kind {
+                let matches = sourcefile.as_ref().is_some_and(|source| {
+                    canonical(Path::new(&source.get_name().to_string_lossy())) == key
+                });
+                if matches {
+                    root = Some(crate::ids::TreeId::new(index as u32));
+                }
+            }
+        }
+        root
+    }
+
+    /// Range of the identifier that can be renamed, if it is a symbol.
+    pub(crate) fn prepare_rename_impl(
+        &mut self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+    ) -> Option<javac_analysis_api::Range> {
+        let text = self.source_text(file)?;
+        let line = position.line as usize + 1;
+        let column = position.column as usize + 1;
+        let word = word_at(&text, line, column)?;
+        let (_, start) = self.symbol_id_at(file, position)?;
+        let (line, column) = offset_to_line_col(&text, start);
+        let width = word.chars().map(|ch| ch.len_utf16() as u32).sum::<u32>();
+        Some(javac_analysis_api::Range::new(
+            javac_analysis_api::Position::new(line, column),
+            javac_analysis_api::Position::new(line, column + width),
+        ))
+    }
+
     /// References to the symbol at a position.
     pub(crate) fn references_impl(
         &mut self,
         file: &Path,
         position: javac_analysis_api::Position,
     ) -> Vec<javac_analysis_api::Location> {
-        let key = PathBuf::from(canonical(file));
-        let text = self
-            .texts
-            .get(&key)
-            .cloned()
-            .or_else(|| std::fs::read_to_string(file).ok())
-            .unwrap_or_default();
-        let Some(word) = word_at(
-            &text,
-            position.line as usize + 1,
-            position.column as usize + 1,
-        ) else {
+        let Some((target, _)) = self.symbol_id_at(file, position) else {
             return Vec::new();
         };
-        // The tree arena keeps every analyzed file; a tree belongs to this file
-        // when the text at its position starts with the identifier.
-        let in_file = |pos: i32| -> bool {
-            if pos < 0 {
-                return false;
-            }
-            let pos = pos as usize;
-            pos <= text.len() && text[pos..].starts_with(&word)
-        };
+        let mut roots = Vec::new();
+        for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {
+            let crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } = &tree.kind else {
+                continue;
+            };
+            let Some(source) = sourcefile else {
+                continue;
+            };
+            let tree_file = PathBuf::from(canonical(Path::new(&source.get_name().to_string_lossy())));
+            let Some(tree_text) = self.source_text(&tree_file) else {
+                continue;
+            };
+            roots.push((crate::ids::TreeId::new(index as u32), tree_file, tree_text));
+        }
         let mut locations = Vec::new();
-        for tree in self.compiler.ctx.trees.iter() {
-            match &tree.kind {
-                crate::tree::jc_tree::TreeKind::VariableDecl {
-                    name, decl_pos, ..
-                } if name.to_java_string().to_string_lossy() == word => {
-                    if in_file(*decl_pos) {
-                        if let Some(location) = location_at(&text, file, *decl_pos) {
-                            locations.push(location);
-                        }
+        for (root, tree_file, tree_text) in roots {
+            let mut collector = ReferenceCollector::new(
+                tree_text.clone(),
+                tree_file,
+                Some(target),
+                None,
+            );
+            collector.scan(&mut self.compiler.ctx, Some(root));
+            locations.extend(collector.locations);
+        }
+        // The declaration tree carries the token position for fields and
+        // parameters even when sym.pos is NOPOS.
+        if let Some(tree_text) = self.source_text(file) {
+            let declaration_file = PathBuf::from(canonical(file));
+            for tree in self.compiler.ctx.trees.iter() {
+                let position = match &tree.kind {
+                    crate::tree::jc_tree::TreeKind::VariableDecl {
+                        sym: Some(sym),
+                        decl_pos,
+                        ..
+                    } if *sym == target => *decl_pos,
+                    crate::tree::jc_tree::TreeKind::MethodDecl { sym: Some(sym), .. }
+                    | crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. }
+                        if *sym == target =>
+                    {
+                        self.compiler.ctx.sym(*sym).pos.get()
+                    }
+                    _ => continue,
+                };
+                if position >= 0 {
+                    if let Some(location) = location_at(&tree_text, &declaration_file, position) {
+                        locations.push(location);
                     }
                 }
-                crate::tree::jc_tree::TreeKind::Ident { name, .. }
-                    if name.to_java_string().to_string_lossy() == word =>
-                {
-                    if in_file(tree.pos) {
-                        if let Some(location) = location_at(&text, file, tree.pos) {
-                            locations.push(location);
-                        }
-                    }
-                }
-                _ => {}
             }
         }
-        locations.sort_by_key(|location| (location.range.start.line, location.range.start.column));
-        locations.dedup_by(|a, b| a.range == b.range);
-        let _ = occurrences;
+        locations.sort_by_key(|location| {
+            (
+                location.file.to_string_lossy().to_string(),
+                location.range.start.line,
+                location.range.start.column,
+            )
+        });
+        locations.dedup_by(|a, b| a.file == b.file && a.range == b.range);
         locations
     }
 
@@ -305,3 +430,105 @@ impl AnalysisSession {
         classes
     }
 }
+
+fn word_start_offset(text: &str, cursor: usize) -> usize {
+    let mut start = cursor.min(text.len());
+    let is_ident = |ch: char| ch.is_alphanumeric() || ch == '_' || ch == '$';
+    for (index, ch) in text[..start].char_indices().rev() {
+        if is_ident(ch) {
+            start = index;
+        } else {
+            break;
+        }
+    }
+    start
+}
+
+
+struct ReferenceCollector {
+    text: String,
+    file: PathBuf,
+    target: Option<SymbolId>,
+    query_start: Option<i32>,
+    query: Option<SymbolId>,
+    locations: Vec<javac_analysis_api::Location>,
+}
+
+impl ReferenceCollector {
+    fn new(
+        text: String,
+        file: PathBuf,
+        target: Option<SymbolId>,
+        query_start: Option<i32>,
+    ) -> Self {
+        Self {
+            text,
+            file,
+            target,
+            query_start,
+            query: None,
+            locations: Vec::new(),
+        }
+    }
+
+    fn field_name_pos(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        selected: crate::ids::TreeId,
+        name: &str,
+    ) -> Option<i32> {
+        let start = ctx.tree(selected).pos.max(0) as usize;
+        let tail = self.text.get(start..)?;
+        let offset = tail.find(name)?;
+        Some((start + offset) as i32)
+    }
+
+    fn record(&mut self, symbol: SymbolId, position: i32) {
+        if self.query_start == Some(position) {
+            self.query = Some(symbol);
+        }
+        if self.target == Some(symbol) && position >= 0 {
+            if let Some(location) =
+                location_at(&self.text, &self.file, position)
+            {
+                self.locations.push(location);
+            }
+        }
+    }
+}
+
+impl crate::tree::tree_scanner::TreeScannerVisitor for ReferenceCollector {
+    fn visit_ident(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: crate::ids::TreeId,
+    ) {
+        if let crate::tree::jc_tree::TreeKind::Ident { sym: Some(sym), .. } = &ctx.tree(tree).kind {
+            self.record(*sym, ctx.tree(tree).pos);
+        }
+    }
+
+    fn visit_select(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: crate::ids::TreeId,
+    ) {
+        let (selected, name, sym) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::FieldAccess { selected, name, sym, .. } => {
+                (*selected, name.to_java_string().to_string_lossy().to_string(), *sym)
+            }
+            _ => return,
+        };
+        if let Some(sym) = sym {
+            if let Some(selected) = selected {
+                if let Some(position) = self.field_name_pos(ctx, selected, &name) {
+                    self.record(sym, position);
+                }
+            }
+        }
+        self.scan(ctx, selected);
+    }
+}
+
+crate::tree::tree_scanner::tree_scanner_visitor_delegate!(ReferenceCollector);
+

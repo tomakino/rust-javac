@@ -168,6 +168,9 @@ pub fn run(
             "textDocument/rename" => {
                 respond(&mut stdout, id, rename(host, &message));
             }
+            "textDocument/prepareRename" => {
+                respond(&mut stdout, id, prepare_rename(host, &message));
+            }
             _ => {
                 if let Some(id) = id {
                     respond_error(&mut stdout, id, -32601, "method not found");
@@ -210,7 +213,7 @@ fn capabilities() -> Value {
         "hoverProvider": true,
         "documentSymbolProvider": true,
         "referencesProvider": true,
-        "renameProvider": true
+        "renameProvider": { "prepareProvider": true }
     })
 }
 
@@ -782,6 +785,16 @@ fn rename(host: &mut dyn AnalysisHost, message: &Value) -> Value {
         })
         .collect();
     json!({ "changes": { uri: changes } })
+}
+
+fn prepare_rename(host: &mut dyn AnalysisHost, message: &Value) -> Value {
+    let Some((path, position)) = request_position(message) else {
+        return Value::Null;
+    };
+    match host.prepare_rename(&path, position) {
+        Some(range) => json!({ "range": range_json(range) }),
+        None => Value::Null,
+    }
 }
 
 fn references(host: &mut dyn AnalysisHost, message: &Value) -> Value {

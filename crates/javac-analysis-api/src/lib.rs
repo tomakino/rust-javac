@@ -300,6 +300,12 @@ pub trait AnalysisHost {
         Vec::new()
     }
 
+    /// Range that a rename at this position would edit, if any.
+    fn prepare_rename(&mut self, file: &Path, position: Position) -> Option<Range> {
+        let _ = (file, position);
+        None
+    }
+
     /// References to the symbol at a position.
     fn references(&mut self, file: &Path, position: Position) -> Vec<Location>;
 
