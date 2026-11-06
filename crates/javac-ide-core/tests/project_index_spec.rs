@@ -54,9 +54,9 @@ fn builds_declarations_occurrences_and_supertypes() {
 
     assert!(matches!(index.status, javac_ide_core::analysis::project_index::IndexStatus::Ready), "status: {:?}", index.status);
     assert_eq!(index.files.len(), 3);
-    assert!(index.by_name.values().any(|ids| ids.iter().any(|id| index.symbol(*id).is_some_and(|s| s.detail.ends_with(" A")))));
     let a = index.symbols_named("A").into_iter().next().expect("A");
     assert_eq!(a.kind, IndexSymbolKind::Class);
+    assert_eq!(index.name(a.key.name), "A");
     let c = index.symbols_named("C").into_iter().next().expect("C");
     let b = index.symbols_named("B").into_iter().next().expect("B");
     assert!(
@@ -82,8 +82,6 @@ fn builds_declarations_occurrences_and_supertypes() {
     let a_index = index.file_index(a_file).expect("A file index");
     assert!(a_index.occurrences.iter().any(|occ| occ.symbol == index.by_key[&value.key]));
     assert!(!a_index.occurrences.is_empty());
-
-    let _ = config(&root, &output);
 }
 #[test]
 fn single_file_batches_preserve_cross_batch_identity() {
@@ -135,7 +133,10 @@ fn workspace_model_captures_source_and_classpath_fingerprint() {
     let model = javac_ide_core::analysis::project_index::build_workspace_model(&config);
     assert_eq!(model.source_path, vec![root.clone()]);
     assert_eq!(model.source_level, "17");
-    assert_eq!(model.classpath_hash, model.classpath_hash);
+    let mut other = config.clone();
+    other.class_path.push(root.join("different.jar"));
+    let other_model = javac_ide_core::analysis::project_index::build_workspace_model(&other);
+    assert_ne!(model.classpath_hash, other_model.classpath_hash);
     assert_eq!(model.root, root);
 }
 #[test]
@@ -152,4 +153,30 @@ fn workspace_symbols_read_the_project_index() {
     assert!(value.iter().any(|symbol| symbol.name == "value"), "symbols: {value:?}");
     let all = session.workspace_symbols("");
     assert!(all.len() >= 4, "all symbols: {all:?}");
+}
+
+#[test]
+fn failed_compilation_is_partial_not_ready() {
+    let root = fixture("partial");
+    std::fs::write(root.join("Bad.java"), "class Bad { void broken( { }").unwrap();
+    let output = root.join("out");
+    let index = build_project_index(&config(&root, &output), 8);
+    assert!(!index.is_ready(), "status: {:?}", index.status);
+    assert!(matches!(
+        index.status,
+        javac_ide_core::analysis::project_index::IndexStatus::Partial { .. }
+    ));
+}
+
+#[test]
+fn source_change_invalidates_cached_project_index() {
+    let root = fixture("invalidation");
+    std::fs::write(root.join("A.java"), "class A { B b; }").unwrap();
+    std::fs::write(root.join("B.java"), "class B { int oldValue; }").unwrap();
+    let output = root.join("out");
+    let mut session = AnalysisSession::new(config(&root, &output));
+    assert!(session.workspace_symbols("B").iter().any(|symbol| symbol.name == "B"));
+    std::fs::write(root.join("B.java"), "class B { int newValue; }").unwrap();
+    let symbols = session.workspace_symbols("newValue");
+    assert!(symbols.iter().any(|symbol| symbol.name == "newValue"), "stale index: {symbols:?}");
 }

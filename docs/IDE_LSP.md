@@ -26,7 +26,7 @@ The original compiler crate (crates/javac-core) is untouched.
 
 | LSP method | Status | Notes |
 |---|---|---|
-| initialize | yes | capabilities for completion/definition/hover/references/documentSymbol |
+| initialize | yes | capabilities for completion/definition/hover/references/documentSymbol/workspaceSymbol |
 | initialized | yes | no-op |
 | shutdown / exit | yes | |
 | textDocument/didOpen | yes | analyzes the buffer, publishes diagnostics |
@@ -37,12 +37,13 @@ The original compiler crate (crates/javac-core) is untouched.
 | textDocument/completion | yes | prefix filter, ranking (class > interface > method > field), project index, Markdown Javadoc (project + JDK src.zip), auto-import additionalTextEdits |
 | textDocument/definition | yes | local declaration, project index, JDK source (JAVA_HOME/lib/src.zip) |
 | textDocument/hover | yes | class name / field / method signature (return and parameter types) |
-| textDocument/references | yes | symbol-level; project source_path compiled for cross-file results |
-| textDocument/documentSymbol | yes | class -> members hierarchy with ranges |
+| textDocument/references | yes | symbol-level; ProjectIndex occurrence table, no AST scan |
+| textDocument/documentSymbol | yes | ProjectIndex class -> members hierarchy with ranges |
 | textDocument/inlayHint | yes | inferred var types and call parameter names, range-filtered |
 | textDocument/codeAction | yes | auto-import and remove-unused-import quick fixes |
 | textDocument/prepareRename | yes | range for the attributed symbol |
 | textDocument/rename | yes | symbol-level; cross-file edits grouped by file |
+| workspace/symbol | yes | ProjectIndex name search; empty query capped at 200 |
 
 ## Running
 
@@ -86,6 +87,8 @@ var types and parameter names).
 Regression:
 
     cargo test -p javac-ide-core --test completion_spec   # 130 tests
+    cargo test -p javac-ide-core --test completion_project_spec  # 1 project-index test
+    cargo test -p javac-ide-core --test project_index_spec       # 7 tests
     cargo test -p javac-core --lib        # 750 tests
     cargo test -p javac-ide-core --lib    # 746 tests
     py scripts/check_gson.py              # 208/208 byte-for-byte
@@ -93,11 +96,11 @@ Regression:
 ## Known limitations
 
 - completion returns only symbols of the current file and source-backed project classes; inherited members (Object.clone etc.) still leak into empty-prefix results.
-- references and rename are symbol-level. Cross-file queries compile the files
-  under the configured source_path once and cache that project session; the cache
-  is invalidated by source-file mtime/length and by the current file's overlay
-  hash. pom/classpath changes still require re-initializing the language server,
-  and files outside source_path are not covered.
+- references and rename are symbol-level. Cross-file queries read the ProjectIndex
+  occurrence table. The index is rebuilt when a source file's content hash or an
+  overlay changes; Partial indexes reject project queries. pom/classpath changes
+  still require re-initializing the language server, and files outside source_path
+  are not covered.
 - definition of class-path classes without sources (jars) returns null unless the JDK source archive has the file.
 - completion documentation for JDK elements requires src.zip; without it only
   project declarations carry Javadoc. The renderer emits a Markdown subset,

@@ -281,6 +281,7 @@ impl AnalysisSession {
         let indexed: Vec<(String, String, IndexSymbolKind, bool)> = self
             .project_index
             .as_ref()
+            .filter(|index| index.is_ready())
             .map(|index| {
                 index
                     .symbols

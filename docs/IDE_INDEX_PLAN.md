@@ -1,12 +1,13 @@
 # 全局索引系统重构计划（无兼容设计）
 
-状态：2026-11-06，已批准；M1 核心模型与构建器已落地，查询切换未开始。
+状态：2026-11-06，已批准；M1 完成；M2 已完成查询切换与旧索引删除，结构清理进行中。
 
 ## 实施进度
 
-- 2026-11-06：新增 ProjectIndex、StringInterner、SymbolKey、FileIndex、WorkspaceModel、IndexBuilder；新增 project_index_spec 4 项测试并通过。
-- 暂未删除旧 flat index / ProjectCache：删除必须与 M2 查询切换同时完成，否则 definition/references 无法编译。
-- 下一步：M2 用 WorkspaceService 切换 definition/references/rename/documentSymbol/workspace symbol，再删除旧索引。
+- 2026-11-06 M1：ProjectIndex、StringInterner、SymbolKey、FileIndex、WorkspaceModel、IndexBuilder；project_index_spec 7 项通过。
+- 2026-11-06 M2：删除旧 flat index、index_lookup、ProjectCache；definition/references/documentSymbol/completion 改查 ProjectIndex；新增 workspace/symbol API 与 LSP handler；project_index 模块拆成 model/builder/session/document_symbols/workspace_symbols/symbols。
+- 质量门禁：新增 completion_project_spec，真实 source_path 下验证补全索引分支；Partial 查询拒绝；源文件 hash 失效；overlay 只单独编译 overlay 文件。
+- 仍未完成：WorkspaceService 抽象；prepareRename 仍走 resident compiler；completion/navigation 仍有超大文件；索引构建同步阻塞；M3/M4 未开始。
 
 前提：项目未发布，不保留旧索引、旧 AnalysisHost 默认方法、旧 ProjectCache，也不做双跑兼容层。直接替换为最合适的架构，测试随新实现重写。
 

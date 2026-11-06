@@ -106,20 +106,40 @@ impl IndexBuilder {
         }
     }
 
+
+    fn batches(&self, batch_size: usize) -> Vec<Vec<PathBuf>> {
+        if self.overlays.is_empty() {
+            return self
+                .files
+                .chunks(batch_size)
+                .map(|batch| batch.to_vec())
+                .collect();
+        }
+        let mut batches = Vec::new();
+        let mut normal = Vec::new();
+        for path in &self.files {
+            if self.overlays.contains_key(path) {
+                // overlay_text carries one buffer; only overlay files get their own batch.
+                batches.push(vec![path.clone()]);
+            } else {
+                normal.push(path.clone());
+            }
+        }
+        batches.extend(
+            normal
+                .chunks(batch_size)
+                .map(|batch| batch.to_vec())
+                .collect::<Vec<_>>(),
+        );
+        batches
+    }
+
     pub fn build(mut self, batch_size: usize) -> ProjectIndex {
         if self.files.is_empty() {
             return self.finish(IndexStatus::Ready);
         }
         let batch_size = batch_size.max(1);
-        let batches: Vec<Vec<PathBuf>> = if self.overlays.is_empty() {
-            self.files
-                .chunks(batch_size)
-                .map(|batch| batch.to_vec())
-                .collect()
-        } else {
-            // overlay_text carries one buffer; compile each overlay file alone.
-            self.files.iter().map(|path| vec![path.clone()]).collect()
-        };
+        let batches = self.batches(batch_size);
         for batch in batches {
             self.build_batch(&batch);
         }
@@ -174,7 +194,8 @@ impl IndexBuilder {
             }
         }
         let compiled = session.compiler.compile_files(batch);
-        if compiled.is_err() {
+        let failed = compiled.is_err() || session.compiler.log.nerrors.get() > 0;
+        if failed {
             for path in batch {
                 self.failed_files.push(path.clone());
                 if let Some(id) = self.file_ids.get(path).copied() {
@@ -395,7 +416,8 @@ impl IndexBuilder {
                 signature.push(')');
             }
             IndexSymbolKind::Local | IndexSymbolKind::Parameter => {
-                signature = format!("{}:{}", file, ctx.sym(symbol).pos.get());
+                let position = ctx.sym(symbol).pos.get().max(0);
+                signature = format!("{}:{}:{}", file, position, symbol.index());
             }
             _ => {}
         }
@@ -595,9 +617,9 @@ fn symbol_kind(ctx: &CompilerContext, symbol: CompilerSymbolId) -> Option<IndexS
                 IndexSymbolKind::Method
             })
         }
+        SymbolKind::ParamSymbol => Some(IndexSymbolKind::Parameter),
         SymbolKind::VarSymbol { .. }
         | SymbolKind::BindingSymbol { .. }
-        | SymbolKind::ParamSymbol
         | SymbolKind::RecordComponent { .. } => {
             if let Some(owner) = ctx.sym(symbol).owner {
                 match ctx.sym(owner).kind_data {
@@ -655,13 +677,13 @@ fn kind_name(kind: IndexSymbolKind) -> &'static str {
     }
 }
 
-fn hash_text(text: &str) -> u64 {
+pub(crate) fn hash_text(text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     text.hash(&mut hasher);
     hasher.finish()
 }
 
-fn collect_java_files(roots: &[PathBuf]) -> Vec<PathBuf> {
+pub(crate) fn collect_java_files(roots: &[PathBuf]) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for root in roots {
         collect_java_files_in(root, &mut files);
