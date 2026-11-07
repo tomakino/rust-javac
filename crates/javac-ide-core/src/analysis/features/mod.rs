@@ -24,6 +24,7 @@ pub(crate) fn map_kind(kind: &'static str) -> javac_analysis_api::SymbolKind {
         "enum" => javac_analysis_api::SymbolKind::Enum,
         "record" => javac_analysis_api::SymbolKind::Record,
         "method" => javac_analysis_api::SymbolKind::Method,
+        "constructor" => javac_analysis_api::SymbolKind::Constructor,
         "field" => javac_analysis_api::SymbolKind::Field,
         "local" => javac_analysis_api::SymbolKind::LocalVariable,
         "keyword" => javac_analysis_api::SymbolKind::Keyword,

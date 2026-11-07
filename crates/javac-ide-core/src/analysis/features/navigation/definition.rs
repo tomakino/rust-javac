@@ -46,6 +46,47 @@ impl FileAnalysis {
             if let Some(location) = self.external_symbol_location(symbol) {
                 return Some(location);
             }
+            // Type variables have no declaring tree in `symbol_trees`; their
+            // symbol position is the `TypeParameter` name token.
+            if matches!(
+                self.compiler.ctx.sym(symbol).kind_data,
+                crate::code::symbol::SymbolKind::TypeVariableSymbol
+            ) {
+                // Type variables have no declaring tree in `symbol_trees`; find
+                // the `TypeParameter` declaration by name (AST-first).
+                let name = self
+                    .compiler
+                    .ctx
+                    .sym(symbol)
+                    .name
+                    .to_java_string()
+                    .to_string_lossy();
+                for index in 0..self.compiler.ctx.trees.len() {
+                    let tree = crate::ids::TreeId::new(index as u32);
+                    if let crate::tree::jc_tree::TreeKind::TypeParameter {
+                        name: parameter_name,
+                        ..
+                    } = &self.compiler.ctx.tree(tree).kind
+                    {
+                        if parameter_name.to_java_string().to_string_lossy() == name {
+                            let pos = self.compiler.ctx.tree(tree).pos;
+                            if pos >= 0 {
+                                let (symbol_line, symbol_column) =
+                                    offset_to_line_col(&text, pos as usize);
+                                return Some(javac_analysis_api::Location {
+                                    file: file.to_path_buf(),
+                                    range: javac_analysis_api::Range::point(
+                                        javac_analysis_api::Position::new(
+                                            symbol_line,
+                                            symbol_column,
+                                        ),
+                                    ),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
         }
         if let Some(symbol) = FileAnalysis::symbol_at(self, file, line, column) {
             if symbol.pos >= 0 {

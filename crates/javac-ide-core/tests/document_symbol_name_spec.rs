@@ -69,3 +69,25 @@ fn index_outline_names_are_not_empty() {
         assert!(!symbol.name.is_empty(), "empty name: {symbol:?}");
     }
 }
+
+#[test]
+fn outline_skips_synthesised_record_and_enum_members() {
+    let root = fixture("synth");
+    let path = root.join("S.java");
+    let source = "record P(int x) {}\nenum E { A }\nclass C { int nonce; C() {} }\n";
+    std::fs::write(&path, source).unwrap();
+    let mut workspace = Workspace::new(config(&root));
+    let symbols = WorkspaceService::document_symbols(&mut workspace, &path);
+    let mut names = Vec::new();
+    for symbol in &symbols {
+        names.push(symbol.name.clone());
+        for child in &symbol.children {
+            names.push(child.name.clone());
+        }
+    }
+    assert!(!names.iter().any(|name| name == "equals"), "synthesised record members: {names:?}");
+    assert!(!names.iter().any(|name| name == "valueOf"), "synthesised enum members: {names:?}");
+    assert!(!names.iter().any(|name| name == "values"), "synthesised enum members: {names:?}");
+    // The explicit constructor is shown under the class name.
+    assert!(names.iter().filter(|name| name.as_str() == "C").count() >= 2, "constructor entry: {names:?}");
+}

@@ -430,6 +430,19 @@ impl IndexBuilder {
             if (ctx.sym(member).flags_field & crate::code::flags::GENERATEDCONSTR) != 0 {
                 continue;
             }
+            let member_name = ctx.sym(member).name.to_java_string().to_string_lossy();
+            let generated = matches!(
+                ctx.sym(member).kind_data,
+                SymbolKind::MethodSymbol { .. }
+            ) && (ctx.sym(member).flags_field & 0x2000_0000_0000_0000_u64 as i64) != 0;
+            let enum_synthetic =
+                (ctx.sym(class).flags_field & 0x4000) != 0
+                    && matches!(member_name.as_ref(), "values" | "valueOf");
+            if generated || enum_synthetic || !self.symbol_trees.contains_key(&member) {
+                // Compiler-synthesised member (record accessor, enum values):
+                // no declaration tree, not an outline entry.
+                continue;
+            }
             let is_class = matches!(ctx.sym(member).kind_data, SymbolKind::ClassSymbol { .. });
             self.resolve_symbol(ctx, member, local);
             if is_class {

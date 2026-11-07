@@ -1330,6 +1330,7 @@ fn symbol_kind_number(kind: SymbolKind) -> i32 {
         SymbolKind::Enum => 13,
         SymbolKind::Record => 23,
         SymbolKind::Method => 2,
+        SymbolKind::Constructor => 9,
         SymbolKind::Field => 8,
         SymbolKind::LocalVariable => 13,
         SymbolKind::Parameter => 14,

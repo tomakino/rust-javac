@@ -296,7 +296,11 @@ impl WorkspaceService for Workspace {
                 &|id| self.text_of_id(id),
             )
         {
-            return Some(location);
+            // A (0,0) location means the record had no source position (type
+            // variables etc.); fall through to the AST analysis.
+            if location.range.start.line != 0 || location.range.start.column != 0 {
+                return Some(location);
+            }
         }
         // Unsaved/overlay file not in the index: analyze it once and read the
         // typed symbol position (never a text match).

@@ -65,6 +65,7 @@ pub enum SymbolKind {
     Enum,
     Record,
     Method,
+    Constructor,
     Field,
     LocalVariable,
     Parameter,

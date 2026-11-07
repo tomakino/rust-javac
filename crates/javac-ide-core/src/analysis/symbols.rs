@@ -211,17 +211,31 @@ impl FileAnalysis {
         let mut out = Vec::new();
         for traced in &self.traced {
             let class = &self.compiler.ctx.sym(traced.sym);
-            let class_name = class.name.to_java_string().to_string_lossy();
+            let class_name = class.name.to_java_string().to_string_lossy().to_string();
+            // Values used inside the member loop; holding `class` across the
+            // `scope_get_symbols` call would alias the mutable context.
+            let class_pos = class.pos.get();
+            let class_flags = class.flags_field;
+            let class_is_enum = (class_flags & 0x4000) != 0;
             if class_name.is_empty() {
                 // Anonymous classes have an empty `Name`; they are not outline
                 // entries.
+                continue;
+            }
+            if class.owner.is_some_and(|owner| {
+                matches!(
+                    self.compiler.ctx.sym(owner).kind_data,
+                    SymbolKind::ClassSymbol { .. }
+                )
+            }) {
+                // Nested classes are added from their owner's members below.
                 continue;
             }
             let class_pos = crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, traced.sym)
                 .map(|position| position as i32)
                 .unwrap_or_else(|| class.pos.get());
             out.push(SymbolInfo {
-                name: class_name,
+                name: class_name.clone(),
                 kind: "class",
                 flat_name: traced.flat_name.to_string(),
                 pos: class_pos,
@@ -248,17 +262,26 @@ impl FileAnalysis {
                         continue;
                     }
                     let sym = &self.compiler.ctx.sym(member);
-                    let member_name = sym.name.to_java_string().to_string_lossy();
-                    if member_name.is_empty() || member_name.starts_with('<') {
-                        // Nameless/synthetic members (synthetic lambda bodies,
-                        // generated constructors) are not outline entries.
+                    let raw_name = sym.name.to_java_string().to_string_lossy();
+                    if raw_name.is_empty() || (raw_name.starts_with('<') && raw_name != "<init>") {
+                        // Nameless/synthetic members are not outline entries.
                         continue;
                     }
-                    let kind = match sym.kind_data {
-                        SymbolKind::MethodSymbol { .. } => "method",
-                        SymbolKind::VarSymbol { .. } => "field",
-                        SymbolKind::ClassSymbol { .. } => "nested",
-                        _ => "member",
+                    let is_constructor = raw_name == "<init>";
+                    let member_name = if is_constructor {
+                        class_name.to_string()
+                    } else {
+                        raw_name.to_string()
+                    };
+                    let kind = if is_constructor {
+                        "constructor"
+                    } else {
+                        match sym.kind_data {
+                            SymbolKind::MethodSymbol { .. } => "method",
+                            SymbolKind::VarSymbol { .. } => "field",
+                            SymbolKind::ClassSymbol { .. } => "nested",
+                            _ => "member",
+                        }
                     };
                     let member_pos = match &sym.kind_data {
                         SymbolKind::VarSymbol { pos, .. } => *pos,
@@ -267,6 +290,19 @@ impl FileAnalysis {
                     let member_pos = crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, member)
                         .map(|position| position as i32)
                         .unwrap_or(member_pos);
+                    // Compiler-synthesised members: record/enum methods carry
+                    // the generated-member flag; `values`/`valueOf` point at
+                    // the enum (no own source position).
+                    let generated = matches!(&sym.kind_data, SymbolKind::MethodSymbol { .. })
+                        && (sym.flags_field & (0x2000_0000_0000_0000_u64 as i64)) != 0;
+                    let enum_synthetic = class_is_enum
+                        && matches!(raw_name.as_str(), "values" | "valueOf")
+                        && sym.pos.get() == class_pos;
+                    let enum_synthetic =
+                        class_is_enum && matches!(raw_name.as_str(), "values" | "valueOf");
+                    if generated || enum_synthetic {
+                        continue;
+                    }
                     let detail = decl_trees
                         .get(&member)
                         .and_then(|tree| match kind {
