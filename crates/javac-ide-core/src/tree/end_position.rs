@@ -139,57 +139,68 @@ fn token_end(ctx: &CompilerContext, text: &str, tree: TreeId) -> i32 {
     crate::analysis::positions::byte_to_utf16(text, byte + length) as i32
 }
 
-/// Structural closure for the node's first bracket group (`(`/`[`/`{`),
-/// stopping at a depth-0 semicolon or brace. Used by the expression end.
+/// Structural closure for the node's bracket groups (`(`/`[`/`{`),
+/// stopping at a depth-0 semicolon or unmatched brace. Returns the end of the
+/// last closed group (array initializers have `[...]` then `{...}`).
 fn closing_end(ctx: &CompilerContext, text: &str, tree: TreeId) -> i32 {
+    // NOPOS/0 nodes must not scan from the file start: they would hit the
+    // enclosing class body brace.
+    if ctx.tree(tree).pos <= 0 {
+        return 0;
+    }
     let pos = ctx.tree(tree).pos.max(0) as usize;
     let start_byte = crate::analysis::positions::utf16_to_byte_snapped(text, pos);
     let start_char = text[..start_byte].chars().count();
     let masked = crate::analysis::inspections::mask_non_code(text);
     let mut depth = 0usize;
-    let mut opened = false;
+    let mut last_close = 0i32;
     for (masked_char, (byte, _original)) in masked
         .chars()
         .skip(start_char)
         .zip(text.char_indices().skip(start_char))
     {
         match masked_char {
-            '(' | '[' | '{' => {
-                if depth == 0 && !opened {
-                    opened = true;
-                }
-                depth += 1;
-            }
+            '(' | '[' | '{' => depth += 1,
             ')' | ']' | '}' => {
                 if depth == 0 {
-                    return 0;
+                    return last_close;
                 }
                 depth -= 1;
-                if opened && depth == 0 {
-                    return crate::analysis::positions::byte_to_utf16(text, byte + 1) as i32;
+                if depth == 0 {
+                    last_close = crate::analysis::positions::byte_to_utf16(text, byte + 1) as i32;
                 }
             }
-            ';' if depth == 0 => return 0,
+            ';' if depth == 0 => return last_close,
             _ => {}
         }
     }
-    0
+    last_close
 }
 
 /// A node's own end: structural for containers (class/method/block/variable/
 /// import/package), `pos + token length` for leaves, then max with children
 /// (the caller bubbles child ends up).
 fn own_end(ctx: &CompilerContext, text: &str, tree: TreeId) -> i32 {
+    if let Tag::VARDEF = ctx.tree(tree).tag {
+        // A parameter declaration (method/lambda) has no trailing `;`;
+        // scanning for one would run into the enclosing statement.
+        let is_parameter = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::VariableDecl {
+                sym: Some(sym), ..
+            } => ctx.sym(*sym).flags() & crate::code::flags::PARAMETER as i64 != 0,
+            _ => false,
+        };
+        return if is_parameter {
+            token_end(ctx, text, tree)
+        } else {
+            scan_end(ctx, text, tree)
+        };
+    }
     match ctx.tree(tree).tag {
-        Tag::CLASSDEF | Tag::METHODDEF | Tag::BLOCK | Tag::VARDEF | Tag::IMPORT | Tag::PACKAGEDEF => {
+        Tag::CLASSDEF | Tag::METHODDEF | Tag::BLOCK | Tag::IMPORT | Tag::PACKAGEDEF => {
             scan_end(ctx, text, tree)
         }
-        _ => {
-            let pos = ctx.tree(tree).pos.max(0) as usize;
-            let byte = crate::analysis::positions::utf16_to_byte_snapped(text, pos);
-            let len = token_len(text, byte);
-            crate::analysis::positions::byte_to_utf16(text, byte + len) as i32
-        }
+        _ => token_end(ctx, text, tree),
     }
 }
 
