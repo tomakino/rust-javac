@@ -17401,6 +17401,7 @@ class Sample {
                 line_map: None,
                 doc_comments: None,
                 end_positions: None,
+                name_positions: None,
             },
         });
         let env = Rc::new(Env {

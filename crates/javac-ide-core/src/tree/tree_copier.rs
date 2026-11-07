@@ -1296,6 +1296,7 @@ impl TreeCopier {
                 line_map: None,
                 doc_comments: None,
                 end_positions: None,
+                name_positions: None,
             },
         )
     }
@@ -2157,6 +2158,7 @@ mod tests {
                 line_map: None,
                 doc_comments: None,
                 end_positions: None,
+                name_positions: None,
             },
             0,
         );

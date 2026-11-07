@@ -478,6 +478,10 @@ pub enum TreeKind {
         /// An object encapsulating ending positions of source ranges indexed by
         /// the tree nodes they belong to. Defined only if option -Xjcov is set.
         end_positions: Option<Rc<dyn EndPosTable>>,
+        /// ide-core: name token positions (UTF-16) for declarations whose name
+        /// is a `Name` field rather than a tree (class/method/parameter),
+        /// filled by the parser (same shape as `end_positions`).
+        name_positions: Option<Rc<dyn EndPosTable>>,
     },
     /// Java: JCTree.JCPackageDecl
     PackageDecl {
@@ -1756,6 +1760,7 @@ mod tests {
             line_map: None,
             doc_comments: None,
             end_positions: None,
+            name_positions: None,
         };
         assert!(matches!(
             unit,

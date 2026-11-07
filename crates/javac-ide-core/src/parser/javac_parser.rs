@@ -61,7 +61,7 @@ use crate::parser::tokens::{Comment, CommentStyle, Token, TokenKind, dummy_token
 use crate::resources::compiler_properties::{errors, fragments, warnings};
 use crate::resources::diagnostic_contract::{DiagnosticArg, FragmentInfo, SourceArg};
 use crate::tree::doc_comment_table::DocCommentTable;
-use crate::tree::end_pos_table::EndPosTable;
+use crate::tree::end_pos_table::{EndPosTable, MapEndPosTable};
 use crate::tree::jc_tree::{LiteralValue, Tag, TreeKind};
 use crate::tree::tree_info;
 use crate::tree::tree_maker::TreeFactory;
@@ -239,6 +239,10 @@ pub struct JavacParser {
     names: Rc<Names>,
     /// End position mappings container.
     end_pos_table: Box<dyn AbstractEndPosTable>,
+    /// ide-core: name token positions (class/method/parameter names whose
+    /// name is a `Name` field rather than a tree), exposed on the compilation
+    /// unit as `name_positions`.
+    name_pos_table: Rc<MapEndPosTable>,
     /// Type annotations that have already been read but have not yet been used.
     type_annotations_pushed_back: List<TreeId>,
     /// If the parser notices extra annotations, then it either immediately
@@ -444,6 +448,7 @@ impl JavacParser {
         } else {
             Box::new(EmptyEndPosTable::new())
         };
+        let name_pos_table = Rc::new(MapEndPosTable::new());
         let doc_comments = JavacParser::new_doc_comment_table(keep_doc_comments, fac);
         let mut parser = JavacParser {
             parse_module_info,
@@ -454,6 +459,7 @@ impl JavacParser {
             preview: fac.preview.clone(),
             names: fac.names.clone(),
             end_pos_table,
+            name_pos_table,
             type_annotations_pushed_back: List::nil(),
             permit_type_annotations_push_back: false,
             allow_string_folding: fac.options.get_boolean_or("allowStringFolding", true),
@@ -5473,6 +5479,7 @@ impl JavacParser {
         if let TreeKind::Modifiers { flags, .. } = &mut ctx.tree_mut(mods).kind {
             *flags |= Flags::RECORD;
         }
+        let name_pos = self.token.pos;
         let name = self.type_name(ctx);
         let typarams = self.type_parameters_opt(ctx);
         let header_fields = self.formal_parameters_impl(ctx, false, true);
@@ -5569,6 +5576,7 @@ impl JavacParser {
                 .class_def(ctx, mods, name, typarams, None, implementing, defs_list);
         let result = self.to_p(result);
         self.attach(result, dc);
+        self.name_pos_table.store_end(result, name_pos);
         result
     }
 
@@ -5581,6 +5589,7 @@ impl JavacParser {
     ) -> TreeId {
         let pos = self.token.pos;
         self.accept(ctx, TokenKind::CLASS);
+        let name_pos = self.token.pos;
         let name = self.type_name(ctx);
         let typarams = self.type_parameters_opt(ctx);
         let mut extending = None;
@@ -5607,6 +5616,7 @@ impl JavacParser {
         );
         let result = self.to_p(result);
         self.attach(result, dc);
+        self.name_pos_table.store_end(result, name_pos);
         result
     }
 
@@ -5619,6 +5629,7 @@ impl JavacParser {
     ) -> TreeId {
         let pos = self.token.pos;
         self.accept(ctx, TokenKind::INTERFACE);
+        let name_pos = self.token.pos;
         let name = self.type_name(ctx);
         let typarams = self.type_parameters_opt(ctx);
         let mut extending = List::nil();
@@ -5634,6 +5645,7 @@ impl JavacParser {
             .class_def_permitting(ctx, mods, name, typarams, None, extending, permitting, defs);
         let result = self.to_p(result);
         self.attach(result, dc);
+        self.name_pos_table.store_end(result, name_pos);
         result
     }
 
@@ -6007,6 +6019,10 @@ impl JavacParser {
         );
         let result = self.to_p(result);
         self.attach(result, dc);
+        // The method-name token position is `pos` for ordinary methods (the
+        // caller sets it to the identifier); compact constructors keep their
+        // declaration start and are skipped by the name layer (`<init>`).
+        self.name_pos_table.store_end(result, pos);
         self.receiver_param = prev_receiver;
         result
     }
@@ -6391,8 +6407,14 @@ impl JavacParser {
             }
         }
         let table = std::mem::replace(&mut self.end_pos_table, Box::new(EmptyEndPosTable::new()));
-        if let TreeKind::CompilationUnit { end_positions, .. } = &mut ctx.tree_mut(toplevel).kind {
+        if let TreeKind::CompilationUnit {
+            end_positions,
+            name_positions,
+            ..
+        } = &mut ctx.tree_mut(toplevel).kind
+        {
             *end_positions = Some(Rc::from(table.boxed()));
+            *name_positions = Some(Rc::clone(&self.name_pos_table) as Rc<dyn EndPosTable>);
         }
         toplevel
     }
@@ -6671,6 +6693,7 @@ impl JavacParser {
     ) -> TreeId {
         let pos = self.token.pos;
         self.accept(ctx, TokenKind::ENUM);
+        let name_pos = self.token.pos;
         let name = self.type_name(ctx);
         let mut implementing = List::nil();
         if self.token.kind == TokenKind::IMPLEMENTS {
@@ -6687,6 +6710,7 @@ impl JavacParser {
                 .class_def(ctx, mods, name, List::nil(), None, implementing, defs);
         let result = self.to_p(result);
         self.attach(result, dc);
+        self.name_pos_table.store_end(result, name_pos);
         result
     }
 

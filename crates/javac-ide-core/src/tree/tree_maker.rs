@@ -197,6 +197,7 @@ impl TreeMaker {
                 line_map: None,
                 doc_comments: None,
                 end_positions: None,
+                name_positions: None,
             },
         );
         self.toplevel.set(Some(tree));

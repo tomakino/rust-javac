@@ -170,6 +170,34 @@ impl FileAnalysis {
         self.end_positions = None;
     }
 
+    /// Name token positions of the parsed unit for `source` (parser-filled).
+    pub(crate) fn name_positions_for(
+        &mut self,
+        source: &Path,
+    ) -> Option<std::rc::Rc<dyn crate::tree::end_pos_table::EndPosTable>> {
+        let target = PathBuf::from(canonical(source));
+        for index in 0..self.compiler.ctx.trees.len() {
+            let unit = crate::ids::TreeId::new(index as u32);
+            let (source_path, name_positions) = match &self.compiler.ctx.tree(unit).kind {
+                TreeKind::CompilationUnit {
+                    sourcefile: Some(file),
+                    name_positions,
+                    ..
+                } => (
+                    PathBuf::from(canonical(Path::new(
+                        &file.get_name().to_string_lossy().to_string(),
+                    ))),
+                    name_positions.clone(),
+                ),
+                _ => continue,
+            };
+            if source_path == target {
+                return name_positions;
+            }
+        }
+        None
+    }
+
     /// Filled end-position table for `source` (lazily built, cached).
     pub(crate) fn end_positions_for(
         &mut self,

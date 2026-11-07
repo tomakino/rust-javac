@@ -34,7 +34,7 @@ pub(crate) struct SelectionCache {
     pub text_hash: u64,
     pub parents: HashMap<TreeId, TreeId>,
     pub ranges: HashMap<TreeId, (i32, i32)>,
-    pub extra_ranges: Vec<(i32, i32)>,
+    pub name_ranges: Vec<(i32, i32)>,
 }
 
 impl FileAnalysis {
@@ -65,7 +65,9 @@ impl FileAnalysis {
             let Some(root) = self.latest_root_for(file) else {
                 return Vec::new();
             };
-            let mut collector = ChainCollector::new(text.clone());
+            let table = self.end_positions_for(file);
+            let name_positions = self.name_positions_for(file);
+            let mut collector = ChainCollector::new(text.clone(), table, name_positions);
             collector.scan(&mut self.compiler.ctx, Some(root));
             self.selection_cache.insert(
                 key.clone(),
@@ -73,7 +75,7 @@ impl FileAnalysis {
                     text_hash,
                     parents: collector.parents,
                     ranges: collector.ranges,
-                    extra_ranges: collector.extra_ranges,
+                    name_ranges: collector.name_ranges,
                 },
             );
         }
@@ -87,7 +89,7 @@ impl FileAnalysis {
                     &text,
                     *position,
                     &cache.ranges,
-                    &cache.extra_ranges,
+                    &cache.name_ranges,
                 )
             })
             .collect()
@@ -98,7 +100,7 @@ fn selection_range_for(
     text: &str,
     position: Position,
     ranges: &HashMap<TreeId, (i32, i32)>,
-    extra_ranges: &[(i32, i32)],
+    name_ranges: &[(i32, i32)],
 ) -> SelectionRange {
     let byte = line_offset(
         text,
@@ -112,7 +114,7 @@ fn selection_range_for(
     let mut candidates: Vec<(i32, i32)> = ranges
         .values()
         .copied()
-        .chain(extra_ranges.iter().copied())
+        .chain(name_ranges.iter().copied())
         .filter(|(start, end)| *start >= 0 && *end > *start && *start <= cursor && cursor <= *end)
         .collect();
     if candidates.is_empty() {
@@ -231,13 +233,21 @@ struct ChainCollector {
     parents: HashMap<TreeId, TreeId>,
     children: HashMap<TreeId, Vec<TreeId>>,
     ranges: HashMap<TreeId, (i32, i32)>,
-    extra_ranges: Vec<(i32, i32)>,
+    name_ranges: Vec<(i32, i32)>,
     stack: Vec<TreeId>,
     seen: HashSet<TreeId>,
+    /// Filled end-position table (declaration + expression ends).
+    table: Option<std::rc::Rc<crate::tree::end_pos_table::MapEndPosTable>>,
+    /// Parser-recorded name token positions (AST name layer).
+    name_positions: Option<std::rc::Rc<dyn crate::tree::end_pos_table::EndPosTable>>,
 }
 
 impl ChainCollector {
-    fn new(text: String) -> Self {
+    fn new(
+        text: String,
+        table: Option<std::rc::Rc<crate::tree::end_pos_table::MapEndPosTable>>,
+        name_positions: Option<std::rc::Rc<dyn crate::tree::end_pos_table::EndPosTable>>,
+    ) -> Self {
         let masked = crate::analysis::inspections::mask_non_code(&text);
         Self {
             mask: masked.chars().collect(),
@@ -245,193 +255,22 @@ impl ChainCollector {
             parents: HashMap::new(),
             children: HashMap::new(),
             ranges: HashMap::new(),
-            extra_ranges: Vec::new(),
             stack: Vec::new(),
             seen: HashSet::new(),
+            table,
+            name_positions,
+            name_ranges: Vec::new(),
         }
     }
 
-    fn end_of(&self, ctx: &CompilerContext, tree: TreeId) -> i32 {
-        let start = self.ranges.get(&tree).map(|range| range.0).unwrap_or(-1);
-        let mut end = self
-            .children
-            .get(&tree)
-            .and_then(|children| {
-                children
-                    .iter()
-                    .filter_map(|child| self.ranges.get(child).map(|range| range.1))
-                    .max()
-            })
-            .unwrap_or(-1);
-        let known = crate::tree::tree_info::get_end_pos(ctx, Some(tree), None);
-        if known > start {
-            end = end.max(known);
-        }
-        if end <= start {
-            end = self.token_end(start);
-        }
-        end
+    fn end_of(&self, _ctx: &CompilerContext, tree: TreeId) -> i32 {
+        // End comes from the filled end-position table only.
+        let Some(table) = &self.table else {
+            return -1;
+        };
+        table.get_expression_end(tree).max(table.get_end_pos(tree))
     }
 
-    fn token_end(&self, start: i32) -> i32 {
-        if start < 0 {
-            return start;
-        }
-        let Some(byte) = utf16_to_byte(&self.text, start as usize) else {
-            return start;
-        };
-        let rest = &self.text[byte..];
-        let Some(first) = rest.chars().next() else {
-            return start;
-        };
-        let is_ident = |ch: char| ch.is_alphanumeric() || ch == '_' || ch == '$';
-        let mut consumed = first.len_utf8();
-        if is_ident(first) {
-            for (index, ch) in rest.char_indices().skip(1) {
-                if is_ident(ch) {
-                    consumed = index + ch.len_utf8();
-                } else {
-                    break;
-                }
-            }
-        } else if first == '"' || first == '\''
-        {
-            let quote = first;
-            let mut chars = rest.char_indices().skip(1);
-            while let Some((index, ch)) = chars.next() {
-                if ch == '\\' {
-                    let _ = chars.next();
-                    continue;
-                }
-                if ch == quote {
-                    consumed = index + ch.len_utf8();
-                    break;
-                }
-            }
-        }
-        start + rest[..consumed]
-            .chars()
-            .map(|ch| ch.len_utf16() as i32)
-            .sum::<i32>()
-    }
-
-    fn close_brackets(&self, start: i32, end: i32) -> i32 {
-        let Some(start_char) = char_index_of_utf16(&self.text, start) else {
-            return end;
-        };
-        let Some(end_char) = char_index_of_utf16(&self.text, end) else {
-            return end;
-        };
-        if end_char <= start_char || end_char > self.mask.len() {
-            return end;
-        }
-        let mut depth = (0i32, 0i32, 0i32);
-        for ch in &self.mask[start_char..end_char] {
-            match ch {
-                '(' => depth.0 += 1,
-                ')' => depth.0 -= 1,
-                '[' => depth.1 += 1,
-                ']' => depth.1 -= 1,
-                '{' => depth.2 += 1,
-                '}' => depth.2 -= 1,
-                _ => {}
-            }
-        }
-        if depth.0 <= 0 && depth.1 <= 0 && depth.2 <= 0 {
-            return end;
-        }
-        let mut pending = depth;
-        for (index, ch) in self.mask.iter().enumerate().skip(end_char) {
-            match ch {
-                '(' => pending.0 += 1,
-                ')' => {
-                    pending.0 -= 1;
-                    if pending.0 < 0 {
-                        pending.0 = 0;
-                    }
-                }
-                '[' => pending.1 += 1,
-                ']' => {
-                    pending.1 -= 1;
-                    if pending.1 < 0 {
-                        pending.1 = 0;
-                    }
-                }
-                '{' => pending.2 += 1,
-                '}' => {
-                    pending.2 -= 1;
-                    if pending.2 < 0 {
-                        pending.2 = 0;
-                    }
-                }
-                _ => {}
-            }
-            if pending.0 <= 0 && pending.1 <= 0 && pending.2 <= 0 {
-                return utf16_of_char_index(&self.text, index + 1);
-            }
-        }
-        end
-    }
-
-    /// Consume one closing token right after `end` (skipping whitespace).
-    fn close_trailing(&self, end: i32, closer: char) -> i32 {
-        let Some(mut index) = char_index_of_utf16(&self.text, end) else {
-            return end;
-        };
-        while index < self.mask.len() && self.mask[index].is_whitespace() {
-            index += 1;
-        }
-        if self.mask.get(index) == Some(&closer) {
-            return utf16_of_char_index(&self.text, index + 1);
-        }
-        end
-    }
-
-    /// Consume an opener that starts right after `end` (empty argument lists,
-    /// empty method parameter lists) and its matching closer.
-    fn close_after(&self, end: i32, opener: char, closer: char) -> i32 {
-        let Some(mut index) = char_index_of_utf16(&self.text, end) else {
-            return end;
-        };
-        while index < self.mask.len() && self.mask[index].is_whitespace() {
-            index += 1;
-        }
-        if self.mask.get(index) != Some(&opener) {
-            return end;
-        }
-        let mut depth = 0i32;
-        while index < self.mask.len() {
-            let ch = self.mask[index];
-            if ch == opener {
-                depth += 1;
-            } else if ch == closer {
-                depth -= 1;
-                if depth == 0 {
-                    return utf16_of_char_index(&self.text, index + 1);
-                }
-            }
-            index += 1;
-        }
-        end
-    }
-
-    /// A `>`-closing type (type apply/parameter) or `]`-closing array.
-    fn close_type(&self, tree: TreeId, end: i32) -> i32 {
-        let _ = tree;
-        let Some(mut index) = char_index_of_utf16(&self.text, end) else {
-            return end;
-        };
-        while index < self.mask.len() {
-            match self.mask[index] {
-                '>' | ']' => {
-                    index += 1;
-                }
-                ' ' | '\t' | '\r' | '\n' => index += 1,
-                _ => break,
-            }
-        }
-        utf16_of_char_index(&self.text, index)
-    }
 }
 
 impl TreeScannerVisitor for ChainCollector {
@@ -446,19 +285,13 @@ impl TreeScannerVisitor for ChainCollector {
             self.parents.insert(tree, *parent);
             self.children.entry(*parent).or_default().push(tree);
         }
-        let (start, declared_name, is_type, needs_paren, needs_brace, is_decl, is_member, trailing_closer) = {
+        let (start, declared_name, is_member) = {
             let node = ctx.tree(tree);
             let mut start = node.pos;
-            // Declarations start before their name (modifiers/return type);
-            // expressions start at their operator. Use the smaller of the
-            // raw pos and the semantic start so both cases are exact.
             let semantic = get_start_pos(ctx, tree);
             if semantic >= 0 && (start < 0 || semantic < start) {
                 start = semantic;
             }
-            // Class/method names are `Name` fields, not trees: record the
-            // declared name span so "select class name" has its own layer
-            // (the same unambiguous helper the index uses).
             let declared_name = match &node.kind {
                 TreeKind::ClassDecl { name, .. }
                 | TreeKind::MethodDecl { name, .. }
@@ -468,85 +301,46 @@ impl TreeScannerVisitor for ChainCollector {
                 }
                 _ => None,
             };
-            let is_type = matches!(
-                node.kind,
-                TreeKind::TypeApply { .. }
-                    | TreeKind::TypeParameter { .. }
-                    | TreeKind::ArrayTypeTree { .. }
-            );
-            let needs_paren = matches!(
-                node.kind,
-                TreeKind::MethodInvocation { .. }
-                    | TreeKind::NewClass { .. }
-                    | TreeKind::MethodDecl { .. }
-                    | TreeKind::Annotation { .. }
-            );
-            let needs_brace = matches!(node.kind, TreeKind::NewArray { .. });
-            let trailing_closer = match &node.kind {
-                TreeKind::Parens { .. } => Some(')'),
-                TreeKind::ArrayAccess { .. } => Some(']'),
-                TreeKind::Block { .. } => Some('}'),
-                _ => None,
-            };
             let is_member = matches!(node.kind, TreeKind::FieldAccess { .. });
-            let is_decl = matches!(
-                node.kind,
-                TreeKind::ClassDecl { .. }
-                    | TreeKind::MethodDecl { .. }
-                    | TreeKind::VariableDecl { .. }
-                    | TreeKind::FieldAccess { .. }
-            );
-            (
-                start,
-                declared_name,
-                is_type,
-                needs_paren,
-                needs_brace,
-                is_decl,
-                is_member,
-                trailing_closer,
-            )
+            (start, declared_name, is_member)
         };
-        let mut name_end = start;
+        // Name layer: parser-recorded name token position (AST) first; the
+        // single text helper is only the fallback when the table has no entry
+        // (parameters/enum constants are not parser-recorded yet).
         if let Some(name) = declared_name {
             let name: &str = &name;
             if !name.is_empty() && name != "<init>" && start >= 0 {
-                let name_start = if is_member {
-                    member_name_start(&self.text, start as u32, name)
-                } else {
-                    declared_name_start(&self.text, start as u32, name)
+                let recorded = self.name_positions.as_ref().and_then(|table| {
+                    let pos = table.get_end_pos(tree);
+                    (pos > 0).then_some(pos as u32)
+                });
+                let name_start = match recorded {
+                    Some(pos) => pos,
+                    None => match &ctx.tree(tree).kind {
+                        // VariableDecl carries the parser-recorded name position
+                        // (fields/locals/parameters).
+                        TreeKind::VariableDecl { decl_pos, .. } if *decl_pos > 0 => {
+                            *decl_pos as u32
+                        }
+                        _ => {
+                            if is_member {
+                                member_name_start(&self.text, start as u32, name)
+                            } else {
+                                declared_name_start(&self.text, start as u32, name)
+                            }
+                        }
+                    },
                 };
                 let width = name.encode_utf16().count() as u32;
-                self.extra_ranges
+                self.name_ranges
                     .push((name_start as i32, (name_start + width) as i32));
-                name_end = (name_start + width) as i32;
             }
         }
         self.ranges.insert(tree, (start, start));
         self.stack.push(tree);
         accept(ctx, tree, self);
         self.stack.pop();
-        let mut end = self.end_of(ctx, tree);
-        if is_decl {
-            end = end.max(name_end);
-        }
-        if is_type {
-            end = end.max(self.close_type(tree, end));
-        }
-        if needs_paren {
-            let closed = self.close_after(end, '(', ')');
-            end = if closed == end {
-                self.close_trailing(end, ')')
-            } else {
-                closed
-            };
-        }
-        if needs_brace {
-            end = end.max(self.close_trailing(end, '}'));
-        }
-        if let Some(closer) = trailing_closer {
-            end = end.max(self.close_trailing(end, closer));
-        }
+        let end = self.end_of(ctx, tree);
         if let Some(range) = self.ranges.get_mut(&tree) {
             range.1 = end;
         }
