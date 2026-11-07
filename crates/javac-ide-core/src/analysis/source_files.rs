@@ -17,6 +17,25 @@ pub(crate) fn zip_entry(archive: &ZipArchive, relative: &str) -> Option<String> 
         .find(|name| name == relative || name.ends_with(&suffix))
 }
 
+/// Source-level simple name of a binary class name:
+/// `java.util.Map$Entry` -> `Entry`.
+pub(crate) fn simple_class_name(class_flat: &str) -> &str {
+    class_flat.rsplit(['.', '$']).next().unwrap_or(class_flat)
+}
+
+/// Source file holding `class_flat`'s declaration, relative to a source root:
+/// `java.lang.RuntimeException` -> `java/lang/RuntimeException.java`;
+/// a nested class lives in its outermost class's file (`Map$Entry` ->
+/// `java/util/Map.java`).
+pub(crate) fn source_relative_path(class_flat: &str) -> Option<String> {
+    // Nested classes live in the outer class's source file.
+    let file_class = class_flat.split('$').next().unwrap_or(class_flat);
+    if file_class.is_empty() {
+        return None;
+    }
+    Some(format!("{}.java", file_class.replace('.', "/")))
+}
+
 /// Extract `bytes` under `<cwd>/<output_dir>/<base_dir>/<entry_name>`.
 pub(crate) fn extract(
     bytes: &[u8],

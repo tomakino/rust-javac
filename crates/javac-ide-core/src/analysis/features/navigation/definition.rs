@@ -3,9 +3,58 @@
 use std::path::{Path, PathBuf};
 
 use super::super::super::positions::{
-    in_literal_or_comment, line_offset, offset_to_line_col, word_at,
+    byte_to_utf16, in_literal_or_comment, line_offset, offset_to_line_col, word_at,
 };
 use super::super::super::{canonical, FileAnalysis};
+use super::is_system_module_class;
+use crate::code::scope::LookupKind;
+use crate::code::symbol::SymbolKind;
+use crate::compiler_context::CompilerContext;
+use crate::ids::{SymbolId, TreeId};
+use crate::tree::jc_tree::TreeKind;
+use crate::tree::tree_scanner::TreeScannerVisitor;
+
+/// A `super(...)` constructor call: the `super` identifier and the number of
+/// arguments written at the call site.
+struct SuperConstructorCall {
+    method: TreeId,
+    argument_count: usize,
+}
+
+/// Finds the method declaration whose body contains `target`.
+struct EnclosingMethodFinder {
+    target: TreeId,
+    methods: Vec<SymbolId>,
+    found: Option<SymbolId>,
+}
+
+impl TreeScannerVisitor for EnclosingMethodFinder {
+    fn scan(&mut self, ctx: &mut crate::compiler_context::CompilerContext, tree: Option<TreeId>) {
+        let Some(tree) = tree else {
+            return;
+        };
+        if self.found.is_some() {
+            return;
+        }
+        let method = match &ctx.tree(tree).kind {
+            TreeKind::MethodDecl { sym: Some(sym), .. } => Some(*sym),
+            _ => None,
+        };
+        if let Some(method) = method {
+            self.methods.push(method);
+        }
+        if tree == self.target {
+            self.found = self.methods.last().copied();
+        } else {
+            crate::tree::jc_tree::accept(ctx, tree, self);
+        }
+        if method.is_some() {
+            self.methods.pop();
+        }
+    }
+}
+
+crate::tree::tree_scanner::tree_scanner_visitor_delegate!(EnclosingMethodFinder);
 
 impl FileAnalysis {
     /// Go to definition.
@@ -25,6 +74,12 @@ impl FileAnalysis {
         // Strings and comments are not code: no navigation from there.
         if in_literal_or_comment(&text, line_offset(&text, line, column)) {
             return None;
+        }
+        // `super(...)` calls the superclass constructor. The compiler already
+        // attributed the `super` identifier to that constructor, so the
+        // definition is the constructor declaration (never the `super` token).
+        if let Some(call) = self.super_constructor_call_at(&text, position) {
+            return self.super_constructor_location(&call);
         }
         // Compiler-attributed symbol first: parameters/locals must win over a
         // same-named field. Only symbols declared in this arena (an AST name
@@ -118,8 +173,279 @@ impl FileAnalysis {
         None
     }
 
-    /// Location in a classpath `-sources.jar`, when `symbol` resolves to a
-    /// class outside the project sources.
+    /// A `super(...)` constructor call under the cursor, when there is one.
+    ///
+    /// Only the bare form is a constructor call: `super.m()` / `X.super()`
+    /// use a field-access method expression and are member selections. The
+    /// match is on the attributed compiler tree, not on the raw text.
+    fn super_constructor_call_at(
+        &self,
+        text: &str,
+        position: javac_analysis_api::Position,
+    ) -> Option<SuperConstructorCall> {
+        let line = position.line as usize + 1;
+        let column = position.column as usize + 1;
+        if word_at(text, line, column)? != "super" {
+            return None;
+        }
+        // `line_offset`/`word_start_offset` work in bytes; compiler tree
+        // positions are Java char (UTF-16) offsets.
+        let cursor = line_offset(text, line, column);
+        let start =
+            byte_to_utf16(text, super::source::word_start_offset(text, cursor)) as i32;
+        let ctx = &self.compiler.ctx;
+        for tree in ctx.trees.iter() {
+            let TreeKind::MethodInvocation {
+                meth: Some(method),
+                args,
+                ..
+            } = &tree.kind
+            else {
+                continue;
+            };
+            if !matches!(&ctx.tree(*method).kind, TreeKind::Ident { .. }) {
+                continue;
+            }
+            if ctx.tree(*method).pos != start {
+                continue;
+            }
+            let is_super = crate::tree::tree_info::name(ctx, *method)
+                .is_some_and(|name| name.to_java_string().to_string_lossy() == "super");
+            if !is_super {
+                continue;
+            }
+            return Some(SuperConstructorCall {
+                method: *method,
+                argument_count: args.size().max(0) as usize,
+            });
+        }
+        None
+    }
+
+    /// Declaration of the superclass constructor called by `super(...)`.
+    fn super_constructor_location(
+        &mut self,
+        call: &SuperConstructorCall,
+    ) -> Option<javac_analysis_api::Location> {
+        // Prefer the constructor Attr resolved for `super(...)`: it is the
+        // exact overload, including parents from the JDK/class path whose
+        // declaration has no tree in this arena.
+        let resolved = crate::tree::tree_info::symbol(&self.compiler.ctx, call.method).filter(
+            |symbol| {
+                matches!(
+                    self.compiler.ctx.sym(*symbol).kind_data,
+                    SymbolKind::MethodSymbol { .. }
+                )
+            },
+        );
+        let (parent, constructor) = match resolved {
+            Some(constructor) => {
+                let parent = self.compiler.ctx.sym(constructor).owner?;
+                if !matches!(
+                    self.compiler.ctx.sym(parent).kind_data,
+                    SymbolKind::ClassSymbol { .. }
+                ) {
+                    return None;
+                }
+                (parent, Some(constructor))
+            }
+            // Unattributed (partial/broken source): walk the declaration tree
+            // to the enclosing class, take its supertype, and search that
+            // class's constructors by the call's argument count.
+            None => {
+                let current = self.enclosing_class_of(call.method)?;
+                let parent = self.direct_superclass(current)?;
+                let constructor = self.constructor_with_arity(parent, call.argument_count);
+                (parent, constructor)
+            }
+        };
+        if let Some(constructor) = constructor
+            && let Some(location) =
+                self.declaration_location(constructor, Some(call.argument_count))
+        {
+            return Some(location);
+        }
+        // Degrade to the parent class declaration instead of returning None.
+        self.declaration_location(parent, None)
+    }
+
+    /// Location of a declared symbol: the AST name position when its
+    /// declaration tree is in this arena, otherwise the external sources.
+    fn declaration_location(
+        &mut self,
+        symbol: SymbolId,
+        arity: Option<usize>,
+    ) -> Option<javac_analysis_api::Location> {
+        if let Some(location) = self.arena_declaration_location(symbol) {
+            return Some(location);
+        }
+        self.external_declaration_location(symbol, arity)
+    }
+
+    /// Name position of a declaration tree in the current arena (project
+    /// sources, including overlays). `None` for class-path/JDK symbols: their
+    /// declaration has no tree here.
+    fn arena_declaration_location(
+        &self,
+        symbol: SymbolId,
+    ) -> Option<javac_analysis_api::Location> {
+        let position =
+            crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, symbol)?;
+        let source = self.declaring_class(symbol).and_then(|class| {
+            match &self.compiler.ctx.sym(class).kind_data {
+                SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile.clone(),
+                _ => None,
+            }
+        })?;
+        let path = PathBuf::from(source.get_name().to_string_lossy());
+        let key = PathBuf::from(canonical(&path));
+        let text = self
+            .texts
+            .get(&key)
+            .cloned()
+            .or_else(|| std::fs::read_to_string(&path).ok())?;
+        let (line, column) = offset_to_line_col(&text, position as usize);
+        Some(javac_analysis_api::Location {
+            file: path,
+            range: javac_analysis_api::Range::point(javac_analysis_api::Position::new(
+                line, column,
+            )),
+        })
+    }
+
+    /// Location of a symbol declared outside the project sources: JDK classes
+    /// resolve through `src.zip`, class-path classes through `-sources.jar`.
+    ///
+    /// `arity` selects a constructor overload by declared parameter count.
+    fn external_declaration_location(
+        &mut self,
+        symbol: SymbolId,
+        arity: Option<usize>,
+    ) -> Option<javac_analysis_api::Location> {
+        let class = self.declaring_class(symbol)?;
+        let is_constructor = self
+            .compiler
+            .ctx
+            .sym(symbol)
+            .name
+            .to_java_string()
+            .to_string_lossy()
+            == "<init>";
+        let flat = self.compiler.ctx.sym(class).flat_name().to_string();
+        let simple = super::super::super::source_files::simple_class_name(&flat);
+        let is_jdk = is_system_module_class(&mut self.compiler.ctx, class);
+        if is_jdk {
+            let jdk_src = super::super::super::jdk_sources::default_jdk_src()?;
+            if is_constructor
+                && let Some(arity) = arity
+                && let Some(location) =
+                    super::super::super::jdk_sources::jdk_constructor_location(
+                        &jdk_src,
+                        &flat,
+                        arity,
+                        &self.config.output_dir,
+                    )
+            {
+                return Some(location);
+            }
+            return super::super::super::jdk_sources::jdk_class_location(
+                &jdk_src,
+                &flat,
+                &self.config.output_dir,
+            );
+        }
+        if is_constructor
+            && let Some(arity) = arity
+            && let Some(location) =
+                crate::analysis::external_sources::external_constructor_location(
+                    &flat,
+                    arity,
+                    &self.config.class_path,
+                    &self.config.output_dir,
+                )
+        {
+            return Some(location);
+        }
+        crate::analysis::external_sources::external_source_location(
+            &flat,
+            simple,
+            &self.config.class_path,
+            &self.config.output_dir,
+        )
+    }
+
+    /// The class symbol that declares `symbol`, following the owner chain.
+    fn declaring_class(&self, symbol: SymbolId) -> Option<SymbolId> {
+        let mut current = symbol;
+        for _ in 0..16 {
+            let sym = self.compiler.ctx.sym(current);
+            if matches!(sym.kind_data, SymbolKind::ClassSymbol { .. }) {
+                return Some(current);
+            }
+            current = sym.owner?;
+        }
+        None
+    }
+
+    /// The class symbol of the method declaration whose body contains
+    /// `target` (the `super(...)` call is always inside a constructor).
+    fn enclosing_class_of(&mut self, target: TreeId) -> Option<SymbolId> {
+        let mut finder = EnclosingMethodFinder {
+            target,
+            methods: Vec::new(),
+            found: None,
+        };
+        for index in 0..self.compiler.ctx.trees.len() {
+            let unit = TreeId::new(index as u32);
+            if !matches!(
+                self.compiler.ctx.tree(unit).kind,
+                TreeKind::CompilationUnit { .. }
+            ) {
+                continue;
+            }
+            finder.scan(&mut self.compiler.ctx, Some(unit));
+            if finder.found.is_some() {
+                break;
+            }
+        }
+        let method = finder.found?;
+        let owner = self.compiler.ctx.sym(method).owner?;
+        matches!(
+            self.compiler.ctx.sym(owner).kind_data,
+            SymbolKind::ClassSymbol { .. }
+        )
+        .then_some(owner)
+    }
+
+    /// The direct superclass of `class` (the `super(...)` target site).
+    fn direct_superclass(&mut self, class: SymbolId) -> Option<SymbolId> {
+        let ty = self.compiler.ctx.sym(class).ty?;
+        let types = self.compiler.types.clone();
+        let syms = self.compiler.syms.clone();
+        let super_ty = types.supertype(&mut self.compiler.ctx, &syms, ty, None);
+        self.compiler.ctx.typ(super_ty).tsym
+    }
+
+    /// The unique constructor of `class` with `arity` declared parameters.
+    fn constructor_with_arity(&mut self, class: SymbolId, arity: usize) -> Option<SymbolId> {
+        let scope = self.compiler.ctx.sym(class).members()?;
+        let members =
+            self.compiler
+                .ctx
+                .scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true);
+        let mut matching = members.into_iter().filter(|member| {
+            let symbol = self.compiler.ctx.sym(*member);
+            let SymbolKind::MethodSymbol { params, .. } = &symbol.kind_data else {
+                return false;
+            };
+            symbol.name.to_java_string().to_string_lossy() == "<init>"
+                && params.size().max(0) as usize == arity
+        });
+        let first = matching.next()?;
+        // Same-arity overloads cannot be told apart without attribution.
+        matching.next().is_none().then_some(first)
+    }
+
     fn external_symbol_location(
         &self,
         symbol: crate::ids::SymbolId,
@@ -333,3 +659,4 @@ impl FileAnalysis {
         locations
     }
 }
+
