@@ -535,19 +535,23 @@ impl WorkspaceService for Workspace {
     fn document_symbols(&mut self, file: &Path) -> Vec<DocumentSymbol> {
         self.ensure_index();
         let snapshot = self.index.snapshot();
-        if !self.is_dirty() && !snapshot.files.is_empty()
+        let mut symbols = Vec::new();
+        if !self.is_dirty()
+            && !snapshot.files.is_empty()
             && let Some(file_id) = snapshot.file_id_for_path(file)
             && let Some(text) = self.text_of_id(file_id)
         {
-            let symbols = query::document_symbols(&snapshot, file_id, &text);
-            if !symbols.is_empty() {
-                return symbols;
-            }
+            symbols = query::document_symbols(&snapshot, file_id, &text);
         }
-        self.with_analysis(file, None, |analysis, _| {
-            analysis.document_symbols_impl(file)
-        })
-        .unwrap_or_default()
+        if symbols.is_empty() {
+            symbols = self
+                .with_analysis(file, None, |analysis, _| analysis.document_symbols_impl(file))
+                .unwrap_or_default();
+        }
+        // Defense in depth: never hand a nameless symbol to the client (VS Code
+        // rejects `name must not be falsy`).
+        retain_named_symbols(&mut symbols);
+        symbols
     }
 
     fn invalidate(&mut self, paths: &[PathBuf]) {
@@ -661,6 +665,13 @@ fn resolve_import_source(
     Some(file_uri(&target))
 }
 
+/// Drop nameless outline entries (recursively); VS Code rejects them.
+fn retain_named_symbols(symbols: &mut Vec<javac_analysis_api::DocumentSymbol>) {
+    symbols.retain(|symbol| !symbol.name.trim().is_empty());
+    for symbol in symbols {
+        retain_named_symbols(&mut symbol.children);
+    }
+}
 fn file_uri(path: &Path) -> String {
     // Percent-encode everything except URI path characters, so Chinese names,
     // spaces, `#` and `%` survive as a valid file URI.

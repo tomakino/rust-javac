@@ -26,6 +26,27 @@ impl FileAnalysis {
         if in_literal_or_comment(&text, line_offset(&text, line, column)) {
             return None;
         }
+        // Compiler-attributed symbol first: parameters/locals must win over a
+        // same-named field. Only symbols declared in this arena (an AST name
+        // position exists) are answered here; class-path symbols keep the
+        // external-source path below.
+        if let Some((symbol, _)) = self.symbol_id_at(file, position) {
+            if let Some(pos) =
+                crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, symbol)
+            {
+                let (symbol_line, symbol_column) = offset_to_line_col(&text, pos as usize);
+                return Some(javac_analysis_api::Location {
+                    file: file.to_path_buf(),
+                    range: javac_analysis_api::Range::point(javac_analysis_api::Position::new(
+                        symbol_line,
+                        symbol_column,
+                    )),
+                });
+            }
+            if let Some(location) = self.external_symbol_location(symbol) {
+                return Some(location);
+            }
+        }
         if let Some(symbol) = FileAnalysis::symbol_at(self, file, line, column) {
             if symbol.pos >= 0 {
                 let (symbol_line, symbol_column) =
@@ -62,6 +83,21 @@ impl FileAnalysis {
         &self,
         symbol: crate::ids::SymbolId,
     ) -> Option<javac_analysis_api::Location> {
+        // Only class members resolve through external sources. Parameters and
+        // locals belong to their method; matching them by name against a JDK
+        // source file would pick a same-named field (Writer.java `lock`).
+        let value_kind = &self.compiler.ctx.sym(symbol).kind_data;
+        if matches!(value_kind, crate::code::symbol::SymbolKind::VarSymbol { .. }) {
+            let owner_is_method = self.compiler.ctx.sym(symbol).owner.is_some_and(|owner| {
+                matches!(
+                    self.compiler.ctx.sym(owner).kind_data,
+                    crate::code::symbol::SymbolKind::MethodSymbol { .. }
+                )
+            });
+            if owner_is_method {
+                return None;
+            }
+        }
         let mut current = symbol;
         for _ in 0..16 {
             let sym = self.compiler.ctx.sym(current);

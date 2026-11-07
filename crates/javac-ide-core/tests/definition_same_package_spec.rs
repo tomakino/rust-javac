@@ -117,6 +117,7 @@ fn definition_works_on_a_partial_index() {
 }
 #[test]
 fn definition_without_an_index_lands_on_the_declared_name() {
+    platform_dir();
     let root = fixture("fallback-position");
     let path = root.join("A.java");
     std::fs::write(&path, "class A {\n    B b;\n}\nclass B {}\n").unwrap();

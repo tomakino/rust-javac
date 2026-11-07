@@ -328,10 +328,9 @@ pub(crate) fn name_start_of_symbol(
     ctx: &crate::compiler_context::CompilerContext,
     symbol: crate::ids::SymbolId,
 ) -> Option<u32> {
+    // `target` may be NOPOS for parameters; the declaration tree is matched by
+    // `sym`/`decl_pos` below, so a missing position is not fatal.
     let target = ctx.sym(symbol).pos.get();
-    if target < 0 {
-        return None;
-    }
     let mut name_tables: Vec<std::rc::Rc<dyn crate::tree::end_pos_table::EndPosTable>> = Vec::new();
     for index in 0..ctx.trees.len() {
         let unit = crate::ids::TreeId::new(index as u32);
@@ -343,12 +342,13 @@ pub(crate) fn name_start_of_symbol(
             name_tables.push(std::rc::Rc::clone(table));
         }
     }
+    // The declaring tree is identified by its `sym` (unique per declaration);
+    // `VariableDecl` carries the name token in `decl_pos` (`sym.pos` may point
+    // at the type instead), class/method symbols point at the declaration.
+    let mut candidate = None;
     for index in 0..ctx.trees.len() {
         let tree = crate::ids::TreeId::new(index as u32);
-        if ctx.tree(tree).pos != target {
-            continue;
-        }
-        let declared_here = match &ctx.tree(tree).kind {
+        let owner = match &ctx.tree(tree).kind {
             crate::tree::jc_tree::TreeKind::ClassDecl {
                 sym: Some(owner), ..
             }
@@ -357,24 +357,110 @@ pub(crate) fn name_start_of_symbol(
             }
             | crate::tree::jc_tree::TreeKind::VariableDecl {
                 sym: Some(owner), ..
-            } => *owner == symbol,
-            _ => false,
+            } => *owner,
+            _ => continue,
         };
-        if !declared_here {
-            continue;
+        if owner == symbol {
+            candidate = Some(tree);
+            break;
         }
-        for table in &name_tables {
-            let position = table.get_end_pos(tree);
-            if position > 0 {
-                return Some(position as u32);
+    }
+    let tree = candidate?;
+    let mut name_tables: Vec<std::rc::Rc<dyn crate::tree::end_pos_table::EndPosTable>> =
+        Vec::new();
+    for index in 0..ctx.trees.len() {
+        let unit = crate::ids::TreeId::new(index as u32);
+        if let crate::tree::jc_tree::TreeKind::CompilationUnit {
+            name_positions: Some(table),
+            ..
+        } = &ctx.tree(unit).kind
+        {
+            name_tables.push(std::rc::Rc::clone(table));
+        }
+    }
+    for table in &name_tables {
+        let position = table.get_end_pos(tree);
+        if position > 0 {
+            return Some(position as u32);
+        }
+    }
+    if let crate::tree::jc_tree::TreeKind::VariableDecl { decl_pos, .. } = &ctx.tree(tree).kind
+        && *decl_pos > 0
+    {
+        return Some(*decl_pos as u32);
+    }
+    Some(ctx.tree(tree).pos.max(0) as u32)
+}
+#[cfg(test)]
+mod name_start_tests {
+    use super::name_start_of_symbol;
+    use crate::analysis::AnalysisConfig;
+    use crate::tree::jc_tree::TreeKind;
+    use crate::workspace::analysis::FileAnalysis;
+
+    #[test]
+    fn parameter_has_an_ast_name_start() {
+        if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+                .join("target")
+                .join("debug");
+            unsafe {
+                std::env::set_var("RAVAC_PLATFORM_DIR", &root);
             }
         }
-        if let crate::tree::jc_tree::TreeKind::VariableDecl { decl_pos, .. } = &ctx.tree(tree).kind
-            && *decl_pos > 0
-        {
-            return Some(*decl_pos as u32);
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("target")
+            .join("tmp")
+            .join("name-start-unit");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("A.java");
+        let text = "class A { void f(String lock) { String x = lock; } }\n";
+        std::fs::write(&path, text).unwrap();
+        let config = AnalysisConfig {
+            class_path: Vec::new(),
+            output_dir: root.join("out"),
+            source_level: "17".to_string(),
+            source_path: vec![root.clone()],
+        };
+        let mut analysis = FileAnalysis::new(config);
+        analysis.texts.insert(path.clone(), text.to_string());
+        analysis.compiler.overlay_text = Some((path.clone(), text.to_string()));
+        let _ = analysis.compiler.compile_files(&[path.clone()]);
+        let mut checked = 0;
+        for index in 0..analysis.compiler.ctx.trees.len() {
+            let tree = crate::ids::TreeId::new(index as u32);
+            if let TreeKind::VariableDecl {
+                sym: Some(symbol),
+                decl_pos,
+                mods: Some(mods),
+                ..
+            } = &analysis.compiler.ctx.tree(tree).kind
+            {
+                let flags_value = match &analysis.compiler.ctx.tree(*mods).kind {
+                    TreeKind::Modifiers { flags, .. } => *flags,
+                    _ => 0,
+                };
+                if flags_value & crate::code::flags::PARAMETER != 0 {
+                    eprintln!(
+                        "[P] sym_pos={} tree_pos={} decl_pos={:?}",
+                        analysis.compiler.ctx.sym(*symbol).pos.get(),
+                        analysis.compiler.ctx.tree(tree).pos,
+                        decl_pos
+                    );
+                    assert_eq!(
+                        name_start_of_symbol(&analysis.compiler.ctx, *symbol),
+                        Some(*decl_pos as u32),
+                        "parameter must have its AST name start"
+                    );
+                    checked += 1;
+                }
+            }
         }
-        return Some(ctx.tree(tree).pos.max(0) as u32);
+        assert!(checked > 0, "no parameter declarations checked");
     }
-    None
 }

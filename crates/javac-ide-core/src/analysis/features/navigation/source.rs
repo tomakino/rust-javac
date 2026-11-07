@@ -18,7 +18,7 @@ impl FileAnalysis {
     }
 
     /// Symbol attributed at a source position, plus the identifier's UTF-16 start.
-    pub(super) fn symbol_id_at(
+    pub(crate) fn symbol_id_at(
         &mut self,
         file: &Path,
         position: javac_analysis_api::Position,
@@ -35,22 +35,23 @@ impl FileAnalysis {
         let cursor = line_offset(&text, line, column);
         let start_byte = word_start_offset(&text, cursor);
         let start = crate::analysis::positions::byte_to_utf16(&text, start_byte);
-        let Some(root) = self.latest_root_for(file) else {
-            return None;
-        };
-        let mut collector = ReferenceCollector::new(
-            text.clone(),
-            file.to_path_buf(),
-            None,
-            Some(start as i32),
-        );
-        collector.scan(&mut self.compiler.ctx, Some(root));
-        if let Some(symbol) = collector.query {
-            return Some((symbol, start));
+        // A reference under the cursor (root may be absent for extracted/JDK
+        // sources, in which case the declaration fallback below still applies).
+        if let Some(root) = self.latest_root_for(file) {
+            let mut collector = ReferenceCollector::new(
+                text.clone(),
+                file.to_path_buf(),
+                None,
+                Some(start as i32),
+            );
+            collector.scan(&mut self.compiler.ctx, Some(root));
+            if let Some(symbol) = collector.query {
+                return Some((symbol, start));
+            }
         }
         // Declarations have exact symbol positions even when their tree has no
         // reliable token position (for example a field access node).
-        for tree in self.compiler.ctx.trees.iter() {
+        for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {
             let symbol = match &tree.kind {
                 crate::tree::jc_tree::TreeKind::VariableDecl {
                     sym: Some(sym),
@@ -64,6 +65,18 @@ impl FileAnalysis {
                 _ => None,
             };
             if let Some(symbol) = symbol {
+                return Some((symbol, start));
+            }
+            // Extracted JDK sources have no reference root and some parser
+            // decl positions are not published: locate the declaration name by
+            // the tree start plus the symbol name in the text (last resort, the
+            // declaration tree itself is the AST evidence).
+            if let Some(symbol) = declaration_name_at(
+                &self.compiler.ctx,
+                &text,
+                crate::ids::TreeId::new(index as u32),
+                start,
+            ) {
                 return Some((symbol, start));
             }
         }
@@ -98,4 +111,28 @@ pub(super) fn word_start_offset(text: &str, cursor: usize) -> usize {
         }
     }
     start
+}
+
+/// A declaration tree whose name starts at `start`: the tree position plus the
+/// symbol name in the source text (used when no parser `decl_pos` is available).
+fn declaration_name_at(
+    ctx: &crate::compiler_context::CompilerContext,
+    text: &str,
+    tree_id: crate::ids::TreeId,
+    start: usize,
+) -> Option<crate::ids::SymbolId> {
+    let (symbol, base) = match &ctx.tree(tree_id).kind {
+        crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(symbol), .. }
+        | crate::tree::jc_tree::TreeKind::MethodDecl { sym: Some(symbol), .. }
+        | crate::tree::jc_tree::TreeKind::VariableDecl { sym: Some(symbol), .. } => {
+            (*symbol, ctx.tree(tree_id).pos.max(0) as usize)
+        }
+        _ => return None,
+    };
+    let name = ctx.sym(symbol).name.to_java_string().to_string_lossy().to_string();
+    if name.is_empty() || name.starts_with('<') {
+        return None;
+    }
+    let offset = text.get(base..)?.find(&name)?;
+    (base + offset == start).then_some(symbol)
 }

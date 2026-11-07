@@ -97,6 +97,18 @@ impl FileAnalysis {
         if word.is_empty() {
             return None;
         }
+        // AST/compiler first: parameters and locals are not in `symbols()`
+        // (class + members), so a same-named field would otherwise win.
+        let position = javac_analysis_api::Position::new(
+            line.saturating_sub(1) as u32,
+            column.saturating_sub(1) as u32,
+        );
+        if let Some((symbol, name_start)) = self.symbol_id_at(source, position)
+            && let Some(info) = self.symbol_info(symbol, name_start)
+        {
+            return Some(info);
+        }
+        // Fallback: declarations matched by name + nearest position.
         // Compiler symbol positions point at the declaration start; move them
         // onto the declared name for editor locations.
         let cursor = byte_to_utf16(&text, line_offset(&text, line, column)) as i64;
@@ -105,6 +117,57 @@ impl FileAnalysis {
             .filter(|symbol| symbol.name == word && symbol.pos >= 0)
             .min_by_key(|symbol| (symbol.pos as i64 - cursor).abs())
             .or_else(|| self.symbols().into_iter().find(|symbol| symbol.name == word))
+    }
+
+    /// `SymbolInfo` for a compiler symbol (hover/definition). Returns `None`
+    /// for nameless synthetic symbols (constructors included).
+    fn symbol_info(
+        &mut self,
+        symbol: crate::ids::SymbolId,
+        name_start: usize,
+    ) -> Option<SymbolInfo> {
+        let ctx = &self.compiler.ctx;
+        let record = ctx.sym(symbol);
+        let name = record.name.to_java_string().to_string_lossy().to_string();
+        if name.is_empty() || name.starts_with('<') {
+            return None;
+        }
+        let kind = match &record.kind_data {
+            SymbolKind::ClassSymbol { .. } => "class",
+            SymbolKind::MethodSymbol { .. } => "method",
+            SymbolKind::VarSymbol { .. } => {
+                if record.flags_field & crate::code::flags::PARAMETER != 0 {
+                    "parameter"
+                } else if record.owner.is_some_and(|owner| {
+                    matches!(
+                        ctx.sym(owner).kind_data,
+                        SymbolKind::ClassSymbol { .. }
+                    )
+                }) {
+                    "field"
+                } else {
+                    "local"
+                }
+            }
+            _ => "member",
+        };
+        let ty = record
+            .ty
+            .map(|ty| type_name(ctx, ty))
+            .unwrap_or_default();
+        let detail = if ty.is_empty() {
+            name.clone()
+        } else {
+            format!("{ty} {name}")
+        };
+        Some(SymbolInfo {
+            name: name.clone(),
+            kind,
+            flat_name: name,
+            pos: name_start as i32,
+            detail,
+            doc: None,
+        })
     }
 
     /// Source text of the currently analyzed file, when available.
@@ -149,6 +212,11 @@ impl FileAnalysis {
         for traced in &self.traced {
             let class = &self.compiler.ctx.sym(traced.sym);
             let class_name = class.name.to_java_string().to_string_lossy();
+            if class_name.is_empty() {
+                // Anonymous classes have an empty `Name`; they are not outline
+                // entries.
+                continue;
+            }
             let class_pos = crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, traced.sym)
                 .map(|position| position as i32)
                 .unwrap_or_else(|| class.pos.get());
@@ -181,6 +249,11 @@ impl FileAnalysis {
                     }
                     let sym = &self.compiler.ctx.sym(member);
                     let member_name = sym.name.to_java_string().to_string_lossy();
+                    if member_name.is_empty() || member_name.starts_with('<') {
+                        // Nameless/synthetic members (synthetic lambda bodies,
+                        // generated constructors) are not outline entries.
+                        continue;
+                    }
                     let kind = match sym.kind_data {
                         SymbolKind::MethodSymbol { .. } => "method",
                         SymbolKind::VarSymbol { .. } => "field",

@@ -181,8 +181,14 @@ fn build_document_symbol(
             }
         }
     }
+    let name = index.display_name(record);
+    if name.trim().is_empty() {
+        // A nameless synthetic symbol must never reach the client: VS Code
+        // rejects DocumentSymbol with `name must not be falsy`.
+        return None;
+    }
     Some(DocumentSymbol {
-        name: index.display_name(record),
+        name,
         kind: api_symbol_kind(record.kind),
         range: Range::new(
             Position::new(start_line, start_col),
