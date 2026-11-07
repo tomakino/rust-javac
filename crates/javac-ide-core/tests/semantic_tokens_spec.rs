@@ -278,3 +278,15 @@ fn item20_import_namespace_covers_the_prefix() {
         "{tokens:?}"
     );
 }
+#[test]
+fn item21_wildcard_import_namespace_covers_the_prefix() {
+    // `import java.util.*;`: the package path is the namespace prefix.
+    let tokens = tokens("import java.util.*;\nclass A { int x; }\n", "item21");
+    assert!(
+        tokens.iter().any(|&(line, column, length, kind, _)| line == 0
+            && kind == type_index("namespace")
+            && column == 7
+            && length == 9),
+        "{tokens:?}"
+    );
+}

@@ -169,32 +169,35 @@ impl FileAnalysis {
         for occurrence in &extracted.occurrences {
             if occurrence.role == OccurrenceRole::Import {
                 // Plan 11.3: the namespace token covers the import prefix
-                // (`java.util` in `import java.util.List;`), while the
-                // occurrence itself points at the imported name so
-                // goto-definition keeps working.
+                // (`java.util` in `import java.util.List;` and in
+                // `import java.util.*;`), while the occurrence itself points
+                // at the imported name so goto-definition keeps working.
                 let kind = occurrence.identity.kind;
-                let prefix = if kind.is_type() || kind.is_member() {
-                    occurrence
+                let (start, length) = if kind.is_type() || kind.is_member() {
+                    let prefix = occurrence
                         .identity
                         .flat_name
                         .rsplit_once('.')
-                        .map(|(prefix, _)| prefix.to_string())
-                } else {
-                    None
-                };
-                if let Some(prefix) = prefix {
-                    let prefix_len = prefix.encode_utf16().count() as u32;
-                    if prefix_len > 0 {
-                        let start = occurrence.range.start.saturating_sub(prefix_len + 1);
-                        push_range(
-                            &text,
-                            start,
-                            prefix_len,
-                            type_index("namespace"),
-                            0,
-                            &mut raw,
-                        );
+                        .map(|(prefix, _)| prefix.to_string());
+                    match prefix {
+                        Some(prefix) => {
+                            let prefix_len = prefix.encode_utf16().count() as u32;
+                            (
+                                occurrence.range.start.saturating_sub(prefix_len + 1),
+                                prefix_len,
+                            )
+                        }
+                        None => (occurrence.range.start, 0),
                     }
+                } else {
+                    // Package import: the occurrence already spans the path.
+                    (
+                        occurrence.range.start,
+                        occurrence.range.end.saturating_sub(occurrence.range.start),
+                    )
+                };
+                if length > 0 {
+                    push_range(&text, start, length, type_index("namespace"), 0, &mut raw);
                 }
                 continue;
             }

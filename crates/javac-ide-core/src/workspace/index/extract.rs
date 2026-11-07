@@ -136,15 +136,35 @@ pub fn extract_file(
             if raw.position < 0 {
                 continue;
             }
-            let Some(identity) = identity_of(&mut analysis.compiler.ctx, raw.symbol, file) else {
-                continue;
+            let identity = match identity_of(&mut analysis.compiler.ctx, raw.symbol, file) {
+                Some(identity) => identity,
+                None if raw.role == OccurrenceRole::Import => {
+                    // Package imports (`import java.util.*;`) target a package,
+                    // which has no class flat name: the index identity is the
+                    // package path itself.
+                    let SymbolKind::PackageSymbol { fullname, .. } =
+                        &analysis.compiler.ctx.sym(raw.symbol).kind_data
+                    else {
+                        continue;
+                    };
+                    SymbolIdentity {
+                        flat_name: fullname.to_java_string().to_string_lossy().to_string(),
+                        kind: IndexSymbolKind::Other,
+                        signature: String::new(),
+                    }
+                }
+                None => continue,
             };
+            let start = raw.position as u32;
             let name_len = simple_name(&identity.flat_name).encode_utf16().count() as u32;
+            // Import occurrences may carry an explicit span (package imports
+            // cover the whole `java.util` path).
+            let end = raw.end.unwrap_or(start + name_len.max(1));
             out.occurrences.push(ExtractedOccurrence {
                 identity,
                 range: ByteRange {
-                    start: raw.position as u32,
-                    end: raw.position as u32 + name_len.max(1),
+                    start,
+                    end: end.max(start + 1),
                 },
                 role: raw.role,
             });

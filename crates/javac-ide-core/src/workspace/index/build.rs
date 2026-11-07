@@ -654,6 +654,9 @@ pub(crate) struct RawOccurrence {
     pub(crate) symbol: CompilerSymbolId,
     pub(crate) position: i32,
     pub(crate) role: OccurrenceRole,
+    /// Explicit UTF-16 end for occurrences whose range is not the symbol's
+    /// simple name (a package import covers the whole `java.util` path).
+    pub(crate) end: Option<u32>,
 }
 
 pub(crate) struct OccurrenceCollector {
@@ -684,6 +687,24 @@ impl OccurrenceCollector {
                 symbol,
                 position,
                 role,
+                end: None,
+            });
+        }
+    }
+
+    fn record_span(
+        &mut self,
+        symbol: CompilerSymbolId,
+        position: i32,
+        end: u32,
+        role: OccurrenceRole,
+    ) {
+        if position >= 0 {
+            self.raw.push(RawOccurrence {
+                symbol,
+                position,
+                role,
+                end: Some(end),
             });
         }
     }
@@ -725,21 +746,56 @@ impl TreeScannerVisitor for OccurrenceCollector {
             } => *qualid,
             _ => return,
         };
-        let (symbol, position) = match &ctx.tree(qualid).kind {
-            TreeKind::Ident {
-                sym: Some(symbol), ..
-            } => (*symbol, ctx.tree(qualid).pos),
+        // `import java.util.*;` parses as FieldAccess(`java.util`, `*`): the
+        // import-on-demand target is the selected expression.
+        let qualid = match &ctx.tree(qualid).kind {
             TreeKind::FieldAccess {
                 selected: Some(selected),
                 name,
-                sym: Some(symbol),
+                ..
+            } if name.to_java_string().to_string_lossy() == "*" => *selected,
+            _ => qualid,
+        };
+        let symbol = match &ctx.tree(qualid).kind {
+            TreeKind::Ident {
+                sym: Some(symbol), ..
+            }
+            | TreeKind::FieldAccess {
+                sym: Some(symbol), ..
+            } => *symbol,
+            _ => return,
+        };
+        // `import java.util.*;`: the whole package path is the prefix, so the
+        // occurrence spans it instead of the last simple name. The select
+        // node starts at its `.`, so walk back over the package path.
+        if let SymbolKind::PackageSymbol { fullname, .. } = &ctx.sym(symbol).kind_data {
+            let fullname = fullname.to_java_string().to_string_lossy().to_string();
+            let length = fullname.encode_utf16().count() as u32;
+            let last_length = fullname
+                .rsplit('.')
+                .next()
+                .map(|segment| segment.encode_utf16().count() as u32)
+                .unwrap_or(length);
+            let mut start = ctx.tree(qualid).pos;
+            if length > last_length {
+                start -= (length - last_length - 1) as i32;
+            }
+            let start = start.max(0);
+            self.record_span(symbol, start, start as u32 + length, OccurrenceRole::Import);
+            return;
+        }
+        let position = match &ctx.tree(qualid).kind {
+            TreeKind::Ident { .. } => ctx.tree(qualid).pos,
+            TreeKind::FieldAccess {
+                selected: Some(selected),
+                name,
                 ..
             } => {
                 let name = name.to_java_string().to_string_lossy().to_string();
                 let Some(position) = self.field_name_pos(&*ctx, *selected, &name) else {
                     return;
                 };
-                (*symbol, position)
+                position
             }
             _ => return,
         };

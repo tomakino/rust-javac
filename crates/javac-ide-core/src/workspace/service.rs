@@ -126,6 +126,9 @@ impl WorkspaceService for Workspace {
     }
 
     fn code_lenses(&mut self, file: &Path) -> Vec<CodeLens> {
+        // CodeLens bypasses `with_analysis`, so without this a fresh workspace
+        // would wait for some unrelated query to start the index build.
+        self.ensure_index();
         let snapshot = self.index.snapshot();
         if !matches!(
             snapshot.status,
