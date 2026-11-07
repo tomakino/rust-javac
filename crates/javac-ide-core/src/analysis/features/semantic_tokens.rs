@@ -168,16 +168,33 @@ impl FileAnalysis {
         }
         for occurrence in &extracted.occurrences {
             if occurrence.role == OccurrenceRole::Import {
-                // Import prefix -> namespace (plan 11.3).
-                if occurrence.range.end > occurrence.range.start {
-                    push_range(
-                        &text,
-                        occurrence.range.start,
-                        occurrence.range.end - occurrence.range.start,
-                        type_index("namespace"),
-                        0,
-                        &mut raw,
-                    );
+                // Plan 11.3: the namespace token covers the import prefix
+                // (`java.util` in `import java.util.List;`), while the
+                // occurrence itself points at the imported name so
+                // goto-definition keeps working.
+                let kind = occurrence.identity.kind;
+                let prefix = if kind.is_type() || kind.is_member() {
+                    occurrence
+                        .identity
+                        .flat_name
+                        .rsplit_once('.')
+                        .map(|(prefix, _)| prefix.to_string())
+                } else {
+                    None
+                };
+                if let Some(prefix) = prefix {
+                    let prefix_len = prefix.encode_utf16().count() as u32;
+                    if prefix_len > 0 {
+                        let start = occurrence.range.start.saturating_sub(prefix_len + 1);
+                        push_range(
+                            &text,
+                            start,
+                            prefix_len,
+                            type_index("namespace"),
+                            0,
+                            &mut raw,
+                        );
+                    }
                 }
                 continue;
             }

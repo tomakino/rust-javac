@@ -265,3 +265,16 @@ fn item19_javadoc_deprecated_flag_fallback() {
         "{tokens:?}"
     );
 }
+#[test]
+fn item20_import_namespace_covers_the_prefix() {
+    // Plan 11.3: the namespace token covers the import prefix (`java.util`),
+    // while goto-definition on the import still points at `List`.
+    let tokens = tokens("import java.util.List;\nclass A { List l; }\n", "item20");
+    assert!(
+        tokens.iter().any(|&(line, column, length, kind, _)| line == 0
+            && kind == type_index("namespace")
+            && column == 7
+            && length == 9),
+        "{tokens:?}"
+    );
+}

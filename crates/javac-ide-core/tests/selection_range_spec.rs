@@ -338,3 +338,19 @@ fn class_name_to_unit() {
     assert_contains(&chain, &range_of(source, "A"));
     assert!(chain.len() >= 2, "{chain:?}");
 }
+
+#[test]
+fn parameter_name_after_repeated_type_name() {
+    // `String String`: a text fallback would latch onto the type name (the
+    // first `String`); the AST name position is the second one.
+    let source = "class A { void f(String String) { } }\n";
+    let (mut workspace, path) = workspace_with(&fixture("parameter-shadow"), source);
+    let name_byte = source.rfind("String").expect("parameter name");
+    let chain = ranges(&mut workspace, &path, source, position_at(source, name_byte));
+    assert_nested(&chain);
+    assert_eq!(
+        chain.first().expect("innermost").start,
+        position_at(source, name_byte),
+        "{chain:?}"
+    );
+}

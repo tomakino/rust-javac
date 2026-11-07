@@ -690,18 +690,91 @@ mod tests {
 /// (`ACC_PUBLIC`). `None` means unreadable (caller keeps the candidate and
 /// falls back to diagnostic pruning).
 fn platform_class_is_public(flat: &str, module: &str) -> Option<bool> {
-    let home = std::env::var_os("JAVA_HOME")?;
-    let home = std::path::PathBuf::from(home);
-    // JDK 17 layout: `<java.home>/lib/modules`.
-    let modules = home.join("lib").join("modules");
-    if !modules.is_file() {
-        return None;
+    if let Some(public) = jimage_class_is_public(flat, module) {
+        return Some(public);
     }
+    // `--release` platform paths may only ship `ct.sym`: fall back to the
+    // versioned `.sig` class files.
+    ct_sym_class_access_flags(flat, module).map(|flags| flags & 1 != 0)
+}
+
+fn jimage_class_is_public(flat: &str, module: &str) -> Option<bool> {
+    let modules = platform_modules_file()?;
     let image = javac_jimage::JImage::open(&modules).ok()?;
     let relative = format!("{}.class", flat.replace('.', "/"));
     let bytes = image.find_resource(&format!("{module}/{relative}"))?;
     let flags = class_access_flags(&bytes)?;
     Some(flags & 1 != 0)
+}
+
+/// The runtime platform layout puts `modules` and `ct.sym` next to the
+/// executable (`RAVAC_PLATFORM_DIR` overrides); `JAVA_HOME/lib` is the
+/// development fallback.
+fn platform_modules_file() -> Option<std::path::PathBuf> {
+    if let Some(dir) = std::env::var_os("RAVAC_PLATFORM_DIR") {
+        let path = crate::file::platform_paths::modules_file(std::path::Path::new(&dir));
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    let home = std::env::var_os("JAVA_HOME")?;
+    let path = std::path::PathBuf::from(home).join("lib").join("modules");
+    path.is_file().then_some(path)
+}
+
+fn ct_sym_file() -> Option<std::path::PathBuf> {
+    if let Some(dir) = std::env::var_os("RAVAC_PLATFORM_DIR") {
+        let path = crate::file::platform_paths::ct_sym_file(std::path::Path::new(&dir));
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    let home = std::env::var_os("JAVA_HOME")?;
+    let path = std::path::PathBuf::from(home).join("lib").join("ct.sym");
+    path.is_file().then_some(path)
+}
+
+/// ACC_PUBLIC of a class from `ct.sym` (the `.sig` entries are class files).
+///
+/// The archive stores one directory per release; newer releases only contain
+/// changed classes, so the highest ranking entry wins (`89ABCDEFG` = 8..16).
+fn ct_sym_class_access_flags(flat: &str, module: &str) -> Option<u16> {
+    let ct_sym = ct_sym_file()?;
+    let archive = javac_zip::ZipArchive::open(&ct_sym).ok()?;
+    let relative = format!("{}.sig", flat.replace('.', "/"));
+    let wanted = format!("{module}/{relative}");
+    let mut best: Option<(u32, String)> = None;
+    for entry in archive.entries() {
+        let name = entry.name();
+        let Some((release, rest)) = name.split_once('/') else {
+            continue;
+        };
+        if rest != wanted {
+            continue;
+        }
+        let Some(rank) = release_rank(release) else {
+            continue;
+        };
+        if best.as_ref().map_or(true, |(best_rank, _)| rank > *best_rank) {
+            best = Some((rank, name.to_string()));
+        }
+    }
+    let (_, entry) = best?;
+    let bytes = archive.get_entry(&entry)?;
+    class_access_flags(&bytes)
+}
+
+/// Release directory rank: `7`..`9`, then `A`..`H` (10..17); merged names use
+/// their highest member (`89ABCDEFG` -> 16, i.e. the `G` content).
+fn release_rank(release: &str) -> Option<u32> {
+    release
+        .chars()
+        .filter_map(|character| match character {
+            '7'..='9' => Some(character as u32 - '0' as u32),
+            'A'..='H' => Some(character as u32 - 'A' as u32 + 10),
+            _ => None,
+        })
+        .max()
 }
 /// System module of a class (`java.util.List` -> `java.base`), if any.
 fn system_module_of(
@@ -727,7 +800,7 @@ fn system_module_of(
 
 #[cfg(test)]
 mod platform_public_tests {
-    use super::platform_class_is_public;
+    use super::{ct_sym_class_access_flags, platform_class_is_public};
 
     #[test]
     fn platform_class_public_flag_comes_from_jimage_bytes() {
@@ -741,5 +814,19 @@ mod platform_public_tests {
             platform_class_is_public("java.util.ImmutableCollections", "java.base"),
             Some(false)
         );
+    }
+
+    #[test]
+    fn ct_sym_access_flags_public_and_package_private() {
+        // `--release` platform paths ship `ct.sym` instead of `lib/modules`:
+        // the `.sig` entries are class files, so ACC_PUBLIC is readable.
+        let list = ct_sym_class_access_flags("java.util.List", "java.base").expect("List.sig");
+        assert!(list & 1 != 0, "List must be public: {list:#x}");
+        let view = ct_sym_class_access_flags(
+            "java.util.concurrent.ConcurrentHashMap$CollectionView",
+            "java.base",
+        )
+        .expect("CollectionView.sig");
+        assert!(view & 1 == 0, "CollectionView must be package-private: {view:#x}");
     }
 }
