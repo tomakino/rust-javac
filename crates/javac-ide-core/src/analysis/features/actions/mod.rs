@@ -439,10 +439,14 @@ impl FileAnalysis {
                 if !is_importable_flat(&flat) {
                     continue;
                 }
-                // Access flags are not reliable for platform classes
-                // (evidence: java.util.List flags=33554432, no ACC_PUBLIC):
-                // degrade to top-level names + javac diagnostic pruning.
-                let _ = symbol.flags_field;
+                // Platform classes: read ACC_PUBLIC from the jimage class
+                // bytes (the symbol flags do not carry it). Unreadable classes
+                // keep the candidate and rely on diagnostic pruning.
+                if let Some(module) = system_module_of(&self.compiler.ctx, *class) {
+                    if platform_class_is_public(&flat, &module) == Some(false) {
+                        continue;
+                    }
+                }
                 if seen.insert(flat.clone()) {
                     candidates.push(ImportCandidate {
                         simple: simple.clone(),
@@ -680,5 +684,62 @@ mod tests {
             code: Some("compiler.err.cant.resolve.location".to_string()),
         };
         assert_eq!(name_of_diagnostic(text, &ranged).as_deref(), Some("List"));
+    }
+}
+/// Whether a platform class is public, read from its jimage class bytes
+/// (`ACC_PUBLIC`). `None` means unreadable (caller keeps the candidate and
+/// falls back to diagnostic pruning).
+fn platform_class_is_public(flat: &str, module: &str) -> Option<bool> {
+    let home = std::env::var_os("JAVA_HOME")?;
+    let home = std::path::PathBuf::from(home);
+    // JDK 17 layout: `<java.home>/lib/modules`.
+    let modules = home.join("lib").join("modules");
+    if !modules.is_file() {
+        return None;
+    }
+    let image = javac_jimage::JImage::open(&modules).ok()?;
+    let relative = format!("{}.class", flat.replace('.', "/"));
+    let bytes = image.find_resource(&format!("{module}/{relative}"))?;
+    let flags = class_access_flags(&bytes)?;
+    Some(flags & 1 != 0)
+}
+/// System module of a class (`java.util.List` -> `java.base`), if any.
+fn system_module_of(
+    ctx: &crate::compiler_context::CompilerContext,
+    class: crate::ids::SymbolId,
+) -> Option<String> {
+    let mut current = class;
+    loop {
+        let symbol = ctx.sym(current);
+        if let crate::code::symbol::SymbolKind::PackageSymbol { modle, .. } = &symbol.kind_data {
+            let module = (*modle)?;
+            return Some(
+                ctx.sym(module)
+                    .name
+                    .to_java_string()
+                    .to_string_lossy()
+                    .to_string(),
+            );
+        }
+        current = symbol.owner?;
+    }
+}
+
+#[cfg(test)]
+mod platform_public_tests {
+    use super::platform_class_is_public;
+
+    #[test]
+    fn platform_class_public_flag_comes_from_jimage_bytes() {
+        // Evidence: java.util.List is public; java.util.ImmutableCollections
+        // is package-private (both read from the jimage class bytes).
+        assert_eq!(
+            platform_class_is_public("java.util.List", "java.base"),
+            Some(true)
+        );
+        assert_eq!(
+            platform_class_is_public("java.util.ImmutableCollections", "java.base"),
+            Some(false)
+        );
     }
 }

@@ -422,3 +422,19 @@ fn item12_remove_all_unused_imports_descending() {
     assert!(!updated.contains("import java.util.Map;"), "{updated:?}");
     assert!(updated.contains("import c.Bar;"), "{updated:?}");
 }
+
+#[test]
+fn item13_non_public_platform_class_is_not_a_candidate() {
+    let root = fixture("item13");
+    let path = source(&root, "Main.java", "class Main { ImmutableCollections x; }\n");
+    let mut analysis = FileAnalysis::new(config(&root, PathBuf::new()));
+    let actions = actions_at(&mut analysis, &path, Position::new(0, 29));
+    // java.util.ImmutableCollections is package-private in the JDK; the
+    // jimage ACC_PUBLIC read must keep it out of the candidates.
+    assert!(
+        !actions
+            .iter()
+            .any(|action| action.title.contains("ImmutableCollections")),
+        "{actions:?}"
+    );
+}
