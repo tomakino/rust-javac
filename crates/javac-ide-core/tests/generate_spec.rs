@@ -228,3 +228,16 @@ fn item13_annotation_with_braces_before_class() {
     );
     assert_eq!(constructor.edits[0].range.start.line, 3, "{constructor:?}");
 }
+#[test]
+fn item14_nested_class_cursor() {
+    let text = "class Outer {\n  class Inner {\n    int a;\n  }\n}\n";
+    let actions = generate_actions_at(text, "item14", Position::new(2, 4));
+    let constructor = find(&actions, "Generate constructor").expect("constructor action");
+    // The innermost class containing the cursor (Inner), not the outer one.
+    // Inner is indented by 2, so its members indent by 6 and its body by 10.
+    assert_eq!(
+        constructor.edits[0].new_text,
+        "      public Inner(int a) {\n          this.a = a;\n      }\n  "
+    );
+    assert_eq!(constructor.edits[0].range.start.line, 3, "{constructor:?}");
+}

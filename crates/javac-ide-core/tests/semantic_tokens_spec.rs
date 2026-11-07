@@ -233,5 +233,6 @@ fn item16_import_prefix_is_namespace() {
         "import java.util.List;\n\nclass A {\n  List value;\n}\n",
         "item16",
     );
+    eprintln!("[T] {tokens:?}");
     assert!(has(&tokens, "namespace", None, Some(0), None), "{tokens:?}");
 }

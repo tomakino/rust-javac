@@ -206,41 +206,7 @@ impl FileAnalysis {
             let length = simple.encode_utf16().count() as u32;
             push_range(&text, start, length, token_type, modifiers, &mut raw);
         }
-        // Import prefixes -> namespace (plan 11.3). Import lines are
-        // structural text (10.2): only the package prefix is tokenized; the
-        // imported type keeps its normal class token.
-        for (line_index, line) in text.lines().enumerate() {
-            let trimmed = line.trim_start();
-            let Some(rest) = trimmed.strip_prefix("import ") else {
-                continue;
-            };
-            let path = rest
-                .strip_prefix("static ")
-                .unwrap_or(rest)
-                .trim_end_matches(';')
-                .trim();
-            let path = path.trim_end_matches(".*");
-            let Some((prefix, _)) = path.rsplit_once('.') else {
-                continue;
-            };
-            let indent = line.len() - trimmed.len();
-            let start_byte = crate::analysis::positions::line_offset(
-                &text,
-                line_index + 1,
-                indent + 8,
-            );
-            let start =
-                crate::analysis::positions::byte_to_utf16(&text, start_byte) as u32;
-            let length = prefix.encode_utf16().count() as u32;
-            push_range(
-                &text,
-                start,
-                length,
-                type_index("namespace"),
-                0,
-                &mut raw,
-            );
-        }        raw.extend(lexical_tokens(&text));
+        raw.extend(lexical_tokens(&text));
         let data = encode(raw);
         self.semantic_tokens_cache = Some((hash, data.clone()));
         data

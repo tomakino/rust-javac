@@ -176,60 +176,44 @@ impl FileAnalysis {
         // text fill), not from text scanning. Each entry is (tree, class start
         // byte, class end byte, class end UTF-16).
         let table = self.end_positions_for(file);
-        let mut classes: Vec<(crate::ids::TreeId, usize, usize, i32)> = Vec::new();
-        for index in 0..self.compiler.ctx.trees.len() {
-            let unit = crate::ids::TreeId::new(index as u32);
-            let (source, defs) = match &self.compiler.ctx.tree(unit).kind {
-                TreeKind::CompilationUnit {
-                    sourcefile: Some(source),
-                    defs,
-                    ..
-                } => (
-                    source.get_name().to_string_lossy().to_string(),
-                    defs.clone(),
-                ),
-                _ => continue,
-            };
-            if PathBuf::from(canonical(Path::new(&source))) != target {
-                continue;
-            }
-            for def in defs.iter() {
-                if let TreeKind::ClassDecl { .. } = &self.compiler.ctx.tree(def).kind {
-                    let class_pos_value = self.compiler.ctx.tree(def).pos;
-                    let class_pos_utf16 = class_pos_value.max(0) as usize;
-                    let class_end_utf16 = crate::tree::end_position::end_position(
-                        &self.compiler.ctx,
-                        text,
-                        def,
-                        table
-                            .as_ref()
-                            .map(|table| table.as_ref() as &dyn crate::tree::end_pos_table::EndPosTable),
-                    );
-                    if class_end_utf16 <= 0 {
-                        continue;
-                    }
-                    let class_pos_byte = crate::analysis::positions::utf16_to_byte_snapped(
-                        text,
-                        class_pos_utf16,
-                    );
-                    let class_end_byte = crate::analysis::positions::utf16_to_byte_snapped(
-                        text,
-                        class_end_utf16 as usize,
-                    );
-                    classes.push((def, class_pos_byte, class_end_byte, class_end_utf16));
-                }
-            }
-        }
-        // The class containing the cursor (AST ranges, not text braces).
+        // The class containing the cursor: every ClassDecl in the arena
+        // (nested classes included), innermost wins (largest pos).
         let cursor = crate::analysis::positions::line_offset(
             text,
             position.line as usize + 1,
             position.column as usize + 1,
         );
-        let (class_tree, class_end_utf16) = classes
-            .iter()
-            .find(|(_, pos, end, _)| *pos <= cursor && cursor <= *end)
-            .map(|(tree, _, _, end)| (*tree, *end))?;
+        let mut best: Option<(crate::ids::TreeId, i32, i32)> = None;
+        for index in 0..self.compiler.ctx.trees.len() {
+            let tree = crate::ids::TreeId::new(index as u32);
+            if !matches!(self.compiler.ctx.tree(tree).kind, TreeKind::ClassDecl { .. }) {
+                continue;
+            }
+            let pos = self.compiler.ctx.tree(tree).pos;
+            if pos < 0 {
+                continue;
+            }
+            let end = crate::tree::end_position::end_position(
+                &self.compiler.ctx,
+                text,
+                tree,
+                table
+                    .as_ref()
+                    .map(|table| table.as_ref() as &dyn crate::tree::end_pos_table::EndPosTable),
+            );
+            if end <= 0 {
+                continue;
+            }
+            let pos_byte = crate::analysis::positions::utf16_to_byte_snapped(text, pos as usize);
+            let end_byte = crate::analysis::positions::utf16_to_byte_snapped(text, end as usize);
+            if cursor < pos_byte || cursor > end_byte {
+                continue;
+            }
+            if best.map_or(true, |(_, best_pos, _)| pos > best_pos) {
+                best = Some((tree, pos, end));
+            }
+        }
+        let (class_tree, class_end_utf16) = best.map(|(tree, _, end)| (tree, end))?;
         let class = match &self.compiler.ctx.tree(class_tree).kind {
             TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
             _ => return None,

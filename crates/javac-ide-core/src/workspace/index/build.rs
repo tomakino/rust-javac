@@ -712,6 +712,25 @@ impl TreeScannerVisitor for OccurrenceCollector {
         self.scan(ctx, init);
     }
 
+    fn visit_import(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        // Import prefix -> namespace; the imported type is recorded as an
+        // Import occurrence (not a Reference) so semantic tokens do not
+        // double count it.
+        let qualid = match &ctx.tree(tree).kind {
+            TreeKind::Import {
+                qualid: Some(qualid),
+                ..
+            } => *qualid,
+            _ => return,
+        };
+        let sym = match &ctx.tree(qualid).kind {
+            TreeKind::Ident { sym: Some(sym), .. } => *sym,
+            TreeKind::FieldAccess { sym: Some(sym), .. } => *sym,
+            _ => return,
+        };
+        self.record(sym, ctx.tree(qualid).pos, OccurrenceRole::Import);
+    }
+
     fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         if let TreeKind::Ident { sym: Some(sym), .. } = &ctx.tree(tree).kind {
             self.record(*sym, ctx.tree(tree).pos, OccurrenceRole::Reference);
