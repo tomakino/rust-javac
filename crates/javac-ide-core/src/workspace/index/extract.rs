@@ -54,6 +54,9 @@ pub struct ExtractedDeclaration {
     pub range: ByteRange,
     pub detail: String,
     pub modifiers: u32,
+    /// AST-first deprecation: the declaring tree carries a `@Deprecated`
+    /// annotation (`mods.annotations`), independent of `flags_field`.
+    pub deprecated: bool,
     pub supertypes: Vec<String>,
     pub return_type: Option<TypeRef>,
     pub javadoc: Option<String>,
@@ -93,6 +96,9 @@ pub fn extract_file(
         };
     }
     let javadocs = collect_javadocs(&mut analysis.compiler);
+    // AST-first deprecation: declarations whose declaring tree carries a
+    // `@Deprecated` annotation (independent of the symbol flag).
+    let deprecated_annotations = deprecated_annotation_symbols(&analysis.compiler.ctx);
     let mut out = ExtractedFile::default();
     let target = PathBuf::from(canonical(path));
     let mut identities: HashMap<CompilerSymbolId, SymbolIdentity> = HashMap::new();
@@ -105,6 +111,7 @@ pub fn extract_file(
             &target,
             file,
             &javadocs,
+            &deprecated_annotations,
             &mut out.declarations,
             &mut identities,
             &mut seen,
@@ -199,6 +206,7 @@ fn collect_class(
     target: &Path,
     file: FileId,
     javadocs: &HashMap<CompilerSymbolId, String>,
+    deprecated_annotations: &HashMap<CompilerSymbolId, bool>,
     out: &mut Vec<ExtractedDeclaration>,
     identities: &mut HashMap<CompilerSymbolId, SymbolIdentity>,
     seen: &mut HashSet<CompilerSymbolId>,
@@ -206,7 +214,14 @@ fn collect_class(
     if !seen.insert(class) {
         return;
     }
-    if let Some(declaration) = declaration_of(&mut compiler.ctx, class, target, file, javadocs) {
+    if let Some(declaration) = declaration_of(
+        &mut compiler.ctx,
+        class,
+        target,
+        file,
+        javadocs,
+        deprecated_annotations,
+    ) {
         identities.insert(class, declaration.identity.clone());
         out.push(declaration);
     }
@@ -225,14 +240,86 @@ fn collect_class(
             SymbolKind::ClassSymbol { .. }
         );
         if is_class {
-            collect_class(compiler, member, target, file, javadocs, out, identities, seen);
-        } else if let Some(declaration) =
-            declaration_of(&mut compiler.ctx, member, target, file, javadocs)
-        {
+            collect_class(
+                compiler,
+                member,
+                target,
+                file,
+                javadocs,
+                deprecated_annotations,
+                out,
+                identities,
+                seen,
+            );
+        } else if let Some(declaration) = declaration_of(
+            &mut compiler.ctx,
+            member,
+            target,
+            file,
+            javadocs,
+            deprecated_annotations,
+        ) {
             identities.insert(member, declaration.identity.clone());
             out.push(declaration);
         }
     }
+}
+
+/// AST-first: symbols whose declaring tree carries a `@Deprecated` annotation.
+fn deprecated_annotation_symbols(ctx: &CompilerContext) -> HashMap<CompilerSymbolId, bool> {
+    let mut deprecated = HashMap::new();
+    for index in 0..ctx.trees.len() {
+        let tree = TreeId::new(index as u32);
+        let (mods, symbol) = match &ctx.tree(tree).kind {
+            TreeKind::ClassDecl {
+                mods: Some(mods),
+                sym: Some(symbol),
+                ..
+            }
+            | TreeKind::MethodDecl {
+                mods: Some(mods),
+                sym: Some(symbol),
+                ..
+            }
+            | TreeKind::VariableDecl {
+                mods: Some(mods),
+                sym: Some(symbol),
+                ..
+            } => (*mods, *symbol),
+            _ => continue,
+        };
+        if has_deprecated_annotation(ctx, mods) {
+            deprecated.insert(symbol, true);
+        }
+    }
+    deprecated
+}
+
+/// `@Deprecated` in `mods.annotations` (simple or qualified name).
+fn has_deprecated_annotation(ctx: &CompilerContext, mods: TreeId) -> bool {
+    let annotations = match &ctx.tree(mods).kind {
+        TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+        _ => return false,
+    };
+    for annotation in annotations.iter() {
+        let annotation_type = match &ctx.tree(annotation).kind {
+            TreeKind::Annotation {
+                annotation_type: Some(annotation_type),
+                ..
+            } => *annotation_type,
+            _ => continue,
+        };
+        let name = match &ctx.tree(annotation_type).kind {
+            TreeKind::Ident { name, .. } | TreeKind::FieldAccess { name, .. } => {
+                name.to_java_string().to_string_lossy().to_string()
+            }
+            _ => continue,
+        };
+        if name == "Deprecated" || name == "java.lang.Deprecated" {
+            return true;
+        }
+    }
+    false
 }
 
 fn declaration_of(
@@ -241,6 +328,7 @@ fn declaration_of(
     target: &Path,
     file: FileId,
     javadocs: &HashMap<CompilerSymbolId, String>,
+    deprecated_annotations: &HashMap<CompilerSymbolId, bool>,
 ) -> Option<ExtractedDeclaration> {
     let source = source_file(ctx, symbol)?;
     if PathBuf::from(canonical(&source)) != target {
@@ -316,6 +404,10 @@ fn declaration_of(
         range,
         detail,
         modifiers: ctx.sym(symbol).flags_field as u32,
+        deprecated: deprecated_annotations
+            .get(&symbol)
+            .copied()
+            .unwrap_or(false),
         supertypes,
         return_type,
         javadoc: javadocs.get(&symbol).cloned(),

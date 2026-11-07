@@ -35,6 +35,10 @@ struct InsertPoint {
     indent: String,
     brace_indent: String,
     newline: &'static str,
+    /// Replaces the closing-brace line prefix when the last member ends on the
+    /// line just above `}`; otherwise the insert is an empty range on the line
+    /// after the last member, keeping trailing comments/blank lines below.
+    replace_prefix: bool,
 }
 
 fn type_name(ctx: &crate::compiler_context::CompilerContext, ty: crate::ids::TypeId) -> String {
@@ -392,7 +396,20 @@ impl FileAnalysis {
             }
         }
         let super_ok = self.super_has_no_arg_constructor(class);
-        let insert = insert_point(text, class_end_utf16)?;
+        // Plan 14.1: insert after the class body's last member (a trailing
+        // comment/blank line after it is kept below the new member).
+        let member_end = defs.last().and_then(|last| {
+            let end = crate::tree::end_position::end_position(
+                &self.compiler.ctx,
+                text,
+                last,
+                table
+                    .as_ref()
+                    .map(|table| table.as_ref() as &dyn crate::tree::end_pos_table::EndPosTable),
+            );
+            (end > 0).then_some(end)
+        });
+        let insert = insert_point(text, member_end?, class_end_utf16)?;
         Some(ClassContext {
             class,
             name,
@@ -446,41 +463,69 @@ impl FileAnalysis {
 
 impl InsertPoint {
     fn edit(&self, mut body: String) -> TextEdit {
-        body.push_str(&self.brace_indent);
+        let range = if self.replace_prefix {
+            body.push_str(&self.brace_indent);
+            Range::new(
+                Position::new(self.line, 0),
+                Position::new(self.line, self.column),
+            )
+        } else {
+            Range::new(
+                Position::new(self.line, self.column),
+                Position::new(self.line, self.column),
+            )
+        };
         TextEdit {
-            range: Range::new(Position::new(self.line, 0), Position::new(self.line, self.column)),
+            range,
             new_text: body,
         }
     }
 }
 
-fn insert_point(text: &str, class_end_utf16: i32) -> Option<InsertPoint> {
-    if class_end_utf16 <= 0 {
+fn insert_point(text: &str, member_end_utf16: i32, class_end_utf16: i32) -> Option<InsertPoint> {
+    if member_end_utf16 < 0 || class_end_utf16 <= 0 {
         return None;
     }
-    // The class end is just past its closing brace (AST end position).
+    // The class end is just past its closing brace (AST end position); the
+    // brace line supplies the member indentation.
     let brace_utf16 = (class_end_utf16 - 1) as usize;
     let brace_byte = crate::analysis::positions::utf16_to_byte_snapped(text, brace_utf16);
     if text.as_bytes().get(brace_byte) != Some(&b'}') {
         return None;
     }
-    let line_start = text[..brace_byte]
+    let brace_line_start = text[..brace_byte]
         .rfind('\n')
         .map(|index| index + 1)
         .unwrap_or(0);
-    let line = text[..line_start].matches('\n').count() as u32;
-    let column = text[line_start..brace_byte]
+    let brace_line = text[..brace_line_start].matches('\n').count() as u32;
+    let brace_column: u32 = text[brace_line_start..brace_byte]
         .chars()
         .map(|character| character.len_utf16() as u32)
         .sum();
-    let brace_indent: String = text[line_start..brace_byte].to_string();
+    let brace_indent: String = text[brace_line_start..brace_byte].to_string();
     let indent = format!("{brace_indent}    ");
     let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
-    Some(InsertPoint {
-        line,
-        column,
-        indent,
-        brace_indent,
-        newline,
-    })
+    // Anchor: the last member's end. The generated member goes on the line
+    // right after it, so a trailing comment or blank line stays below.
+    let member_end_byte = crate::analysis::positions::utf16_to_byte_snapped(text, member_end_utf16 as usize);
+    let member_line = text[..member_end_byte].matches('\n').count() as u32;
+    if member_line + 1 == brace_line {
+        Some(InsertPoint {
+            line: brace_line,
+            column: brace_column,
+            indent,
+            brace_indent,
+            newline,
+            replace_prefix: true,
+        })
+    } else {
+        Some(InsertPoint {
+            line: member_line + 1,
+            column: 0,
+            indent,
+            brace_indent,
+            newline,
+            replace_prefix: false,
+        })
+    }
 }

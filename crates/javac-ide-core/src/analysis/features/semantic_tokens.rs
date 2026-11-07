@@ -152,7 +152,9 @@ impl FileAnalysis {
             if flags_value & flags::ABSTRACT as i64 != 0 {
                 modifiers |= modifier_bit("abstract");
             }
-            if flags_value & flags::DEPRECATED as i64 != 0 {
+            // AST-first: the extractor reports a `@Deprecated` annotation tree;
+            // the symbol flag is only a fallback (e.g. javadoc @deprecated).
+            if declaration.deprecated || flags_value & flags::DEPRECATED as i64 != 0 {
                 modifiers |= modifier_bit("deprecated");
             }
             // `declared_name_start` already returns the exact name start.

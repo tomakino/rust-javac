@@ -236,3 +236,32 @@ fn item16_import_prefix_is_namespace() {
     eprintln!("[T] {tokens:?}");
     assert!(has(&tokens, "namespace", None, Some(0), None), "{tokens:?}");
 }
+#[test]
+fn item17_deprecated_annotation_on_method() {
+    // AST-first: the annotation tree in `mods.annotations` sets the modifier.
+    let tokens = tokens("class A {\n  @Deprecated void old() {}\n}\n", "item17");
+    assert!(
+        has(&tokens, "method", Some("deprecated"), Some(1), Some(19)),
+        "{tokens:?}"
+    );
+}
+
+#[test]
+fn item18_deprecated_annotation_on_class() {
+    let tokens = tokens("@Deprecated class A {}\n", "item18");
+    assert!(
+        has(&tokens, "class", Some("deprecated"), Some(0), Some(18)),
+        "{tokens:?}"
+    );
+}
+
+#[test]
+fn item19_javadoc_deprecated_flag_fallback() {
+    // No annotation tree here: the symbol flag (javadoc @deprecated) still
+    // marks the declaration deprecated.
+    let tokens = tokens("class A {\n  /** @deprecated */ void old() {}\n}\n", "item19");
+    assert!(
+        has(&tokens, "method", Some("deprecated"), Some(1), Some(26)),
+        "{tokens:?}"
+    );
+}

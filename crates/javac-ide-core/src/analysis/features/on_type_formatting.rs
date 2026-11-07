@@ -52,7 +52,7 @@ impl FileAnalysis {
             ';' => previous_indent(&lines, line_index),
             '\n' => {
                 let previous = previous_indent(&lines, line_index);
-                if opens_block(&masked_lines, line_index) {
+                if opens_block(&masked_lines, line_index) || opens_case(&masked_lines, line_index) {
                     previous + INDENT
                 } else {
                     previous
@@ -105,5 +105,21 @@ fn opens_block(lines: &[&str], line_index: usize) -> bool {
         .checked_sub(1)
         .and_then(|index| lines.get(index))
         .map(|line| line.trim_end().ends_with('{'))
+        .unwrap_or(false)
+}
+
+/// Plan 9.2: a `case X:` / `default:` label opens an indented body.
+fn opens_case(lines: &[&str], line_index: usize) -> bool {
+    line_index
+        .checked_sub(1)
+        .and_then(|index| lines.get(index))
+        .map(|line| {
+            let trimmed = line.trim_end();
+            if !trimmed.ends_with(':') {
+                return false;
+            }
+            let head = trimmed.trim_start();
+            head.starts_with("case ") || head.starts_with("default")
+        })
         .unwrap_or(false)
 }

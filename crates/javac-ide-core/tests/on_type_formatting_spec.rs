@@ -122,3 +122,16 @@ fn item10_crlf_keeps_indent_without_cr() {
     let text = "class A {\r\n    void f() {\r\n            }\r\n}\r\n";
     assert_eq!(edit_text(text, 2, '}'), "    ");
 }
+
+#[test]
+fn item11_switch_case_body_is_indented() {
+    // Plan 9.2: after `case X:` the body indents 4 past the case label.
+    let text = "class A {\n    void f() {\n        switch (x) {\n            case 1:\n            break;\n        }\n    }\n}\n";
+    assert_eq!(edit_text(text, 4, '\n'), "                ");
+}
+
+#[test]
+fn item12_switch_default_body_is_indented() {
+    let text = "class A {\n    void f() {\n        switch (x) {\n            default:\n            break;\n        }\n    }\n}\n";
+    assert_eq!(edit_text(text, 4, '\n'), "                ");
+}

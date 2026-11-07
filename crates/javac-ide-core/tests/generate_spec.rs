@@ -241,3 +241,41 @@ fn item14_nested_class_cursor() {
     );
     assert_eq!(constructor.edits[0].range.start.line, 3, "{constructor:?}");
 }
+#[test]
+fn item15_insert_after_last_member_before_trailing_comment() {
+    // Plan 14.1: the generated member goes after the last member and before a
+    // trailing comment line (the comment stays below it).
+    let text = "class Foo {\n  int a;\n  // trailing\n}\n";
+    let actions = generate_actions(text, "item15");
+    let constructor = find(&actions, "Generate constructor").expect("constructor action");
+    assert_eq!(
+        constructor.edits[0].new_text,
+        "    public Foo(int a) {\n        this.a = a;\n    }\n"
+    );
+    // Inserted on the line right after `int a;` (the comment line), empty range.
+    assert_eq!(constructor.edits[0].range.start.line, 2, "{constructor:?}");
+    assert_eq!(constructor.edits[0].range.start.column, 0, "{constructor:?}");
+    assert_eq!(
+        constructor.edits[0].range.end,
+        constructor.edits[0].range.start,
+        "{constructor:?}"
+    );
+}
+
+#[test]
+fn item16_insert_after_last_member_before_blank_line() {
+    let text = "class Foo {\n  int a;\n\n}\n";
+    let actions = generate_actions(text, "item16");
+    let constructor = find(&actions, "Generate constructor").expect("constructor action");
+    assert_eq!(
+        constructor.edits[0].new_text,
+        "    public Foo(int a) {\n        this.a = a;\n    }\n"
+    );
+    assert_eq!(constructor.edits[0].range.start.line, 2, "{constructor:?}");
+    assert_eq!(constructor.edits[0].range.start.column, 0, "{constructor:?}");
+    assert_eq!(
+        constructor.edits[0].range.end,
+        constructor.edits[0].range.start,
+        "{constructor:?}"
+    );
+}

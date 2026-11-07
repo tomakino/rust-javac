@@ -715,7 +715,9 @@ impl TreeScannerVisitor for OccurrenceCollector {
     fn visit_import(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         // Import prefix -> namespace; the imported type is recorded as an
         // Import occurrence (not a Reference) so semantic tokens do not
-        // double count it.
+        // double count it. The range points at the imported name itself so
+        // goto-definition on `import a.B` still resolves (the index looks
+        // occurrences up by position).
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Import {
                 qualid: Some(qualid),
@@ -723,12 +725,25 @@ impl TreeScannerVisitor for OccurrenceCollector {
             } => *qualid,
             _ => return,
         };
-        let sym = match &ctx.tree(qualid).kind {
-            TreeKind::Ident { sym: Some(sym), .. } => *sym,
-            TreeKind::FieldAccess { sym: Some(sym), .. } => *sym,
+        let (symbol, position) = match &ctx.tree(qualid).kind {
+            TreeKind::Ident {
+                sym: Some(symbol), ..
+            } => (*symbol, ctx.tree(qualid).pos),
+            TreeKind::FieldAccess {
+                selected: Some(selected),
+                name,
+                sym: Some(symbol),
+                ..
+            } => {
+                let name = name.to_java_string().to_string_lossy().to_string();
+                let Some(position) = self.field_name_pos(&*ctx, *selected, &name) else {
+                    return;
+                };
+                (*symbol, position)
+            }
             _ => return,
         };
-        self.record(sym, ctx.tree(qualid).pos, OccurrenceRole::Import);
+        self.record(symbol, position, OccurrenceRole::Import);
     }
 
     fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {

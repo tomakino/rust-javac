@@ -152,12 +152,25 @@ impl WorkspaceService for Workspace {
             }) else {
                 continue;
             };
-            let references = occurrences
-                .iter()
-                .filter(|occurrence| {
-                    occurrence.role != crate::workspace::index::model::OccurrenceRole::Declaration
-                })
-                .count();
+            // Reference count comes from the shared index query (query::references),
+            // not from a second traversal here; the declaration itself is one of
+            // the returned locations.
+            let (decl_line, decl_column) = crate::analysis::positions::offset_to_line_col(
+                &text,
+                declaration.range.start as usize,
+            );
+            let locations = crate::workspace::index::query::references(
+                &snapshot,
+                file_id,
+                &text,
+                Position::new(decl_line, decl_column),
+                &|file| self.text_of_id(file),
+            );
+            let references = if locations.is_empty() {
+                0
+            } else {
+                locations.len() - 1
+            };
             let implementations = snapshot
                 .by_supertype
                 .get(symbol)
@@ -646,7 +659,33 @@ fn resolve_import_source(
 }
 
 fn file_uri(path: &Path) -> String {
-    format!("file:///{}", path.to_string_lossy().replace('\\', "/"))
+    // Percent-encode everything except URI path characters, so Chinese names,
+    // spaces, `#` and `%` survive as a valid file URI.
+    let text = path.to_string_lossy().replace('\\', "/");
+    let mut uri = String::from("file:///");
+    for byte in text.bytes() {
+        let keep = byte.is_ascii_alphanumeric()
+            || matches!(byte, b'/' | b':' | b'-' | b'_' | b'.' | b'~');
+        if keep {
+            uri.push(byte as char);
+        } else {
+            uri.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    uri
+}
+
+#[cfg(test)]
+mod file_uri_tests {
+    use super::file_uri;
+
+    #[test]
+    fn file_uri_percent_encodes_unicode_space_hash_percent() {
+        assert_eq!(
+            file_uri(std::path::Path::new("C:/中文 目录/a#b%.java")),
+            "file:///C:/%E4%B8%AD%E6%96%87%20%E7%9B%AE%E5%BD%95/a%23b%25.java"
+        );
+    }
 }
 
 /// `http(s)://` links. Scanning text is intentional and unambiguous here
