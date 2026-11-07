@@ -2,10 +2,13 @@
 
 use std::path::{Path, PathBuf};
 
-use super::super::super::positions::{line_offset, word_at};
+use super::super::super::positions::{line_offset, offset_to_line_col, word_at};
 use super::super::super::{canonical, FileAnalysis};
 use super::references::ReferenceCollector;
-use crate::ids::SymbolId;
+use crate::code::scope::LookupKind;
+use crate::code::symbol::SymbolKind;
+use crate::ids::{SymbolId, TreeId};
+use crate::tree::jc_tree::TreeKind;
 use crate::tree::tree_scanner::TreeScannerVisitor;
 
 impl FileAnalysis {
@@ -48,6 +51,14 @@ impl FileAnalysis {
             if let Some(symbol) = collector.query {
                 return Some((symbol, start));
             }
+        }
+        // A static import's last segment is resolved into the import scope
+        // rather than onto the qualifier tree (its `FieldAccess.sym` stays
+        // unset), so attribute it from the selected origin type's members.
+        if let Some((symbol, position)) =
+            static_import_member_at(&mut self.compiler.ctx, &text, &word, start, line)
+        {
+            return Some((symbol, position));
         }
         // Declarations have exact symbol positions even when their tree has no
         // reliable token position (for example a field access node).
@@ -135,4 +146,71 @@ fn declaration_name_at(
     }
     let offset = text.get(base..)?.find(&name)?;
     (base + offset == start).then_some(symbol)
+}
+
+/// The member symbol named `word` of an `import static ...` clause on `line`.
+///
+/// The compiler resolves a static import into the compilation unit's import
+/// scope and leaves the qualifier `FieldAccess.sym` unset, so the reference
+/// collector cannot attribute the imported name. The qualifier still names the
+/// origin type, whose direct members are the import candidates.
+fn static_import_member_at(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    text: &str,
+    word: &str,
+    start: usize,
+    line: usize,
+) -> Option<(SymbolId, usize)> {
+    for index in 0..ctx.trees.len() {
+        let tree = TreeId::new(index as u32);
+        let TreeKind::Import {
+            qualid: Some(qualid),
+            static_import: true,
+            ..
+        } = &ctx.tree(tree).kind
+        else {
+            continue;
+        };
+        let import_pos = ctx.tree(tree).pos;
+        if import_pos < 0 {
+            continue;
+        }
+        let (import_line, _) = offset_to_line_col(text, import_pos as usize);
+        if import_line as usize + 1 != line {
+            continue;
+        }
+        let TreeKind::FieldAccess {
+            selected: Some(selected),
+            name,
+            ..
+        } = &ctx.tree(*qualid).kind
+        else {
+            continue;
+        };
+        if name.to_java_string().to_string_lossy() != word {
+            continue;
+        }
+        let Some(origin) = crate::tree::tree_info::symbol(ctx, *selected) else {
+            continue;
+        };
+        if !matches!(ctx.sym(origin).kind_data, SymbolKind::ClassSymbol { .. }) {
+            continue;
+        }
+        let Some(scope) = ctx.sym(origin).members() else {
+            continue;
+        };
+        let members = ctx.scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true);
+        for member in members {
+            let matches = match &ctx.sym(member).kind_data {
+                SymbolKind::VarSymbol { .. } | SymbolKind::MethodSymbol { .. } => {
+                    ctx.sym(member).name.to_java_string().to_string_lossy() == word
+                }
+                _ => false,
+            };
+            if matches {
+                return Some((member, start));
+            }
+        }
+    }
+    None
 }

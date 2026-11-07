@@ -318,6 +318,56 @@ mod tests {
     }
 }
 
+/// The declaring `VariableDecl` of an enum constant, matched by name inside
+/// the owning enum's class body.
+///
+/// javac can attribute an enum constant's `VariableDecl.sym` to the enum class
+/// itself, so a `sym`-keyed declaration lookup misses the constant. The
+/// constant is still the same-named variable declaration directly under the
+/// enum's `ClassDecl`, so that tree is the authoritative anchor here.
+pub(crate) fn enum_constant_tree(
+    ctx: &crate::compiler_context::CompilerContext,
+    symbol: crate::ids::SymbolId,
+) -> Option<crate::ids::TreeId> {
+    let sym = ctx.sym(symbol);
+    if !matches!(
+        sym.kind_data,
+        crate::code::symbol::SymbolKind::VarSymbol { .. }
+    ) {
+        return None;
+    }
+    let owner = sym.owner?;
+    let owner_symbol = ctx.sym(owner);
+    if (owner_symbol.flags_field & crate::code::flags::ENUM as i64) == 0 {
+        return None;
+    }
+    let name = sym.name.to_java_string().to_string_lossy().to_string();
+    for index in 0..ctx.trees.len() {
+        let tree = crate::ids::TreeId::new(index as u32);
+        let crate::tree::jc_tree::TreeKind::ClassDecl {
+            sym: Some(class),
+            defs,
+            ..
+        } = &ctx.tree(tree).kind
+        else {
+            continue;
+        };
+        if *class != owner {
+            continue;
+        }
+        for definition in defs.iter() {
+            if let crate::tree::jc_tree::TreeKind::VariableDecl {
+                name: declared, ..
+            } = &ctx.tree(definition).kind
+                && declared.to_java_string().to_string_lossy() == name
+            {
+                return Some(definition);
+            }
+        }
+    }
+    None
+}
+
 /// AST name position of a symbol's declaration: parser name table (the
 /// `CompilationUnit.name_positions` published by the parser), then
 /// `VariableDecl.decl_pos`, then the declaring tree position.
@@ -328,9 +378,6 @@ pub(crate) fn name_start_of_symbol(
     ctx: &crate::compiler_context::CompilerContext,
     symbol: crate::ids::SymbolId,
 ) -> Option<u32> {
-    // `target` may be NOPOS for parameters; the declaration tree is matched by
-    // `sym`/`decl_pos` below, so a missing position is not fatal.
-    let target = ctx.sym(symbol).pos.get();
     let mut name_tables: Vec<std::rc::Rc<dyn crate::tree::end_pos_table::EndPosTable>> = Vec::new();
     for index in 0..ctx.trees.len() {
         let unit = crate::ids::TreeId::new(index as u32);
@@ -365,7 +412,14 @@ pub(crate) fn name_start_of_symbol(
             break;
         }
     }
-    let tree = candidate?;
+    let tree = match candidate {
+        Some(tree) => tree,
+        // Do not rely on `VariableDecl.sym` for enum constants: javac can
+        // attribute the constant's declaration tree to the enum class, which
+        // makes the `sym`-keyed lookup above miss it. The declaration is still
+        // the same-named variable directly under the enum's class body.
+        None => enum_constant_tree(ctx, symbol)?,
+    };
     let mut name_tables: Vec<std::rc::Rc<dyn crate::tree::end_pos_table::EndPosTable>> =
         Vec::new();
     for index in 0..ctx.trees.len() {
@@ -397,6 +451,96 @@ mod name_start_tests {
     use crate::analysis::AnalysisConfig;
     use crate::tree::jc_tree::TreeKind;
     use crate::workspace::analysis::FileAnalysis;
+
+    #[test]
+    fn enum_constant_name_start_survives_a_wrong_declaration_sym() {
+        if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+                .join("target")
+                .join("debug");
+            unsafe {
+                std::env::set_var("RAVAC_PLATFORM_DIR", &root);
+            }
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("target")
+            .join("tmp")
+            .join("name-start-enum");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("E.java");
+        let text = "enum E {\n    A,\n    B\n}\n";
+        std::fs::write(&path, text).unwrap();
+        let config = AnalysisConfig {
+            class_path: Vec::new(),
+            output_dir: root.join("out"),
+            source_level: "17".to_string(),
+            source_path: vec![root.clone()],
+        };
+        let mut analysis = FileAnalysis::new(config);
+        let key = std::path::PathBuf::from(crate::analysis::canonical(&path));
+        analysis.texts.insert(key, text.to_string());
+        analysis.compiler.overlay_text = Some((path.clone(), text.to_string()));
+        let _ = analysis.compiler.compile_files(&[path.clone()]);
+
+        let mut class_symbol = None;
+        let mut constant_tree = None;
+        let mut constant_symbol = None;
+        for index in 0..analysis.compiler.ctx.trees.len() {
+            let tree = crate::ids::TreeId::new(index as u32);
+            match &analysis.compiler.ctx.tree(tree).kind {
+                TreeKind::ClassDecl {
+                    sym: Some(symbol), ..
+                } => class_symbol = Some(*symbol),
+                TreeKind::VariableDecl {
+                    name, sym: Some(symbol), ..
+                } if name.to_java_string().to_string_lossy() == "A" => {
+                    constant_tree = Some(tree);
+                    constant_symbol = Some(*symbol);
+                }
+                _ => {}
+            }
+        }
+        let class_symbol = class_symbol.expect("enum class symbol");
+        let constant_tree = constant_tree.expect("enum constant declaration");
+        let constant_symbol = constant_symbol.expect("enum constant symbol");
+        let expected = analysis.compiler.ctx.tree(constant_tree).pos;
+        assert_eq!(
+            name_start_of_symbol(&analysis.compiler.ctx, constant_symbol),
+            Some(expected as u32),
+            "the constant's own declaration tree is the anchor"
+        );
+
+        // Reproduce javac mapping the constant's declaration tree to the enum
+        // class: the `sym`-keyed lookup can no longer find it, so the name +
+        // enum-body match must take over.
+        if let TreeKind::VariableDecl { sym, .. } =
+            &mut analysis.compiler.ctx.tree_mut(constant_tree).kind
+        {
+            *sym = Some(class_symbol);
+        }
+        assert_eq!(
+            name_start_of_symbol(&analysis.compiler.ctx, constant_symbol),
+            Some(expected as u32),
+            "enum constant declaration must not depend on VariableDecl.sym"
+        );
+        let no_symbol_trees = std::collections::HashMap::new();
+        assert_eq!(
+            crate::workspace::index::build::name_start_of(
+                &analysis.compiler.ctx,
+                constant_symbol,
+                &no_symbol_trees,
+                None,
+                Some(text),
+            ),
+            expected as u32,
+            "the index declaration range must fall back to the enum-body match"
+        );
+    }
 
     #[test]
     fn parameter_has_an_ast_name_start() {

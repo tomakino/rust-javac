@@ -912,35 +912,52 @@ pub(crate) fn name_start_of(
     text: Option<&str>,
 ) -> u32 {
     if let Some(tree) = symbol_trees.get(&symbol) {
-        let tree_pos = ctx.tree(*tree).pos.max(0) as usize;
-        // AST-first order: parser-recorded name token, then the variable
-        // declaration position, then a boundary-checked text match (the
-        // declaration start can be a modifier such as `final`), then the tree.
-        if let Some(table) = name_positions {
-            let position = table.get_end_pos(*tree);
-            if position > 0 {
-                return position as u32;
-            }
-        }
-        if let TreeKind::VariableDecl { decl_pos, .. } = &ctx.tree(*tree).kind
-            && *decl_pos > 0
-        {
-            return *decl_pos as u32;
-        }
-        let name = ctx.sym(symbol).name.to_java_string().to_string_lossy();
-        if !name.is_empty()
-            && !name.starts_with('<')
-            && let Some(text) = text
-        {
-            // `tree_pos` is a UTF-16 offset; `&str` slicing is byte based.
-            let base = crate::analysis::positions::utf16_to_byte_snapped(text, tree_pos);
-            if let Some(offset) = find_identifier(text, base, &name) {
-                return crate::analysis::positions::byte_to_utf16(text, base + offset) as u32;
-            }
-        }
-        return ctx.tree(*tree).pos.max(0) as u32;
+        return name_start_of_tree(ctx, symbol, *tree, name_positions, text);
+    }
+    // Do not trust `VariableDecl.sym` for enum constants: javac can map the
+    // constant's declaration tree to the enum class. The constant is still the
+    // same-named variable declaration directly under the enum's class body.
+    if let Some(tree) = crate::analysis::positions::enum_constant_tree(ctx, symbol) {
+        return name_start_of_tree(ctx, symbol, tree, name_positions, text);
     }
     ctx.sym(symbol).pos.get().max(0) as u32
+}
+
+/// Name position of the declaration `tree` for `symbol`.
+fn name_start_of_tree(
+    ctx: &CompilerContext,
+    symbol: CompilerSymbolId,
+    tree: TreeId,
+    name_positions: Option<&dyn crate::tree::end_pos_table::EndPosTable>,
+    text: Option<&str>,
+) -> u32 {
+    let tree_pos = ctx.tree(tree).pos.max(0) as usize;
+    // AST-first order: parser-recorded name token, then the variable
+    // declaration position, then a boundary-checked text match (the
+    // declaration start can be a modifier such as `final`), then the tree.
+    if let Some(table) = name_positions {
+        let position = table.get_end_pos(tree);
+        if position > 0 {
+            return position as u32;
+        }
+    }
+    if let TreeKind::VariableDecl { decl_pos, .. } = &ctx.tree(tree).kind
+        && *decl_pos > 0
+    {
+        return *decl_pos as u32;
+    }
+    let name = ctx.sym(symbol).name.to_java_string().to_string_lossy();
+    if !name.is_empty()
+        && !name.starts_with('<')
+        && let Some(text) = text
+    {
+        // `tree_pos` is a UTF-16 offset; `&str` slicing is byte based.
+        let base = crate::analysis::positions::utf16_to_byte_snapped(text, tree_pos);
+        if let Some(offset) = find_identifier(text, base, &name) {
+            return crate::analysis::positions::byte_to_utf16(text, base + offset) as u32;
+        }
+    }
+    ctx.tree(tree).pos.max(0) as u32
 }
 
 /// Byte offset of `name` in `text[base..]` matched as a whole identifier, so a
