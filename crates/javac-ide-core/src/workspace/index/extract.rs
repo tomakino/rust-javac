@@ -52,6 +52,8 @@ pub struct ExtractedDeclaration {
     pub name: String,
     pub owner: Option<SymbolIdentity>,
     pub range: ByteRange,
+    /// AST name position (parser name table / `decl_pos`), not a text search.
+    pub name_start: u32,
     pub detail: String,
     pub modifiers: u32,
     /// AST-first deprecation: the declaring tree carries a `@Deprecated`
@@ -103,6 +105,15 @@ pub fn extract_file(
     let target = PathBuf::from(canonical(path));
     let mut identities: HashMap<CompilerSymbolId, SymbolIdentity> = HashMap::new();
     let mut seen = HashSet::new();
+    // Declaration TreeIds let `name_start` come from the parser's name table /
+    // `decl_pos` instead of a text search.
+    let symbol_trees = symbol_tree_map(&analysis.compiler.ctx);
+    let name_positions = compilation_unit(&analysis.compiler.ctx, &target).and_then(|unit| {
+        match &analysis.compiler.ctx.tree(unit).kind {
+            TreeKind::CompilationUnit { name_positions, .. } => name_positions.clone(),
+            _ => None,
+        }
+    });
     let classes = analysis.compiler.syms.get_all_classes();
     for class in classes {
         collect_class(
@@ -112,6 +123,8 @@ pub fn extract_file(
             file,
             &javadocs,
             &deprecated_annotations,
+            &symbol_trees,
+            name_positions.as_deref(),
             &mut out.declarations,
             &mut identities,
             &mut seen,
@@ -171,26 +184,8 @@ pub fn extract_file(
         }
     }
 
-    // Declaration positions point at the declaration tree start (`class`,
-    // modifiers, return type); move them onto the declared name.
-    for declaration in &mut out.declarations {
-        let start =
-            crate::analysis::positions::declared_name_start(text, declaration.range.start, &declaration.name);
-        declaration.range = ByteRange {
-            start,
-            end: start.saturating_add(declaration.name.encode_utf16().count() as u32),
-        };
-    }
-    for occurrence in &mut out.occurrences {
-        if occurrence.role == OccurrenceRole::Declaration {
-            let name = simple_name(&occurrence.identity.flat_name);
-            let start = crate::analysis::positions::declared_name_start(text, occurrence.range.start, name);
-            occurrence.range = ByteRange {
-                start,
-                end: start.saturating_add(name.encode_utf16().count() as u32),
-            };
-        }
-    }
+    // Declaration ranges already start at the declared name (AST name start);
+    // no text post-processing is needed.
 
     // Type/method/constructor declarations are not emitted by the tree
     // scanner; the builder adds their declaration occurrence itself. Mirror
@@ -227,6 +222,8 @@ fn collect_class(
     file: FileId,
     javadocs: &HashMap<CompilerSymbolId, String>,
     deprecated_annotations: &HashMap<CompilerSymbolId, bool>,
+    symbol_trees: &HashMap<CompilerSymbolId, TreeId>,
+    name_positions: Option<&dyn crate::tree::end_pos_table::EndPosTable>,
     out: &mut Vec<ExtractedDeclaration>,
     identities: &mut HashMap<CompilerSymbolId, SymbolIdentity>,
     seen: &mut HashSet<CompilerSymbolId>,
@@ -241,6 +238,8 @@ fn collect_class(
         file,
         javadocs,
         deprecated_annotations,
+        symbol_trees,
+        name_positions,
     ) {
         identities.insert(class, declaration.identity.clone());
         out.push(declaration);
@@ -267,6 +266,8 @@ fn collect_class(
                 file,
                 javadocs,
                 deprecated_annotations,
+                symbol_trees,
+                name_positions,
                 out,
                 identities,
                 seen,
@@ -278,6 +279,8 @@ fn collect_class(
             file,
             javadocs,
             deprecated_annotations,
+            symbol_trees,
+            name_positions,
         ) {
             identities.insert(member, declaration.identity.clone());
             out.push(declaration);
@@ -342,6 +345,72 @@ fn has_deprecated_annotation(ctx: &CompilerContext, mods: TreeId) -> bool {
     false
 }
 
+/// The compilation unit parsed for the target source file.
+fn compilation_unit(ctx: &CompilerContext, target: &Path) -> Option<TreeId> {
+    for index in 0..ctx.trees.len() {
+        let unit = TreeId::new(index as u32);
+        if let TreeKind::CompilationUnit {
+            sourcefile: Some(source),
+            ..
+        } = &ctx.tree(unit).kind
+        {
+            let path = PathBuf::from(canonical(Path::new(&source.get_name().to_string_lossy())));
+            if path == *target {
+                return Some(unit);
+            }
+        }
+    }
+    None
+}
+
+/// `symbol -> declaring tree` for the declarations in the arena.
+fn symbol_tree_map(ctx: &CompilerContext) -> HashMap<CompilerSymbolId, TreeId> {
+    let mut trees = HashMap::new();
+    for index in 0..ctx.trees.len() {
+        let tree = TreeId::new(index as u32);
+        let symbol = match &ctx.tree(tree).kind {
+            TreeKind::ClassDecl {
+                sym: Some(symbol), ..
+            }
+            | TreeKind::MethodDecl {
+                sym: Some(symbol), ..
+            }
+            | TreeKind::VariableDecl {
+                sym: Some(symbol), ..
+            } => *symbol,
+            _ => continue,
+        };
+        trees.entry(symbol).or_insert(tree);
+    }
+    trees
+}
+
+/// AST name position: parser name table (classes/interfaces/enums/records/
+/// methods), then `VariableDecl.decl_pos` (fields/locals/parameters/enum
+/// constants), then the declaring tree position (constructors/type parameters).
+fn name_start_of(
+    ctx: &CompilerContext,
+    symbol: CompilerSymbolId,
+    symbol_trees: &HashMap<CompilerSymbolId, TreeId>,
+    name_positions: Option<&dyn crate::tree::end_pos_table::EndPosTable>,
+) -> u32 {
+    if let Some(tree) = symbol_trees.get(&symbol) {
+        if let Some(table) = name_positions {
+            let position = table.get_end_pos(*tree);
+            if position > 0 {
+                return position as u32;
+            }
+        }
+        if let TreeKind::VariableDecl { decl_pos, .. } = &ctx.tree(*tree).kind
+            && *decl_pos > 0
+        {
+            return *decl_pos as u32;
+        }
+        return ctx.tree(*tree).pos.max(0) as u32;
+    }
+    ctx.sym(symbol).pos.get().max(0) as u32
+}
+
 fn declaration_of(
     ctx: &mut CompilerContext,
     symbol: CompilerSymbolId,
@@ -349,6 +418,8 @@ fn declaration_of(
     file: FileId,
     javadocs: &HashMap<CompilerSymbolId, String>,
     deprecated_annotations: &HashMap<CompilerSymbolId, bool>,
+    symbol_trees: &HashMap<CompilerSymbolId, TreeId>,
+    name_positions: Option<&dyn crate::tree::end_pos_table::EndPosTable>,
 ) -> Option<ExtractedDeclaration> {
     let source = source_file(ctx, symbol)?;
     if PathBuf::from(canonical(&source)) != target {
@@ -367,10 +438,10 @@ fn declaration_of(
         .sym(symbol)
         .owner
         .and_then(|owner| identity_of(ctx, owner, file));
-    let pos = ctx.sym(symbol).pos.get().max(0) as u32;
+    let name_start = name_start_of(ctx, symbol, symbol_trees, name_positions);
     let range = ByteRange {
-        start: pos,
-        end: pos.saturating_add(name.encode_utf16().count() as u32),
+        start: name_start,
+        end: name_start.saturating_add(name.encode_utf16().count() as u32),
     };
     let detail = match &ctx.sym(symbol).kind_data {
         SymbolKind::VarSymbol { .. } => {
@@ -422,6 +493,7 @@ fn declaration_of(
         name,
         owner,
         range,
+        name_start,
         detail,
         modifiers: ctx.sym(symbol).flags_field as u32,
         deprecated: deprecated_annotations
