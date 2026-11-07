@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use javac_analysis_api::{Position, Range, SelectionRange};
 
 use super::super::positions::{
-    byte_to_utf16, declared_name_start, in_literal_or_comment, line_offset, member_name_start,
+    byte_to_utf16, in_literal_or_comment, line_offset, member_name_start,
     offset_to_line_col, utf16_to_byte,
 };
 use super::super::{canonical, FileAnalysis};
@@ -208,24 +208,6 @@ fn fallback_ranges(text: &str, byte: usize) -> SelectionRange {
     }
 }
 
-/// UTF-16 offset of a char index.
-fn utf16_of_char_index(text: &str, index: usize) -> i32 {
-    let mut offset = 0i32;
-    for (seen, ch) in text.chars().enumerate() {
-        if seen == index {
-            break;
-        }
-        offset += ch.len_utf16() as i32;
-    }
-    offset
-}
-
-/// Char index of a UTF-16 offset.
-fn char_index_of_utf16(text: &str, offset: i32) -> Option<usize> {
-    let byte = utf16_to_byte(text, offset.max(0) as usize)?;
-    Some(text[..byte].chars().count())
-}
-
 struct ChainCollector {
     text: String,
     /// A copy of `text` with strings/comments blanked (same char count).
@@ -322,11 +304,14 @@ impl TreeScannerVisitor for ChainCollector {
                         TreeKind::VariableDecl { decl_pos, .. } if *decl_pos > 0 => {
                             *decl_pos as u32
                         }
+                        // Non-member declarations without a parser name entry
+                        // (type parameters, constructors): the tree position is
+                        // the name or the declaration start.
                         _ => {
                             if is_member {
                                 member_name_start(&self.text, start as u32, name)
                             } else {
-                                declared_name_start(&self.text, start as u32, name)
+                                ctx.tree(tree).pos.max(0) as u32
                             }
                         }
                     },

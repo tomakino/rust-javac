@@ -17,8 +17,8 @@ use crate::tree::tree_scanner::TreeScannerVisitor;
 use crate::workspace::analysis::FileAnalysis;
 
 use super::build::{
-    canonical, class_supertypes, collect_javadocs, kind_name, source_file, symbol_kind,
-    OccurrenceCollector,
+    canonical, class_supertypes, collect_javadocs, kind_name, name_start_of, source_file,
+    symbol_kind, OccurrenceCollector,
 };
 use super::key::{FileId, IndexSymbolKind};
 use super::model::{ByteRange, OccurrenceRole, TypeRef};
@@ -388,28 +388,6 @@ fn symbol_tree_map(ctx: &CompilerContext) -> HashMap<CompilerSymbolId, TreeId> {
 /// AST name position: parser name table (classes/interfaces/enums/records/
 /// methods), then `VariableDecl.decl_pos` (fields/locals/parameters/enum
 /// constants), then the declaring tree position (constructors/type parameters).
-fn name_start_of(
-    ctx: &CompilerContext,
-    symbol: CompilerSymbolId,
-    symbol_trees: &HashMap<CompilerSymbolId, TreeId>,
-    name_positions: Option<&dyn crate::tree::end_pos_table::EndPosTable>,
-) -> u32 {
-    if let Some(tree) = symbol_trees.get(&symbol) {
-        if let Some(table) = name_positions {
-            let position = table.get_end_pos(*tree);
-            if position > 0 {
-                return position as u32;
-            }
-        }
-        if let TreeKind::VariableDecl { decl_pos, .. } = &ctx.tree(*tree).kind
-            && *decl_pos > 0
-        {
-            return *decl_pos as u32;
-        }
-        return ctx.tree(*tree).pos.max(0) as u32;
-    }
-    ctx.sym(symbol).pos.get().max(0) as u32
-}
 
 fn declaration_of(
     ctx: &mut CompilerContext,

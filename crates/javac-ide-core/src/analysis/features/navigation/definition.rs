@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::super::super::positions::{
-    declared_name_start, in_literal_or_comment, line_offset, offset_to_line_col, word_at,
+    in_literal_or_comment, line_offset, offset_to_line_col, word_at,
 };
 use super::super::super::{canonical, FileAnalysis};
 
@@ -145,18 +145,9 @@ impl FileAnalysis {
         };
         if let Some(path) = sourcefile {
             if class_pos >= 0 {
-                let key = PathBuf::from(canonical(&path));
-                let text = self
-                    .texts
-                    .get(&key)
-                    .cloned()
-                    .or_else(|| std::fs::read_to_string(&path).ok());
-                let pos = match text {
-                    Some(text) => {
-                        declared_name_start(&text, class_pos as u32, &class_name) as i32
-                    }
-                    None => class_pos,
-                };
+                let pos = crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, class)
+                    .map(|position| position as i32)
+                    .unwrap_or(class_pos);
                 return self.location_for(&path, pos);
             }
         }
@@ -254,18 +245,9 @@ impl FileAnalysis {
                 _ => None,
             };
             if let (Some(path), true) = (sourcefile, pos >= 0) {
-                let key = PathBuf::from(canonical(&path));
-                let text = self
-                    .texts
-                    .get(&key)
-                    .cloned()
-                    .or_else(|| std::fs::read_to_string(&path).ok());
-                let pos = match text {
-                    Some(text) => {
-                        declared_name_start(&text, pos as u32, &class_name) as i32
-                    }
-                    None => pos,
-                };
+                let pos = crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, sym)
+                    .map(|position| position as i32)
+                    .unwrap_or(pos);
                 if let Some(location) = self.location_for(&path, pos) {
                     locations.push(location);
                 }

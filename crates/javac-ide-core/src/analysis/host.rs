@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use super::diagnostics::convert_diagnostic;
 use super::type_names::type_name;
-use super::positions::{declared_name_start, indexed_location, occurrences, offset_to_line_col, prefix_at, symbol_range, word_at};
+use super::positions::{indexed_location, occurrences, offset_to_line_col, prefix_at, symbol_range, word_at};
 use super::features::map_kind;
 use super::{canonical, FileAnalysis};
 
@@ -129,7 +129,10 @@ impl FileAnalysis {
             .get(&PathBuf::from(canonical(&file)))
             .cloned()
             .or_else(|| std::fs::read_to_string(&file).ok())?;
-        let (line, column) = offset_to_line_col(&text, declared_name_start(&text, pos.max(0) as u32, &name) as usize);
+        let pos = crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, class)
+            .map(|position| position as i32)
+            .unwrap_or(pos);
+        let (line, column) = offset_to_line_col(&text, pos.max(0) as usize);
         Some(javac_analysis_api::TypeHierarchyItem {
             name,
             kind: javac_analysis_api::SymbolKind::Class,
@@ -190,7 +193,10 @@ impl FileAnalysis {
             .get(&PathBuf::from(canonical(&file)))
             .cloned()
             .or_else(|| std::fs::read_to_string(&file).ok())?;
-        let (line, column) = offset_to_line_col(&text, declared_name_start(&text, pos.max(0) as u32, name) as usize);
+        let pos = crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, sym)
+            .map(|position| position as i32)
+            .unwrap_or(pos);
+        let (line, column) = offset_to_line_col(&text, pos.max(0) as usize);
         Some(javac_analysis_api::CallHierarchyItem {
             name: name.to_string(),
             file,

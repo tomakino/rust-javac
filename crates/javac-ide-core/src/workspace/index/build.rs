@@ -97,6 +97,9 @@ pub struct IndexBuilder {
     strings: StringInterner,
     /// Rendered Javadoc of the symbols in the batch being indexed.
     javadocs: HashMap<CompilerSymbolId, String>,
+    /// Batch-local AST name data: declaring trees and parser name tables.
+    symbol_trees: HashMap<CompilerSymbolId, TreeId>,
+    name_positions: HashMap<FileId, Option<Rc<dyn crate::tree::end_pos_table::EndPosTable>>>,
 }
 
 impl IndexBuilder {
@@ -154,6 +157,8 @@ impl IndexBuilder {
             overlays: HashMap::new(),
             strings: StringInterner::default(),
             javadocs: HashMap::new(),
+            symbol_trees: HashMap::new(),
+            name_positions: HashMap::new(),
         }
     }
 
@@ -287,6 +292,41 @@ impl IndexBuilder {
             }
         }
         let compiled = session.compiler.compile_files(batch);
+        // AST name data for this batch: declaring trees and the parser name
+        // tables published on the compilation units.
+        self.symbol_trees.clear();
+        self.name_positions.clear();
+        {
+            let ctx = &session.compiler.ctx;
+            for index in 0..ctx.trees.len() {
+                let tree = TreeId::new(index as u32);
+                match &ctx.tree(tree).kind {
+                    TreeKind::ClassDecl {
+                        sym: Some(symbol), ..
+                    }
+                    | TreeKind::MethodDecl {
+                        sym: Some(symbol), ..
+                    }
+                    | TreeKind::VariableDecl {
+                        sym: Some(symbol), ..
+                    } => {
+                        self.symbol_trees.entry(*symbol).or_insert(tree);
+                    }
+                    TreeKind::CompilationUnit {
+                        sourcefile: Some(source),
+                        name_positions,
+                        ..
+                    } => {
+                        let path =
+                            PathBuf::from(canonical(Path::new(&source.get_name().to_string_lossy())));
+                        if let Some(id) = self.file_ids.get(&path).copied() {
+                            self.name_positions.insert(id, name_positions.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
         self.javadocs = collect_javadocs(&mut session.compiler);
         let failed = compiled.is_err() || session.compiler.log.nerrors.get() > 0;
         if failed {
@@ -439,9 +479,17 @@ impl IndexBuilder {
             return Some(id);
         }
 
-        let text = self.texts.get(&file).cloned().unwrap_or_default();
-        let raw_pos = ctx.sym(symbol).pos.get().max(0) as u32;
-        let pos = crate::analysis::positions::declared_name_start(&text, raw_pos, &name_string);
+        // AST name position: parser name table, then `decl_pos`, then the
+        // declaring tree position.
+        let pos = name_start_of(
+            ctx,
+            symbol,
+            &self.symbol_trees,
+            self.name_positions
+                .get(&file)
+                .and_then(|positions| positions.as_ref())
+                .map(|positions| positions.as_ref()),
+        );
         let end = pos.saturating_add(name_string.encode_utf16().count() as u32);
         let range = ByteRange { start: pos, end };
         let flat_name = match &ctx.sym(symbol).kind_data {
@@ -597,12 +645,9 @@ impl IndexBuilder {
         };
         let name = record.flat_name.rsplit('.').next().unwrap_or("");
         let name_len = name.encode_utf16().count() as u32;
-        let text = self.texts.get(&file).cloned().unwrap_or_default();
-        let start = if role == OccurrenceRole::Declaration {
-            crate::analysis::positions::declared_name_start(&text, position as u32, name)
-        } else {
-            position as u32
-        };
+        // Declaration positions already point at the AST name (`decl_pos` for
+        // variables; `name_start` for builder-added declarations).
+        let start = position as u32;
         let range = ByteRange {
             start,
             end: start.saturating_add(name_len.max(1)),
@@ -843,6 +888,31 @@ pub(crate) fn source_file(ctx: &CompilerContext, symbol: CompilerSymbolId) -> Op
             .owner
             .and_then(|owner| source_file(ctx, owner)),
     }
+}
+
+/// AST name position for a symbol: parser name table, then
+/// `VariableDecl.decl_pos`, then the declaring tree position.
+pub(crate) fn name_start_of(
+    ctx: &CompilerContext,
+    symbol: CompilerSymbolId,
+    symbol_trees: &HashMap<CompilerSymbolId, TreeId>,
+    name_positions: Option<&dyn crate::tree::end_pos_table::EndPosTable>,
+) -> u32 {
+    if let Some(tree) = symbol_trees.get(&symbol) {
+        if let Some(table) = name_positions {
+            let position = table.get_end_pos(*tree);
+            if position > 0 {
+                return position as u32;
+            }
+        }
+        if let TreeKind::VariableDecl { decl_pos, .. } = &ctx.tree(*tree).kind
+            && *decl_pos > 0
+        {
+            return *decl_pos as u32;
+        }
+        return ctx.tree(*tree).pos.max(0) as u32;
+    }
+    ctx.sym(symbol).pos.get().max(0) as u32
 }
 
 pub(crate) fn symbol_kind(ctx: &CompilerContext, symbol: CompilerSymbolId) -> Option<IndexSymbolKind> {

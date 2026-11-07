@@ -13,7 +13,7 @@ use javac_analysis_api::{Location, Position, Range};
 
 use super::super::super::{canonical, FileAnalysis};
 use crate::analysis::positions::{
-    declared_name_start, in_literal_or_comment, line_offset, offset_to_line_col,
+    in_literal_or_comment, line_offset, offset_to_line_col,
 };
 use crate::analysis::type_names::type_name;
 use crate::code::flags;
@@ -280,8 +280,8 @@ impl FileAnalysis {
                     .get(&key)
                     .cloned()
                     .or_else(|| std::fs::read_to_string(&path).ok())?;
-                let pos = self.compiler.ctx.sym(method).pos.get().max(0) as u32;
-                let pos = declared_name_start(&text, pos, &name);
+                let pos = crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, method)
+                    .unwrap_or(self.compiler.ctx.sym(method).pos.get().max(0) as u32);
                 let (line, column) = offset_to_line_col(&text, pos as usize);
                 return Some(Location {
                     file: path,

@@ -128,10 +128,6 @@ fn name_start_in(text: &str, start: u32, name: &str, reject_qualified: bool) -> 
     start
 }
 
-pub(crate) fn declared_name_start(text: &str, start: u32, name: &str) -> u32 {
-    name_start_in(text, start, name, true)
-}
-
 /// Start of a member name (`a.b`): the qualifier dot is expected here.
 pub(crate) fn member_name_start(text: &str, start: u32, name: &str) -> u32 {
     name_start_in(text, start, name, false)
@@ -320,4 +316,65 @@ mod tests {
         assert_eq!(range.start.column, 4);
         assert_eq!(range.end.column, 8, "emoji is two UTF-16 code units");
     }
+}
+
+/// AST name position of a symbol's declaration: parser name table (the
+/// `CompilationUnit.name_positions` published by the parser), then
+/// `VariableDecl.decl_pos`, then the declaring tree position.
+///
+/// Returns `None` when the symbol is not declared in the current arena
+/// (class-path / JDK symbols, which have no source tree here).
+pub(crate) fn name_start_of_symbol(
+    ctx: &crate::compiler_context::CompilerContext,
+    symbol: crate::ids::SymbolId,
+) -> Option<u32> {
+    let target = ctx.sym(symbol).pos.get();
+    if target < 0 {
+        return None;
+    }
+    let mut name_tables: Vec<std::rc::Rc<dyn crate::tree::end_pos_table::EndPosTable>> = Vec::new();
+    for index in 0..ctx.trees.len() {
+        let unit = crate::ids::TreeId::new(index as u32);
+        if let crate::tree::jc_tree::TreeKind::CompilationUnit {
+            name_positions: Some(table),
+            ..
+        } = &ctx.tree(unit).kind
+        {
+            name_tables.push(std::rc::Rc::clone(table));
+        }
+    }
+    for index in 0..ctx.trees.len() {
+        let tree = crate::ids::TreeId::new(index as u32);
+        if ctx.tree(tree).pos != target {
+            continue;
+        }
+        let declared_here = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::ClassDecl {
+                sym: Some(owner), ..
+            }
+            | crate::tree::jc_tree::TreeKind::MethodDecl {
+                sym: Some(owner), ..
+            }
+            | crate::tree::jc_tree::TreeKind::VariableDecl {
+                sym: Some(owner), ..
+            } => *owner == symbol,
+            _ => false,
+        };
+        if !declared_here {
+            continue;
+        }
+        for table in &name_tables {
+            let position = table.get_end_pos(tree);
+            if position > 0 {
+                return Some(position as u32);
+            }
+        }
+        if let crate::tree::jc_tree::TreeKind::VariableDecl { decl_pos, .. } = &ctx.tree(tree).kind
+            && *decl_pos > 0
+        {
+            return Some(*decl_pos as u32);
+        }
+        return Some(ctx.tree(tree).pos.max(0) as u32);
+    }
+    None
 }

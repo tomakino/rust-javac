@@ -7,7 +7,7 @@ use crate::code::scope::LookupKind;
 use crate::code::symbol::{symbol_packge, SymbolKind};
 use crate::ids::{SymbolId, TreeId};
 use crate::util::name::Name;
-use super::positions::{byte_to_utf16, declared_name_start, line_offset, word_at};
+use super::positions::{byte_to_utf16, line_offset, word_at};
 use super::type_names::type_name;
 use super::{canonical, FileAnalysis};
 
@@ -149,7 +149,9 @@ impl FileAnalysis {
         for traced in &self.traced {
             let class = &self.compiler.ctx.sym(traced.sym);
             let class_name = class.name.to_java_string().to_string_lossy();
-            let class_pos = position_on_name(text.as_deref(), class.pos.get(), &class_name);
+            let class_pos = crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, traced.sym)
+                .map(|position| position as i32)
+                .unwrap_or_else(|| class.pos.get());
             out.push(SymbolInfo {
                 name: class_name,
                 kind: "class",
@@ -189,7 +191,9 @@ impl FileAnalysis {
                         SymbolKind::VarSymbol { pos, .. } => *pos,
                         _ => sym.pos.get(),
                     };
-                    let member_pos = position_on_name(text.as_deref(), member_pos, &member_name);
+                    let member_pos = crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, member)
+                        .map(|position| position as i32)
+                        .unwrap_or(member_pos);
                     let detail = decl_trees
                         .get(&member)
                         .and_then(|tree| match kind {
@@ -378,13 +382,5 @@ impl FileAnalysis {
             }
             _ => None,
         }
-    }
-}
-
-/// Move a compiler declaration position onto the declared name.
-fn position_on_name(text: Option<&str>, pos: i32, name: &str) -> i32 {
-    match text {
-        Some(text) if pos >= 0 => declared_name_start(text, pos as u32, name) as i32,
-        _ => pos,
     }
 }

@@ -157,12 +157,8 @@ impl FileAnalysis {
             if declaration.deprecated || flags_value & flags::DEPRECATED as i64 != 0 {
                 modifiers |= modifier_bit("deprecated");
             }
-            // `declared_name_start` already returns the exact name start.
-            let start = crate::analysis::positions::declared_name_start(
-                &text,
-                declaration.range.start,
-                &declaration.name,
-            );
+            // `declaration.range` already starts at the AST name position.
+            let start = declaration.range.start;
             let length = declaration.name.encode_utf16().count() as u32;
             push_range(&text, start, length, token_type, modifiers, &mut raw);
         }
@@ -215,16 +211,10 @@ impl FileAnalysis {
                 .unwrap_or("")
                 .to_string();
             let mut modifiers = 0;
-            let start = if occurrence.role == OccurrenceRole::Declaration {
+            if occurrence.role == OccurrenceRole::Declaration {
                 modifiers |= modifier_bit("declaration");
-                crate::analysis::positions::declared_name_start(
-                    &text,
-                    occurrence.range.start,
-                    &simple,
-                )
-            } else {
-                occurrence.range.start
-            };
+            }
+            let start = occurrence.range.start;
             let length = simple.encode_utf16().count() as u32;
             push_range(&text, start, length, token_type, modifiers, &mut raw);
         }
