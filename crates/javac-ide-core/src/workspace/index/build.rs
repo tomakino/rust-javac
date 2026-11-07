@@ -298,32 +298,42 @@ impl IndexBuilder {
         self.name_positions.clear();
         {
             let ctx = &session.compiler.ctx;
+            // Two passes: class declarations must win their symbol mapping; an
+            // enum constant's `VariableDecl` can carry the enum's own symbol
+            // as `sym`, otherwise the enum would resolve to the constant's
+            // position.
+            for pass in 0..2 {
+                for index in 0..ctx.trees.len() {
+                    let tree = TreeId::new(index as u32);
+                    let symbol = match &ctx.tree(tree).kind {
+                        TreeKind::ClassDecl {
+                            sym: Some(symbol), ..
+                        } if pass == 0 => *symbol,
+                        TreeKind::MethodDecl {
+                            sym: Some(symbol), ..
+                        }
+                        | TreeKind::VariableDecl {
+                            sym: Some(symbol), ..
+                        } if pass == 1 => *symbol,
+                        _ => continue,
+                    };
+                    self.symbol_trees.entry(symbol).or_insert(tree);
+                }
+            }
             for index in 0..ctx.trees.len() {
                 let tree = TreeId::new(index as u32);
-                match &ctx.tree(tree).kind {
-                    TreeKind::ClassDecl {
-                        sym: Some(symbol), ..
+                if let TreeKind::CompilationUnit {
+                    sourcefile: Some(source),
+                    name_positions,
+                    ..
+                } = &ctx.tree(tree).kind
+                {
+                    let path = PathBuf::from(canonical(Path::new(
+                        &source.get_name().to_string_lossy(),
+                    )));
+                    if let Some(id) = self.file_ids.get(&path).copied() {
+                        self.name_positions.insert(id, name_positions.clone());
                     }
-                    | TreeKind::MethodDecl {
-                        sym: Some(symbol), ..
-                    }
-                    | TreeKind::VariableDecl {
-                        sym: Some(symbol), ..
-                    } => {
-                        self.symbol_trees.entry(*symbol).or_insert(tree);
-                    }
-                    TreeKind::CompilationUnit {
-                        sourcefile: Some(source),
-                        name_positions,
-                        ..
-                    } => {
-                        let path =
-                            PathBuf::from(canonical(Path::new(&source.get_name().to_string_lossy())));
-                        if let Some(id) = self.file_ids.get(&path).copied() {
-                            self.name_positions.insert(id, name_positions.clone());
-                        }
-                    }
-                    _ => {}
                 }
             }
         }
@@ -426,21 +436,7 @@ impl IndexBuilder {
         };
         let members = ctx.scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true);
         for member in members {
-            // Compiler-generated constructors are not part of the outline.
-            if (ctx.sym(member).flags_field & crate::code::flags::GENERATEDCONSTR) != 0 {
-                continue;
-            }
-            let member_name = ctx.sym(member).name.to_java_string().to_string_lossy();
-            let generated = matches!(
-                ctx.sym(member).kind_data,
-                SymbolKind::MethodSymbol { .. }
-            ) && (ctx.sym(member).flags_field & 0x2000_0000_0000_0000_u64 as i64) != 0;
-            let enum_synthetic =
-                (ctx.sym(class).flags_field & 0x4000) != 0
-                    && matches!(member_name.as_ref(), "values" | "valueOf");
-            if generated || enum_synthetic || !self.symbol_trees.contains_key(&member) {
-                // Compiler-synthesised member (record accessor, enum values):
-                // no declaration tree, not an outline entry.
+            if super::extract::is_synthesised_member(ctx, class, member) {
                 continue;
             }
             let is_class = matches!(ctx.sym(member).kind_data, SymbolKind::ClassSymbol { .. });
@@ -502,6 +498,7 @@ impl IndexBuilder {
                 .get(&file)
                 .and_then(|positions| positions.as_ref())
                 .map(|positions| positions.as_ref()),
+            self.texts.get(&file).map(String::as_str),
         );
         let end = pos.saturating_add(name_string.encode_utf16().count() as u32);
         let range = ByteRange { start: pos, end };
@@ -734,9 +731,11 @@ impl OccurrenceCollector {
 
     fn field_name_pos(&self, ctx: &CompilerContext, selected: TreeId, name: &str) -> Option<i32> {
         let start = ctx.tree(selected).pos.max(0) as usize;
-        let tail = self.text.get(start..)?;
+        // `pos` is a UTF-16 offset; text slicing is byte based.
+        let base = crate::analysis::positions::utf16_to_byte_snapped(&self.text, start);
+        let tail = self.text.get(base..)?;
         let offset = tail.find(name)?;
-        Some((start + offset) as i32)
+        Some(crate::analysis::positions::byte_to_utf16(&self.text, base + offset) as i32)
     }
 
     fn record(&mut self, symbol: CompilerSymbolId, position: i32, role: OccurrenceRole) {
@@ -910,8 +909,13 @@ pub(crate) fn name_start_of(
     symbol: CompilerSymbolId,
     symbol_trees: &HashMap<CompilerSymbolId, TreeId>,
     name_positions: Option<&dyn crate::tree::end_pos_table::EndPosTable>,
+    text: Option<&str>,
 ) -> u32 {
     if let Some(tree) = symbol_trees.get(&symbol) {
+        let tree_pos = ctx.tree(*tree).pos.max(0) as usize;
+        // AST-first order: parser-recorded name token, then the variable
+        // declaration position, then a boundary-checked text match (the
+        // declaration start can be a modifier such as `final`), then the tree.
         if let Some(table) = name_positions {
             let position = table.get_end_pos(*tree);
             if position > 0 {
@@ -923,9 +927,39 @@ pub(crate) fn name_start_of(
         {
             return *decl_pos as u32;
         }
+        let name = ctx.sym(symbol).name.to_java_string().to_string_lossy();
+        if !name.is_empty()
+            && !name.starts_with('<')
+            && let Some(text) = text
+        {
+            // `tree_pos` is a UTF-16 offset; `&str` slicing is byte based.
+            let base = crate::analysis::positions::utf16_to_byte_snapped(text, tree_pos);
+            if let Some(offset) = find_identifier(text, base, &name) {
+                return crate::analysis::positions::byte_to_utf16(text, base + offset) as u32;
+            }
+        }
         return ctx.tree(*tree).pos.max(0) as u32;
     }
     ctx.sym(symbol).pos.get().max(0) as u32
+}
+
+/// Byte offset of `name` in `text[base..]` matched as a whole identifier, so a
+/// declaration starting with a modifier (`final int f`) does not hit `final`.
+fn find_identifier(text: &str, base: usize, name: &str) -> Option<usize> {
+    let tail = text.get(base..)?;
+    let is_name_char = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    let mut from = 0;
+    while let Some(found) = tail.get(from..)?.find(name) {
+        let start = from + found;
+        let end = start + name.len();
+        let before = tail[..start].chars().next_back();
+        let after = tail[end..].chars().next();
+        if !before.is_some_and(is_name_char) && !after.is_some_and(is_name_char) {
+            return Some(start);
+        }
+        from = end;
+    }
+    None
 }
 
 pub(crate) fn symbol_kind(ctx: &CompilerContext, symbol: CompilerSymbolId) -> Option<IndexSymbolKind> {

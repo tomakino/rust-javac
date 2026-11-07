@@ -125,6 +125,7 @@ pub fn extract_file(
             &deprecated_annotations,
             &symbol_trees,
             name_positions.as_deref(),
+            text,
             &mut out.declarations,
             &mut identities,
             &mut seen,
@@ -224,6 +225,7 @@ fn collect_class(
     deprecated_annotations: &HashMap<CompilerSymbolId, bool>,
     symbol_trees: &HashMap<CompilerSymbolId, TreeId>,
     name_positions: Option<&dyn crate::tree::end_pos_table::EndPosTable>,
+    text: &str,
     out: &mut Vec<ExtractedDeclaration>,
     identities: &mut HashMap<CompilerSymbolId, SymbolIdentity>,
     seen: &mut HashSet<CompilerSymbolId>,
@@ -240,6 +242,7 @@ fn collect_class(
         deprecated_annotations,
         symbol_trees,
         name_positions,
+        text,
     ) {
         identities.insert(class, declaration.identity.clone());
         out.push(declaration);
@@ -251,7 +254,7 @@ fn collect_class(
         .ctx
         .scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true);
     for member in members {
-        if (compiler.ctx.sym(member).flags_field & crate::code::flags::GENERATEDCONSTR) != 0 {
+        if is_synthesised_member(&compiler.ctx, class, member) {
             continue;
         }
         let is_class = matches!(
@@ -268,6 +271,7 @@ fn collect_class(
                 deprecated_annotations,
                 symbol_trees,
                 name_positions,
+                text,
                 out,
                 identities,
                 seen,
@@ -281,11 +285,34 @@ fn collect_class(
             deprecated_annotations,
             symbol_trees,
             name_positions,
+            text,
         ) {
             identities.insert(member, declaration.identity.clone());
             out.push(declaration);
         }
     }
+}
+
+/// Compiler-synthesised members (default constructors, record object methods,
+/// enum `values`/`valueOf`) are not outline entries. Shared by extraction and
+/// the batch index builder. Do not filter on "no declaration tree": fields do
+/// not always carry their symbol on the `VariableDecl`, so that test removes
+/// real members.
+pub(crate) fn is_synthesised_member(
+    ctx: &CompilerContext,
+    class: CompilerSymbolId,
+    member: CompilerSymbolId,
+) -> bool {
+    // Compiler-generated constructors are not part of the outline.
+    if (ctx.sym(member).flags_field & crate::code::flags::GENERATEDCONSTR) != 0 {
+        return true;
+    }
+    let member_name = ctx.sym(member).name.to_java_string().to_string_lossy();
+    let generated = matches!(ctx.sym(member).kind_data, SymbolKind::MethodSymbol { .. })
+        && (ctx.sym(member).flags_field & 0x2000_0000_0000_0000_u64 as i64) != 0;
+    let enum_synthetic = (ctx.sym(class).flags_field & 0x4000) != 0
+        && matches!(member_name.as_ref(), "values" | "valueOf");
+    generated || enum_synthetic
 }
 
 /// AST-first: symbols whose declaring tree carries a `@Deprecated` annotation.
@@ -366,21 +393,25 @@ fn compilation_unit(ctx: &CompilerContext, target: &Path) -> Option<TreeId> {
 /// `symbol -> declaring tree` for the declarations in the arena.
 fn symbol_tree_map(ctx: &CompilerContext) -> HashMap<CompilerSymbolId, TreeId> {
     let mut trees = HashMap::new();
-    for index in 0..ctx.trees.len() {
-        let tree = TreeId::new(index as u32);
-        let symbol = match &ctx.tree(tree).kind {
-            TreeKind::ClassDecl {
-                sym: Some(symbol), ..
-            }
-            | TreeKind::MethodDecl {
-                sym: Some(symbol), ..
-            }
-            | TreeKind::VariableDecl {
-                sym: Some(symbol), ..
-            } => *symbol,
-            _ => continue,
-        };
-        trees.entry(symbol).or_insert(tree);
+    // Two passes: class declarations must win their symbol mapping; an enum
+    // constant's `VariableDecl` can carry the enum's own symbol as `sym`.
+    for pass in 0..2 {
+        for index in 0..ctx.trees.len() {
+            let tree = TreeId::new(index as u32);
+            let symbol = match &ctx.tree(tree).kind {
+                TreeKind::ClassDecl {
+                    sym: Some(symbol), ..
+                } if pass == 0 => *symbol,
+                TreeKind::MethodDecl {
+                    sym: Some(symbol), ..
+                }
+                | TreeKind::VariableDecl {
+                    sym: Some(symbol), ..
+                } if pass == 1 => *symbol,
+                _ => continue,
+            };
+            trees.entry(symbol).or_insert(tree);
+        }
     }
     trees
 }
@@ -398,6 +429,7 @@ fn declaration_of(
     deprecated_annotations: &HashMap<CompilerSymbolId, bool>,
     symbol_trees: &HashMap<CompilerSymbolId, TreeId>,
     name_positions: Option<&dyn crate::tree::end_pos_table::EndPosTable>,
+    text: &str,
 ) -> Option<ExtractedDeclaration> {
     let source = source_file(ctx, symbol)?;
     if PathBuf::from(canonical(&source)) != target {
@@ -416,7 +448,7 @@ fn declaration_of(
         .sym(symbol)
         .owner
         .and_then(|owner| identity_of(ctx, owner, file));
-    let name_start = name_start_of(ctx, symbol, symbol_trees, name_positions);
+    let name_start = name_start_of(ctx, symbol, symbol_trees, name_positions, Some(text));
     let range = ByteRange {
         start: name_start,
         end: name_start.saturating_add(name.encode_utf16().count() as u32),
