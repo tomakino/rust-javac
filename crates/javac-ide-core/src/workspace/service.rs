@@ -528,6 +528,36 @@ impl WorkspaceService for Workspace {
                     },
                 });
             }
+            for override_symbol in query::override_declarations(&snapshot, symbol) {
+                let Some(record) = snapshot.symbol(override_symbol) else {
+                    continue;
+                };
+                let Some(file_record) = snapshot.file(record.file) else {
+                    continue;
+                };
+                let Some(text) = self.text_of_id(record.file) else {
+                    continue;
+                };
+                let location = query::location_for_range(
+                    &file_record.path,
+                    &text,
+                    record.range.start,
+                    record.range.end,
+                );
+                if edits
+                    .iter()
+                    .any(|edit| edit.file == location.file && edit.edit.range == location.range)
+                {
+                    continue;
+                }
+                edits.push(TextDocumentEdit {
+                    file: location.file,
+                    edit: TextEdit {
+                        range: location.range,
+                        new_text: new_name.to_string(),
+                    },
+                });
+            }
             if !edits.is_empty() {
                 return edits;
             }

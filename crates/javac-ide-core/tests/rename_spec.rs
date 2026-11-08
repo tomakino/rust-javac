@@ -214,3 +214,37 @@ fn rename_overload_only_touches_the_selected_signature() {
     assert_eq!(a_edits.len(), 1, "overload rename: {edits:?}");
     assert_eq!(a_edits[0].edit.range.start.column, 26, "{edits:?}");
 }
+
+#[test]
+fn rename_method_includes_override_declaration() {
+    let root = fixture("override");
+    let model = root.join("Model.java");
+    let child = root.join("Child.java");
+    let app = root.join("App.java");
+    std::fs::write(&model, "class Model { void compute() { } }\n").unwrap();
+    std::fs::write(
+        &child,
+        "class Child extends Model { @Override void compute() { } }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &app,
+        "class App { void f(Child child) { child.compute(); Model model = child; model.compute(); } }\n",
+    )
+    .unwrap();
+    let mut workspace = Workspace::new(config(&root));
+    workspace.wait_for_index();
+    let edits = workspace.rename_workspace(&model, Position::new(0, 19), "run");
+    assert!(
+        edits
+            .iter()
+            .any(|edit| edit.file.ends_with("Child.java") && edit.edit.new_text == "run"),
+        "override declaration must be renamed: {edits:?}"
+    );
+    assert!(
+        edits
+            .iter()
+            .any(|edit| edit.file.ends_with("App.java") && edit.edit.new_text == "run"),
+        "call sites must be renamed: {edits:?}"
+    );
+}

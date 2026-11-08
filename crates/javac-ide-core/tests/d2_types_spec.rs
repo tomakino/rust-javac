@@ -149,7 +149,6 @@ class Box<T> {
 }
 "#;
 
-const BASE: &str = "src/main/java/com/example/base/";
 const MAIN_REL: &str = "src/main/java/com/example/app/D2Probe.java";
 
 fn fixture_files() -> Vec<(&'static str, &'static str)> {

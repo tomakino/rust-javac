@@ -119,6 +119,87 @@ pub fn overriding_methods(index: &ProjectIndex, symbol: SymbolId) -> Vec<String>
     result
 }
 
+/// Declarations of the methods in `symbol`'s override pair: the overridden
+/// declarations up the supertype chain and the overriding declarations in the
+/// subtype table. Rename edits them together with the calls.
+pub fn override_declarations(index: &ProjectIndex, symbol: SymbolId) -> Vec<SymbolId> {
+    let Some(record) = index.symbol(symbol) else {
+        return Vec::new();
+    };
+    if record.kind != super::key::IndexSymbolKind::Method {
+        return Vec::new();
+    }
+    let Some(owner) = record.key.owner else {
+        return Vec::new();
+    };
+    let Some(owner_record) = index.symbol(owner) else {
+        return Vec::new();
+    };
+    let is_override_pair = |candidate: &super::model::SymbolRecord| {
+        candidate.kind == super::key::IndexSymbolKind::Method
+            && candidate.key.name == record.key.name
+            && candidate.key.signature == record.key.signature
+            && candidate.modifiers & crate::code::flags::STATIC as u32 == 0
+            && candidate.modifiers & crate::code::flags::PRIVATE as u32 == 0
+    };
+    let mut result = Vec::new();
+    // Parent declarations.
+    let mut pending: Vec<super::model::TypeRef> = owner_record.supertypes.clone();
+    let mut seen = std::collections::HashSet::new();
+    while let Some(supertype) = pending.pop() {
+        let super::model::TypeRef::Project(parent) = supertype else {
+            continue;
+        };
+        if !seen.insert(parent) {
+            continue;
+        }
+        let Some(parent_record) = index.symbol(parent) else {
+            continue;
+        };
+        pending.extend(parent_record.supertypes.iter().cloned());
+        let Some(file_index) = index.file_index(parent_record.file) else {
+            continue;
+        };
+        for candidate in &file_index.declarations {
+            if let Some(candidate_record) = index.symbol(*candidate)
+                && is_override_pair(candidate_record)
+            {
+                result.push(*candidate);
+            }
+        }
+    }
+    // Child declarations (the subtype table maps a supertype to its subtypes).
+    let mut pending = vec![owner];
+    let mut seen = std::collections::HashSet::new();
+    while let Some(current) = pending.pop() {
+        if !seen.insert(current) {
+            continue;
+        }
+        let Some(children) = index.by_supertype.get(&current) else {
+            continue;
+        };
+        for child in children {
+            pending.push(*child);
+            let Some(child_record) = index.symbol(*child) else {
+                continue;
+            };
+            let Some(file_index) = index.file_index(child_record.file) else {
+                continue;
+            };
+            for candidate in &file_index.declarations {
+                if let Some(candidate_record) = index.symbol(*candidate)
+                    && is_override_pair(candidate_record)
+                {
+                    result.push(*candidate);
+                }
+            }
+        }
+    }
+    result.sort_unstable();
+    result.dedup();
+    result
+}
+
 /// Go-to-definition.
 pub fn definition(
     index: &ProjectIndex,
