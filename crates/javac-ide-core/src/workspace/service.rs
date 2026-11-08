@@ -631,6 +631,10 @@ impl WorkspaceService for Workspace {
         self.is_building()
     }
 
+    fn poll_index(&mut self) {
+        Workspace::poll_index(self);
+    }
+
     fn configuration(&self) -> WorkspaceConfiguration {
         WorkspaceConfiguration {
             class_path: self.config.class_path.clone(),

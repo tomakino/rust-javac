@@ -175,7 +175,15 @@ impl IndexBuilder {
         let batch_size = batch_size.max(1);
         let batches = self.batches(batch_size);
         for (batch, index_set) in batches {
+            let started = std::time::Instant::now();
+            let len = batch.len();
             self.build_batch(&batch, &index_set);
+            eprintln!(
+                "[index-batch] files={} indexed={} ms={}",
+                len,
+                index_set.len(),
+                started.elapsed().as_millis()
+            );
         }
         let mut status = if self.failed_files.is_empty() && self.skipped_files.is_empty() {
             IndexStatus::Ready

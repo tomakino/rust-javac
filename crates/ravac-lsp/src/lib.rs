@@ -36,6 +36,11 @@ pub fn run(
     let mut artifacts: Option<artifacts::ArtifactBuilder> = None;
     loop {
         let Some(message) = read_message(&mut stdin) else { break };
+        // Publish a finished background index build before serving the request:
+        // `ravac/indexStats` and every query otherwise see the previous
+        // snapshot (building: true, generation: 0) until a workspace query
+        // happens to poll it.
+        host.poll_index();
         // Apply a finished artifact build exactly once, before serving the
         // next request: the analysis switches from source fallback to classes.
         if let Some(builder) = &artifacts

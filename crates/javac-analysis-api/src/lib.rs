@@ -483,6 +483,14 @@ pub trait WorkspaceService {
     /// Queries keep serving the previous snapshot while this is true.
     fn is_index_building(&self) -> bool;
 
+    /// Advance a finished background index build: publish the new snapshot and
+    /// clear the building flag.
+    ///
+    /// Readers of `index_generation`/`is_index_building` must call this before
+    /// reading, otherwise a finished build keeps waiting for the next query and
+    /// the stats look stuck at `building: true, generation: 0`.
+    fn poll_index(&mut self) {}
+
     /// Current workspace configuration.
     fn configuration(&self) -> WorkspaceConfiguration;
 

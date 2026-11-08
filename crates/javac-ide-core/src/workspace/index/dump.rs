@@ -19,21 +19,48 @@ pub const MAGIC: &[u8; 4] = b"RAVI";
 pub const SCHEMA_VERSION: u32 = 4;
 
 /// Directory that holds persisted indexes.
+///
+/// The platform cache directory is preferred; when it is not writable (for
+/// example Windows Controlled Folder Access denies `%LOCALAPPDATA%`), the
+/// temporary directory is used instead so restarts can still reuse the dump.
 pub fn cache_dir() -> Option<PathBuf> {
-    #[cfg(windows)]
-    {
-        std::env::var_os("LOCALAPPDATA")
-            .map(|base| PathBuf::from(base).join("ravac").join("index"))
+    let mut candidates: Vec<PathBuf> = Vec::new();
+        #[cfg(windows)]
+        if let Some(base) = std::env::var_os("LOCALAPPDATA") {
+            candidates.push(PathBuf::from(base).join("ravac").join("index"));
+        }
+        #[cfg(not(windows))]
+        {
+            if let Some(base) = std::env::var_os("XDG_CACHE_HOME") {
+                candidates.push(PathBuf::from(base).join("ravac").join("index"));
+            }
+            if let Some(base) = std::env::var_os("HOME") {
+                candidates.push(
+                    PathBuf::from(base)
+                        .join(".cache")
+                        .join("ravac")
+                        .join("index"),
+                );
+            }
+        }
+        candidates.push(std::env::temp_dir().join("ravac").join("index"));
+        // Keep the platform directory as the contract even when nothing is
+        // writable here: `save` degrades to a no-op, callers still get a path.
+    let writable = candidates
+        .iter()
+        .find(|dir| std::fs::create_dir_all(dir).is_ok() && writable_probe(dir));
+    writable
+        .cloned()
+        .or_else(|| candidates.first().cloned())
+}
+
+fn writable_probe(dir: &Path) -> bool {
+    let probe = dir.join(".write-test");
+    if std::fs::write(&probe, b"1").is_err() {
+        return false;
     }
-    #[cfg(not(windows))]
-    {
-        std::env::var_os("XDG_CACHE_HOME")
-            .map(|base| PathBuf::from(base).join("ravac").join("index"))
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|base| PathBuf::from(base).join(".cache").join("ravac").join("index"))
-            })
-    }
+    let _ = std::fs::remove_file(&probe);
+    true
 }
 
 pub fn cache_path(workspace_hash: u64) -> Option<PathBuf> {

@@ -201,6 +201,11 @@ impl Workspace {
         self.index.is_building()
     }
 
+    /// Publish a finished background build (indexStats and LSP requests use it).
+    pub fn poll_index(&mut self) {
+        self.poll_build();
+    }
+
     /// Snapshot counters for diagnostics and tests.
     pub fn index_stats(&self) -> IndexStats {
         let snapshot = self.index.snapshot();
