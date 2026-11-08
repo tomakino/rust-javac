@@ -1,8 +1,34 @@
 //! Signature help.
+//!
+//! The call is located through the attributed trees (a `MethodInvocation` or
+//! `NewClass` whose callee name ends at the `(`), so overloads are chosen by
+//! the resolved argument types, constructors are supported, and methods
+//! declared in other project/JDK files resolve through their symbols.
 
 use std::path::{Path, PathBuf};
 
+use javac_analysis_api::{SignatureHelp, SignatureInformation};
+
 use super::super::super::{canonical, FileAnalysis};
+
+use crate::code::flags::VARARGS;
+use crate::code::scope::LookupKind;
+use crate::code::symbol::SymbolKind;
+use crate::code::type_::TypeKindData;
+use crate::ids::{SymbolId, TreeId};
+use crate::tree::jc_tree::TreeKind;
+use crate::tree::tree_info;
+
+/// A resolved call site: the candidate signatures and the argument trees.
+struct CallAt {
+    candidates: Vec<(SymbolId, bool)>,
+    arguments: Vec<TreeId>,
+}
+
+enum CallKind {
+    Method(SymbolId, Vec<TreeId>),
+    NewClass(SymbolId, Option<SymbolId>, Vec<TreeId>),
+}
 
 impl FileAnalysis {
     /// Signature help for the call at a position.
@@ -10,7 +36,7 @@ impl FileAnalysis {
         &mut self,
         file: &Path,
         position: javac_analysis_api::Position,
-    ) -> Option<javac_analysis_api::SignatureHelp> {
+    ) -> Option<SignatureHelp> {
         let key = PathBuf::from(canonical(file));
         let text = self
             .texts
@@ -27,19 +53,40 @@ impl FileAnalysis {
         if is_declaration_paren(&text, open) {
             return None;
         }
-        let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
-        let name: String = text[..open]
-            .chars()
-            .rev()
-            .take_while(|c| is_ident(*c))
-            .collect::<String>()
-            .chars()
-            .rev()
-            .collect();
+        let name = ident_before(&text, open);
         if name.is_empty() {
             return None;
         }
         let active_parameter = parameter_index(&text[open + 1..cursor]);
+        if let Some(call) = self.call_at(open, &name) {
+            let signatures: Vec<SignatureInformation> = call
+                .candidates
+                .iter()
+                .filter_map(|(symbol, constructor)| {
+                    self.signature_information(*symbol, *constructor)
+                })
+                .collect();
+            if !signatures.is_empty() {
+                let argument_types: Vec<Option<String>> = call
+                    .arguments
+                    .iter()
+                    .map(|argument| self.argument_type_name(*argument))
+                    .collect();
+                let active_signature =
+                    choose_signature(&signatures, &argument_types, active_parameter);
+                return Some(SignatureHelp {
+                    signatures,
+                    active_signature,
+                    active_parameter,
+                });
+            }
+        }
+        // Fallback: methods declared in this file (kept for incomplete code
+        // where attribution did not produce a call tree yet).
+        self.declared_method_signatures(&name, active_parameter)
+    }
+
+    fn declared_method_signatures(&mut self, name: &str, active_parameter: u32) -> Option<SignatureHelp> {
         let mut signatures = Vec::new();
         for symbol in self.symbols() {
             if symbol.kind != "method" || symbol.name != name {
@@ -47,22 +94,335 @@ impl FileAnalysis {
             }
             let label = symbol.detail;
             let parameters = signature_parameters(&label);
-            signatures.push(javac_analysis_api::SignatureInformation { label, parameters });
+            signatures.push(SignatureInformation { label, parameters });
         }
         if signatures.is_empty() {
             return None;
         }
-        // Prefer the first overload that can hold the current argument.
         let active_signature = signatures
             .iter()
             .position(|signature| signature.parameters.len() as u32 > active_parameter)
             .unwrap_or(0) as u32;
-        Some(javac_analysis_api::SignatureHelp {
+        Some(SignatureHelp {
             signatures,
             active_signature,
             active_parameter,
         })
     }
+
+    fn call_at(&mut self, open: usize, name: &str) -> Option<CallAt> {
+        let mut best: Option<(i32, CallKind)> = None;
+        {
+            let ctx = &self.compiler.ctx;
+            for index in 0..ctx.trees.len() {
+                let tree = TreeId::new(index as u32);
+                match &ctx.tree(tree).kind {
+                    TreeKind::MethodInvocation {
+                        meth: Some(meth),
+                        args,
+                        ..
+                    } => {
+                        let Some(symbol) = tree_info::symbol(ctx, *meth) else {
+                            continue;
+                        };
+                        let symbol_name = symbol_name(ctx, symbol);
+                        if symbol_name != name || symbol_name == "<init>" {
+                            continue;
+                        }
+                        let start = tree_info::get_start_pos(ctx, *meth);
+                        if start < 0 || start as usize > open {
+                            continue;
+                        }
+                        let arguments: Vec<TreeId> = args.iter().collect();
+                        if !arguments_match(ctx, &arguments, open) {
+                            continue;
+                        }
+                        if best
+                            .as_ref()
+                            .map(|(best_start, _)| start >= *best_start)
+                            .unwrap_or(true)
+                        {
+                            best = Some((start, CallKind::Method(symbol, arguments)));
+                        }
+                    }
+                    TreeKind::NewClass {
+                        clazz: Some(clazz),
+                        constructor,
+                        args,
+                        ..
+                    } => {
+                        let Some(class) = tree_info::symbol(ctx, *clazz) else {
+                            continue;
+                        };
+                        if symbol_name(ctx, class) != name {
+                            continue;
+                        }
+                        let start = tree_info::get_start_pos(ctx, *clazz);
+                        if start < 0 || start as usize > open {
+                            continue;
+                        }
+                        let arguments: Vec<TreeId> = args.iter().collect();
+                        if !arguments_match(ctx, &arguments, open) {
+                            continue;
+                        }
+                        if best
+                            .as_ref()
+                            .map(|(best_start, _)| start >= *best_start)
+                            .unwrap_or(true)
+                        {
+                            best = Some((
+                                start,
+                                CallKind::NewClass(class, *constructor, arguments),
+                            ));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let (_, kind) = best?;
+        match kind {
+            CallKind::Method(symbol, arguments) => Some(CallAt {
+                candidates: method_candidates(&mut self.compiler.ctx, symbol),
+                arguments,
+            }),
+            CallKind::NewClass(class, constructor, arguments) => {
+                let mut candidates = Vec::new();
+                let ctx = &mut self.compiler.ctx;
+                if let Some(scope) = ctx.sym(class).members() {
+                    let members =
+                        ctx.scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true);
+                    for member in members {
+                        if matches!(
+                            ctx.sym(member).kind_data,
+                            SymbolKind::MethodSymbol { .. }
+                        ) && symbol_name(ctx, member) == "<init>"
+                        {
+                            candidates.push((member, true));
+                        }
+                    }
+                }
+                if candidates.is_empty()
+                    && let Some(constructor) = constructor
+                {
+                    candidates.push((constructor, true));
+                }
+                if candidates.is_empty() {
+                    return None;
+                }
+                Some(CallAt {
+                    candidates,
+                    arguments,
+                })
+            }
+        }
+    }
+
+    /// A `SignatureInformation` built from the resolved symbol (parameter names
+    /// come from source/class-file symbols, not from the hover detail string).
+    fn signature_information(
+        &self,
+        symbol: SymbolId,
+        constructor: bool,
+    ) -> Option<SignatureInformation> {
+        let ctx = &self.compiler.ctx;
+        let record = ctx.sym(symbol);
+        let SymbolKind::MethodSymbol { params, .. } = &record.kind_data else {
+            return None;
+        };
+        let mut parameter_labels = Vec::new();
+        let count = params.size().max(0) as usize;
+        for (index, param) in params.iter().enumerate() {
+            let param_record = ctx.sym(param);
+            let mut ty = param_record
+                .ty
+                .map(|ty| crate::analysis::type_names::type_name(ctx, ty))
+                .unwrap_or_default();
+            if index + 1 == count
+                && record.flags_field & VARARGS != 0
+                && ty.ends_with("[]")
+            {
+                ty.truncate(ty.len() - 2);
+                ty.push_str("...");
+            }
+            let param_name = param_record.name.to_java_string().to_string_lossy();
+            parameter_labels.push(format!("{ty} {param_name}"));
+        }
+        let name = if constructor {
+            record
+                .owner
+                .and_then(|owner| match &ctx.sym(owner).kind_data {
+                    SymbolKind::ClassSymbol { flatname, .. } => flatname
+                        .to_string()
+                        .rsplit('.')
+                        .next()
+                        .map(str::to_string),
+                    _ => None,
+                })
+                .unwrap_or_else(|| "<init>".to_string())
+        } else {
+            symbol_name(ctx, symbol)
+        };
+        let prefix = if constructor {
+            String::new()
+        } else {
+            let return_type = record
+                .ty
+                .and_then(|ty| match &ctx.typ(ty).kind {
+                    TypeKindData::MethodType { restype, .. } => *restype,
+                    _ => None,
+                })
+                .map(|restype| crate::analysis::type_names::type_name(ctx, restype))
+                .unwrap_or_default();
+            format!("{return_type} ")
+        };
+        let label = format!("{prefix}{name}({})", parameter_labels.join(", "));
+        Some(SignatureInformation {
+            label,
+            parameters: parameter_labels,
+        })
+    }
+
+    fn argument_type_name(&self, tree: TreeId) -> Option<String> {
+        let ty = self.compiler.ctx.tree(tree).ty?;
+        let name = crate::analysis::type_names::type_name(&self.compiler.ctx, ty);
+        (!name.is_empty() && name != "<none>").then_some(name)
+    }
+}
+
+fn symbol_name(ctx: &crate::compiler_context::CompilerContext, symbol: SymbolId) -> String {
+    ctx.sym(symbol)
+        .name
+        .to_java_string()
+        .to_string_lossy()
+        .to_string()
+}
+
+/// Overloads of `method`: the resolved declaration plus same-named methods of
+/// its owner type.
+fn method_candidates(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    method: SymbolId,
+) -> Vec<(SymbolId, bool)> {
+    let mut candidates = vec![(method, false)];
+    if let Some(owner) = ctx.sym(method).owner {
+        let name = symbol_name(ctx, method);
+        collect_owner_methods(ctx, owner, &name, &mut candidates);
+    }
+    candidates.sort_unstable();
+    candidates.dedup();
+    candidates
+}
+
+fn collect_owner_methods(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    owner: SymbolId,
+    name: &str,
+    candidates: &mut Vec<(SymbolId, bool)>,
+) {
+    let Some(scope) = ctx.sym(owner).members() else {
+        return;
+    };
+    let name = name.to_string();
+    let members = ctx.scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true);
+    for member in members {
+        if matches!(ctx.sym(member).kind_data, SymbolKind::MethodSymbol { .. })
+            && symbol_name(ctx, member) == name
+        {
+            candidates.push((member, false));
+        }
+    }
+}
+
+/// The parenthesized argument list at `open` belongs to this call only when its
+/// first argument starts after `open`.
+fn arguments_match(
+    ctx: &crate::compiler_context::CompilerContext,
+    args: &[TreeId],
+    open: usize,
+) -> bool {
+    let Some(first) = args.first() else {
+        return true;
+    };
+    tree_info::get_start_pos(ctx, *first) > open as i32
+}
+
+/// Choose the overload matching the resolved argument types. `None` scores
+/// (unknown argument type) fall back to the arity-based choice.
+fn choose_signature(
+    signatures: &[SignatureInformation],
+    argument_types: &[Option<String>],
+    active_parameter: u32,
+) -> u32 {
+    if signatures.len() == 1 {
+        return 0;
+    }
+    let mut best = 0usize;
+    let mut best_score: Option<i32> = None;
+    for (index, signature) in signatures.iter().enumerate() {
+        let Some(score) = signature_score(signature, argument_types) else {
+            continue;
+        };
+        if best_score.map(|current| score > current).unwrap_or(true) {
+            best_score = Some(score);
+            best = index;
+        }
+    }
+    if best_score.is_some() {
+        return best as u32;
+    }
+    signatures
+        .iter()
+        .position(|signature| signature.parameters.len() as u32 > active_parameter)
+        .unwrap_or(0) as u32
+}
+
+fn signature_score(
+    signature: &SignatureInformation,
+    argument_types: &[Option<String>],
+) -> Option<i32> {
+    let parameter_types: Vec<&str> = signature
+        .parameters
+        .iter()
+        .map(|label| label.split_once(' ').map(|(ty, _)| ty).unwrap_or(label))
+        .collect();
+    let varargs = parameter_types
+        .last()
+        .is_some_and(|ty| ty.ends_with("..."));
+    if !varargs && parameter_types.len() != argument_types.len() {
+        return None;
+    }
+    if varargs && argument_types.len() + 1 < parameter_types.len() {
+        return None;
+    }
+    let mut score = 0i32;
+    for (index, argument) in argument_types.iter().enumerate() {
+        let argument = argument.as_deref()?;
+        let parameter = if index < parameter_types.len() {
+            parameter_types[index]
+        } else {
+            *parameter_types.last()?
+        };
+        let parameter = parameter.trim_end_matches("...");
+        let same = argument == parameter
+            || argument.ends_with(&format!(".{parameter}"))
+            || parameter.ends_with(&format!(".{argument}"))
+            || parameter == "Object";
+        score += if same { 2 } else { -1 };
+    }
+    Some(score)
+}
+
+fn ident_before(text: &str, open: usize) -> String {
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    text[..open]
+        .chars()
+        .rev()
+        .take_while(|c| is_ident(*c))
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect()
 }
 
 /// Whether the parenthesized list at `open` belongs to a declaration.
@@ -220,5 +580,34 @@ mod tests {
         let cursor = text.find("1,").unwrap();
         let open = call_open_offset(text, cursor).expect("open");
         assert_eq!(&text[open..open + 1], "(");
+    }
+
+    #[test]
+    fn overload_score_prefers_the_argument_type() {
+        let int_signature = SignatureInformation {
+            label: "void over(int a)".to_string(),
+            parameters: vec!["int a".to_string()],
+        };
+        let string_signature = SignatureInformation {
+            label: "void over(String a)".to_string(),
+            parameters: vec!["String a".to_string()],
+        };
+        let signatures = vec![string_signature, int_signature];
+        assert_eq!(
+            choose_signature(
+                &signatures,
+                &[Some("int".to_string())],
+                0
+            ),
+            1
+        );
+        assert_eq!(
+            choose_signature(
+                &signatures,
+                &[Some("String".to_string())],
+                0
+            ),
+            0
+        );
     }
 }
