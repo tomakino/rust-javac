@@ -73,9 +73,18 @@ function removeTempServer() {
 // The server is the only completion filter and ranker. vscode-languageclient's
 // CompletionItemFeature already registers the provider; this middleware only
 // overrides the two fields VS Code would otherwise use to re-filter/re-sort:
-// filterText = current prefix, sortText = server order.
-function completionMiddleware() {
+// filterText = current prefix, sortText = server order. It also intercepts the
+// code lens command `ravac.showReferences` (see showReferences below).
+function clientMiddleware() {
   return {
+    async executeCommand(command, args, next) {
+      if (command === 'ravac.showReferences') {
+        const list = Array.isArray(args) ? args : [];
+        await showReferences(list[0], list[1]);
+        return undefined;
+      }
+      return next(command, args);
+    },
     async provideCompletionItem(document, position, context, token, next) {
       const result = await next(document, position, context, token);
       if (!result) return result;
@@ -128,7 +137,7 @@ async function startClient() {
     workspaceFolder: folder,
     outputChannel: output,
     traceOutputChannel: output,
-    middleware: completionMiddleware()
+    middleware: clientMiddleware()
   };
   const instance = new LanguageClient('ravacLsp', 'Ravac LSP', serverOptions, clientOptions);
   try {
@@ -181,6 +190,67 @@ async function restartClient() {
     await ensureClient();
   } finally {
     restarting = false;
+  }
+}
+
+function toLocation(location) {
+  const start = (location && location.range && location.range.start) || {};
+  const end = (location && location.range && location.range.end) || {};
+  return new vscode.Location(
+    vscode.Uri.parse(location && location.uri ? location.uri : ''),
+    new vscode.Range(start.line || 0, start.character || 0, end.line || 0, end.character || 0)
+  );
+}
+
+// The code lens command `ravac.showReferences` is listed by the server in
+// executeCommandProvider, so vscode-languageclient's ExecuteCommandFeature
+// registers it and forwards invocations to `workspace/executeCommand`. The
+// server has no case for it (it answers null), which is why clicking the lens
+// did nothing. Intercept it in the client instead: ask the server for the
+// references and open VS Code's own references view.
+async function showReferences(uri, position) {
+  let target = typeof uri === 'string' ? uri : uri && uri.toString ? uri.toString() : '';
+  let line = position && Number.isInteger(position.line) ? position.line : 0;
+  let character = position && Number.isInteger(position.character) ? position.character : 0;
+  if (!target) {
+    // Command palette fallback: use the Java editor's cursor.
+    const editor = vscode.window.activeTextEditor;
+    if (editor && editor.document.languageId === 'java') {
+      target = editor.document.uri.toString();
+      line = editor.selection.active.line;
+      character = editor.selection.active.character;
+    }
+  }
+  try {
+    const instance = await ensureClient();
+    if (!instance) {
+      vscode.window.showInformationMessage('Ravac: 语言服务器未启动，无法查询引用。');
+      return;
+    }
+    if (!target) {
+      vscode.window.showInformationMessage('Ravac: 没有引用。');
+      return;
+    }
+    const result = await instance.sendRequest('textDocument/references', {
+      textDocument: { uri: target },
+      position: { line, character },
+      context: { includeDeclaration: true }
+    });
+    const locations = (Array.isArray(result) ? result : []).map(toLocation);
+    if (locations.length === 0) {
+      vscode.window.showInformationMessage('Ravac: 没有引用。');
+      return;
+    }
+    await vscode.commands.executeCommand(
+      'editor.action.showReferences',
+      vscode.Uri.parse(target),
+      new vscode.Position(line, character),
+      locations
+    );
+  } catch (error) {
+    const detail = error && error.message ? error.message : String(error);
+    log('showReferences failed: ' + detail);
+    vscode.window.showErrorMessage('Ravac: 查询引用失败: ' + detail);
   }
 }
 

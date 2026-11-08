@@ -64,6 +64,10 @@
       {
         "command": "ravacLsp.probeCompletion",
         "title": "Ravac: 探测当前补全"
+      },
+      {
+        "command": "ravac.showReferences",
+        "title": "Ravac: 显示引用"
       }
     ]
   },

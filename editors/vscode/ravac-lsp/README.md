@@ -48,3 +48,4 @@
 - Ravac: 重启语言服务器
 - Ravac: 显示输出
 - Ravac: 探测当前补全
+- Ravac: 显示引用（codeLens 的「N references」或当前光标）
