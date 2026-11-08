@@ -189,14 +189,9 @@ impl FileAnalysis {
                 return Some(location);
             }
         }
-        let word = word_at(&text, line, column)?;
-        if let Some(jdk_src) = super::super::super::jdk_sources::default_jdk_src() {
-            return super::super::super::jdk_sources::jdk_source_location(
-                &jdk_src,
-                &word,
-                &self.config.output_dir,
-            );
-        }
+        // No compiler symbol: do not guess a JDK class from the bare word. A
+        // missing generated-sources type (`Generated`) must not resolve to the
+        // same-named JDK annotation (java.compiler).
         None
     }
 
