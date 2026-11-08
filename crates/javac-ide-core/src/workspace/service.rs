@@ -145,7 +145,29 @@ impl WorkspaceService for Workspace {
         let text = self.text_of(file).unwrap_or_default();
         let uri = file_uri(file);
         let mut lenses = Vec::new();
+        // One lens group per declaration range: an index can hold extra ids at
+        // the same position (a synthetic constructor shares the class name
+        // range), and a duplicated incremental record must not add a second
+        // group. Outline-only symbols do not get lenses at all.
+        let mut seen_ranges: std::collections::HashSet<(u32, u32)> =
+            std::collections::HashSet::new();
         for symbol in &file_index.declarations {
+            let Some(record) = snapshot.symbol(*symbol) else {
+                continue;
+            };
+            let outline = matches!(
+                record.kind,
+                crate::workspace::index::key::IndexSymbolKind::Class
+                    | crate::workspace::index::key::IndexSymbolKind::Interface
+                    | crate::workspace::index::key::IndexSymbolKind::Enum
+                    | crate::workspace::index::key::IndexSymbolKind::Annotation
+                    | crate::workspace::index::key::IndexSymbolKind::Record
+                    | crate::workspace::index::key::IndexSymbolKind::Field
+                    | crate::workspace::index::key::IndexSymbolKind::Method
+            );
+            if !outline {
+                continue;
+            }
             let Some(occurrences) = snapshot.occurrences.get(symbol) else {
                 continue;
             };
@@ -162,6 +184,17 @@ impl WorkspaceService for Workspace {
                 &text,
                 declaration.range.start as usize,
             );
+            if !seen_ranges.insert((declaration.range.start, declaration.range.end)) {
+                continue;
+            }
+            // Import lines are not declarations of this file.
+            if text
+                .lines()
+                .nth(decl_line as usize)
+                .is_some_and(|line| line.trim_start().starts_with("import "))
+            {
+                continue;
+            }
             let locations = crate::workspace::index::query::references(
                 &snapshot,
                 file_id,
