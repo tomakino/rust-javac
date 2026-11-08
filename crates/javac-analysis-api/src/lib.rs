@@ -491,6 +491,9 @@ pub trait WorkspaceService {
     /// the stats look stuck at `building: true, generation: 0`.
     fn poll_index(&mut self) {}
 
+    /// Drop the unsaved buffer for `file` (the client closed the document).
+    fn remove_overlay(&mut self, _file: &Path) {}
+
     /// Current workspace configuration.
     fn configuration(&self) -> WorkspaceConfiguration;
 

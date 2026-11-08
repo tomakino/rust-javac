@@ -129,6 +129,14 @@ fn name_start_in(text: &str, start: u32, name: &str, reject_qualified: bool) -> 
 }
 
 /// Start of a member name (`a.b`): the qualifier dot is expected here.
+/// Fallback: where the member name starts in the source text.
+///
+/// The compiler tree has no separate position for a `FieldAccess` name token,
+/// but the parser records one in `CompilationUnit.name_positions`; selection
+/// ranges consult that AST table first and only fall back to this text search
+/// for nodes without a recorded name (parameters, enum constants). Keep this
+/// helper for those cases only; it cannot distinguish `abc.b` from the `b`
+/// inside `abc`.
 pub(crate) fn member_name_start(text: &str, start: u32, name: &str) -> u32 {
     name_start_in(text, start, name, false)
 }

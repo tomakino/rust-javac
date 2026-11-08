@@ -635,6 +635,10 @@ impl WorkspaceService for Workspace {
         Workspace::poll_index(self);
     }
 
+    fn remove_overlay(&mut self, file: &Path) {
+        Workspace::remove_overlay(self, file);
+    }
+
     fn configuration(&self) -> WorkspaceConfiguration {
         WorkspaceConfiguration {
             class_path: self.config.class_path.clone(),
