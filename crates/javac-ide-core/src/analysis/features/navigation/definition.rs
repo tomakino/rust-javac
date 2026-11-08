@@ -107,11 +107,41 @@ impl FileAnalysis {
         // external-source path below.
         if let Some((symbol, _)) = self.symbol_id_at(file, position) {
             // A constructor symbol (for example `T::new`) has no usable name
-            // position on its own tree; resolve its declaration directly.
-            if self.is_constructor_symbol(symbol)
-                && let Some(location) = self.constructor_definition(symbol)
-            {
-                return Some(location);
+            // position on its own tree; resolve its declaration directly, but
+            // only where the cursor is on the type name (`new Helper`,
+            // `Helper::new`). The compiler attributes the class declaration
+            // token to the default constructor, so a plain word check would
+            // otherwise make `class` jump to the supertype.
+            if self.is_constructor_symbol(symbol) {
+                let cursor_word = word_at(&text, line, column)?;
+                let owner_name = self
+                    .compiler
+                    .ctx
+                    .sym(symbol)
+                    .owner
+                    .and_then(|owner| match &self.compiler.ctx.sym(owner).kind_data {
+                        crate::code::symbol::SymbolKind::ClassSymbol { .. } => Some(
+                            self.compiler
+                                .ctx
+                                .sym(owner)
+                                .name
+                                .to_java_string()
+                                .to_string_lossy(),
+                        ),
+                        _ => None,
+                    });
+                let on_type_name = owner_name
+                    .as_deref()
+                    .is_some_and(|name| name == cursor_word);
+                // `new Helper`, `Helper::new`, `super(...)` and `this(...)` all
+                // name a constructor at the keyword; any other token (notably
+                // `class`) must not resolve through the default constructor.
+                if !on_type_name && !matches!(cursor_word.as_str(), "new" | "super" | "this") {
+                    return None;
+                }
+                if let Some(location) = self.constructor_definition(symbol) {
+                    return Some(location);
+                }
             }
             if let Some(pos) =
                 crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, symbol)

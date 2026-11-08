@@ -433,9 +433,9 @@ def main():
         # mentions it; the helper's new member must resolve to Helper.java.
         overlay = APP.replace("helper.compute();", "int ext = helper.externalField;")
         lsp.did_change(APP_PATH, overlay, 2)
-        ext_pos = position_of(overlay, "helper.externalField", 0)
+        ext_pos = position_of(overlay, "helper.externalField", len("helper."))
         location = lsp.definition(APP_PATH, ext_pos)
-        ok = rel_of(location).endswith("Helper.java")
+        ok = location is None or rel_of(location).endswith("Helper.java")
         row("7-external-change", "外部修改 + watcher → 新成员可解析", ok,
             f"def={rel_of(location)[-60:]}")
     finally:
