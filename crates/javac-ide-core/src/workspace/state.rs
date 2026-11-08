@@ -230,7 +230,8 @@ impl Workspace {
 
     pub fn remove_overlay(&mut self, file: &Path) {
         let path = PathBuf::from(crate::analysis::canonical(file));
-        if self.overlays.remove(&path).is_some() {
+        let removed = self.overlays.remove(&path).is_some();
+        if removed {
             self.retain_analysis_for(file);
             self.dirty = true;
         }
@@ -441,6 +442,11 @@ impl Workspace {
         for path in changed {
             match snapshot.file_id_for_path(path) {
                 Some(file) => {
+                    // A skipped record (overlay-only build) has no occurrences;
+                    // only a full rebuild restores them.
+                    if snapshot.file(file).is_some_and(|record| !record.status.is_live()) {
+                        return false;
+                    }
                     if self.text_of(path).is_some() {
                         updates.push((file, path.clone()));
                     } else {
@@ -582,6 +588,19 @@ impl Workspace {
         let mut present: Vec<&PathBuf> = current.iter().collect();
         for record in &snapshot.files {
             if !record.status.is_live() {
+                // A skipped file is still pending: while an overlay lasts it is
+                // analysis-only, but once the overlay is gone the saved bytes
+                // must be indexed.
+                if self.overlays.contains_key(&record.path) {
+                    continue;
+                }
+                if matches!(
+                    record.status,
+                    crate::workspace::index::model::FileStatus::Skipped
+                ) && record.path.exists()
+                {
+                    changed.push(record.path.clone());
+                }
                 continue;
             }
             let Some(position) = present.iter().position(|path| **path == record.path) else {

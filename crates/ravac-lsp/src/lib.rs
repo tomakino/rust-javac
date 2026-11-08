@@ -34,9 +34,6 @@ pub fn run(
 ) {
     let mut docs: HashMap<PathBuf, String> = HashMap::new();
     let mut artifacts: Option<artifacts::ArtifactBuilder> = None;
-    // Project source roots for the analysis fallback (imports, cross-file
-    // types). Filled at initialize, applied once the artifacts are ready.
-    let mut analysis_source_path: Vec<PathBuf> = Vec::new();
     loop {
         let Some(message) = read_message(&mut stdin) else { break };
         // Publish a finished background index build before serving the request:
@@ -49,7 +46,7 @@ pub fn run(
         if let Some(builder) = &artifacts
             && let Some(class_path) = builder.take_completion()
         {
-            host.update_analysis_config(class_path, analysis_source_path.clone());
+            host.update_analysis_config(class_path, Vec::new());
             log_line("artifacts ready: analysis switched to the artifact class path");
         }
         let method = message.get("method").and_then(Value::as_str).unwrap_or("");
@@ -70,7 +67,6 @@ pub fn run(
                         output_dir,
                         None,
                     ));
-                    analysis_source_path = model.source_roots();
                     let source_level = host.configuration().source_level;
                     let (sources, class_path, has_output, level) =
                         artifact_inputs(&model, &source_level);

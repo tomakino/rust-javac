@@ -181,6 +181,18 @@ class Lsp:
                 return
             time.sleep(0.02)
 
+    def wait_index(self, timeout: float = 8.0):
+        """Advance the index through a real query, then wait until settled."""
+        deadline = time.time() + timeout
+        stats = {}
+        while time.time() < deadline:
+            self.request("textDocument/documentSymbol", {"textDocument": {"uri": self.uri(APP_PATH)}})
+            stats = self.request("ravac/indexStats", {}) or {}
+            if not stats.get("building"):
+                return stats
+            time.sleep(0.05)
+        return stats
+
     def did_open(self, relative: str, text: str):
         self.send(
             {
@@ -378,6 +390,9 @@ def main():
         items = completion if isinstance(completion, list) else (completion or {}).get("items") or []
         labels = [item.get("label", "") for item in items]
         completion_ok = any("compute" in label or "value" in label for label in labels)
+        # Drop the completion overlay: rename/references must see the saved
+        # bytes (an open buffer is analysis-only).
+        lsp.did_close(APP_PATH)
         # rename Helper -> Helper2 from the class declaration (cross-file edit).
         rename = lsp.rename(HELPER_PATH, position_of(HELPER, "class Helper", 0, len("class ")), "Helper2")
         changes = (rename or {}).get("changes") or {}
@@ -386,7 +401,7 @@ def main():
             any(uri.endswith(name) for uri in rename_files)
             for name in ("App.java", "Helper.java", "User.java")
         )
-        print("stderr:", [line for line in lsp.stderr_lines if line.startswith(("[ref]", "[rename]", "[index", "[def]"))][-10:], flush=True)
+        print("stderr:", [line for line in lsp.stderr_lines if line.startswith(("[ref]", "[rename]", "[index", "[def]", "[overlay]"))][-10:], flush=True)
         total_chain = time.time() - started
         row(
             "1-full-chain",
@@ -453,13 +468,19 @@ def main():
             stacktrace_detail = f"hover={'ok' if hover else 'null'} def={rel_of(definition)[-30:]}"
         row("4-stacktrace-jdk", "打开 jdk-src 的 NullPointerException → hover/definition", stacktrace_ok, stacktrace_detail)
 
-        # 5. edit diagnostics: syntax error appears, fix clears it.
-        broken = APP.replace("int v = helper.value;", "int v = ;")
-        lsp.did_change(APP_PATH, broken, 3)
-        bad = lsp.wait_diagnostics(APP_PATH, timeout=8, expect_empty=False)
-        fixed = APP
-        lsp.did_change(APP_PATH, fixed, 4)
-        clean = lsp.wait_diagnostics(APP_PATH, timeout=8, expect_empty=True)
+        # 5. edit diagnostics in a fresh session: the shared session already
+        # queued several analysis rebuilds (single-threaded server), and G1
+        # closed App so didChange would be ignored there.
+        fresh = Lsp(root)
+        try:
+            fresh.did_open(APP_PATH, APP)
+            broken = APP.replace("int v = helper.value;", "int v = helper.value")
+            fresh.did_change(APP_PATH, broken, 3)
+            bad = fresh.wait_diagnostics(APP_PATH, timeout=8, expect_empty=False)
+            fresh.did_change(APP_PATH, APP, 4)
+            clean = fresh.wait_diagnostics(APP_PATH, timeout=8, expect_empty=True)
+        finally:
+            fresh.close()
         diagnostics_ok = bool(bad) and clean == []
         row(
             "5-edit-diagnostics",

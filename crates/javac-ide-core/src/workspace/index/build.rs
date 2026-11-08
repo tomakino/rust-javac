@@ -240,11 +240,6 @@ impl IndexBuilder {
             .chunks(batch_size)
             .map(|batch| batch.to_vec())
             .collect();
-        // The first normal batch gives an overlay batch its project context:
-        // an overlay file compiled alone cannot resolve the project classes it
-        // references. Only the overlay itself is indexed; the context files are
-        // compiled for visibility, not re-indexed.
-        let base: Vec<PathBuf> = normal_batches.first().cloned().unwrap_or_default();
         let mut batches: Vec<(Vec<PathBuf>, HashSet<PathBuf>)> = normal_batches
             .into_iter()
             .map(|batch| {
@@ -252,11 +247,20 @@ impl IndexBuilder {
                 (batch, index_set)
             })
             .collect();
-        for overlay in overlay_files {
-            let mut batch = base.clone();
-            batch.push(overlay.clone());
-            let index_set = [overlay].into_iter().collect();
-            batches.push((batch, index_set));
+        // The first normal batch gives overlay batches their project context:
+        // an overlay file compiled alone cannot resolve the project classes it
+        // references. The overlays join that batch (compiled once) but are not
+        // indexed: an edited buffer is not a stable index input, and compiling
+        // the same context twice made the build fail.
+        if !overlay_files.is_empty() {
+            if let Some(first) = batches.first_mut() {
+                first.0.extend(overlay_files);
+            } else {
+                for overlay in overlay_files {
+                    let index_set = [overlay.clone()].into_iter().collect();
+                    batches.push((vec![overlay], index_set));
+                }
+            }
         }
         batches
     }
