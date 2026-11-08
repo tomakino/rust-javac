@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use super::super::super::positions::{line_offset, offset_to_line_col, word_at};
 use super::super::super::{canonical, FileAnalysis};
 use super::references::ReferenceCollector;
-use crate::code::scope::LookupKind;
 use crate::code::symbol::SymbolKind;
 use crate::ids::{SymbolId, TreeId};
 use crate::tree::jc_tree::TreeKind;
@@ -51,6 +50,13 @@ impl FileAnalysis {
             if let Some(symbol) = collector.query {
                 return Some((symbol, start));
             }
+        }
+        // A method reference's target is not visited as an identifier: the
+        // `MemberReference` tree carries it (with `A::new` stored as `<init>`).
+        if let Some((symbol, position)) =
+            member_reference_symbol_at(&self.compiler.ctx, &text, &word, start)
+        {
+            return Some((symbol, position));
         }
         // A static import's last segment is resolved into the import scope
         // rather than onto the qualifier tree (its `FieldAccess.sym` stays
@@ -196,21 +202,57 @@ fn static_import_member_at(
         if !matches!(ctx.sym(origin).kind_data, SymbolKind::ClassSymbol { .. }) {
             continue;
         }
-        let Some(scope) = ctx.sym(origin).members() else {
-            continue;
-        };
-        let members = ctx.scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true);
-        for member in members {
-            let matches = match &ctx.sym(member).kind_data {
-                SymbolKind::VarSymbol { .. } | SymbolKind::MethodSymbol { .. } => {
-                    ctx.sym(member).name.to_java_string().to_string_lossy() == word
-                }
-                _ => false,
-            };
-            if matches {
-                return Some((member, start));
-            }
+        // The imported member may be inherited from a supertype.
+        if let Some(member) = crate::analysis::positions::inherited_member(ctx, origin, word) {
+            return Some((member, start));
         }
     }
     None
+}
+
+/// Symbol of a method reference under the cursor (`A::method`, `A::new`,
+/// `obj::method`).
+///
+/// The `MemberReference` target is not visited as an identifier, so match its
+/// target name against the cursor word; requiring the `::` prefix keeps a
+/// plain identifier of the same name from matching.
+fn member_reference_symbol_at(
+    ctx: &crate::compiler_context::CompilerContext,
+    text: &str,
+    word: &str,
+    start: usize,
+) -> Option<(SymbolId, usize)> {
+    use crate::tree::jc_tree::ReferenceMode;
+    let byte = crate::analysis::positions::utf16_to_byte_snapped(text, start);
+    if !text.get(..byte)?.trim_end().ends_with("::") {
+        return None;
+    }
+    let mut found = None;
+    let mut ambiguous = false;
+    for index in 0..ctx.trees.len() {
+        let tree = TreeId::new(index as u32);
+        let TreeKind::MemberReference {
+            name,
+            mode,
+            sym: Some(sym),
+            ..
+        } = &ctx.tree(tree).kind
+        else {
+            continue;
+        };
+        let target = if matches!(mode, ReferenceMode::NEW) {
+            "new".to_string()
+        } else {
+            name.to_java_string().to_string_lossy().to_string()
+        };
+        if target != word {
+            continue;
+        }
+        match found {
+            None => found = Some(*sym),
+            Some(existing) if existing != *sym => ambiguous = true,
+            _ => {}
+        }
+    }
+    if ambiguous { None } else { found.map(|symbol| (symbol, start)) }
 }

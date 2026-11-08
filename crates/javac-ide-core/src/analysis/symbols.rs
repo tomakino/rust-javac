@@ -103,10 +103,17 @@ impl FileAnalysis {
             line.saturating_sub(1) as u32,
             column.saturating_sub(1) as u32,
         );
-        if let Some((symbol, name_start)) = self.symbol_id_at(source, position)
-            && let Some(info) = self.symbol_info(symbol, name_start)
-        {
-            return Some(info);
+        if let Some((symbol, _)) = self.symbol_id_at(source, position) {
+            // `pos` is the declaration position, never the reference position:
+            // go-to-definition uses it, so a class-path symbol without a tree
+            // here keeps -1 instead of jumping to the cursor.
+            let declaration =
+                crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, symbol)
+                    .map(|position| position as i32)
+                    .unwrap_or(-1);
+            if let Some(info) = self.symbol_info(symbol, declaration) {
+                return Some(info);
+            }
         }
         // Fallback: declarations matched by name + nearest position.
         // Compiler symbol positions point at the declaration start; move them
@@ -124,7 +131,7 @@ impl FileAnalysis {
     fn symbol_info(
         &mut self,
         symbol: crate::ids::SymbolId,
-        name_start: usize,
+        declaration: i32,
     ) -> Option<SymbolInfo> {
         let ctx = &self.compiler.ctx;
         let record = ctx.sym(symbol);
@@ -164,7 +171,7 @@ impl FileAnalysis {
             name: name.clone(),
             kind,
             flat_name: name,
-            pos: name_start as i32,
+            pos: declaration,
             detail,
             doc: None,
         })

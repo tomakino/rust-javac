@@ -510,26 +510,8 @@ impl IndexBuilder {
                 .unwrap_or_else(|| name_string.clone()),
         };
         let signature_text = self.strings.get(signature).to_string();
-        let detail = match &ctx.sym(symbol).kind_data {
-            SymbolKind::VarSymbol { .. } => {
-                let ty = ctx
-                    .sym(symbol)
-                    .ty
-                    .map(|ty| crate::analysis::type_names::type_name(ctx, ty));
-                match ty {
-                    Some(ty) => format!("{ty} {name_string}"),
-                    None => format!("{} {}", kind_name(kind), name_string),
-                }
-            }
-            _ if matches!(
-                kind,
-                IndexSymbolKind::Method | IndexSymbolKind::Constructor
-            ) =>
-            {
-                format!("{name_string}{signature_text}")
-            }
-            _ => format!("{} {}", kind_name(kind), name_string),
-        };
+        let detail =
+            super::extract::declaration_detail(ctx, symbol, kind, &name_string, &signature_text);
         let return_type = if matches!(
             kind,
             IndexSymbolKind::Method | IndexSymbolKind::Constructor
@@ -749,6 +731,22 @@ impl OccurrenceCollector {
         }
     }
 
+    /// Record the constructor selected for a `new T(...)` call at the type
+    /// name position. It is recorded before the identifier visitor records the
+    /// class name at the same position, so definition/hover prefer the
+    /// constructor while references and type rename still see the class.
+    fn record_constructor(&mut self, symbol: CompilerSymbolId, position: i32) {
+        if position < 0 {
+            return;
+        }
+        self.raw.push(RawOccurrence {
+            symbol,
+            position,
+            role: OccurrenceRole::Reference,
+            end: None,
+        });
+    }
+
     fn record_span(
         &mut self,
         symbol: CompilerSymbolId,
@@ -764,6 +762,50 @@ impl OccurrenceCollector {
                 end: Some(end),
             });
         }
+    }
+    /// Position of a method reference target: the name after `::` (or `new`).
+    fn member_reference_position(
+        &self,
+        ctx: &CompilerContext,
+        expr: TreeId,
+        name: &str,
+        is_new: bool,
+    ) -> Option<i32> {
+        let start = ctx.tree(expr).pos.max(0) as usize;
+        let base = crate::analysis::positions::utf16_to_byte_snapped(&self.text, start);
+        let tail = self.text.get(base..)?;
+        let colons = tail.find("::")?;
+        let after = &tail[colons + 2..];
+        let target = if is_new { "new" } else { name };
+        let offset = after.find(target)?;
+        Some(crate::analysis::positions::byte_to_utf16(&self.text, base + colons + 2 + offset) as i32)
+    }
+
+    /// The member a static import names, including inherited members.
+    fn static_import_member(
+        &self,
+        ctx: &mut CompilerContext,
+        qualid: TreeId,
+    ) -> Option<(CompilerSymbolId, i32)> {
+        let (selected, name) = match &ctx.tree(qualid).kind {
+            TreeKind::FieldAccess {
+                selected: Some(selected),
+                name,
+                ..
+            } => (*selected, name.to_java_string().to_string_lossy().to_string()),
+            _ => return None,
+        };
+        if name == "*" {
+            return None;
+        }
+        let origin = crate::tree::tree_info::symbol(ctx, selected)?;
+        if !matches!(ctx.sym(origin).kind_data, SymbolKind::ClassSymbol { .. }) {
+            return None;
+        }
+        let member = crate::analysis::positions::inherited_member(ctx, origin, &name)?;
+        let position =
+            crate::analysis::positions::member_name_position(ctx, &self.text, selected, &name)?;
+        Some((member, position))
     }
 }
 
@@ -820,7 +862,21 @@ impl TreeScannerVisitor for OccurrenceCollector {
             | TreeKind::FieldAccess {
                 sym: Some(symbol), ..
             } => *symbol,
-            _ => return,
+            // A static import's member is resolved into the import scope, not
+            // onto the qualifier tree; attribute it from the origin type.
+            _ => {
+                if matches!(
+                    &ctx.tree(tree).kind,
+                    TreeKind::Import {
+                        static_import: true,
+                        ..
+                    }
+                ) && let Some((member, position)) = self.static_import_member(ctx, qualid)
+                {
+                    self.record(member, position, OccurrenceRole::Import);
+                }
+                return;
+            }
         };
         // `import java.util.*;`: the whole package path is the prefix, so the
         // occurrence spans it instead of the last simple name. The select
@@ -857,6 +913,71 @@ impl TreeScannerVisitor for OccurrenceCollector {
             _ => return,
         };
         self.record(symbol, position, OccurrenceRole::Import);
+    }
+
+    fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (encl, typeargs, clazz, args, def, constructor) = match &ctx.tree(tree).kind {
+            TreeKind::NewClass {
+                encl,
+                typeargs,
+                clazz,
+                args,
+                def,
+                constructor,
+                ..
+            } => (
+                *encl,
+                typeargs.clone(),
+                *clazz,
+                args.clone(),
+                *def,
+                *constructor,
+            ),
+            _ => return,
+        };
+        if let (Some(clazz), Some(constructor)) = (clazz, constructor)
+            && let Some(class) = crate::tree::tree_info::symbol(&*ctx, clazz)
+            // Anonymous class bodies own their constructor; the type name must
+            // keep resolving to the named class.
+            && ctx.sym(constructor).owner == Some(class)
+            && matches!(ctx.sym(constructor).kind_data, SymbolKind::MethodSymbol { .. })
+            && let Some(position) =
+                crate::analysis::positions::type_name_position(&*ctx, &self.text, clazz)
+        {
+            self.record_constructor(constructor, position);
+        }
+        self.scan(ctx, encl);
+        self.scan_list(ctx, &typeargs);
+        self.scan(ctx, clazz);
+        self.scan_list(ctx, &args);
+        self.scan(ctx, def);
+    }
+
+    fn visit_reference(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (name, sym, expr, typeargs, is_new) = match &ctx.tree(tree).kind {
+            TreeKind::MemberReference {
+                name,
+                mode,
+                expr,
+                typeargs,
+                sym,
+                ..
+            } => (
+                name.to_java_string().to_string_lossy().to_string(),
+                *sym,
+                *expr,
+                typeargs.clone(),
+                matches!(mode, crate::tree::jc_tree::ReferenceMode::NEW),
+            ),
+            _ => return,
+        };
+        if let (Some(sym), Some(expr)) = (sym, expr)
+            && let Some(position) = self.member_reference_position(ctx, expr, &name, is_new)
+        {
+            self.record(sym, position, OccurrenceRole::Reference);
+        }
+        self.scan(ctx, expr);
+        self.scan_list_opt(ctx, typeargs);
     }
 
     fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {

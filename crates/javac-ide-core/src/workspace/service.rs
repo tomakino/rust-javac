@@ -285,7 +285,7 @@ impl WorkspaceService for Workspace {
     fn definition(&mut self, file: &Path, position: Position) -> Option<Location> {
         self.ensure_index();
         let snapshot = self.index.snapshot();
-        if !self.is_dirty() && !snapshot.files.is_empty()
+        if !self.has_unsaved_edits() && !snapshot.files.is_empty()
             && let Some(text) = self.text_of(file)
             && let Some(file_id) = snapshot.file_id_for_path(file)
             && let Some(location) = query::definition(
@@ -401,7 +401,7 @@ impl WorkspaceService for Workspace {
     fn prepare_rename(&mut self, file: &Path, position: Position) -> Option<Range> {
         self.ensure_index();
         let snapshot = self.index.snapshot();
-        if !self.is_dirty() && !snapshot.files.is_empty()
+        if !self.has_unsaved_edits() && !snapshot.files.is_empty()
             && let Some(text) = self.text_of(file)
             && let Some(file_id) = snapshot.file_id_for_path(file)
             && let Some(range) = query::prepare_rename_range(&snapshot, file_id, &text, position)
@@ -417,7 +417,7 @@ impl WorkspaceService for Workspace {
     fn references(&mut self, file: &Path, position: Position) -> Vec<Location> {
         self.ensure_index();
         let snapshot = self.index.snapshot();
-        if !self.is_dirty() && !snapshot.files.is_empty()
+        if !self.has_unsaved_edits() && !snapshot.files.is_empty()
             && let Some(text) = self.text_of(file)
             && let Some(file_id) = snapshot.file_id_for_path(file)
         {
@@ -441,7 +441,7 @@ impl WorkspaceService for Workspace {
     fn hover(&mut self, file: &Path, position: Position) -> Option<String> {
         self.ensure_index();
         let snapshot = self.index.snapshot();
-        if !self.is_dirty() && !snapshot.files.is_empty()
+        if !self.has_unsaved_edits() && !snapshot.files.is_empty()
             && let Some(text) = self.text_of(file)
             && let Some(file_id) = snapshot.file_id_for_path(file)
             && let Some(symbol) = query::symbol_at(&snapshot, file_id, &text, position)
@@ -462,18 +462,29 @@ impl WorkspaceService for Workspace {
                 detail.push_str("\n\n");
                 detail.push_str(javadoc);
             }
-            if matches!(record.kind, index::IndexSymbolKind::Method)
-                && let Some(supers) = self.with_analysis(file, None, |analysis, _| {
-                    analysis.super_methods_with_names_impl(file, position)
-                })
-                && !supers.is_empty()
-            {
-                detail.push_str("\n\n---\n\n**Overrides:**");
-                for (_, name) in supers.iter().take(5) {
-                    detail.push_str(&format!("\n- `{name}`"));
+            if matches!(record.kind, index::IndexSymbolKind::Method) {
+                let mut supers: Vec<String> = self
+                    .with_analysis(file, None, |analysis, _| {
+                        analysis.super_methods_with_names_impl(file, position)
+                    })
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(_, name)| name)
+                    .collect();
+                if supers.is_empty() {
+                    // Project sources are not on the analysis compiler's
+                    // source path, so the analysis above cannot resolve a
+                    // project superclass; the index records the supertypes.
+                    supers = query::overriding_methods(&snapshot, symbol);
                 }
-                if supers.len() > 5 {
-                    detail.push_str(&format!("\n- … (+{} more)", supers.len() - 5));
+                if !supers.is_empty() {
+                    detail.push_str("\n\n---\n\n**Overrides:**");
+                    for name in supers.iter().take(5) {
+                        detail.push_str(&format!("\n- `{name}`"));
+                    }
+                    if supers.len() > 5 {
+                        detail.push_str(&format!("\n- … (+{} more)", supers.len() - 5));
+                    }
                 }
             }
             return Some(detail);

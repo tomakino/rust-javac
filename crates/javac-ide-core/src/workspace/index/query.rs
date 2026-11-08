@@ -61,6 +61,64 @@ pub fn symbol_location(
     ))
 }
 
+/// The methods a method overrides, using index data only (project sources are
+/// not on the analysis compiler's source path, so hover needs this fallback).
+///
+/// Parent methods are matched by name + parameter fingerprint and must be
+/// instance (non-static, non-private) declarations.
+pub fn overriding_methods(index: &ProjectIndex, symbol: SymbolId) -> Vec<String> {
+    let Some(record) = index.symbol(symbol) else {
+        return Vec::new();
+    };
+    if record.kind != super::key::IndexSymbolKind::Method {
+        return Vec::new();
+    }
+    let Some(owner) = record.key.owner else {
+        return Vec::new();
+    };
+    let Some(owner_record) = index.symbol(owner) else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    let mut pending: Vec<super::model::TypeRef> = owner_record.supertypes.clone();
+    let mut seen = std::collections::HashSet::new();
+    while let Some(supertype) = pending.pop() {
+        let super::model::TypeRef::Project(parent) = supertype else {
+            continue;
+        };
+        if !seen.insert(parent) {
+            continue;
+        }
+        let Some(parent_record) = index.symbol(parent) else {
+            continue;
+        };
+        pending.extend(parent_record.supertypes.iter().cloned());
+        let Some(file_index) = index.file_index(parent_record.file) else {
+            continue;
+        };
+        for candidate in &file_index.declarations {
+            let Some(candidate_record) = index.symbol(*candidate) else {
+                continue;
+            };
+            if candidate_record.kind != super::key::IndexSymbolKind::Method
+                || candidate_record.key.name != record.key.name
+                || candidate_record.key.signature != record.key.signature
+                || candidate_record.modifiers & crate::code::flags::STATIC as u32 != 0
+                || candidate_record.modifiers & crate::code::flags::PRIVATE as u32 != 0
+            {
+                continue;
+            }
+            let parent_name = index.display_name(parent_record);
+            let name = index.strings.get(candidate_record.key.name).to_string();
+            let entry = format!("{parent_name}.{name}");
+            if !result.contains(&entry) {
+                result.push(entry);
+            }
+        }
+    }
+    result
+}
+
 /// Go-to-definition.
 pub fn definition(
     index: &ProjectIndex,

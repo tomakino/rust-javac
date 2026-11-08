@@ -416,6 +416,49 @@ fn symbol_tree_map(ctx: &CompilerContext) -> HashMap<CompilerSymbolId, TreeId> {
     trees
 }
 
+/// Hover/outline detail of a declaration record. Shared by the batch builder
+/// and the incremental extractor (SSOT for the index `detail` string).
+pub(crate) fn declaration_detail(
+    ctx: &crate::compiler_context::CompilerContext,
+    symbol: CompilerSymbolId,
+    kind: IndexSymbolKind,
+    name: &str,
+    signature: &str,
+) -> String {
+    match &ctx.sym(symbol).kind_data {
+        SymbolKind::VarSymbol { .. } => {
+            let ty = ctx
+                .sym(symbol)
+                .ty
+                .map(|ty| crate::analysis::type_names::type_name(ctx, ty));
+            match ty {
+                Some(ty) => format!("{ty} {name}"),
+                None => format!("{} {name}", kind_name(kind)),
+            }
+        }
+        _ if matches!(kind, IndexSymbolKind::Method | IndexSymbolKind::Constructor) => {
+            // Constructors are `<init>` internally; show the class name like
+            // the editor does (`BaseType(int)`).
+            let display = if name == "<init>" {
+                ctx.sym(symbol)
+                    .owner
+                    .and_then(|owner| match &ctx.sym(owner).kind_data {
+                        SymbolKind::ClassSymbol { flatname, .. } => flatname
+                            .to_string()
+                            .rsplit('.')
+                            .next()
+                            .map(str::to_string),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| name.to_string())
+            } else {
+                name.to_string()
+            };
+            format!("{display}{signature}")
+        }
+        _ => format!("{} {name}", kind_name(kind)),
+    }
+}
 /// AST name position: parser name table (classes/interfaces/enums/records/
 /// methods), then `VariableDecl.decl_pos` (fields/locals/parameters/enum
 /// constants), then the declaring tree position (constructors/type parameters).
@@ -453,26 +496,7 @@ fn declaration_of(
         start: name_start,
         end: name_start.saturating_add(name.encode_utf16().count() as u32),
     };
-    let detail = match &ctx.sym(symbol).kind_data {
-        SymbolKind::VarSymbol { .. } => {
-            let ty = ctx
-                .sym(symbol)
-                .ty
-                .map(|ty| crate::analysis::type_names::type_name(ctx, ty));
-            match ty {
-                Some(ty) => format!("{ty} {name}"),
-                None => format!("{} {}", kind_name(kind), name),
-            }
-        }
-        _ if matches!(
-            kind,
-            IndexSymbolKind::Method | IndexSymbolKind::Constructor
-        ) =>
-        {
-            format!("{name}{signature}")
-        }
-        _ => format!("{} {}", kind_name(kind), name),
-    };
+    let detail = declaration_detail(ctx, symbol, kind, &name, &signature);
     let return_type = if matches!(
         kind,
         IndexSymbolKind::Method | IndexSymbolKind::Constructor

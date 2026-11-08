@@ -318,6 +318,127 @@ mod tests {
     }
 }
 
+/// Source position of the declared name inside a type tree (`A`, `a.b.C`,
+/// `C<T>`, `@A C<T>`): the AST node position, or the name segment for a
+/// qualified type.
+pub(crate) fn type_name_position(
+    ctx: &crate::compiler_context::CompilerContext,
+    text: &str,
+    tree: crate::ids::TreeId,
+) -> Option<i32> {
+    match &ctx.tree(tree).kind {
+        crate::tree::jc_tree::TreeKind::Ident { .. } => Some(ctx.tree(tree).pos),
+        crate::tree::jc_tree::TreeKind::FieldAccess {
+            selected: Some(selected),
+            name,
+            ..
+        } => member_name_position(ctx, text, *selected, &name.to_java_string().to_string_lossy()),
+        crate::tree::jc_tree::TreeKind::TypeApply {
+            clazz: Some(clazz), ..
+        }
+        | crate::tree::jc_tree::TreeKind::AnnotatedType {
+            underlying_type: Some(clazz),
+            ..
+        }
+        | crate::tree::jc_tree::TreeKind::Parens { expr: Some(clazz) } => {
+            type_name_position(ctx, text, *clazz)
+        }
+        _ => None,
+    }
+}
+
+/// Position of `name` in the source starting from `selected`'s declarator
+/// (the name segment after a qualifier), as a UTF-16 offset.
+///
+/// The first occurrence is the member name: `selected` ends where the qualifier
+/// does, so a later occurrence would belong to another reference (the same
+/// import name used in the file body).
+pub(crate) fn member_name_position(
+    ctx: &crate::compiler_context::CompilerContext,
+    text: &str,
+    selected: crate::ids::TreeId,
+    name: &str,
+) -> Option<i32> {
+    let start = ctx.tree(selected).pos.max(0) as usize;
+    let base = utf16_to_byte_snapped(text, start);
+    let offset = text.get(base..)?.find(name)?;
+    Some(byte_to_utf16(text, base + offset) as i32)
+}
+
+/// A variable or method named `name` in `class`, its superclasses or its
+/// interfaces (static-import inheritance).
+pub(crate) fn inherited_member(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    class: crate::ids::SymbolId,
+    name: &str,
+) -> Option<crate::ids::SymbolId> {
+    use crate::code::symbol::SymbolKind;
+    let mut stack = vec![class];
+    let mut visited = std::collections::HashSet::new();
+    while let Some(current) = stack.pop() {
+        if !visited.insert(current) {
+            continue;
+        }
+        let scope = ctx.sym(current).members();
+        if let Some(scope) = scope {
+            let members = ctx.scope_get_symbols(
+                scope,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+            );
+            for member in members {
+                let symbol = ctx.sym(member);
+                if matches!(
+                    symbol.kind_data,
+                    SymbolKind::VarSymbol { .. } | SymbolKind::MethodSymbol { .. }
+                ) && symbol.name.to_java_string().to_string_lossy() == name
+                {
+                    return Some(member);
+                }
+            }
+        }
+        let ty = ctx.sym(current).ty;
+        if let Some(ty) = ty {
+            let (supertype, interfaces) = match &ctx.typ(ty).kind {
+                crate::code::type_::TypeKindData::ClassType {
+                    supertype_field,
+                    interfaces_field,
+                    ..
+                }
+                | crate::code::type_::TypeKindData::ErasedClassType {
+                    supertype_field,
+                    interfaces_field,
+                    ..
+                }
+                | crate::code::type_::TypeKindData::UnionClassType {
+                    supertype_field,
+                    interfaces_field,
+                    ..
+                }
+                | crate::code::type_::TypeKindData::IntersectionClassType {
+                    supertype_field,
+                    interfaces_field,
+                    ..
+                } => (*supertype_field, interfaces_field.clone()),
+                _ => (None, None),
+            };
+            if let Some(super_ty) = supertype
+                && let Some(symbol) = ctx.typ(super_ty).tsym
+            {
+                stack.push(symbol);
+            }
+            if let Some(interfaces) = interfaces {
+                for interface in interfaces.iter() {
+                    if let Some(symbol) = ctx.typ(interface).tsym {
+                        stack.push(symbol);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 /// The declaring `VariableDecl` of an enum constant, matched by name inside
 /// the owning enum's class body.
 ///

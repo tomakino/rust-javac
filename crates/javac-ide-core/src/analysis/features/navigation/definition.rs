@@ -21,6 +21,16 @@ struct SuperConstructorCall {
     argument_count: usize,
 }
 
+/// A `new T(...)` call under the cursor: the type name and the constructor the
+/// compiler selected for this argument list.
+struct NewClassCall {
+    class: SymbolId,
+    constructor: SymbolId,
+    /// `new T() { ... }`: the definition is the type, not the anonymous
+    /// constructor generated for the class body.
+    anonymous: bool,
+}
+
 /// Finds the method declaration whose body contains `target`.
 struct EnclosingMethodFinder {
     target: TreeId,
@@ -81,11 +91,28 @@ impl FileAnalysis {
         if let Some(call) = self.super_constructor_call_at(&text, position) {
             return self.super_constructor_location(&call);
         }
+        // `new T(...)` names a constructor call: the class name is the type,
+        // but the editor definition is the selected constructor overload.
+        if let Some(call) = self.new_class_call_at(&text, position) {
+            if !call.anonymous
+                && let Some(location) = self.constructor_definition(call.constructor)
+            {
+                return Some(location);
+            }
+            return self.declaration_location(call.class, None);
+        }
         // Compiler-attributed symbol first: parameters/locals must win over a
         // same-named field. Only symbols declared in this arena (an AST name
         // position exists) are answered here; class-path symbols keep the
         // external-source path below.
         if let Some((symbol, _)) = self.symbol_id_at(file, position) {
+            // A constructor symbol (for example `T::new`) has no usable name
+            // position on its own tree; resolve its declaration directly.
+            if self.is_constructor_symbol(symbol)
+                && let Some(location) = self.constructor_definition(symbol)
+            {
+                return Some(location);
+            }
             if let Some(pos) =
                 crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, symbol)
             {
@@ -267,6 +294,83 @@ impl FileAnalysis {
         }
         // Degrade to the parent class declaration instead of returning None.
         self.declaration_location(parent, None)
+    }
+
+    /// A `new T(...)` expression under the cursor, when the cursor is on `T`.
+    fn new_class_call_at(
+        &self,
+        text: &str,
+        position: javac_analysis_api::Position,
+    ) -> Option<NewClassCall> {
+        let line = position.line as usize + 1;
+        let column = position.column as usize + 1;
+        word_at(text, line, column)?;
+        let cursor = line_offset(text, line, column);
+        let start =
+            byte_to_utf16(text, super::source::word_start_offset(text, cursor)) as i32;
+        for tree in self.compiler.ctx.trees.iter() {
+            let TreeKind::NewClass {
+                clazz: Some(clazz),
+                constructor: Some(constructor),
+                def,
+                ..
+            } = &tree.kind
+            else {
+                continue;
+            };
+            let Some(class_name) =
+                crate::analysis::positions::type_name_position(&self.compiler.ctx, text, *clazz)
+            else {
+                continue;
+            };
+            if class_name != start {
+                continue;
+            }
+            let class = crate::tree::tree_info::symbol(&self.compiler.ctx, *clazz)
+                .or_else(|| self.compiler.ctx.sym(*constructor).owner)?;
+            // An anonymous class body gets a constructor owned by the anonymous
+            // class; the `new T(){}` definition is still T.
+            let anonymous = def.is_some()
+                || self.compiler.ctx.sym(*constructor).owner != Some(class);
+            return Some(NewClassCall {
+                class,
+                constructor: *constructor,
+                anonymous,
+            });
+        }
+        None
+    }
+
+    /// Whether `symbol` is a constructor (`<init>`).
+    fn is_constructor_symbol(&self, symbol: SymbolId) -> bool {
+        matches!(
+            self.compiler.ctx.sym(symbol).kind_data,
+            SymbolKind::MethodSymbol { .. }
+        ) && self
+            .compiler
+            .ctx
+            .sym(symbol)
+            .name
+            .to_java_string()
+            .to_string_lossy()
+            == "<init>"
+    }
+
+    /// Declaration of a constructor symbol; falls back to its class declaration
+    /// when the constructor itself cannot be located.
+    fn constructor_definition(
+        &mut self,
+        constructor: SymbolId,
+    ) -> Option<javac_analysis_api::Location> {
+        let arity = match &self.compiler.ctx.sym(constructor).kind_data {
+            SymbolKind::MethodSymbol { params, .. } => params.size().max(0) as usize,
+            _ => return None,
+        };
+        if let Some(location) = self.declaration_location(constructor, Some(arity)) {
+            return Some(location);
+        }
+        let owner = self.compiler.ctx.sym(constructor).owner?;
+        self.declaration_location(owner, None)
     }
 
     /// Location of a declared symbol: the AST name position when its
@@ -659,4 +763,6 @@ impl FileAnalysis {
         locations
     }
 }
+
+
 
