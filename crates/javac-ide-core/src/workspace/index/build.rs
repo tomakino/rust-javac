@@ -174,8 +174,8 @@ impl IndexBuilder {
         }
         let batch_size = batch_size.max(1);
         let batches = self.batches(batch_size);
-        for batch in batches {
-            self.build_batch(&batch);
+        for (batch, index_set) in batches {
+            self.build_batch(&batch, &index_set);
         }
         let mut status = if self.failed_files.is_empty() && self.skipped_files.is_empty() {
             IndexStatus::Ready
@@ -215,30 +215,41 @@ impl IndexBuilder {
         }
     }
 
-    fn batches(&self, batch_size: usize) -> Vec<Vec<PathBuf>> {
-        if self.overlays.is_empty() {
-            return self
-                .files
-                .chunks(batch_size)
-                .map(|batch| batch.to_vec())
-                .collect();
+    fn batches(&self, batch_size: usize) -> Vec<(Vec<PathBuf>, HashSet<PathBuf>)> {
+        let normal: Vec<PathBuf> = self
+            .files
+            .iter()
+            .filter(|path| !self.overlays.contains_key(*path))
+            .cloned()
+            .collect();
+        let overlay_files: Vec<PathBuf> = self
+            .files
+            .iter()
+            .filter(|path| self.overlays.contains_key(*path))
+            .cloned()
+            .collect();
+        let normal_batches: Vec<Vec<PathBuf>> = normal
+            .chunks(batch_size)
+            .map(|batch| batch.to_vec())
+            .collect();
+        // The first normal batch gives an overlay batch its project context:
+        // an overlay file compiled alone cannot resolve the project classes it
+        // references. Only the overlay itself is indexed; the context files are
+        // compiled for visibility, not re-indexed.
+        let base: Vec<PathBuf> = normal_batches.first().cloned().unwrap_or_default();
+        let mut batches: Vec<(Vec<PathBuf>, HashSet<PathBuf>)> = normal_batches
+            .into_iter()
+            .map(|batch| {
+                let index_set = batch.iter().cloned().collect();
+                (batch, index_set)
+            })
+            .collect();
+        for overlay in overlay_files {
+            let mut batch = base.clone();
+            batch.push(overlay.clone());
+            let index_set = [overlay].into_iter().collect();
+            batches.push((batch, index_set));
         }
-        let mut batches = Vec::new();
-        let mut normal = Vec::new();
-        for path in &self.files {
-            if self.overlays.contains_key(path) {
-                // A batch has one overlay buffer; only overlay files get their own batch.
-                batches.push(vec![path.clone()]);
-            } else {
-                normal.push(path.clone());
-            }
-        }
-        batches.extend(
-            normal
-                .chunks(batch_size)
-                .map(|batch| batch.to_vec())
-                .collect::<Vec<_>>(),
-        );
         batches
     }
 
@@ -281,8 +292,8 @@ impl IndexBuilder {
         }
     }
 
-    fn build_batch(&mut self, batch: &[PathBuf]) {
-        let batch_set: HashSet<PathBuf> = batch.iter().cloned().collect();
+    fn build_batch(&mut self, batch: &[PathBuf], index_set: &HashSet<PathBuf>) {
+        let batch_set = index_set;
         let config = self.config.clone();
         let mut session = FileAnalysis::new(config);
         for path in batch {

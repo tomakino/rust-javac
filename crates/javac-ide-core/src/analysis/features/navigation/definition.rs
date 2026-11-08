@@ -631,6 +631,11 @@ impl FileAnalysis {
         // not part of `symbols()` (declared members only).
         let (symbol, _) = self.symbol_id_at(file, position)?;
         let ty = self.compiler.ctx.sym(symbol).ty?;
+        // A method reference/call resolves to its declared return type.
+        let ty = match &self.compiler.ctx.typ(ty).kind {
+            TypeKindData::MethodType { restype, .. } => (*restype)?,
+            _ => ty,
+        };
         let class = match &self.compiler.ctx.typ(ty).kind {
             TypeKindData::ClassType { .. } => self.compiler.ctx.typ(ty).tsym,
             _ => None,

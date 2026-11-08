@@ -200,6 +200,113 @@ pub fn override_declarations(index: &ProjectIndex, symbol: SymbolId) -> Vec<Symb
     result
 }
 
+/// Implementation locations: subtypes of a type, or the declarations in
+/// project subtypes that override a method.
+pub fn implementations(
+    index: &ProjectIndex,
+    file: FileId,
+    text: &str,
+    position: Position,
+    text_of: &dyn Fn(FileId) -> Option<String>,
+) -> Vec<Location> {
+    let Some(symbol) = symbol_at(index, file, text, position) else {
+        return Vec::new();
+    };
+    let Some(record) = index.symbol(symbol) else {
+        return Vec::new();
+    };
+    let mut declarations: Vec<SymbolId> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    match record.kind {
+        super::key::IndexSymbolKind::Class
+        | super::key::IndexSymbolKind::Interface
+        | super::key::IndexSymbolKind::Enum
+        | super::key::IndexSymbolKind::Record
+        | super::key::IndexSymbolKind::Annotation => {
+            let mut pending = vec![symbol];
+            while let Some(current) = pending.pop() {
+                let Some(children) = index.by_supertype.get(&current) else {
+                    continue;
+                };
+                for child in children {
+                    if !seen.insert(*child) {
+                        continue;
+                    }
+                    pending.push(*child);
+                    declarations.push(*child);
+                }
+            }
+        }
+        super::key::IndexSymbolKind::Method => {
+            let Some(owner) = record.key.owner else {
+                return Vec::new();
+            };
+            let mut pending = vec![owner];
+            let mut subtypes = Vec::new();
+            while let Some(current) = pending.pop() {
+                let Some(children) = index.by_supertype.get(&current) else {
+                    continue;
+                };
+                for child in children {
+                    if !seen.insert(*child) {
+                        continue;
+                    }
+                    pending.push(*child);
+                    subtypes.push(*child);
+                }
+            }
+            for subtype in subtypes {
+                let Some(subtype_record) = index.symbol(subtype) else {
+                    continue;
+                };
+                let Some(file_index) = index.file_index(subtype_record.file) else {
+                    continue;
+                };
+                for candidate in &file_index.declarations {
+                    if let Some(candidate_record) = index.symbol(*candidate)
+                        && candidate_record.kind == super::key::IndexSymbolKind::Method
+                        && candidate_record.key.name == record.key.name
+                        && candidate_record.key.signature == record.key.signature
+                        && candidate_record.modifiers & crate::code::flags::STATIC as u32 == 0
+                        && candidate_record.modifiers & crate::code::flags::PRIVATE as u32 == 0
+                    {
+                        declarations.push(*candidate);
+                    }
+                }
+            }
+        }
+        _ => return Vec::new(),
+    }
+    let mut locations: Vec<Location> = declarations
+        .into_iter()
+        .filter_map(|declaration| {
+            let record = index.symbol(declaration)?;
+            let file_record = index.file(record.file)?;
+            let text = text_of(record.file)?;
+            Some(location_for_range(
+                &file_record.path,
+                &text,
+                record.range.start,
+                record.range.end,
+            ))
+        })
+        .collect();
+    locations.sort_by(|left, right| {
+        (
+            left.file.to_string_lossy().to_string(),
+            left.range.start.line,
+            left.range.start.column,
+        )
+            .cmp(&(
+                right.file.to_string_lossy().to_string(),
+                right.range.start.line,
+                right.range.start.column,
+            ))
+    });
+    locations.dedup_by(|left, right| left.file == right.file && left.range == right.range);
+    locations
+}
+
 /// Go-to-definition.
 pub fn definition(
     index: &ProjectIndex,

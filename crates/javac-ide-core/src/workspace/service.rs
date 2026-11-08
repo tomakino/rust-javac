@@ -318,6 +318,23 @@ impl WorkspaceService for Workspace {
     }
 
     fn implementation(&mut self, file: &Path, position: Position) -> Vec<Location> {
+        self.ensure_index();
+        let snapshot = self.index.snapshot();
+        if !self.has_unsaved_edits() && !snapshot.files.is_empty()
+            && let Some(text) = self.text_of(file)
+            && let Some(file_id) = snapshot.file_id_for_path(file)
+        {
+            let locations = query::implementations(
+                &snapshot,
+                file_id,
+                &text,
+                position,
+                &|id| self.text_of_id(id),
+            );
+            if !locations.is_empty() {
+                return locations;
+            }
+        }
         self.with_analysis(file, None, |analysis, _| {
             analysis.implementation_impl(file, position)
         })

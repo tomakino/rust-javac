@@ -23,6 +23,25 @@ impl FileAnalysis {
 fn fold_ranges(text: &str) -> Vec<FoldingRange> {
     let mut ranges = Vec::new();
     let lines: Vec<&str> = text.lines().collect();
+    // Import block (consecutive `import ` lines).
+    let first_import = lines
+        .iter()
+        .position(|line| line.trim_start().starts_with("import "));
+    if let Some(first) = first_import {
+        let mut last = first;
+        while last + 1 < lines.len()
+            && lines[last + 1].trim_start().starts_with("import ")
+        {
+            last += 1;
+        }
+        if last > first {
+            ranges.push(FoldingRange {
+                start_line: first as u32,
+                end_line: last as u32,
+                kind: Some(FoldingRangeKind::Imports),
+            });
+        }
+    }
     // Consecutive line comments / block-comment lines.
     let mut comment_start: Option<u32> = None;
     for (index, line) in lines.iter().enumerate() {
@@ -99,6 +118,32 @@ mod tests {
             ranges
                 .iter()
                 .any(|range| range.start_line == 1 && range.end_line == 2),
+            "{ranges:?}"
+        );
+    }
+
+    #[test]
+    fn import_block_folds_with_the_imports_kind() {
+        let text = "package a;\n\nimport java.util.List;\nimport java.util.Map;\n\nclass A {\n}\n";
+        let ranges = fold_ranges(text);
+        assert!(
+            ranges.iter().any(|range| {
+                range.kind == Some(FoldingRangeKind::Imports)
+                    && range.start_line == 2
+                    && range.end_line == 3
+            }),
+            "{ranges:?}"
+        );
+    }
+
+    #[test]
+    fn a_single_import_line_does_not_fold() {
+        let text = "package a;\n\nimport java.util.List;\n\nclass A {\n}\n";
+        let ranges = fold_ranges(text);
+        assert!(
+            !ranges
+                .iter()
+                .any(|range| range.kind == Some(FoldingRangeKind::Imports)),
             "{ranges:?}"
         );
     }
