@@ -110,19 +110,41 @@ pub fn run(
                 }
             }
             "workspace/didChangeWatchedFiles" => {
-                let paths: Vec<PathBuf> = message
+                let changes: Vec<(PathBuf, i64)> = message
                     .get("params")
                     .and_then(|params| params.get("changes"))
                     .and_then(Value::as_array)
                     .map(|changes| {
                         changes
                             .iter()
-                            .filter_map(|change| change.get("uri").and_then(Value::as_str))
-                            .filter_map(|uri| uri_to_path(uri).ok())
+                            .filter_map(|change| {
+                                let uri = change.get("uri").and_then(Value::as_str)?;
+                                let path = uri_to_path(uri).ok()?;
+                                let kind = change.get("type").and_then(Value::as_i64).unwrap_or(2);
+                                Some((path, kind))
+                            })
                             .collect()
                     })
                     .unwrap_or_default();
+                let paths: Vec<PathBuf> = changes.iter().map(|(path, _)| path.clone()).collect();
                 host.invalidate(&paths);
+                // A watched change/creation changes the bytes on disk, so the
+                // shared artifact classes are stale too: recompile the existing
+                // project sources and drop their analyses. Deletions get a fresh
+                // analysis and are not compiled (the file is gone).
+                if let Some(builder) = &artifacts {
+                    let project_sources: Vec<PathBuf> = changes
+                        .iter()
+                        .filter(|(_, kind)| *kind != 3)
+                        .map(|(path, _)| path.clone())
+                        .filter(|path| path.extension().is_some_and(|ext| ext == "java"))
+                        .collect();
+                    if !project_sources.is_empty() && builder.build_files(&project_sources) {
+                        for file in &project_sources {
+                            host.invalidate_analysis(file);
+                        }
+                    }
+                }
             }
             "textDocument/didSave" => {
                 if let Some(uri) = document_uri(&message) {
