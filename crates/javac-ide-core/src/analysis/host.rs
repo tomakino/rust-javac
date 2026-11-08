@@ -33,6 +33,18 @@ impl FileAnalysis {
             .map(|diag| convert_diagnostic(diag, &text))
             .collect();
         result.extend(super::inspections::unused_imports(&text));
+        // A single-file analysis cannot model a module's package graph:
+        // javac then reports every `exports`/`opens` package as empty even
+        // though the sources exist under the source roots. Suppress that one
+        // false positive for module-info; syntax errors still surface.
+        if file
+            .file_name()
+            .is_some_and(|name| name == "module-info.java")
+        {
+            result.retain(|diagnostic| {
+                diagnostic.code.as_deref() != Some("compiler.err.package.empty.or.not.found")
+            });
+        }
         self.diagnostics = result.clone();
         self.diagnostics_hash = Some(hash);
         result

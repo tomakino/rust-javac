@@ -309,6 +309,8 @@ pub fn run(
                     json!({
                         "generation": host.index_generation(),
                         "building": host.is_index_building(),
+                        "files": host.index_files(),
+                        "symbols": host.index_symbols(),
                     }),
                 );
             }

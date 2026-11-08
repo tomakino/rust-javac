@@ -316,6 +316,13 @@ impl WorkspaceService for Workspace {
     }
 
     fn definition(&mut self, file: &Path, position: Position) -> Option<Location> {
+        // Clicking anywhere on an import line resolves the imported type: the
+        // index records the import occurrence at the simple name, so map the
+        // cursor onto it before the normal definition path runs.
+        let position = self
+            .text_of(file)
+            .and_then(|text| import_target_position(&text, position))
+            .unwrap_or(position);
         self.ensure_index();
         let snapshot = self.index.snapshot();
         if !self.has_unsaved_edits() && !snapshot.files.is_empty()
@@ -664,6 +671,14 @@ impl WorkspaceService for Workspace {
         self.is_building()
     }
 
+    fn index_files(&self) -> usize {
+        self.index.snapshot().files.len()
+    }
+
+    fn index_symbols(&self) -> usize {
+        self.index.snapshot().symbols.len()
+    }
+
     fn poll_index(&mut self) {
         Workspace::poll_index(self);
     }
@@ -888,4 +903,29 @@ fn flat_name(
     }
     parts.reverse();
     Some(parts.join("."))
+}
+/// Map a cursor on an `import` line onto the imported simple name: the index
+/// records the import occurrence at the simple name, so definition should not
+/// depend on which part of the qualified name was clicked.
+fn import_target_position(text: &str, position: Position) -> Option<Position> {
+    let line = text.lines().nth(position.line as usize)?;
+    let trimmed = line.trim_start();
+    let rest = trimmed.strip_prefix("import ")?;
+    let rest = rest.strip_prefix("static ").unwrap_or(rest);
+    let end = rest.find(';')?;
+    let path = &rest[..end];
+    if path.is_empty() || path.ends_with('*') {
+        return None;
+    }
+    let simple = path.rsplit('.').next()?;
+    let leading = line.len() - trimmed.len();
+    let keyword = trimmed.len() - rest.len();
+    let simple_offset = path.rfind(simple)?;
+    let column = line[..leading + keyword + simple_offset]
+        .encode_utf16()
+        .count() as u32;
+    if column == position.column {
+        return None;
+    }
+    Some(Position::new(position.line, column))
 }

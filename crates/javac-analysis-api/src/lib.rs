@@ -483,6 +483,16 @@ pub trait WorkspaceService {
     /// Queries keep serving the previous snapshot while this is true.
     fn is_index_building(&self) -> bool;
 
+    /// Number of files in the published index snapshot.
+    fn index_files(&self) -> usize {
+        0
+    }
+
+    /// Number of symbols in the published index snapshot.
+    fn index_symbols(&self) -> usize {
+        0
+    }
+
     /// Advance a finished background index build: publish the new snapshot and
     /// clear the building flag.
     ///
