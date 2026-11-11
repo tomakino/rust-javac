@@ -89,11 +89,15 @@ fn render_blocks(nodes: &[Rc<DCTree>]) -> String {
                     let inner = &nodes[index + 1..inner_end];
                     let block = match tag.as_str() {
                         "p" => inline_trimmed(inner),
-                        "ul" => render_list(inner, false, 0),
-                        "ol" => render_list(inner, true, 0),
+                        "ul" => render_list(inner, false, 0, attrs),
+                        "ol" => render_list(inner, true, 0, attrs),
                         "pre" => render_pre(inner),
                         "blockquote" => render_blockquote(inner),
+                        "dl" => render_definition_list(inner),
                         "table" => render_table(inner),
+                        "details" => render_details(inner),
+                        "div" | "section" | "article" | "header" | "footer"
+                        | "figure" | "summary" => render_blocks(inner),
                         "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
                             let level = tag[1..].parse::<usize>().unwrap_or(1);
                             let text = inline_trimmed(inner);
@@ -181,6 +185,8 @@ fn is_block_tag(tag: &str) -> bool {
         tag,
         "p" | "ul" | "ol" | "pre" | "blockquote" | "table" | "hr" | "dl"
             | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
+            | "div" | "section" | "article" | "header" | "footer" | "figure"
+            | "details" | "summary"
     )
 }
 
@@ -221,10 +227,40 @@ fn optional_end(nodes: &[Rc<DCTree>], start: usize, name: &str) -> (usize, usize
 
 /// Index of the `EndElement` matching the start at `start`, honouring nesting.
 fn element_range(nodes: &[Rc<DCTree>], start: usize, name: &str) -> (usize, usize) {
+    if let Some(DCKind::StartElement {
+        name,
+        self_closing,
+        ..
+    }) = nodes.get(start).map(|node| &node.kind)
+    {
+        if *self_closing || is_void_tag(&lower(name)) {
+            return (start + 1, start + 1);
+        }
+    }
     match matching_end(nodes, start, name) {
         Some(end) => (end, end + 1),
         None => (nodes.len(), nodes.len()),
     }
+}
+
+fn is_void_tag(tag: &str) -> bool {
+    matches!(
+        tag,
+        "img"
+            | "br"
+            | "hr"
+            | "input"
+            | "meta"
+            | "link"
+            | "area"
+            | "base"
+            | "col"
+            | "embed"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
+    )
 }
 
 fn matching_end(nodes: &[Rc<DCTree>], start: usize, name: &str) -> Option<usize> {
@@ -246,17 +282,44 @@ fn matching_end(nodes: &[Rc<DCTree>], start: usize, name: &str) -> Option<usize>
     None
 }
 
-fn render_list(nodes: &[Rc<DCTree>], ordered: bool, depth: usize) -> String {
+fn render_list(
+    nodes: &[Rc<DCTree>],
+    ordered: bool,
+    depth: usize,
+    attrs: &List<Rc<DCTree>>,
+) -> String {
+    let has_item_value = nodes.iter().any(|node| {
+        matches!(
+            &node.kind,
+            DCKind::StartElement { name, attrs, .. }
+                if lower(name) == "li" && has_attribute(attrs, "value")
+        )
+    });
+    let start = attribute(attrs, "start")
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .unwrap_or(1);
+    if ordered
+        && (start != 1 || has_attribute(attrs, "reversed") || has_item_value)
+    {
+        return render_html_list(nodes, true, attrs);
+    }
+    if !ordered && has_item_value {
+        return render_html_list(nodes, false, attrs);
+    }
     let mut items: Vec<String> = Vec::new();
     let mut number = 1usize;
     let mut index = 0usize;
     while index < nodes.len() {
-        if let DCKind::StartElement { name, .. } = &nodes[index].kind
+        if let DCKind::StartElement {
+            name,
+            attrs: item_attrs,
+            ..
+        } = &nodes[index].kind
             && lower(name) == "li"
         {
             let (end, next) = element_range(nodes, index, "li");
             let inner = &nodes[index + 1..end];
-            items.push(render_list_item(inner, ordered, depth, number));
+            items.push(render_list_item(inner, ordered, depth, number, item_attrs));
             number += 1;
             index = next;
             continue;
@@ -266,7 +329,61 @@ fn render_list(nodes: &[Rc<DCTree>], ordered: bool, depth: usize) -> String {
     items.join("\n")
 }
 
-fn render_list_item(nodes: &[Rc<DCTree>], ordered: bool, depth: usize, number: usize) -> String {
+fn render_html_list(
+    nodes: &[Rc<DCTree>],
+    ordered: bool,
+    attrs: &List<Rc<DCTree>>,
+) -> String {
+    let tag = if ordered { "ol" } else { "ul" };
+    let mut out = format!("<{tag}");
+    if ordered {
+        if let Some(start) = attribute(attrs, "start")
+            && start.trim() != "1"
+        {
+            out.push_str(&format!(" start=\"{}\"", html_escape_attribute(start.trim())));
+        }
+        if has_attribute(attrs, "reversed") {
+            out.push_str(" reversed");
+        }
+    }
+    out.push('>');
+    let mut index = 0usize;
+    while index < nodes.len() {
+        let DCKind::StartElement {
+            name,
+            attrs: item_attrs,
+            ..
+        } = &nodes[index].kind
+        else {
+            index += 1;
+            continue;
+        };
+        if lower(name) != "li" {
+            index += 1;
+            continue;
+        }
+        let (end, next) = element_range(nodes, index, "li");
+        out.push_str("\n<li");
+        if let Some(value) = attribute(item_attrs, "value") {
+            out.push_str(&format!(" value=\"{}\"", html_escape_attribute(value.trim())));
+        }
+        out.push('>');
+        out.push_str(&inline_trimmed(&nodes[index + 1..end]));
+        out.push_str("</li>");
+        index = next;
+    }
+    out.push_str(&format!("\n</{tag}>"));
+    out
+}
+
+fn render_list_item(
+    nodes: &[Rc<DCTree>],
+    ordered: bool,
+    depth: usize,
+    number: usize,
+    attrs: &List<Rc<DCTree>>,
+) -> String {
+    let _ = attrs;
     let indent = "  ".repeat(depth);
     let marker = if ordered {
         format!("{number}. ")
@@ -278,17 +395,21 @@ fn render_list_item(nodes: &[Rc<DCTree>], ordered: bool, depth: usize, number: u
     let mut index = 0usize;
     while index < nodes.len() {
         match &nodes[index].kind {
-            DCKind::StartElement { name, .. } => {
+            DCKind::StartElement { name, attrs, .. } => {
                 let tag = lower(name);
                 if is_block_tag(&tag) || tag == "li" {
                     let (end, next) = element_range(nodes, index, &tag);
                     let inner = &nodes[index + 1..end];
                     let block = match tag.as_str() {
-                        "ul" => render_list(inner, false, depth + 1),
-                        "ol" => render_list(inner, true, depth + 1),
+                        "ul" => render_list(inner, false, depth + 1, attrs),
+                        "ol" => render_list(inner, true, depth + 1, attrs),
                         "pre" => render_pre(inner),
                         "blockquote" => render_blockquote(inner),
+                        "dl" => render_definition_list(inner),
                         "table" => render_table(inner),
+                        "details" => render_details(inner),
+                        "div" | "section" | "article" | "header" | "footer"
+                        | "figure" | "summary" => render_blocks(inner),
                         "p" => tidy_paragraph(&render_inline(inner)),
                         _ => String::new(),
                     };
@@ -377,6 +498,33 @@ fn render_blockquote(nodes: &[Rc<DCTree>]) -> String {
         .join("\n")
 }
 
+fn render_details(nodes: &[Rc<DCTree>]) -> String {
+    let mut summary = None;
+    let mut rest: Vec<Rc<DCTree>> = Vec::new();
+    let mut index = 0usize;
+    while index < nodes.len() {
+        if let DCKind::StartElement { name, .. } = &nodes[index].kind
+            && lower(name) == "summary"
+        {
+            let (end, next) = element_range(nodes, index, "summary");
+            summary = Some(inline_trimmed(&nodes[index + 1..end]));
+            index = next;
+            continue;
+        }
+        rest.push(Rc::clone(&nodes[index]));
+        index += 1;
+    }
+    let mut blocks: Vec<String> = Vec::new();
+    if let Some(summary) = summary.filter(|summary| !summary.is_empty()) {
+        blocks.push(format!("**{summary}**"));
+    }
+    let body = render_blocks(&rest);
+    if !body.trim().is_empty() {
+        blocks.push(body);
+    }
+    blocks.join("\n\n")
+}
+
 fn only_pre_block(nodes: &[Rc<DCTree>]) -> Option<&[Rc<DCTree>]> {
     let mut index = 0usize;
     let mut found = None;
@@ -400,7 +548,120 @@ fn only_pre_block(nodes: &[Rc<DCTree>]) -> Option<&[Rc<DCTree>]> {
     found
 }
 
+/// Render `<dl>` as Markdown term/definition pairs.
+///
+/// Html permits omitted `</dt>`/`</dd>` and multiple terms before one
+/// definition; both forms are handled without discarding following nodes.
+fn render_definition_list(nodes: &[Rc<DCTree>]) -> String {
+    let mut output: Vec<String> = Vec::new();
+    let mut terms: Vec<String> = Vec::new();
+    let mut index = 0usize;
+    while index < nodes.len() {
+        let DCKind::StartElement { name, .. } = &nodes[index].kind else {
+            index += 1;
+            continue;
+        };
+        let tag = lower(name);
+        if tag == "dt" {
+            let (end, next) = definition_component_range(nodes, index, "dt");
+            let term = inline_trimmed(&nodes[index + 1..end]);
+            if !term.is_empty() {
+                terms.push(term);
+            }
+            index = next;
+            continue;
+        }
+        if tag == "dd" {
+            let (end, next) = definition_component_range(nodes, index, "dd");
+            let definition = render_blocks(&nodes[index + 1..end]);
+            let definition = definition.trim();
+            if !definition.is_empty() {
+                if terms.is_empty() {
+                    // A definition without a preceding term is still useful:
+                    // render its text directly rather than dropping it.
+                    output.push(definition.to_string());
+                } else {
+                    for term in terms.drain(..) {
+                        output.push(format_definition(&term, definition));
+                    }
+                }
+            }
+            index = next;
+            continue;
+        }
+        if tag == "dl" {
+            let (end, next) = element_range(nodes, index, "dl");
+            let nested = render_definition_list(&nodes[index + 1..end]);
+            if !nested.trim().is_empty() {
+                output.push(nested);
+            }
+            index = next;
+            continue;
+        }
+        index += 1;
+    }
+    // A trailing term with no definition is still worth showing.
+    output.extend(terms.into_iter().map(|term| format!("- **{term}**")));
+    output.join("\n\n")
+}
+
+fn format_definition(term: &str, definition: &str) -> String {
+    let mut lines = definition.lines();
+    let first = lines.next().unwrap_or("");
+    let mut out = if first.is_empty() {
+        format!("- **{term}**")
+    } else {
+        format!("- **{term}** — {first}")
+    };
+    for line in lines {
+        out.push('\n');
+        if !line.is_empty() {
+            out.push_str("  ");
+            out.push_str(line);
+        }
+    }
+    out
+}
+
+fn definition_component_range(
+    nodes: &[Rc<DCTree>],
+    start: usize,
+    name: &str,
+) -> (usize, usize) {
+    if let Some(end) = matching_end(nodes, start, name) {
+        return (end, end + 1);
+    }
+    let mut depth = 0usize;
+    let mut index = start + 1;
+    while index < nodes.len() {
+        match &nodes[index].kind {
+            DCKind::StartElement { name: tag, .. } => {
+                let tag = lower(tag);
+                if depth == 0 && matches!(tag.as_str(), "dt" | "dd") {
+                    return (index, index);
+                }
+                if is_block_tag(&tag) || matches!(tag.as_str(), "li" | "dt" | "dd") {
+                    depth += 1;
+                }
+            }
+            DCKind::EndElement { name: tag, .. } => {
+                let tag = lower(tag);
+                if depth == 0 && matches!(tag.as_str(), "dt" | "dd" | "dl") {
+                    return (index, index);
+                }
+                depth = depth.saturating_sub(1);
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    (nodes.len(), nodes.len())
+}
+
 fn render_table(nodes: &[Rc<DCTree>]) -> String {
+    if table_has_span(nodes) {
+        return render_html_table(nodes);
+    }
     let mut rows: Vec<Vec<String>> = Vec::new();
     let mut index = 0usize;
     while index < nodes.len() {
@@ -462,6 +723,113 @@ fn render_table(nodes: &[Rc<DCTree>]) -> String {
     out.trim_end().to_string()
 }
 
+fn table_has_span(nodes: &[Rc<DCTree>]) -> bool {
+    let mut index = 0usize;
+    while index < nodes.len() {
+        if let DCKind::StartElement { name, .. } = &nodes[index].kind
+            && lower(name) == "tr"
+        {
+            let (end, next) = element_range(nodes, index, "tr");
+            let row = &nodes[index + 1..end];
+            let mut cell = 0usize;
+            while cell < row.len() {
+                if let DCKind::StartElement { name, attrs, .. } = &row[cell].kind
+                    && matches!(lower(name).as_str(), "th" | "td")
+                    && (has_attribute(attrs, "colspan") || has_attribute(attrs, "rowspan"))
+                {
+                    return true;
+                }
+                cell += 1;
+            }
+            index = next;
+            continue;
+        }
+        index += 1;
+    }
+    false
+}
+
+fn render_html_table(nodes: &[Rc<DCTree>]) -> String {
+    let mut out = String::from("<table>");
+    let mut index = 0usize;
+    while index < nodes.len() {
+        if let DCKind::StartElement { name, .. } = &nodes[index].kind
+            && lower(name) == "tr"
+        {
+            let (end, next) = element_range(nodes, index, "tr");
+            let row = &nodes[index + 1..end];
+            out.push_str("\n<tr>");
+            let mut cell = 0usize;
+            while cell < row.len() {
+                let DCKind::StartElement {
+                    name,
+                    attrs,
+                    self_closing,
+                    ..
+                } = &row[cell].kind
+                else {
+                    cell += 1;
+                    continue;
+                };
+                let tag = lower(name);
+                if !matches!(tag.as_str(), "th" | "td") {
+                    cell += 1;
+                    continue;
+                }
+                let (cell_end, cell_next) = element_range(row, cell, &tag);
+                let content = if *self_closing {
+                    String::new()
+                } else {
+                    inline_trimmed(&row[cell + 1..cell_end])
+                };
+                let attributes = html_attributes(attrs);
+                out.push_str(&format!("\n<{tag}{attributes}>{content}</{tag}>"));
+                cell = cell_next;
+            }
+            out.push_str("\n</tr>");
+            index = next;
+            continue;
+        }
+        index += 1;
+    }
+    out.push_str("\n</table>");
+    out
+}
+
+fn html_attributes(attrs: &List<Rc<DCTree>>) -> String {
+    let mut out = String::new();
+    for attr in attrs.iter() {
+        let DCKind::Attribute {
+            name,
+            value,
+            ..
+        } = &attr.kind
+        else {
+            continue;
+        };
+        let name = lower(name);
+        if !matches!(name.as_str(), "colspan" | "rowspan" | "scope" | "headers") {
+            continue;
+        }
+        out.push(' ');
+        out.push_str(&name);
+        if let Some(value) = value {
+            out.push_str("=\"");
+            out.push_str(&html_escape_attribute(&inline_trimmed(&nodes(value))));
+            out.push('"');
+        }
+    }
+    out
+}
+
+fn html_escape_attribute(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 // ---------------------------------------------------------------------------
 // Inline rendering
 // ---------------------------------------------------------------------------
@@ -501,12 +869,21 @@ fn render_inline(nodes: &[Rc<DCTree>]) -> String {
                             _ => out.push_str(&text),
                         }
                     }
+                    "sup" => out.push_str(&format!("<sup>{}</sup>", inline_trimmed(inner))),
+                    "sub" => out.push_str(&format!("<sub>{}</sub>", inline_trimmed(inner))),
+                    "img" => out.push_str(&render_image(attrs)),
                     "br" => out.push_str("  \n"),
                     "pre" => push_block(&mut out, render_pre(inner)),
-                    "ul" => push_block(&mut out, render_list(inner, false, 0)),
-                    "ol" => push_block(&mut out, render_list(inner, true, 0)),
+                    "dl" => push_block(&mut out, render_definition_list(inner)),
+                    "ul" => push_block(&mut out, render_list(inner, false, 0, attrs)),
+                    "ol" => push_block(&mut out, render_list(inner, true, 0, attrs)),
                     "table" => push_block(&mut out, render_table(inner)),
                     "blockquote" => push_block(&mut out, render_blockquote(inner)),
+                    "details" => push_block(&mut out, render_details(inner)),
+                    "div" | "section" | "article" | "header" | "footer"
+                    | "figure" | "summary" => {
+                        push_block(&mut out, render_blocks(inner));
+                    }
                     "p" => {
                         if !out.is_empty() && !out.ends_with('\n') {
                             out.push('\n');
@@ -594,6 +971,10 @@ fn render_inline_node(node: &DCTree) -> String {
         DCKind::Erroneous { body, .. } => body.to_string_lossy(),
         DCKind::Comment { body } => body.to_string_lossy(),
         DCKind::InheritDoc { .. } => INHERIT_DOC_MARKER.to_string(),
+        // Hover has no documentation-root context. Keep the source form
+        // visible instead of silently dropping it; the user can still
+        // diagnose the unresolved root.
+        DCKind::DocRoot { .. } => "{@docRoot}".to_string(),
         DCKind::Summary { summary, .. } => render_inline(&nodes(summary)),
         DCKind::Index {
             term, description, ..
@@ -669,6 +1050,16 @@ fn snippet_file_attribute(attributes: &str) -> Option<String> {
         .map(|value| value.trim_matches('"').to_string())
 }
 
+fn render_image(attrs: &List<Rc<DCTree>>) -> String {
+    let src = attribute(attrs, "src").filter(|src| !src.trim().is_empty());
+    let alt = attribute(attrs, "alt").unwrap_or_default();
+    match src {
+        Some(src) => format!("![{alt}]({src})"),
+        None if !alt.is_empty() => alt,
+        None => "[image]".to_string(),
+    }
+}
+
 fn render_link(reference: &Rc<DCTree>, label: &List<Rc<DCTree>>) -> String {
     let target = match &reference.kind {
         DCKind::Reference { signature, .. } => signature.to_string_lossy(),
@@ -720,6 +1111,15 @@ fn attribute(attrs: &List<Rc<DCTree>>, name: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn has_attribute(attrs: &List<Rc<DCTree>>, name: &str) -> bool {
+    attrs.iter().any(|attr| {
+        matches!(
+            &attr.kind,
+            DCKind::Attribute { name: attr_name, .. } if lower(attr_name) == name
+        )
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -774,6 +1174,43 @@ fn render_tags(comment: &DCDocComment) -> String {
             DCKind::Deprecated { body } => {
                 Some(format!("- **Deprecated** {}", list_trimmed(body)))
             }
+            DCKind::Serial { description } => {
+                Some(format!("- **Serial** {}", list_trimmed(description)))
+            }
+            DCKind::SerialData { description } => {
+                Some(format!("- **Serial Data** {}", list_trimmed(description)))
+            }
+            DCKind::SerialField {
+                name,
+                type_,
+                description,
+            } => Some(format!(
+                "- **Serial Field** {} {} {}",
+                render_inline_node(name).trim(),
+                render_inline_node(type_).trim(),
+                list_trimmed(description)
+            )),
+            DCKind::Uses {
+                service_type,
+                description,
+            } => Some(format!(
+                "- **Uses** {} {}",
+                render_inline_node(service_type).trim(),
+                list_trimmed(description)
+            )),
+            DCKind::Provides {
+                service_type,
+                description,
+            } => Some(format!(
+                "- **Provides** {} {}",
+                render_inline_node(service_type).trim(),
+                list_trimmed(description)
+            )),
+            // @hidden means "do not include this element in generated
+            // documentation". Hover follows that semantic intentionally; this
+            // explicit arm documents the omission instead of falling through
+            // the catch-all.
+            DCKind::Hidden { .. } => None,
             DCKind::UnknownBlockTag { name, content } => Some(format!(
                 "- **{}** {}",
                 block_tag_label(&name.to_java_string().to_string_lossy()),

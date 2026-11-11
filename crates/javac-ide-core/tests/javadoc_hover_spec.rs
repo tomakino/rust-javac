@@ -1320,6 +1320,265 @@ fn snippet_then_tail_paragraph_in_tag_survives() {
     assert!(code < tail, "tail paragraph came before the snippet: {hover}");
 }
 
+#[test]
+fn definition_lists_render_all_terms_and_definitions() {
+    let source = r#"class Definitions {
+    /**
+     * <dl>
+     * <dt>Alpha</dt>
+     * <dd>First definition.</dd>
+     * <dt>Beta</dt>
+     * <dd><p>Second paragraph.</p><ul><li>nested item</li></ul></dd>
+     * <dd>Definition without a term.</dd>
+     * <dt>One</dt><dt>Two</dt><dd>Shared definition.</dd>
+     * <dt>NoClose<dd>Definition follows an unclosed term.</dd>
+     * </dl>
+     */
+    public void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "Definitions", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void method() {",
+        "public void ".len(),
+    );
+    for expected in [
+        "- **Alpha** — First definition.",
+        "- **Beta** — Second paragraph.",
+        "  - nested item",
+        "Definition without a term.",
+        "- **One** — Shared definition.",
+        "- **Two** — Shared definition.",
+        "- **NoClose** — Definition follows an unclosed term.",
+    ] {
+        assert!(
+            hover.lines().any(|line| line == expected),
+            "missing exact line {expected:?}: {hover}"
+        );
+    }
+    assert!(!hover.contains("<dl>"), "{hover}");
+    assert!(!hover.contains("**Beta** — </p>"), "{hover}");
+}
+
+#[test]
+fn doc_root_is_kept_visible() {
+    let source = r#"class DocRootProbe {
+    /**
+     * See {@docRoot}/api for the generated documentation root.
+     */
+    public void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "DocRootProbe", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void method() {",
+        "public void ".len(),
+    );
+    assert_eq!(
+        hover
+            .lines()
+            .find(|line| line.contains("{@docRoot}"))
+            .expect("docRoot line"),
+        "See {@docRoot}/api for the generated documentation root."
+    );
+}
+
+#[test]
+fn serial_uses_provides_and_hidden_tags_are_rendered_or_intentionally_omitted() {
+    let source = r#"class SerialTags {
+    /**
+     * @serial serial description
+     * @serialField fieldName String field description
+     * @serialData serial data description
+     * @uses com.example.Service uses description
+     * @provides com.example.Service provides description
+     * @hidden hidden text that must not be shown
+     */
+    public void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "SerialTags", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void method() {",
+        "public void ".len(),
+    );
+    for expected in [
+        "- **Serial** serial description",
+        "- **Serial Field** fieldName String field description",
+        "- **Serial Data** serial data description",
+        "- **Uses** com.example.Service uses description",
+        "- **Provides** com.example.Service provides description",
+    ] {
+        assert!(
+            hover.lines().any(|line| line == expected),
+            "missing exact line {expected:?}: {hover}"
+        );
+    }
+    assert!(!hover.contains("hidden text that must not be shown"), "{hover}");
+    assert!(!hover.contains("**Hidden**"), "{hover}");
+}
+
+#[test]
+fn inline_sup_sub_and_images_keep_semantics() {
+    let source = r#"class InlineHtml {
+    /**
+     * x<sup>2</sup> and H<sub>2</sub>O
+     * <img src="diagram.png" alt="Diagram">
+     * <img alt="Alt only">
+     * <img>
+     */
+    public void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "InlineHtml", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void method() {",
+        "public void ".len(),
+    );
+    for expected in [
+        "x<sup>2</sup>",
+        "H<sub>2</sub>O",
+        "![Diagram](diagram.png)",
+        "Alt only",
+        "[image]",
+    ] {
+        assert!(
+            hover.lines().any(|line| line.contains(expected)),
+            "missing {expected:?}: {hover}"
+        );
+    }
+    let body = hover
+        .lines()
+        .find(|line| line.contains("H<sub>2</sub>O"))
+        .expect("inline body");
+    assert_eq!(
+        body,
+        "x<sup>2</sup> and H<sub>2</sub>O ![Diagram](diagram.png) Alt only [image]"
+    );
+}
+
+#[test]
+fn block_containers_and_details_keep_block_structure() {
+    let source = r#"class BlockContainers {
+    /**
+     * <div><p>first paragraph</p><p>second paragraph</p></div>
+     * <section>section text</section>
+     * <details><summary>More</summary><p>hidden detail</p></details>
+     */
+    public void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "BlockContainers", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void method() {",
+        "public void ".len(),
+    );
+    assert!(
+        hover.contains(
+            "first paragraph\n\nsecond paragraph\n\nsection text\n\n**More**\n\nhidden detail"
+        ),
+        "{hover}"
+    );
+    assert!(!hover.contains("<div>"), "{hover}");
+    assert!(!hover.contains("<details>"), "{hover}");
+}
+
+#[test]
+fn span_tables_use_html_while_plain_tables_stay_markdown() {
+    let source = r#"class Tables {
+    /**
+     * <table>
+     * <tr><th>Name</th><th>Value</th></tr>
+     * <tr><td>x</td><td>y</td></tr>
+     * </table>
+     * <table>
+     * <tr><th colspan="2">Wide</th></tr>
+     * <tr><td rowspan="2">A</td><td>B</td></tr>
+     * </table>
+     */
+    public void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "Tables", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void method() {",
+        "public void ".len(),
+    );
+    assert!(
+        hover.contains(
+            "| Name | Value |\n| --- | --- |\n| x | y |"
+        ),
+        "{hover}"
+    );
+    let html = "<table>\n<tr>\n<th colspan=\"2\">Wide</th>\n</tr>\n<tr>\n<td rowspan=\"2\">A</td>\n<td>B</td>\n</tr>\n</table>";
+    assert!(hover.contains(html), "missing exact HTML table: {hover}");
+}
+
+#[test]
+fn ordered_list_start_reversed_and_li_value_use_html() {
+    let source = r#"class ListAttrs {
+    /**
+     * <ol start="5"><li>five</li><li>six</li></ol>
+     * <ol reversed><li>last</li></ol>
+     * <ol><li value="7">seven</li></ol>
+     * <ol start="3"><li value="9">mixed</li></ol>
+     */
+    public void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "ListAttrs", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void method() {",
+        "public void ".len(),
+    );
+    for expected in [
+        "<ol start=\"5\">\n<li>five</li>\n<li>six</li>\n</ol>",
+        "<ol reversed>\n<li>last</li>\n</ol>",
+        "<ol>\n<li value=\"7\">seven</li>\n</ol>",
+        "<ol start=\"3\">\n<li value=\"9\">mixed</li>\n</ol>",
+    ] {
+        assert!(
+            hover.contains(expected),
+            "missing exact HTML list {expected:?}: {hover}"
+        );
+    }
+}
+
 fn jdk_src_available() -> bool {
     if let Some(platform) = std::env::var_os("RAVAC_PLATFORM_DIR") {
         if PathBuf::from(platform).join("src.zip").is_file() {
