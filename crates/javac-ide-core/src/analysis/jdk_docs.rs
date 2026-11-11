@@ -1,8 +1,9 @@
 //! Javadoc lookup from the JDK src.zip for completion documentation.
 //!
 //! IDEA shows the element documentation in the completion popup. Class files
-//! carry no Javadoc, so the text is read lazily from the platform sources and
-//! cached per class. The format is the same Markdown subset doc_render emits.
+//! carry no Javadoc, so the raw `/** ... */` blocks are read lazily from the
+//! platform sources and cached per class. `FileAnalysis` parses each block with
+//! `DocCommentParser` and renders it with the shared Markdown renderer.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -122,27 +123,28 @@ fn parse_docs(source: &str) -> JdkClassDocs {
             break;
         };
         let end = start + end_relative + 2;
-        if let Some(decl) = declaration_after(&source[end..])
-            && let Some(rendered) = render_javadoc(&source[start..end])
-        {
+        if let Some(decl) = declaration_after(&source[end..]) {
+            // Raw Javadoc block: `FileAnalysis` parses it with
+            // DocCommentParser and renders it with the shared renderer.
+            let raw = source[start..end].to_string();
             match decl.kind {
                 DeclKind::Class => {
                     if docs.class_doc.is_none() {
-                        docs.class_doc = Some(rendered.clone());
+                        docs.class_doc = Some(raw.clone());
                     }
                     docs.members
                         .entry(format!("class:{}", decl.name))
-                        .or_insert(rendered);
+                        .or_insert(raw);
                 }
                 DeclKind::Method(arity) => {
                     docs.members
                         .entry(format!("method:{}/{}", decl.name, arity))
-                        .or_insert(rendered);
+                        .or_insert(raw);
                 }
                 DeclKind::Field => {
                     docs.members
                         .entry(format!("field:{}", decl.name))
-                        .or_insert(rendered);
+                        .or_insert(raw);
                 }
             }
         }
@@ -320,121 +322,6 @@ fn count_params(source: &str) -> Option<usize> {
     None
 }
 
-fn render_javadoc(raw: &str) -> Option<String> {
-    let body = raw.strip_prefix("/**")?.strip_suffix("*/")?;
-    let mut lines: Vec<String> = Vec::new();
-    for line in body.lines() {
-        let line = line.trim_start();
-        let line = line.strip_prefix('*').unwrap_or(line);
-        lines.push(inline(line));
-    }
-    while lines.first().is_some_and(|line| line.trim().is_empty()) {
-        lines.remove(0);
-    }
-    while lines.last().is_some_and(|line| line.trim().is_empty()) {
-        lines.pop();
-    }
-    let mut out = String::new();
-    for line in lines {
-        let trimmed = line.trim_start();
-        if let Some(tag) = trimmed.strip_prefix('@') {
-            if !out.is_empty() && !out.ends_with('\n') {
-                out.push('\n');
-            }
-            out.push_str(&render_block_tag(tag));
-        } else {
-            if !out.is_empty() && !out.ends_with('\n') {
-                out.push('\n');
-            }
-            out.push_str(line.trim_end());
-        }
-    }
-    let rendered = collapse_blank_lines(&out);
-    (!rendered.trim().is_empty()).then(|| rendered.trim().to_string())
-}
-
-fn render_block_tag(tag: &str) -> String {
-    let (name, rest) = split_first_word(tag);
-    match name {
-        "param" => {
-            let (param, desc) = split_first_word(rest);
-            format!("- **{param}** {desc}")
-        }
-        "return" => format!("- **Returns** {rest}"),
-        "throws" | "exception" => {
-            let (exception, desc) = split_first_word(rest);
-            format!("- **Throws** {exception} {desc}")
-        }
-        "see" => format!("- **See** {rest}"),
-        "since" => format!("- **Since** {rest}"),
-        "deprecated" => format!("**Deprecated** {rest}"),
-        _ => format!("@{tag}"),
-    }
-}
-
-fn split_first_word(source: &str) -> (&str, &str) {
-    let source = source.trim_start();
-    match source.find(char::is_whitespace) {
-        Some(index) => (&source[..index], source[index..].trim_start()),
-        None => (source, ""),
-    }
-}
-
-fn inline(text: &str) -> String {
-    let mut out = String::new();
-    let mut rest = text;
-    while let Some(position) = rest.find("{@") {
-        out.push_str(&rest[..position]);
-        let after = &rest[position + 2..];
-        let Some(end) = after.find('}') else {
-            out.push_str(&rest[position..]);
-            return out;
-        };
-        let (name, body) = split_first_word(&after[..end]);
-        match name {
-            "code" => {
-                out.push('`');
-                out.push_str(body);
-                out.push('`');
-            }
-            "literal" => out.push_str(body),
-            "link" | "linkplain" => {
-                let (reference, label) = split_first_word(body);
-                if label.is_empty() {
-                    out.push_str(reference);
-                } else {
-                    out.push_str(label);
-                }
-            }
-            "inheritDoc" => {}
-            _ => out.push_str(body),
-        }
-        rest = &after[end + 1..];
-    }
-    out.push_str(rest);
-    out
-}
-
-fn collapse_blank_lines(text: &str) -> String {
-    let mut out = String::new();
-    let mut blank = false;
-    for line in text.lines() {
-        if line.trim().is_empty() {
-            if !blank && !out.is_empty() {
-                out.push('\n');
-            }
-            blank = true;
-        } else {
-            if !out.is_empty() && !out.ends_with('\n') {
-                out.push('\n');
-            }
-            out.push_str(line.trim_end());
-            blank = false;
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,15 +347,14 @@ public class Greeter {
 }
 "#;
         let docs = parse_docs(source);
-        assert_eq!(docs.class_doc.as_deref(), Some("A greeting."));
+        let class_doc = docs.class_doc.as_deref().unwrap_or("");
+        assert!(class_doc.contains("A greeting."), "{class_doc}");
         let method = docs.members.get("method:hello/1").expect("method doc");
         assert!(method.contains("Says hello."), "{method}");
-        assert!(method.contains("**name**"), "{method}");
-        assert!(method.contains("**Returns**"), "{method}");
-        assert_eq!(
-            docs.members.get("field:DEFAULT").map(String::as_str),
-            Some("The default name.")
-        );
+        assert!(method.contains("@param name"), "{method}");
+        assert!(method.contains("@return"), "{method}");
+        let field = docs.members.get("field:DEFAULT").expect("field doc");
+        assert!(field.contains("The default name."), "{field}");
     }
 
     #[test]
@@ -481,15 +367,14 @@ class Holder {
 }
 "#;
         let docs = parse_docs(source);
-        assert_eq!(docs.class_doc.as_deref(), Some("A map holder."));
-        assert_eq!(
-            docs.members.get("method:put/2").map(String::as_str),
-            Some("Puts a value.")
-        );
+        let class_doc = docs.class_doc.as_deref().unwrap_or("");
+        assert!(class_doc.contains("A map holder."), "{class_doc}");
+        let method = docs.members.get("method:put/2").expect("method doc");
+        assert!(method.contains("Puts a value."), "{method}");
     }
 
     #[test]
-    fn renders_inline_tags_and_paragraphs() {
+    fn keeps_the_complete_raw_javadoc_block() {
         let source = r#"
 /**
  * Returns a {@link java.util.Base64.Decoder} using {@code Base64}.
@@ -500,11 +385,8 @@ public class Thing {
 "#;
         let docs = parse_docs(source);
         let class_doc = docs.class_doc.expect("doc");
-        assert!(class_doc.contains("java.util.Base64.Decoder"), "{class_doc}");
-        assert!(class_doc.contains("`Base64`"), "{class_doc}");
-        assert!(
-            class_doc.contains("<p>Second paragraph.</p>"),
-            "paragraph structure lost: {class_doc}"
-        );
+        assert!(class_doc.contains("{@link java.util.Base64.Decoder}"), "{class_doc}");
+        assert!(class_doc.contains("{@code Base64}"), "{class_doc}");
+        assert!(class_doc.contains("<p>Second paragraph.</p>"), "{class_doc}");
     }
 }

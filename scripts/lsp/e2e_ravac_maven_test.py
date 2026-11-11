@@ -347,6 +347,11 @@ def main():
         )
         to_json_typed = position_of(gson_text, "public String toJson(Object src, Type typeOfSrc)")
         to_json_typed = (to_json_typed[0], to_json_typed[1] + len("public String "))
+        from_json_typed = position_of(
+            gson_text,
+            "public <T> T fromJson(JsonReader reader, Type typeOfT)",
+            offset=len("public <T> T "),
+        )
         type_token_get = position_of(gson_text, "TypeToken.get(typeOfSrc)", offset=len("TypeToken."))
 
         # 3. definition
@@ -429,11 +434,33 @@ def main():
             writer_ok = (
                 "JsonWriter newJsonWriter(Writer writer)" in writer_value
                 and "Returns a new JSON writer configured" in writer_value
-                and "<ul>" in writer_value
-                and "GsonBuilder#disableHtmlEscaping()" in writer_value
+                and "- `GsonBuilder#disableHtmlEscaping()`" in writer_value
+                and "<ul>" not in writer_value
             )
             details.append("newJsonWriter-doc=" + ("ok" if writer_ok else repr(writer_value[:80])))
             ok = ok and writer_ok
+            from_json_hover = lsp.request(
+                "textDocument/hover",
+                {
+                    "textDocument": {"uri": lsp.uri(GSON_PATH)},
+                    "position": {"line": from_json_typed[0], "character": from_json_typed[1]},
+                },
+            )
+            from_json_value = ((from_json_hover or {}).get("contents") or {}).get("value") or ""
+            from_json_paragraphs = [
+                "Reads the next JSON value from `reader`",
+                "\n\nSince `Type` is not parameterized by T",
+                "\n\nUnlike the other `fromJson` methods",
+                "\n\nThe JSON data is parsed in lenient mode",
+                "- **reader** the reader whose next JSON value should be deserialized",
+            ]
+            from_json_ok = all(
+                paragraph in from_json_value for paragraph in from_json_paragraphs
+            ) and "<p>" not in from_json_value
+            details.append(
+                "fromJson-paragraphs=" + ("ok" if from_json_ok else repr(from_json_value[:120]))
+            )
+            ok = ok and from_json_ok
             return ok, " ".join(details)
 
         safe(report, 4, "hover", item_hover)

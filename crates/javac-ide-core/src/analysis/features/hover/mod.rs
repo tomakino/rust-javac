@@ -39,13 +39,9 @@ impl FileAnalysis {
         text.push(newline);
         text.push_str("```");
         if let Some(doc) = symbol.doc {
-            let cleaned = doc
-                .lines()
-                .map(str::trim)
-                .collect::<Vec<_>>()
-                .join(&newline.to_string())
-                .trim()
-                .to_string();
+            // The renderer already emits normalized Markdown; trimming each
+            // line would destroy list and code-block indentation.
+            let cleaned = doc.trim().to_string();
             if !cleaned.is_empty() {
                 text.push(newline);
                 text.push(newline);

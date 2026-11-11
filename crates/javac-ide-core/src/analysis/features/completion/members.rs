@@ -344,9 +344,11 @@ impl FileAnalysis {
         if let Some(doc) = self.traced_class_doc(flat) {
             return Some(doc);
         }
-        self.jdk_docs
+        let raw = self
+            .jdk_docs
             .get_or_insert_with(JdkDocCache::new)
-            .class_doc(flat)
+            .class_doc(flat);
+        raw.and_then(|raw| self.render_external_javadoc(&raw))
     }
 
     /// Javadoc of a member: project source first, then the JDK sources.
@@ -359,9 +361,11 @@ impl FileAnalysis {
         if let Some(doc) = self.traced_member_doc(class_flat, name) {
             return Some(doc);
         }
-        self.jdk_docs
+        let raw = self
+            .jdk_docs
             .get_or_insert_with(JdkDocCache::new)
-            .member_doc(class_flat, name, arity)
+            .member_doc(class_flat, name, arity);
+        raw.and_then(|raw| self.render_external_javadoc(&raw))
     }
 
     pub(super) fn method_shape(&mut self, symbol: crate::ids::SymbolId) -> (bool, usize) {

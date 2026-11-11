@@ -145,16 +145,187 @@ fn hover_shows_javadoc_for_every_declaration_kind() {
 }
 
 #[test]
+fn multi_paragraph_javadoc_keeps_every_paragraph_and_block() {
+    let source = r#"class Paragraphs {
+    /**
+     * First paragraph with {@code code} and {@link Paragraphs}. It continues.
+     *
+     * <p>Second paragraph with {@linkplain Paragraphs#paragraphs(int) plain label}.
+     *
+     * <p>Third paragraph.
+     *
+     * <p>Fourth paragraph with {@code List<Foo>}.
+     *
+     * <pre>
+     * new TypeToken&lt;Collection&lt;Foo&gt;&gt;(){}
+     * </pre>
+     *
+     * @param x the x
+     * @return the result
+     * @throws IllegalStateException when bad
+     * @see Paragraphs
+     * @since 1.0
+     * @deprecated old
+     */
+    int paragraphs(int x) {
+        return x;
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "Paragraphs", source);
+    let hover = hover_at(&mut workspace, &path, source, "int paragraphs(int x) {", 4);
+
+    // Every paragraph must survive, not just the first sentence.
+    assert!(
+        hover.contains("First paragraph with `code` and `Paragraphs`. It continues."),
+        "{hover}"
+    );
+    assert!(
+        hover.contains("Second paragraph with plain label (`Paragraphs#paragraphs(int)`)."),
+        "{hover}"
+    );
+    assert!(hover.contains("Third paragraph."), "{hover}");
+    assert!(
+        hover.contains("Fourth paragraph with `List<Foo>`."),
+        "{hover}"
+    );
+
+    // Paragraphs are separated by a blank line, and the `<pre>` block becomes a
+    // fenced code block (raw HTML is not rendered by hover clients).
+    assert!(
+        hover.contains(
+            "It continues.\n\nSecond paragraph with plain label (`Paragraphs#paragraphs(int)`)."
+        ),
+        "paragraph break lost: {hover}"
+    );
+    assert!(
+        hover.contains("```\nnew TypeToken<Collection<Foo>>(){}\n```"),
+        "code block lost: {hover}"
+    );
+    assert!(!hover.contains("<p>"), "raw paragraph tag leaked: {hover}");
+    assert!(!hover.contains("<pre>"), "raw pre tag leaked: {hover}");
+
+    for tag in [
+        "- **x** the x",
+        "- **Returns** the result",
+        "- **Throws** IllegalStateException when bad",
+        "- **See** Paragraphs",
+        "- **Since** 1.0",
+        "- **Deprecated** old",
+    ] {
+        assert!(hover.contains(tag), "missing tag {tag}: {hover}");
+    }
+}
+
+#[test]
+fn structured_blocks_inline_formatting_and_entity_decoding() {
+    let source = r#"class Blocks {
+    /**
+     * Intro <b>bold</b> <i>italic</i> <s>strike</s> <code>a`b</code>.<br>Hard break.
+     *
+     * <p>Paragraph with <a href="https://example.com">link text</a>.
+     *
+     * <ul>
+     *   <li>one</li>
+     *   <li>two
+     *     <ul><li>nested</li></ul>
+     *   </li>
+     * </ul>
+     *
+     * <ol><li>first</li><li>second</li></ol>
+     *
+     * <pre>
+     * line1
+     *     indented
+     * </pre>
+     *
+     * <blockquote>quoted</blockquote>
+     *
+     * <table>
+     *   <tr><th>Name</th><th>Value</th></tr>
+     *   <tr><td>a</td><td>b</td></tr>
+     * </table>
+     *
+     * <h1>Heading</h1>
+     * <hr>
+     * Entities: &lt; &gt; &amp; &quot; &apos; &nbsp; &#65; &#x42;
+     *
+     * @param <T> the type
+     * @param x the x
+     * @return the result
+     * @throws IllegalStateException bad
+     * @see Blocks
+     * @since 1.0
+     * @author A
+     * @deprecated old
+     */
+    int blocks(int x) {
+        return x;
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "Blocks", source);
+    let hover = hover_at(&mut workspace, &path, source, "int blocks(int x) {", 4);
+
+    for expected in [
+        "**bold**",
+        "*italic*",
+        "~~strike~~",
+        "`` a`b ``",
+        "[link text](https://example.com)",
+        "- one",
+        "- two",
+        "  - nested",
+        "1. first",
+        "2. second",
+        "```\nline1\n    indented\n```",
+        "> quoted",
+        "| Name | Value |",
+        "| --- | --- |",
+        "| a | b |",
+        "# Heading",
+        "---",
+        "Entities: < > & \" '   A B",
+        "  \nHard break.",
+        "- **`<T>`** the type",
+    ] {
+        assert!(hover.contains(expected), "missing {expected:?}: {hover}");
+    }
+    assert!(!hover.contains("<p>"), "raw <p> leaked: {hover}");
+    assert!(!hover.contains("<table>"), "raw <table> leaked: {hover}");
+
+    // Tags keep their source order.
+    let order = [
+        "- **`<T>`** the type",
+        "- **x** the x",
+        "- **Returns** the result",
+        "- **Throws** IllegalStateException bad",
+        "- **See** Blocks",
+        "- **Since** 1.0",
+        "- **Author** A",
+        "- **Deprecated** old",
+    ];
+    let mut last = 0usize;
+    for tag in order {
+        let position = hover
+            .find(tag)
+            .unwrap_or_else(|| panic!("missing tag {tag}: {hover}"));
+        assert!(position >= last, "tag order broken at {tag}: {hover}");
+        last = position;
+    }
+}
+
+#[test]
 fn hover_renders_tags_links_lists_and_skips_empty_sections() {
     let mut workspace = session();
     let path = overlay(&mut workspace, "Doc", SOURCE);
 
     let method = hover_at(&mut workspace, &path, SOURCE, "int method(int x) {", 4);
     for expected in [
-        "Method doc.",
-        "More detail.",
-        "<ul>",
-        "<li>item one</li>",
+        "Method doc. More detail.",
+        "- item one",
         "- **x** the x value",
         "- **Returns** the result",
         "- **Throws** IllegalStateException when bad",
@@ -162,11 +333,14 @@ fn hover_renders_tags_links_lists_and_skips_empty_sections() {
     ] {
         assert!(method.contains(expected), "method hover missing {expected}: {method}");
     }
+    assert!(
+        !method.contains("<ul>") && !method.contains("<li>"),
+        "raw HTML list leaked into hover: {method}"
+    );
 
     let constructor = hover_at(&mut workspace, &path, SOURCE, "Doc() {", 0);
     assert!(constructor.contains("Constructor doc"), "{constructor}");
     assert!(constructor.contains("`Doc`"), "link target lost: {constructor}");
-    assert!(constructor.contains("<ul>") == false, "{constructor}");
 
     let plain = hover_at(&mut workspace, &path, SOURCE, "void plain() {", 5);
     assert!(!plain.contains("\n---\n"), "empty doc section: {plain}");
@@ -234,14 +408,40 @@ fn hover_reads_javadoc_of_class_path_symbols_from_the_jdk_sources() {
     if !jdk_src_available() {
         return;
     }
-    let source = "class JdkDoc {\n    java.io.Writer writer;\n}\n";
+    let source = "class JdkDoc {\n    java.io.Writer writer;\n    java.util.TreeMap map;\n}\n";
     let mut workspace = session();
     let path = overlay(&mut workspace, "JdkDoc", source);
     let hover = hover_at(&mut workspace, &path, source, "java.io.Writer writer", "java.io.".len());
-    assert!(
-        hover.contains("Abstract class for writing to character streams"),
-        "JDK hover: {hover}"
+    for expected in [
+        "Abstract class for writing to character streams",
+        "Most subclasses, however, will override some of the methods",
+        "- **See** BufferedWriter",
+        "- **Author** Mark Reinhold",
+        "- **Since** 1.1",
+    ] {
+        assert!(hover.contains(expected), "JDK hover missing {expected:?}: {hover}");
+    }
+
+    // A multi-paragraph JDK class: external Javadoc must also go through the
+    // AST renderer, not a string-level HTML scan.
+    let tree_map = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "java.util.TreeMap map",
+        "java.util.".len(),
     );
+    for expected in [
+        "A Red-Black tree based",
+        "This implementation provides guaranteed log(n) time cost",
+        "Note that this implementation is not synchronized.",
+        "SortedMap m = Collections.synchronizedSortedMap(new TreeMap(...));",
+    ] {
+        assert!(
+            tree_map.contains(expected),
+            "JDK paragraph missing {expected:?}: {tree_map}"
+        );
+    }
 }
 
 #[test]

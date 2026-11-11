@@ -137,6 +137,28 @@ impl FileAnalysis {
             .or_else(|| self.symbols().into_iter().find(|symbol| symbol.name == word))
     }
 
+    /// Parse an external Javadoc block (`/** ... */`) with the compiler's
+    /// DocCommentParser and render it with the shared Markdown renderer.
+    pub(crate) fn render_external_javadoc(&mut self, raw: &str) -> Option<String> {
+        let content = javadoc_content(raw);
+        let maker = std::rc::Rc::new(crate::tree::doc_tree_maker::DocTreeMaker::new(
+            std::rc::Rc::clone(&self.compiler.diags),
+        ));
+        let comment: std::rc::Rc<dyn crate::parser::tokens::Comment> =
+            std::rc::Rc::new(RawJavadoc {
+                text: crate::util::java_string::JavaString::from(content.as_str()),
+            });
+        let mut parser = crate::parser::doc_comment_parser::DocCommentParser::new_for_comment(
+            std::rc::Rc::clone(&self.compiler.parser_factory),
+            std::rc::Rc::clone(&self.compiler.names),
+            maker,
+            None,
+            comment,
+        );
+        let tree = parser.parse(&mut self.compiler.ctx);
+        crate::analysis::doc_render::format_doc_comment(&tree)
+    }
+
     /// Javadoc of a compiler symbol: project declarations first, then the JDK
     /// sources for class-path symbols.
     pub(crate) fn documentation_for(&mut self, symbol: crate::ids::SymbolId) -> Option<String> {
@@ -234,14 +256,17 @@ impl FileAnalysis {
             }
             _ => return None,
         }
-        let cache = self
-            .jdk_docs
-            .get_or_insert_with(crate::analysis::jdk_docs::JdkDocCache::new);
-        match (member_name, arity) {
-            (None, _) => cache.class_doc(&outer),
-            (Some(name), Some(arity)) => cache.member_doc(&outer, &name, Some(arity)),
-            (Some(name), None) => cache.member_doc(&outer, &name, None),
-        }
+        let raw = {
+            let cache = self
+                .jdk_docs
+                .get_or_insert_with(crate::analysis::jdk_docs::JdkDocCache::new);
+            match (member_name, arity) {
+                (None, _) => cache.class_doc(&outer),
+                (Some(name), Some(arity)) => cache.member_doc(&outer, &name, Some(arity)),
+                (Some(name), None) => cache.member_doc(&outer, &name, None),
+            }
+        };
+        raw.and_then(|raw| self.render_external_javadoc(&raw))
     }
 
     /// `SymbolInfo` for a compiler symbol (hover/definition). Returns `None`
@@ -652,4 +677,42 @@ impl FileAnalysis {
             _ => None,
         }
     }
+}
+
+struct RawJavadoc {
+    text: crate::util::java_string::JavaString,
+}
+
+impl crate::parser::tokens::Comment for RawJavadoc {
+    fn get_text(&self) -> Option<crate::util::java_string::JavaString> {
+        Some(self.text.clone())
+    }
+
+    fn get_source_pos(&self, index: i32) -> i32 {
+        index
+    }
+
+    fn get_style(&self) -> crate::parser::tokens::CommentStyle {
+        crate::parser::tokens::CommentStyle::JAVADOC
+    }
+
+    fn is_deprecated(&self) -> bool {
+        false
+    }
+}
+
+/// Content of a `/** ... */` block: strip the delimiters and the leading `*`
+/// of every line, preserving the remaining indentation (for `<pre>`).
+fn javadoc_content(raw: &str) -> String {
+    let raw = raw.trim();
+    let body = raw.strip_prefix("/**").unwrap_or(raw);
+    let body = body.strip_suffix("*/").unwrap_or(body);
+    body.lines()
+        .map(|line| {
+            let line = line.trim_start();
+            let line = line.strip_prefix('*').unwrap_or(line);
+            line.strip_prefix(' ').unwrap_or(line)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
