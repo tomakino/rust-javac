@@ -881,7 +881,7 @@ fn snippet_renders_a_language_fence_and_file_form_is_marked() {
     );
     assert!(inline.contains("**Implementation Requirements**"), "{inline}");
     assert!(inline.contains("```java"), "{inline}");
-    assert!(inline.contains("    int value = 1;"), "{inline}");
+    assert!(inline.contains("int value = 1;"), "{inline}");
     assert!(inline.contains("System.out.println(value);"), "{inline}");
     assert!(!inline.contains("{@snippet"), "{inline}");
     let file = hover_at(
@@ -1117,6 +1117,207 @@ fn tag_block_content_has_no_blockquote_prefix() {
     assert!(!hover.contains("> ```"), "tag code block was quoted: {hover}");
     // An explicit prose blockquote still uses the quote prefix.
     assert!(hover.contains("> quoted prose"), "{hover}");
+}
+
+#[test]
+fn blocks_after_pre_and_lists_are_not_dropped() {
+    let source = r#"class TagTail {
+    /**
+     * Body before.
+     * @implSpec
+     * Value:
+     * <pre>
+     * getClass().getName()
+     * </pre>
+     * The {@link java.util.Objects#toIdentityString(Object) Objects.toIdentityString}
+     * method returns the string for an object.
+     *
+     * <ul>
+     * <li>first item</li>
+     * </ul>
+     * Tail after list.
+     */
+    public void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "TagTail", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void method() {",
+        "public void ".len(),
+    );
+    for expected in [
+        "**Implementation Requirements**",
+        "```\ngetClass().getName()\n```",
+        "toIdentityString",
+        "method returns the string for an object.",
+        "- first item",
+        "Tail after list.",
+    ] {
+        assert!(hover.contains(expected), "missing {expected:?}: {hover}");
+    }
+    let code = hover.find("```\ngetClass().getName()\n```").expect("tag code");
+    let tail = hover.find("toIdentityString").expect("tag tail");
+    let item = hover.find("- first item").expect("list item");
+    let after_list = hover.find("Tail after list.").expect("tail after list");
+    assert!(code < tail && tail < item && item < after_list, "{hover}");
+}
+
+#[test]
+fn body_pre_siblings_are_all_rendered() {
+    let source = r#"class BodyBlocks {
+    /**
+     * <p>Before paragraph.</p>
+     * <pre>
+     * int bodyCode = 1;
+     * </pre>
+     * <p>After paragraph.</p>
+     */
+    public void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "BodyBlocks", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void method() {",
+        "public void ".len(),
+    );
+    for expected in [
+        "Before paragraph.",
+        "```\nint bodyCode = 1;\n```",
+        "After paragraph.",
+    ] {
+        assert!(hover.contains(expected), "missing {expected:?}: {hover}");
+    }
+    let before = hover.find("Before paragraph.").expect("before");
+    let code = hover.find("int bodyCode = 1;").expect("body code");
+    let after = hover.find("After paragraph.").expect("after");
+    assert!(before < code && code < after, "{hover}");
+}
+
+#[test]
+fn jdk_style_blockquote_pre_then_tail_paragraph_survives() {
+    let source = r#"class JdkStyleImplSpec {
+    /**
+     * @implSpec
+     * Value:
+     * <blockquote>
+     * <pre>
+     * getClass().getName()
+     * </pre>
+     * </blockquote>
+     * The {@link java.util.Objects#toIdentityString(Object) Objects.toIdentityString}
+     * method returns the string for an object.
+     */
+    public void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "JdkStyleImplSpec", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void method() {",
+        "public void ".len(),
+    );
+    for expected in [
+        "```\ngetClass().getName()\n```",
+        "toIdentityString",
+        "method returns the string for an object.",
+    ] {
+        assert!(hover.contains(expected), "missing {expected:?}: {hover}");
+    }
+    assert!(!hover.contains("> ```"), "{hover}");
+    let code = hover.find("```\ngetClass().getName()\n```").expect("code fence");
+    let tail = hover.find("toIdentityString").expect("tail paragraph");
+    assert!(code < tail, "tail paragraph came before the code block: {hover}");
+}
+
+#[test]
+fn mixed_blockquote_pre_tail_inside_quote_survives() {
+    let source = r#"class MixedQuote {
+    /**
+     * @implSpec
+     * <blockquote>
+     * <pre>
+     * getClass().getName()
+     * </pre>
+     * The {@link java.util.Objects#toIdentityString(Object) Objects.toIdentityString}
+     * method returns the string for an object.
+     * </blockquote>
+     */
+    public void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "MixedQuote", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void method() {",
+        "public void ".len(),
+    );
+    for expected in [
+        "> ```\n> getClass().getName()\n> ```",
+        "toIdentityString",
+        "method returns the string for an object.",
+    ] {
+        assert!(hover.contains(expected), "missing {expected:?}: {hover}");
+    }
+}
+
+#[test]
+fn snippet_then_tail_paragraph_in_tag_survives() {
+    let source = r#"class SnippetTail {
+    /**
+     * @implSpec
+     * The toString method returns a value:
+     * {@snippet lang=java :
+     * getClass().getName() + '@' + Integer.toHexString(hashCode())
+     * }
+     * The {@link java.util.Objects#toIdentityString(Object) Objects.toIdentityString}
+     * method returns the string for an object equal to the string that would be
+     * returned if neither toString nor hashCode were overridden.
+     */
+    public void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "SnippetTail", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void method() {",
+        "public void ".len(),
+    );
+    for expected in [
+        "**Implementation Requirements**",
+        "```java\ngetClass().getName() + '@' + Integer.toHexString(hashCode())\n```",
+        "toIdentityString",
+        "method returns the string for an object equal",
+        "neither toString nor hashCode were overridden",
+    ] {
+        assert!(hover.contains(expected), "missing {expected:?}: {hover}");
+    }
+    let code = hover
+        .find("```java\ngetClass().getName() + '@' + Integer.toHexString(hashCode())\n```")
+        .expect("snippet fence");
+    let tail = hover.find("toIdentityString").expect("tail paragraph");
+    assert!(code < tail, "tail paragraph came before the snippet: {hover}");
 }
 
 fn jdk_src_available() -> bool {

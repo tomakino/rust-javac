@@ -124,6 +124,19 @@ fn render_blocks(nodes: &[Rc<DCTree>]) -> String {
             DCKind::EndElement { .. } => {
                 // A stray end tag (e.g. after a self-closing block) is ignored.
             }
+            DCKind::UnknownInlineTag { name, content, .. }
+                if lower(name) == "snippet" =>
+            {
+                // A snippet is a block-level code element even though the
+                // parser stores it as an inline tag. Flush the surrounding
+                // paragraph so text after the snippet starts a new block
+                // instead of being swallowed into the code block.
+                flush_paragraph(&mut blocks, &mut paragraph);
+                let snippet = render_snippet(content);
+                if !snippet.trim().is_empty() {
+                    blocks.push(snippet.trim().to_string());
+                }
+            }
             _ => paragraph.push_str(&render_inline_node(&nodes[index])),
         }
         index += 1;
@@ -303,7 +316,15 @@ fn render_list_item(nodes: &[Rc<DCTree>], ordered: bool, depth: usize, number: u
 }
 
 fn render_pre(nodes: &[Rc<DCTree>]) -> String {
-    let raw = raw_text(nodes);
+    let code = dedent_code(&raw_text(nodes));
+    if code.is_empty() {
+        return String::new();
+    }
+    let fence = "`".repeat((longest_backtick_run(&code) + 1).max(3));
+    format!("{fence}\n{code}\n{fence}")
+}
+
+fn dedent_code(raw: &str) -> String {
     let mut lines: Vec<String> = raw
         .replace("\r\n", "\n")
         .lines()
@@ -331,9 +352,7 @@ fn render_pre(nodes: &[Rc<DCTree>]) -> String {
             line.drain(..indent);
         }
     }
-    let code = lines.join("\n");
-    let fence = "`".repeat((longest_backtick_run(&code) + 1).max(3));
-    format!("{fence}\n{code}\n{fence}")
+    lines.join("\n")
 }
 
 fn render_blockquote(nodes: &[Rc<DCTree>]) -> String {
@@ -541,6 +560,9 @@ fn list_trimmed(list: &List<Rc<DCTree>>) -> String {
             &node.kind,
             DCKind::StartElement { name, .. }
                 if is_block_tag(&lower(name))
+        ) || matches!(
+            &node.kind,
+            DCKind::UnknownInlineTag { name, .. } if lower(name) == "snippet"
         )
     }) {
         // Tag descriptions can contain real block content (the JDK uses
@@ -628,14 +650,15 @@ fn render_snippet(content: &List<Rc<DCTree>>) -> String {
         .chars()
         .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '#'))
         .collect();
-    let body = raw[colon + 1..]
-        .strip_prefix('\n')
-        .unwrap_or(&raw[colon + 1..])
-        .trim_end();
+    let body = dedent_code(
+        raw[colon + 1..]
+            .strip_prefix('\n')
+            .unwrap_or(&raw[colon + 1..]),
+    );
     if body.trim().is_empty() {
         return "*[snippet: missing body]*".to_string();
     }
-    let fence = "`".repeat((longest_backtick_run(body) + 1).max(3));
+    let fence = "`".repeat((longest_backtick_run(&body) + 1).max(3));
     format!("\n\n{fence}{language}\n{body}\n{fence}\n\n")
 }
 
