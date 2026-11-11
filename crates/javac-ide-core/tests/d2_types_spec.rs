@@ -403,7 +403,7 @@ fn constructor_overloads() {
         "public ".len(),
     );
     let hover = hover(&mut workspace, &main, "new BaseType(1);", "new ".len());
-    assert!(hover.contains("BaseType(int)"), "{hover}");
+    assert!(hover.contains("BaseType(int value)"), "{hover}");
 }
 
 #[test]

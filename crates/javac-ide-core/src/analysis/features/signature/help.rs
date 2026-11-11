@@ -11,10 +11,8 @@ use javac_analysis_api::{SignatureHelp, SignatureInformation};
 
 use super::super::super::{canonical, FileAnalysis};
 
-use crate::code::flags::VARARGS;
 use crate::code::scope::LookupKind;
 use crate::code::symbol::SymbolKind;
-use crate::code::type_::TypeKindData;
 use crate::ids::{SymbolId, TreeId};
 use crate::tree::jc_tree::TreeKind;
 use crate::tree::tree_info;
@@ -223,63 +221,16 @@ impl FileAnalysis {
     fn signature_information(
         &self,
         symbol: SymbolId,
-        constructor: bool,
+        _constructor: bool,
     ) -> Option<SignatureInformation> {
-        let ctx = &self.compiler.ctx;
-        let record = ctx.sym(symbol);
-        let SymbolKind::MethodSymbol { params, .. } = &record.kind_data else {
-            return None;
-        };
-        let mut parameter_labels = Vec::new();
-        let count = params.size().max(0) as usize;
-        for (index, param) in params.iter().enumerate() {
-            let param_record = ctx.sym(param);
-            let mut ty = param_record
-                .ty
-                .map(|ty| crate::analysis::type_names::type_name(ctx, ty))
-                .unwrap_or_default();
-            if index + 1 == count
-                && record.flags_field & VARARGS != 0
-                && ty.ends_with("[]")
-            {
-                ty.truncate(ty.len() - 2);
-                ty.push_str("...");
-            }
-            let param_name = param_record.name.to_java_string().to_string_lossy();
-            parameter_labels.push(format!("{ty} {param_name}"));
-        }
-        let name = if constructor {
-            record
-                .owner
-                .and_then(|owner| match &ctx.sym(owner).kind_data {
-                    SymbolKind::ClassSymbol { flatname, .. } => flatname
-                        .to_string()
-                        .rsplit('.')
-                        .next()
-                        .map(str::to_string),
-                    _ => None,
-                })
-                .unwrap_or_else(|| "<init>".to_string())
-        } else {
-            symbol_name(ctx, symbol)
-        };
-        let prefix = if constructor {
-            String::new()
-        } else {
-            let return_type = record
-                .ty
-                .and_then(|ty| match &ctx.typ(ty).kind {
-                    TypeKindData::MethodType { restype, .. } => *restype,
-                    _ => None,
-                })
-                .map(|restype| crate::analysis::type_names::type_name(ctx, restype))
-                .unwrap_or_default();
-            format!("{return_type} ")
-        };
-        let label = format!("{prefix}{name}({})", parameter_labels.join(", "));
+        let parts = crate::analysis::signatures::signature_parts(
+            &self.compiler.ctx,
+            symbol,
+            crate::analysis::signatures::ParameterNames::Verbatim,
+        )?;
         Some(SignatureInformation {
-            label,
-            parameters: parameter_labels,
+            label: parts.label(),
+            parameters: parts.parameters,
         })
     }
 

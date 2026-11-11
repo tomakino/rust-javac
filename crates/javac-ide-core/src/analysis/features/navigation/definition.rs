@@ -23,12 +23,12 @@ struct SuperConstructorCall {
 
 /// A `new T(...)` call under the cursor: the type name and the constructor the
 /// compiler selected for this argument list.
-struct NewClassCall {
-    class: SymbolId,
-    constructor: SymbolId,
+pub(crate) struct NewClassCall {
+    pub(crate) class: SymbolId,
+    pub(crate) constructor: SymbolId,
     /// `new T() { ... }`: the definition is the type, not the anonymous
     /// constructor generated for the class body.
-    anonymous: bool,
+    pub(crate) anonymous: bool,
 }
 
 /// Finds the method declaration whose body contains `target`.
@@ -322,7 +322,7 @@ impl FileAnalysis {
     }
 
     /// A `new T(...)` expression under the cursor, when the cursor is on `T`.
-    fn new_class_call_at(
+    pub(crate) fn new_class_call_at(
         &self,
         text: &str,
         position: javac_analysis_api::Position,

@@ -335,6 +335,11 @@ def main():
         import_jdk = (import_jdk[0], import_jdk[1] + len("import "))
         new_gson_in_builder = position_of(builder_text, "new Gson(", occurrence=1, offset=len("new "))
         body_expr = position_of(gson_text, "return toJson(src, src.getClass());", offset=len("return toJson(src, "))
+        new_json_reader = position_of(
+            gson_text,
+            "public JsonReader newJsonReader(Reader reader)",
+            offset=len("public JsonReader "),
+        )
         to_json_typed = position_of(gson_text, "public String toJson(Object src, Type typeOfSrc)")
         to_json_typed = (to_json_typed[0], to_json_typed[1] + len("public String "))
         type_token_get = position_of(gson_text, "TypeToken.get(typeOfSrc)", offset=len("TypeToken."))
@@ -394,6 +399,20 @@ def main():
                 value = ((hover or {}).get("contents") or {}).get("value") or ""
                 details.append(f"{name}:{len(value)}")
                 ok = ok and len(value.strip()) > 0
+            signature_hover = lsp.request(
+                "textDocument/hover",
+                {
+                    "textDocument": {"uri": lsp.uri(GSON_PATH)},
+                    "position": {"line": new_json_reader[0], "character": new_json_reader[1]},
+                },
+            )
+            signature_value = ((signature_hover or {}).get("contents") or {}).get("value") or ""
+            signature_ok = (
+                "JsonReader newJsonReader(Reader reader)" in signature_value
+                and "(Reader)JsonReader" not in signature_value
+            )
+            details.append("newJsonReader=" + ("ok" if signature_ok else repr(signature_value[:80])))
+            ok = ok and signature_ok
             return ok, " ".join(details)
 
         safe(report, 4, "hover", item_hover)

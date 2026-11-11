@@ -23,7 +23,12 @@ impl FileAnalysis {
         if in_literal_or_comment(&text, line_offset(&text, line, column)) {
             return None;
         }
-        let symbol = FileAnalysis::symbol_at(self, file, line, column)?;
+        let symbol = match self.new_class_call_at(&text, position) {
+            // `new T(...)`: the cursor is on the type name, but the useful
+            // signature is the selected constructor.
+            Some(call) if !call.anonymous => self.symbol_info(call.constructor, -1)?,
+            _ => FileAnalysis::symbol_at(self, file, line, column)?,
+        };
         let newline = char::from(10);
         let mut text = String::from("```java");
         text.push(newline);

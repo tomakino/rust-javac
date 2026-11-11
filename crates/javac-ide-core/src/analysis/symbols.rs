@@ -128,19 +128,24 @@ impl FileAnalysis {
 
     /// `SymbolInfo` for a compiler symbol (hover/definition). Returns `None`
     /// for nameless synthetic symbols (constructors included).
-    fn symbol_info(
+    pub(crate) fn symbol_info(
         &mut self,
         symbol: crate::ids::SymbolId,
         declaration: i32,
     ) -> Option<SymbolInfo> {
+        // Hover shows the declaration Javadoc; reuse the analysis document
+        // cache instead of dropping it (the index fallback no longer runs for
+        // every hover).
+        let doc = self.doc_comments_for_traced().get(&symbol).cloned();
         let ctx = &self.compiler.ctx;
         let record = ctx.sym(symbol);
         let name = record.name.to_java_string().to_string_lossy().to_string();
-        if name.is_empty() || name.starts_with('<') {
+        if name.is_empty() || (name.starts_with('<') && name != "<init>") {
             return None;
         }
         let kind = match &record.kind_data {
             SymbolKind::ClassSymbol { .. } => "class",
+            SymbolKind::MethodSymbol { .. } if name == "<init>" => "constructor",
             SymbolKind::MethodSymbol { .. } => "method",
             SymbolKind::VarSymbol { .. } => {
                 if record.flags_field & crate::code::flags::PARAMETER != 0 {
@@ -162,7 +167,18 @@ impl FileAnalysis {
             .ty
             .map(|ty| type_name(ctx, ty))
             .unwrap_or_default();
-        let detail = if ty.is_empty() {
+        // Methods and constructors use the shared signature renderer so hover
+        // reads `ReturnType name(params)`, never the raw method type
+        // `(params)return` glued to the name.
+        let detail = if matches!(record.kind_data, SymbolKind::MethodSymbol { .. }) {
+            super::signatures::signature_parts(
+                ctx,
+                symbol,
+                super::signatures::ParameterNames::Real,
+            )
+            .map(|parts| parts.label())
+            .unwrap_or_else(|| name.clone())
+        } else if ty.is_empty() {
             name.clone()
         } else {
             format!("{ty} {name}")
@@ -173,7 +189,7 @@ impl FileAnalysis {
             flat_name: name,
             pos: declaration,
             detail,
-            doc: None,
+            doc,
         })
     }
 
@@ -310,15 +326,13 @@ impl FileAnalysis {
                     if generated || enum_synthetic {
                         continue;
                     }
-                    let detail = decl_trees
-                        .get(&member)
-                        .and_then(|tree| match kind {
-                            "method" => super::signatures::method_signature(
-                                &self.compiler.ctx,
-                                *tree,
-                            ),
-                            _ => super::signatures::field_signature(&self.compiler.ctx, *tree),
-                        })
+                    let detail = if kind == "method" || kind == "constructor" {
+                        let mut text = super::signatures::signature_parts(
+                            &self.compiler.ctx,
+                            member,
+                            super::signatures::ParameterNames::Real,
+                        )
+                        .map(|parts| parts.label())
                         .unwrap_or_else(|| {
                             format!(
                                 "{}.{}",
@@ -326,6 +340,28 @@ impl FileAnalysis {
                                 sym.name.to_java_string().to_string_lossy()
                             )
                         });
+                        let mods = super::signatures::modifiers_for_symbol(
+                            &self.compiler.ctx,
+                            member,
+                        );
+                        if !mods.is_empty() {
+                            text = format!("{mods} {text}");
+                        }
+                        text
+                    } else {
+                        decl_trees
+                            .get(&member)
+                            .and_then(|tree| {
+                                super::signatures::field_signature(&self.compiler.ctx, *tree)
+                            })
+                            .unwrap_or_else(|| {
+                                format!(
+                                    "{}.{}",
+                                    traced.flat_name,
+                                    sym.name.to_java_string().to_string_lossy()
+                                )
+                            })
+                    };
                     out.push(SymbolInfo {
                         name: member_name,
                         kind,

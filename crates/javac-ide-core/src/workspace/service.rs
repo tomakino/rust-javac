@@ -496,6 +496,15 @@ impl WorkspaceService for Workspace {
     }
 
     fn hover(&mut self, file: &Path, position: Position) -> Option<String> {
+        // Prefer the transient analysis: only it renders the faithful
+        // declaration signature (parameter names, generic parameters). The
+        // index keeps a summary detail that cannot reconstruct it.
+        if let Some(hover) = self
+            .with_analysis(file, None, |analysis, _| analysis.hover_impl(file, position))
+            .flatten()
+        {
+            return Some(hover);
+        }
         self.ensure_index();
         let snapshot = self.index.snapshot();
         if !self.has_unsaved_edits() && !snapshot.files.is_empty()

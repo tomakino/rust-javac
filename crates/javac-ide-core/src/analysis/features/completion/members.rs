@@ -421,53 +421,22 @@ impl FileAnalysis {
 
     /// Return type of a method (shown in the detail column).
     pub(super) fn method_return_type(&mut self, symbol: crate::ids::SymbolId) -> Option<String> {
-        let ty = self.compiler.ctx.sym(symbol).ty?;
-        let restype = match &self.compiler.ctx.typ(ty).kind {
-            TypeKindData::MethodType { restype, .. }
-            | TypeKindData::PartiallyInferredMethodType { restype, .. } => *restype,
-            _ => None,
-        }?;
-        Some(type_name(&self.compiler.ctx, restype))
+        crate::analysis::signatures::signature_parts(
+            &self.compiler.ctx,
+            symbol,
+            crate::analysis::signatures::ParameterNames::Positional,
+        )
+        .and_then(|parts| parts.return_type)
     }
 
     /// Human-readable parameter list for a method, e.g. "(int, String)".
     pub(super) fn method_signature(&mut self, symbol: crate::ids::SymbolId) -> Option<String> {
-        let params = match &self.compiler.ctx.sym(symbol).kind_data {
-            crate::code::symbol::SymbolKind::MethodSymbol { params, .. } => params.clone(),
-            _ => return None,
-        };
-        let varargs = (self.compiler.ctx.sym(symbol).flags_field
-            & crate::code::flags::VARARGS)
-            != 0;
-        let last = params.iter().count().saturating_sub(1);
-        let mut parts = Vec::new();
-        for (index, param) in params.iter().enumerate() {
-            let param = self.compiler.ctx.sym(param);
-            let mut ty = param
-                .ty
-                .map(|ty| type_name(&self.compiler.ctx, ty))
-                .unwrap_or_else(|| "?".to_string());
-            if varargs && index == last {
-                if let Some(stripped) = ty.strip_suffix("[]") {
-                    ty = format!("{stripped}...");
-                }
-            }
-            let name = param.name.to_java_string().to_string_lossy();
-            // Synthetic names (arg0, arg1, ...) come from class files without
-            // parameter metadata (native/abstract methods have no Code and thus
-            // no LocalVariableTable); use positional p0, p1 instead.
-            let synthetic = name
-                .strip_prefix("arg")
-                .map(|digits| !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()))
-                .unwrap_or(false);
-            let name = if synthetic || name.is_empty() {
-                format!("p{index}")
-            } else {
-                name.to_string()
-            };
-            parts.push(format!("{ty} {name}"));
-        }
-        Some(format!("({})", parts.join(", ")))
+        crate::analysis::signatures::signature_parts(
+            &self.compiler.ctx,
+            symbol,
+            crate::analysis::signatures::ParameterNames::Positional,
+        )
+        .map(|parts| parts.parameter_list())
     }
 
     pub(super) fn apply_prefix_replace(
