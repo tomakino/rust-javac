@@ -443,7 +443,8 @@ fn hover_shows_overrides() {
         .hover(&root.join("A.java"), method_position(sub, "void "))
         .expect("hover");
     assert!(hover.contains("Overrides"), "{hover}");
-    assert!(hover.contains("I.f"), "{hover}");
+    assert!(hover.contains("I#f()"), "{hover}");
+    assert!(hover.contains("I#f()](file://"), "{hover}");
 }
 
 #[test]

@@ -61,12 +61,24 @@ pub fn symbol_location(
     ))
 }
 
+/// An overridden project method with enough data for hover docs and links.
+#[derive(Debug, Clone)]
+pub struct OverridingMethod {
+    pub symbol: SymbolId,
+    pub display: String,
+    pub location: Option<Location>,
+    pub javadoc: Option<String>,
+}
+
 /// The methods a method overrides, using index data only (project sources are
 /// not on the analysis compiler's source path, so hover needs this fallback).
 ///
 /// Parent methods are matched by name + parameter fingerprint and must be
 /// instance (non-static, non-private) declarations.
-pub fn overriding_methods(index: &ProjectIndex, symbol: SymbolId) -> Vec<String> {
+pub fn overriding_method_entries(
+    index: &ProjectIndex,
+    symbol: SymbolId,
+) -> Vec<OverridingMethod> {
     let Some(record) = index.symbol(symbol) else {
         return Vec::new();
     };
@@ -79,7 +91,7 @@ pub fn overriding_methods(index: &ProjectIndex, symbol: SymbolId) -> Vec<String>
     let Some(owner_record) = index.symbol(owner) else {
         return Vec::new();
     };
-    let mut result = Vec::new();
+    let mut result: Vec<OverridingMethod> = Vec::new();
     let mut pending: Vec<super::model::TypeRef> = owner_record.supertypes.clone();
     let mut seen = std::collections::HashSet::new();
     while let Some(supertype) = pending.pop() {
@@ -109,14 +121,33 @@ pub fn overriding_methods(index: &ProjectIndex, symbol: SymbolId) -> Vec<String>
                 continue;
             }
             let parent_name = index.display_name(parent_record);
-            let name = index.strings.get(candidate_record.key.name).to_string();
-            let entry = format!("{parent_name}.{name}");
-            if !result.contains(&entry) {
-                result.push(entry);
+            let parent_simple = parent_name.rsplit('.').next().unwrap_or(&parent_name);
+            let detail = &candidate_record.detail;
+            let display = format!("{parent_simple}#{detail}");
+            if result.iter().any(|entry| entry.display == display) {
+                continue;
             }
+            result.push(OverridingMethod {
+                symbol: *candidate,
+                display,
+                location: symbol_location(index, *candidate, &|file_id| {
+                    index
+                        .file(file_id)
+                        .and_then(|file| std::fs::read_to_string(&file.path).ok())
+                }),
+                javadoc: candidate_record.javadoc.clone(),
+            });
         }
     }
     result
+}
+
+/// Human-readable names of the overridden project methods.
+pub fn overriding_methods(index: &ProjectIndex, symbol: SymbolId) -> Vec<String> {
+    overriding_method_entries(index, symbol)
+        .into_iter()
+        .map(|entry| entry.display)
+        .collect()
 }
 
 /// Declarations of the methods in `symbol`'s override pair: the overridden

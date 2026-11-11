@@ -384,7 +384,8 @@ fn override_declaration_and_call_stay_on_the_override() {
         "public void ".len(),
     );
     assert!(hover.contains("Overrides"), "{hover}");
-    assert!(hover.contains("BaseType.instanceMethod"), "{hover}");
+    assert!(hover.contains("BaseType#instanceMethod()"), "{hover}");
+    assert!(hover.contains("BaseType#instanceMethod()](file://"), "{hover}");
 }
 
 #[test]

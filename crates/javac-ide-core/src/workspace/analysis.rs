@@ -407,7 +407,7 @@ impl FileAnalysis {
         file: &Path,
         position: javac_analysis_api::Position,
     ) -> Option<String> {
-        self.hover_impl(file, position)
+        self.hover_impl(file, position, None)
     }
 
     pub fn completion(

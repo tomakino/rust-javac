@@ -87,8 +87,87 @@ impl FileAnalysis {
         results.dedup_by(|(left, _), (right, _)| left.file == right.file && left.range == right.range);
         results
     }
+}
 
-    /// `Owner.method` for hover.
+/// A method overridden by the hovered symbol, with a navigable declaration.
+pub(crate) struct OverrideMethod {
+    pub symbol: SymbolId,
+    pub display: String,
+    pub location: Option<Location>,
+}
+
+impl FileAnalysis {
+    /// Symbol-based override lookup for hover documentation/inheritance.
+    ///
+    /// Unlike the position-based helper this does not sort by location: the
+    /// supertypes are kept in inheritance order so "first documented parent"
+    /// is deterministic.
+    pub(crate) fn overridden_method_entries(&mut self, symbol: SymbolId) -> Vec<OverrideMethod> {
+        let (is_method, flags_field, owner) = {
+            let child = self.compiler.ctx.sym(symbol);
+            (
+                matches!(child.kind_data, SymbolKind::MethodSymbol { .. }),
+                child.flags_field,
+                child.owner,
+            )
+        };
+        if !is_method {
+            return Vec::new();
+        }
+        if (flags_field & flags::STATIC as i64) != 0
+            || (flags_field & flags::PRIVATE as i64) != 0
+        {
+            return Vec::new();
+        }
+        let Some(signature) = self.erased_signature_of(symbol) else {
+            return Vec::new();
+        };
+        let Some(owner) = owner else {
+            return Vec::new();
+        };
+        let sites = self.supertype_closure(owner);
+        let mut result = Vec::new();
+        let mut seen = HashSet::new();
+        for site in &sites {
+            let Some(method) = self.find_matching_method(site, &signature) else {
+                continue;
+            };
+            if !seen.insert(method) {
+                continue;
+            }
+            let location = self.method_location(method);
+            let display = self.override_entry_display(method, &signature);
+            result.push(OverrideMethod {
+                symbol: method,
+                display,
+                location,
+            });
+        }
+        result
+    }
+
+    fn override_entry_display(&self, method: SymbolId, signature: &ErasedSignature) -> String {
+        let sym = self.compiler.ctx.sym(method);
+        let name = sym.name.to_java_string().to_string_lossy();
+        let owner = sym
+            .owner
+            .and_then(|owner| match &self.compiler.ctx.sym(owner).kind_data {
+                SymbolKind::ClassSymbol { flatname, .. } => flatname
+                    .to_string()
+                    .rsplit('.')
+                    .next()
+                    .map(str::to_string),
+                _ => None,
+            })
+            .unwrap_or_default();
+        let owner = owner.rsplit('$').next().unwrap_or(&owner);
+        format!(
+            "{owner}#{name}({})",
+            signature.params.join(", ")
+        )
+    }
+
+/// `Owner.method` for hover.
     fn override_display_name(&self, method: SymbolId) -> String {
         let sym = self.compiler.ctx.sym(method);
         let name = sym.name.to_java_string().to_string_lossy();
@@ -210,7 +289,7 @@ impl FileAnalysis {
         let members =
             self.compiler
                 .ctx
-                .scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true);
+                .scope_get_symbols(scope, LookupKind::RECURSIVE, &|_| true);
         for member in members {
             let sym = self.compiler.ctx.sym(member);
             if !matches!(sym.kind_data, SymbolKind::MethodSymbol { .. }) {
@@ -269,13 +348,14 @@ impl FileAnalysis {
         };
         if let Some(file) = sourcefile {
             let path = PathBuf::from(file.get_name().to_string_lossy());
-            if self
+            let key = PathBuf::from(canonical(&path));
+            let in_source_path = self
                 .config
                 .source_path
                 .iter()
-                .any(|root| path.starts_with(root))
-            {
-                let key = PathBuf::from(canonical(&path));
+                .any(|root| path.starts_with(root));
+            let in_analysis = self.texts.contains_key(&key);
+            if in_source_path || in_analysis {
                 let text = self
                     .texts
                     .get(&key)

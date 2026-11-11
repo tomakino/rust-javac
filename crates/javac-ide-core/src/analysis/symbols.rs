@@ -32,6 +32,12 @@ pub(crate) struct TracedClass {
     package: Option<SymbolId>,
 }
 
+/// Rendered documentation plus the declaration it was inherited from.
+pub(crate) struct ResolvedDocumentation {
+    pub text: String,
+    pub inherited_from: Option<String>,
+}
+
 impl FileAnalysis {
     pub(crate) fn trace_classes_for(&mut self, source: &Path) {
         self.traced.clear();
@@ -159,9 +165,8 @@ impl FileAnalysis {
         crate::analysis::doc_render::format_doc_comment(&tree)
     }
 
-    /// Javadoc of a compiler symbol: project declarations first, then the JDK
-    /// sources for class-path symbols.
-    pub(crate) fn documentation_for(&mut self, symbol: crate::ids::SymbolId) -> Option<String> {
+    /// Javadoc declared on the symbol itself (project source or JDK source).
+    fn own_documentation(&mut self, symbol: crate::ids::SymbolId) -> Option<String> {
         let docs = self.doc_comments_for_traced();
         if let Some(doc) = docs.get(&symbol) {
             return Some(doc.clone());
@@ -267,6 +272,102 @@ impl FileAnalysis {
             }
         };
         raw.and_then(|raw| self.render_external_javadoc(&raw))
+    }
+
+    /// Javadoc of a symbol, including inherited Javadoc for overrides and
+    /// `{@inheritDoc}` expansion. Without an index only declarations visible in
+    /// this analysis (current file + JDK sources) are used.
+    pub(crate) fn documentation_for(
+        &mut self,
+        symbol: crate::ids::SymbolId,
+    ) -> Option<String> {
+        self.documentation_for_with_index(symbol, None, None, None)
+            .map(|resolved| resolved.text)
+    }
+
+    /// Hover-ready documentation with index fallback for project symbols in
+    /// other files. `index_javadoc` is the index record of the hovered symbol.
+    pub(crate) fn documentation_for_with_index(
+        &mut self,
+        symbol: crate::ids::SymbolId,
+        index: Option<&crate::workspace::index::model::ProjectIndex>,
+        index_symbol: Option<crate::workspace::index::key::SymbolId>,
+        index_javadoc: Option<&str>,
+    ) -> Option<ResolvedDocumentation> {
+        let mut stack = Vec::new();
+        self.resolve_documentation(symbol, index, index_symbol, index_javadoc, &mut stack)
+    }
+
+    fn resolve_documentation(
+        &mut self,
+        symbol: crate::ids::SymbolId,
+        index: Option<&crate::workspace::index::model::ProjectIndex>,
+        index_symbol: Option<crate::workspace::index::key::SymbolId>,
+        index_javadoc: Option<&str>,
+        stack: &mut Vec<crate::ids::SymbolId>,
+    ) -> Option<ResolvedDocumentation> {
+        if stack.contains(&symbol) {
+            return None;
+        }
+        stack.push(symbol);
+        let mut own = self.own_documentation(symbol);
+        if own.is_none()
+            && let Some(javadoc) = index_javadoc.filter(|text| !text.trim().is_empty())
+        {
+            own = Some(javadoc.to_string());
+        }
+
+        let mut parents: Vec<(String, String)> = Vec::new();
+        let overrides = self.overridden_method_entries(symbol);
+        for entry in overrides {
+            if let Some(resolved) =
+                self.resolve_documentation(entry.symbol, index, None, None, stack)
+                && !resolved.text.trim().is_empty()
+            {
+                parents.push((entry.display, resolved.text));
+            }
+        }
+        if let Some(index) = index
+            && let Some(index_symbol) = index_symbol
+        {
+            for entry in
+                crate::workspace::index::query::overriding_method_entries(index, index_symbol)
+            {
+                if let Some(javadoc) = entry.javadoc
+                    && !javadoc.trim().is_empty()
+                    && !parents.iter().any(|(label, _)| label == &entry.display)
+                {
+                    parents.push((entry.display, javadoc));
+                }
+            }
+        }
+
+        let result = match own {
+            Some(mut text) => {
+                let marker = crate::analysis::doc_render::INHERIT_DOC_MARKER;
+                let mut inherited_from = None;
+                if text.contains(marker) {
+                    if let Some((label, parent_text)) = parents.first() {
+                        text = text.replace(marker, parent_text);
+                        inherited_from = Some(label.clone());
+                    } else {
+                        text = text.replace(marker, "{@inheritDoc: unresolved}");
+                    }
+                }
+                Some(ResolvedDocumentation {
+                    text,
+                    inherited_from,
+                })
+            }
+            None => parents.into_iter().next().map(|(label, text)| {
+                ResolvedDocumentation {
+                    text,
+                    inherited_from: Some(label),
+                }
+            }),
+        };
+        stack.pop();
+        result
     }
 
     /// `SymbolInfo` for a compiler symbol (hover/definition). Returns `None`

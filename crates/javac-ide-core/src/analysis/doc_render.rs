@@ -15,6 +15,11 @@ use javac_source::doctree::doc_tree::Kind;
 use crate::tree::dc_tree::{DCKind, DCDocComment, DCTree};
 use crate::util::list::List;
 
+/// Placeholder emitted for `{@inheritDoc}`. The documentation resolver
+/// replaces it with the overridden method's Javadoc, or with
+/// `{@inheritDoc: unresolved}` when no parent documentation is available.
+pub(crate) const INHERIT_DOC_MARKER: &str = "\u{E000}inheritDoc\u{E000}";
+
 /// Render one parsed doc comment as Markdown.
 pub(crate) fn format_doc_comment(tree: &DCTree) -> Option<String> {
     let DCKind::DocComment(comment) = &tree.kind else {
@@ -522,7 +527,7 @@ fn render_inline_node(node: &DCTree) -> String {
         DCKind::Identifier { name } => name.to_java_string().to_string_lossy(),
         DCKind::Erroneous { body, .. } => body.to_string_lossy(),
         DCKind::Comment { body } => body.to_string_lossy(),
-        DCKind::InheritDoc { .. } => "{@inheritDoc}".to_string(),
+        DCKind::InheritDoc { .. } => INHERIT_DOC_MARKER.to_string(),
         DCKind::Summary { summary, .. } => render_inline(&nodes(summary)),
         DCKind::Index {
             term, description, ..

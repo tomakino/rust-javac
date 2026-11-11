@@ -496,84 +496,13 @@ impl WorkspaceService for Workspace {
     }
 
     fn hover(&mut self, file: &Path, position: Position) -> Option<String> {
-        // Prefer the transient analysis: only it renders the faithful
-        // declaration signature (parameter names, generic parameters). The
-        // index keeps a summary detail that cannot reconstruct it.
-        if let Some(mut hover) = self
-            .with_analysis(file, None, |analysis, _| analysis.hover_impl(file, position))
-            .flatten()
-        {
-            // Symbols declared in another project file have no analysis tree
-            // here; their Javadoc lives in the index.
-            if !hover.contains("\n---\n") {
-                self.ensure_index();
-                let snapshot = self.index.snapshot();
-                if !self.has_unsaved_edits()
-                    && !snapshot.files.is_empty()
-                    && let Some(text) = self.text_of(file)
-                    && let Some(file_id) = snapshot.file_id_for_path(file)
-                    && let Some(symbol) = query::symbol_at(&snapshot, file_id, &text, position)
-                    && let Some(record) = snapshot.symbol(symbol)
-                    && let Some(javadoc) = &record.javadoc
-                {
-                    hover.push_str("\n\n---\n\n");
-                    hover.push_str(javadoc);
-                }
-            }
-            return Some(hover);
-        }
-        self.ensure_index();
-        let snapshot = self.index.snapshot();
-        if !self.has_unsaved_edits() && !snapshot.files.is_empty()
-            && let Some(text) = self.text_of(file)
-            && let Some(file_id) = snapshot.file_id_for_path(file)
-            && let Some(symbol) = query::symbol_at(&snapshot, file_id, &text, position)
-            && let Some(record) = snapshot.symbol(symbol)
-        {
-            let mut detail = record.detail.clone();
-            if let Some(return_type) = &record.return_type {
-                detail.push_str(": ");
-                detail.push_str(&match return_type {
-                    index::TypeRef::Project(id) => snapshot
-                        .symbol(*id)
-                        .map(|record| record.flat_name.clone())
-                        .unwrap_or_default(),
-                    index::TypeRef::External(name) => name.clone(),
-                });
-            }
-            if let Some(javadoc) = &record.javadoc {
-                detail.push_str("\n\n");
-                detail.push_str(javadoc);
-            }
-            if matches!(record.kind, index::IndexSymbolKind::Method) {
-                let mut supers: Vec<String> = self
-                    .with_analysis(file, None, |analysis, _| {
-                        analysis.super_methods_with_names_impl(file, position)
-                    })
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|(_, name)| name)
-                    .collect();
-                if supers.is_empty() {
-                    // Project sources are not on the analysis compiler's
-                    // source path, so the analysis above cannot resolve a
-                    // project superclass; the index records the supertypes.
-                    supers = query::overriding_methods(&snapshot, symbol);
-                }
-                if !supers.is_empty() {
-                    detail.push_str("\n\n---\n\n**Overrides:**");
-                    for name in supers.iter().take(5) {
-                        detail.push_str(&format!("\n- `{name}`"));
-                    }
-                    if supers.len() > 5 {
-                        detail.push_str(&format!("\n- … (+{} more)", supers.len() - 5));
-                    }
-                }
-            }
-            return Some(detail);
-        }
-        self.with_analysis(file, None, |analysis, _| analysis.hover_impl(file, position))
-            .flatten()
+        // One hover implementation: the transient analysis renders the
+        // signature and resolves documentation/overrides. The index is passed
+        // in for cross-file parent docs and declaration links.
+        self.with_analysis(file, None, |analysis, index| {
+            analysis.hover_impl(file, position, index)
+        })
+        .flatten()
     }
 
     fn rename_workspace(

@@ -37,6 +37,16 @@ fn session() -> Workspace {
     })
 }
 
+fn project_session(root: &Path) -> Workspace {
+    platform_dir();
+    Workspace::new(AnalysisConfig {
+        class_path: Vec::new(),
+        output_dir: root.join("out"),
+        source_level: "17".to_string(),
+        source_path: vec![root.to_path_buf()],
+    })
+}
+
 fn overlay(session: &mut Workspace, name: &str, source: &str) -> PathBuf {
     let path = PathBuf::from(format!("target/tmp/javadoc-spec/{name}.java"));
     std::fs::create_dir_all("target/tmp/javadoc-spec").unwrap();
@@ -386,6 +396,327 @@ fn signature_help_and_outline_carry_javadoc() {
             .contains("Method doc. More detail."),
         "method outline detail: {:?}",
         method.detail
+    );
+}
+
+#[test]
+fn overrides_inherit_parent_javadoc_and_link_the_declaration() {
+    let source = r#"class Base {
+    /** Base method doc. */
+    String value() {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    @Override
+    String value() {
+        return "child";
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "Inherited", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "String value() {\n        return \"child\";",
+        "String ".len(),
+    );
+    for expected in [
+        "String value()",
+        "Base method doc.",
+        "Inherited from Base#value()",
+        "**Overrides:**",
+        "Base#value()](file://",
+    ] {
+        assert!(hover.contains(expected), "missing {expected:?}: {hover}");
+    }
+}
+
+#[test]
+fn inherit_doc_expands_body_and_tags() {
+    let source = r#"class Base2 {
+    /**
+     * Base doc.
+     * @param x the x
+     */
+    int work(int x) {
+        return x + 1;
+    }
+}
+
+class Impl2 extends Base2 {
+    /** Impl prefix {@inheritDoc} suffix. */
+    @Override
+    int work(int x) {
+        return x + 2;
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "InheritDoc", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "int work(int x) {\n        return x + 2;",
+        "int ".len(),
+    );
+    for expected in [
+        "Impl prefix",
+        "Base doc.",
+        "- **x** the x",
+        "suffix.",
+        "Inherited from Base2#work(int)",
+    ] {
+        assert!(hover.contains(expected), "missing {expected:?}: {hover}");
+    }
+    assert!(
+        !hover.contains("{@inheritDoc: unresolved}"),
+        "explicit inheritDoc was not expanded: {hover}"
+    );
+}
+
+#[test]
+fn inherit_doc_without_parent_is_marked_unresolved() {
+    let source = r#"class Top {
+    /** {@inheritDoc} */
+    void missingParent() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "Unresolved", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "void missingParent() {",
+        "void ".len(),
+    );
+    assert!(
+        hover.contains("{@inheritDoc: unresolved}"),
+        "unresolved inheritDoc not marked: {hover}"
+    );
+}
+
+#[test]
+fn undocumented_method_without_parent_has_no_empty_doc_section() {
+    let source = r#"class PlainNoDoc {
+    void plain() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "PlainNoDoc", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "void plain() {",
+        "void plain".len(),
+    );
+    assert!(!hover.contains("\n---\n"), "empty doc/overrides section: {hover}");
+    assert!(!hover.contains("Inherited from"), "{hover}");
+}
+
+#[test]
+fn diamond_override_is_deduplicated() {
+    let source = r#"interface LeftDoc {
+    /** Left doc. */
+    default void shared() {
+    }
+}
+
+interface RightDoc {
+    /** Right doc. */
+    default void shared() {
+    }
+}
+
+class Diamond implements LeftDoc, RightDoc {
+    @Override
+    public void shared() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "Diamond", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void shared() {",
+        "public void ".len(),
+    );
+    assert!(
+        hover.contains("Left doc.") || hover.contains("Right doc."),
+        "{hover}"
+    );
+    let overrides = hover
+        .split("**Overrides:**")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no overrides section: {hover}"));
+    assert_eq!(
+        overrides.matches("LeftDoc#shared()").count(),
+        1,
+        "left interface duplicated: {overrides}"
+    );
+    assert_eq!(
+        overrides.matches("RightDoc#shared()").count(),
+        1,
+        "right interface duplicated: {overrides}"
+    );
+}
+
+#[test]
+fn cross_file_override_uses_index_parent_javadoc() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("target")
+        .join("tmp")
+        .join("javadoc-spec")
+        .join("cross-file");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("p")).unwrap();
+    std::fs::write(
+        root.join("p/Base.java"),
+        "package p;\npublic class Base {\n    /** Base cross doc. */\n    public String value() { return \"\"; }\n}\n",
+    )
+    .unwrap();
+    let child_source = "package p;\npublic class Child extends Base {\n    @Override\n    public String value() { return \"child\"; }\n}\n";
+    let child_path = root.join("p/Child.java");
+    std::fs::write(&child_path, child_source).unwrap();
+    let mut workspace = project_session(&root);
+    workspace.wait_for_index();
+    WorkspaceService::diagnostics(&mut workspace, &child_path, Some(child_source));
+
+    let hover = WorkspaceService::hover(
+        &mut workspace,
+        &child_path,
+        position_of(
+            child_source,
+            "public String value() { return \"child\"; }",
+            "public String ".len(),
+        ),
+    )
+    .expect("cross-file hover");
+    for expected in [
+        "Base cross doc.",
+        "Inherited from Base#value()",
+        "**Overrides:**",
+        "Base#value()](file://",
+    ] {
+        assert!(hover.contains(expected), "missing {expected:?}: {hover}");
+    }
+}
+
+#[test]
+fn override_inherits_jdk_parent_javadoc() {
+    if !jdk_src_available() {
+        return;
+    }
+    let source = r#"class JdkOverride {
+    @Override
+    public String toString() {
+        return "x";
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "JdkOverride", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public String toString() {",
+        "public String ".len(),
+    );
+    for expected in [
+        "Returns a string representation of the object.",
+        "Inherited from Object#toString()",
+        "**Overrides:**",
+        "Object#toString()](file://",
+    ] {
+        assert!(hover.contains(expected), "missing {expected:?}: {hover}");
+    }
+}
+
+#[test]
+fn nested_inherit_doc_expands_the_whole_chain() {
+    let source = r#"class BaseDoc {
+    /** Base doc. */
+    void chain() {
+    }
+}
+
+class MidDoc extends BaseDoc {
+    /** {@inheritDoc} */
+    @Override
+    void chain() {
+    }
+}
+
+class LeafDoc extends MidDoc {
+    /** {@inheritDoc} */
+    @Override
+    void chain() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "InheritChain", source);
+    let marker = "class LeafDoc extends MidDoc {\n    /** {@inheritDoc} */\n    @Override\n    void chain() {";
+    let offset = marker.rfind("void chain").unwrap() + "void ".len();
+    let hover = hover_at(&mut workspace, &path, source, marker, offset);
+    assert!(
+        hover.contains("Base doc."),
+        "nested inheritDoc did not resolve: {hover}"
+    );
+    assert!(
+        !hover.contains("{@inheritDoc: unresolved}"),
+        "nested inheritDoc unresolved: {hover}"
+    );
+}
+
+#[test]
+fn overrides_are_capped_at_five_with_a_remainder_count() {
+    let mut source = String::from("class LimitOverride implements ");
+    for index in 0..6 {
+        source.push_str(&format!("I{index}, "));
+    }
+    source.push_str("{\n    @Override\n    public void shared() {\n    }\n}\n\n");
+    for index in 0..6 {
+        source.push_str(&format!(
+            "interface I{index} {{\n    /** Doc {index}. */\n    default void shared() {{\n    }}\n}}\n\n"
+        ));
+    }
+    let source = source.as_str();
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "OverrideLimit", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void shared() {",
+        "public void ".len(),
+    );
+    assert!(hover.contains("(+1 more)"), "cap not reported: {hover}");
+    let overrides = hover
+        .split("**Overrides:**")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no overrides section: {hover}"));
+    assert_eq!(
+        overrides.matches("](file://").count()
+            + overrides
+                .lines()
+                .filter(|line| line.starts_with("- I"))
+                .count(),
+        5,
+        "more than five override entries rendered: {overrides}"
     );
 }
 

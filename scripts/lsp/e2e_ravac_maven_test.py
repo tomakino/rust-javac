@@ -352,6 +352,11 @@ def main():
             "public <T> T fromJson(JsonReader reader, Type typeOfT)",
             offset=len("public <T> T "),
         )
+        gson_to_string = position_of(
+            gson_text,
+            "public String toString()",
+            offset=len("public String "),
+        )
         type_token_get = position_of(gson_text, "TypeToken.get(typeOfSrc)", offset=len("TypeToken."))
 
         # 3. definition
@@ -461,6 +466,28 @@ def main():
                 "fromJson-paragraphs=" + ("ok" if from_json_ok else repr(from_json_value[:120]))
             )
             ok = ok and from_json_ok
+            to_string_hover = lsp.request(
+                "textDocument/hover",
+                {
+                    "textDocument": {"uri": lsp.uri(GSON_PATH)},
+                    "position": {"line": gson_to_string[0], "character": gson_to_string[1]},
+                },
+            )
+            to_string_value = ((to_string_hover or {}).get("contents") or {}).get("value") or ""
+            to_string_ok = all(
+                part in to_string_value
+                for part in [
+                    "String toString()",
+                    "Returns a string representation of the object.",
+                    "Inherited from Object#toString()",
+                    "**Overrides:**",
+                    "Object#toString()](file://",
+                ]
+            )
+            details.append(
+                "toString-inherited=" + ("ok" if to_string_ok else repr(to_string_value[:120]))
+            )
+            ok = ok and to_string_ok
             return ok, " ".join(details)
 
         safe(report, 4, "hover", item_hover)
