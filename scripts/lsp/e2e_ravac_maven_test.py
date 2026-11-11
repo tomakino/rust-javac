@@ -526,6 +526,10 @@ def main():
                 "     * }\n"
                 "     * The {@link java.util.Objects#toIdentityString(Object) Objects.toIdentityString}\n"
                 "     * method returns the string for an object.\n"
+                "     * <dl>\n"
+                "     * <dt>Alpha</dt><dd>First definition.</dd>\n"
+                "     * <dt>Beta</dt><dd>Second definition.</dd>\n"
+                "     * </dl>\n"
                 "     */\n"
                 "    public void probe() {\n"
                 "    }\n"
@@ -553,6 +557,8 @@ def main():
                 and "**Implementation Requirements**" in snippet_value
                 and "toIdentityString" in snippet_value
                 and "method returns the string for an object" in snippet_value
+                and "- **Alpha** — First definition.\n- **Beta** — Second definition."
+                in snippet_value
             )
             details.append("snippet=" + ("ok" if snippet_ok else repr(snippet_value[:100])))
             ok = ok and to_string_ok and uri_ok and tags_ok and code_ok and snippet_ok

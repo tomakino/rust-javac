@@ -1579,6 +1579,46 @@ fn ordered_list_start_reversed_and_li_value_use_html() {
     }
 }
 
+#[test]
+fn definition_list_items_use_single_newlines_and_nested_dl_is_a_block() {
+    let source = r#"class DefinitionSpacing {
+    /**
+     * <dl>
+     * <dt>Alpha</dt><dd>First definition.</dd>
+     * <dt>Beta</dt><dd>Second definition.</dd>
+     * <dt>Trailing</dt>
+     * <dl>
+     * <dt>Inner</dt><dd>Inner definition.</dd>
+     * </dl>
+     * </dl>
+     */
+    public void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "DefinitionSpacing", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void method() {",
+        "public void ".len(),
+    );
+    assert!(
+        hover.contains("- **Alpha** — First definition.\n- **Beta** — Second definition."),
+        "{hover}"
+    );
+    assert!(
+        hover.contains("- **Beta** — Second definition.\n- **Trailing**"),
+        "{hover}"
+    );
+    assert!(
+        hover.contains("- **Trailing**\n\n- **Inner** — Inner definition."),
+        "{hover}"
+    );
+}
+
 fn jdk_src_available() -> bool {
     if let Some(platform) = std::env::var_os("RAVAC_PLATFORM_DIR") {
         if PathBuf::from(platform).join("src.zip").is_file() {

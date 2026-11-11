@@ -553,7 +553,9 @@ fn only_pre_block(nodes: &[Rc<DCTree>]) -> Option<&[Rc<DCTree>]> {
 /// Html permits omitted `</dt>`/`</dd>` and multiple terms before one
 /// definition; both forms are handled without discarding following nodes.
 fn render_definition_list(nodes: &[Rc<DCTree>]) -> String {
-    let mut output: Vec<String> = Vec::new();
+    // `is_block` entries (a directly nested <dl>) get blank lines around them;
+    // ordinary dt/dd item entries are adjacent lines of one Markdown list.
+    let mut output: Vec<(bool, String)> = Vec::new();
     let mut terms: Vec<String> = Vec::new();
     let mut index = 0usize;
     while index < nodes.len() {
@@ -579,10 +581,10 @@ fn render_definition_list(nodes: &[Rc<DCTree>]) -> String {
                 if terms.is_empty() {
                     // A definition without a preceding term is still useful:
                     // render its text directly rather than dropping it.
-                    output.push(definition.to_string());
+                    output.push((false, definition.to_string()));
                 } else {
                     for term in terms.drain(..) {
-                        output.push(format_definition(&term, definition));
+                        output.push((false, format_definition(&term, definition)));
                     }
                 }
             }
@@ -593,7 +595,12 @@ fn render_definition_list(nodes: &[Rc<DCTree>]) -> String {
             let (end, next) = element_range(nodes, index, "dl");
             let nested = render_definition_list(&nodes[index + 1..end]);
             if !nested.trim().is_empty() {
-                output.push(nested);
+                // A term with no definition must stay in source order when a
+                // nested definition list follows it.
+                for term in terms.drain(..) {
+                    output.push((false, format!("- **{term}**")));
+                }
+                output.push((true, nested));
             }
             index = next;
             continue;
@@ -601,8 +608,23 @@ fn render_definition_list(nodes: &[Rc<DCTree>]) -> String {
         index += 1;
     }
     // A trailing term with no definition is still worth showing.
-    output.extend(terms.into_iter().map(|term| format!("- **{term}**")));
-    output.join("\n\n")
+    output.extend(
+        terms
+            .into_iter()
+            .map(|term| (false, format!("- **{term}**"))),
+    );
+    let mut rendered = String::new();
+    for (position, (is_block, text)) in output.iter().enumerate() {
+        if position > 0 {
+            if *is_block || output[position - 1].0 {
+                rendered.push_str("\n\n");
+            } else {
+                rendered.push('\n');
+            }
+        }
+        rendered.push_str(text);
+    }
+    rendered
 }
 
 fn format_definition(term: &str, definition: &str) -> String {
