@@ -96,6 +96,28 @@ pub(crate) struct OverrideMethod {
     pub location: Option<Location>,
 }
 
+/// Whether two override labels identify the same declaration. The compiler
+/// occasionally reports a source class without its package in `flatname`,
+/// while the index has the fully qualified owner; a plain `Type#method` label
+/// can therefore differ only by an owner-package prefix.
+pub(crate) fn same_override_display(left: &str, right: &str) -> bool {
+    let split = |text: &str| {
+        text.rsplit_once('#')
+            .map(|(owner, member)| (owner.to_string(), member.to_string()))
+    };
+    let (Some((left_owner, left_member)), Some((right_owner, right_member))) =
+        (split(left), split(right))
+    else {
+        return left == right;
+    };
+    if left_member != right_member {
+        return false;
+    }
+    left_owner == right_owner
+        || left_owner.ends_with(&format!(".{right_owner}"))
+        || right_owner.ends_with(&format!(".{left_owner}"))
+}
+
 impl FileAnalysis {
     /// Symbol-based override lookup for hover documentation/inheritance.
     ///
@@ -152,15 +174,12 @@ impl FileAnalysis {
         let owner = sym
             .owner
             .and_then(|owner| match &self.compiler.ctx.sym(owner).kind_data {
-                SymbolKind::ClassSymbol { flatname, .. } => flatname
-                    .to_string()
-                    .rsplit('.')
-                    .next()
-                    .map(str::to_string),
+                SymbolKind::ClassSymbol { flatname, .. } => {
+                    Some(flatname.to_string().replace('$', "."))
+                }
                 _ => None,
             })
             .unwrap_or_default();
-        let owner = owner.rsplit('$').next().unwrap_or(&owner);
         format!(
             "{owner}#{name}({})",
             signature.params.join(", ")

@@ -477,11 +477,14 @@ def main():
             to_string_ok = all(
                 part in to_string_value
                 for part in [
-                    "String toString()",
+                    "com.google.gson.Gson",
+                    "java.lang.Object",
+                    "public String toString()",
                     "Returns a string representation of the object.",
-                    "Inherited from Object#toString()",
+                    "Inherited from java.lang.Object#toString()",
                     "**Overrides:**",
-                    "Object#toString()](file://",
+                    "java.lang.Object#toString()](file://",
+                    "*Source:",
                 ]
             )
             details.append(
@@ -498,10 +501,51 @@ def main():
             details.append("toString-uri=" + ("ok" if uri_ok else "bad"))
             tags_ok = all(
                 label in to_string_value
-                for label in ["**API Note**", "**Implementation Note**", "**Returns**"]
+                for label in [
+                    "**API Note**",
+                    "**Implementation Requirements**",
+                    "**Returns**",
+                ]
             ) and "**@apiNote**" not in to_string_value
             details.append("toString-tags=" + ("ok" if tags_ok else "bad"))
-            ok = ok and to_string_ok and uri_ok and tags_ok
+            snippet_relative = "src/main/java/com/google/gson/HoverSnippetProbe.java"
+            snippet_text = (
+                "package com.google.gson;\n"
+                "class HoverSnippetProbe {\n"
+                "    /**\n"
+                "     * Snippet body.\n"
+                "     * @implSpec\n"
+                "     * {@snippet lang=java :\n"
+                "     *     int snippetValue = 1;\n"
+                "     * }\n"
+                "     */\n"
+                "    public void probe() {\n"
+                "    }\n"
+                "}\n"
+            )
+            snippet_position = position_of(
+                snippet_text, "public void probe()", offset=len("public void ")
+            )
+            lsp.did_open(snippet_relative, snippet_text)
+            snippet_hover = lsp.request(
+                "textDocument/hover",
+                {
+                    "textDocument": {"uri": lsp.uri(snippet_relative)},
+                    "position": {
+                        "line": snippet_position[0],
+                        "character": snippet_position[1],
+                    },
+                },
+            )
+            lsp.did_close(snippet_relative)
+            snippet_value = ((snippet_hover or {}).get("contents") or {}).get("value") or ""
+            snippet_ok = (
+                "```java" in snippet_value
+                and "int snippetValue = 1;" in snippet_value
+                and "**Implementation Requirements**" in snippet_value
+            )
+            details.append("snippet=" + ("ok" if snippet_ok else repr(snippet_value[:100])))
+            ok = ok and to_string_ok and uri_ok and tags_ok and snippet_ok
             return ok, " ".join(details)
 
         safe(report, 4, "hover", item_hover)

@@ -543,14 +543,63 @@ fn render_inline_node(node: &DCTree) -> String {
         DCKind::Value { reference, .. } => render_inline_node(reference),
         DCKind::SystemProperty { property_name, .. } => format!("${{{}}}", property_name.to_java_string().to_string_lossy()),
         DCKind::UnknownInlineTag { name, content, .. } => {
-            format!(
-                "@{} {}",
-                name.to_java_string().to_string_lossy(),
-                list_trimmed(content)
-            )
+            let name = name.to_java_string().to_string_lossy().to_string();
+            if name == "snippet" {
+                render_snippet(content)
+            } else {
+                format!(
+                    "@{} {}",
+                    name,
+                    list_trimmed(content)
+                )
+            }
         }
         _ => String::new(),
     }
+}
+
+/// Render a Javadoc `{@snippet ...}` inline tag. The parser currently stores
+/// the tag payload as plain text (there is no DCSnippet node), so the payload
+/// grammar is handled here: `lang=... : body`, or an explicit marker for
+/// unsupported `file=...` forms.
+fn render_snippet(content: &List<Rc<DCTree>>) -> String {
+    let raw = raw_text(&content.to_vec()).replace("\r\n", "\n");
+    let Some(colon) = raw.find(':') else {
+        let file = snippet_file_attribute(&raw);
+        return match file {
+            Some(file) => format!("*[snippet file unresolved: {file}]*"),
+            None => "*[snippet: missing body]*".to_string(),
+        };
+    };
+    let attributes = raw[..colon].trim();
+    if let Some(file) = snippet_file_attribute(attributes) {
+        return format!("*[snippet file unresolved: {file}]*");
+    }
+    let language = attributes
+        .split_whitespace()
+        .find_map(|attribute| attribute.strip_prefix("lang="))
+        .map(|value| value.trim_matches('"').to_string())
+        .unwrap_or_default();
+    let language: String = language
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '#'))
+        .collect();
+    let body = raw[colon + 1..]
+        .strip_prefix('\n')
+        .unwrap_or(&raw[colon + 1..])
+        .trim_end();
+    if body.trim().is_empty() {
+        return "*[snippet: missing body]*".to_string();
+    }
+    let fence = "`".repeat((longest_backtick_run(body) + 1).max(3));
+    format!("\n\n{fence}{language}\n{body}\n{fence}\n\n")
+}
+
+fn snippet_file_attribute(attributes: &str) -> Option<String> {
+    attributes
+        .split_whitespace()
+        .find_map(|attribute| attribute.strip_prefix("file="))
+        .map(|value| value.trim_matches('"').to_string())
 }
 
 fn render_link(reference: &Rc<DCTree>, label: &List<Rc<DCTree>>) -> String {
@@ -676,9 +725,8 @@ fn block_tag_label(name: &str) -> String {
     let name = name.trim().trim_start_matches('@');
     match name {
         "apiNote" => return "API Note".to_string(),
-        // Javadoc calls this "Implementation Requirements"; hover uses the
-        // parent-specified "Implementation Note" wording, matching @implNote.
-        "implSpec" | "implNote" => return "Implementation Note".to_string(),
+        "implSpec" => return "Implementation Requirements".to_string(),
+        "implNote" => return "Implementation Note".to_string(),
         _ => {}
     }
     let mut words: Vec<String> = Vec::new();

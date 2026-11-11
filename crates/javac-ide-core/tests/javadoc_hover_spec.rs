@@ -595,9 +595,9 @@ fn cross_file_override_uses_index_parent_javadoc() {
     .expect("cross-file hover");
     for expected in [
         "Base cross doc.",
-        "Inherited from Base#value()",
+        "Inherited from p.Base#value()",
         "**Overrides:**",
-        "Base#value()](file://",
+        "p.Base#value()](file://",
     ] {
         assert!(hover.contains(expected), "missing {expected:?}: {hover}");
     }
@@ -626,9 +626,9 @@ fn override_inherits_jdk_parent_javadoc() {
     );
     for expected in [
         "Returns a string representation of the object.",
-        "Inherited from Object#toString()",
+        "Inherited from java.lang.Object#toString()",
         "**Overrides:**",
-        "Object#toString()](file://",
+        "java.lang.Object#toString()](file://",
     ] {
         assert!(hover.contains(expected), "missing {expected:?}: {hover}");
     }
@@ -716,6 +716,7 @@ fn api_and_impl_tags_use_the_same_no_at_label_style_as_returns() {
      * Tagged body.
      * @apiNote See {@link java.util.List} and <a href="https://example.com">site</a>.
      * @implSpec Keep {@link java.util.Map}.
+     * @implNote Keep note.
      * @return value
      */
     int tagged() {
@@ -736,8 +737,9 @@ fn api_and_impl_tags_use_the_same_no_at_label_style_as_returns() {
         "- **API Note** See",
         "`java.util.List`",
         "[site](https://example.com)",
-        "- **Implementation Note** Keep",
+        "- **Implementation Requirements** Keep",
         "`java.util.Map`",
+        "- **Implementation Note** Keep note.",
         "- **Returns** value",
     ] {
         assert!(hover.contains(expected), "missing {expected:?}: {hover}");
@@ -786,7 +788,7 @@ fn cross_file_index_inherit_doc_expands_the_parent_chain() {
     .expect("cross-file chain hover");
     assert!(hover.contains("Root chain doc."), "{hover}");
     assert!(
-        hover.contains("Inherited from Mid#value()"),
+        hover.contains("Inherited from p.Mid#value()"),
         "{hover}"
     );
     assert!(!hover.contains("{@inheritDoc: unresolved}"), "{hover}");
@@ -834,6 +836,254 @@ fn cross_file_index_inherit_doc_without_parent_is_unresolved() {
         hover.contains("{@inheritDoc: unresolved}"),
         "index parent inheritDoc was silently dropped: {hover}"
     );
+}
+
+#[test]
+fn snippet_renders_a_language_fence_and_file_form_is_marked() {
+    let source = r#"class SnippetDoc {
+    /**
+     * Snippet body.
+     * @implSpec
+     * {@snippet lang=java :
+     *     int value = 1;
+     *     System.out.println(value);
+     * }
+     */
+    public void inlineSnippet() {
+    }
+
+    /**
+     * Unsupported file form.
+     * @implSpec {@snippet file=MissingSnippet.java}
+     */
+    public void fileSnippet() {
+    }
+
+    /**
+     * Language-less snippet.
+     * @implSpec
+     * {@snippet :
+     *     plainSnippet();
+     * }
+     */
+    public void noLanguageSnippet() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "SnippetDoc", source);
+    let inline = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void inlineSnippet() {",
+        "public void ".len(),
+    );
+    assert!(inline.contains("**Implementation Requirements**"), "{inline}");
+    assert!(inline.contains("```java"), "{inline}");
+    assert!(inline.contains("    int value = 1;"), "{inline}");
+    assert!(inline.contains("System.out.println(value);"), "{inline}");
+    assert!(!inline.contains("{@snippet"), "{inline}");
+    let file = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void fileSnippet() {",
+        "public void ".len(),
+    );
+    assert!(
+        file.contains("[snippet file unresolved: MissingSnippet.java]"),
+        "{file}"
+    );
+    let no_language = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void noLanguageSnippet() {",
+        "public void ".len(),
+    );
+    assert!(no_language.contains("```\n"), "{no_language}");
+    assert!(no_language.contains("plainSnippet();"), "{no_language}");
+}
+
+#[test]
+fn hover_signatures_carry_java_modifiers() {
+    let source = r#"abstract class AbstractProbe {
+    public abstract void abstractMethod();
+}
+
+class ModifierProbe {
+    public final int field = 1;
+
+    public ModifierProbe() {
+    }
+
+    public void publicMethod() {
+    }
+
+    private void privateMethod() {
+    }
+
+    protected void protectedMethod() {
+    }
+
+    public static void staticMethod() {
+    }
+
+    public final void finalMethod() {
+    }
+
+    public synchronized void synchronizedMethod() {
+    }
+
+    public native void nativeMethod();
+
+    public strictfp void strictMethod() {
+    }
+}
+
+interface DefaultProbe {
+    default int defaultValue() {
+        return 1;
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "Modifiers", source);
+    let cases = [
+        ("public void publicMethod()", "public void publicMethod() {"),
+        ("private void privateMethod()", "private void privateMethod() {"),
+        ("protected void protectedMethod()", "protected void protectedMethod() {"),
+        ("public static void staticMethod()", "public static void staticMethod() {"),
+        ("public final void finalMethod()", "public final void finalMethod() {"),
+        (
+            "public synchronized void synchronizedMethod()",
+            "public synchronized void synchronizedMethod() {",
+        ),
+        ("public native void nativeMethod()", "public native void nativeMethod();"),
+        ("public strictfp void strictMethod()", "public strictfp void strictMethod() {"),
+        (
+            "public abstract void abstractMethod()",
+            "public abstract void abstractMethod();",
+        ),
+        ("public ModifierProbe()", "public ModifierProbe() {"),
+        ("public final int field", "public final int field"),
+        ("default int defaultValue()", "default int defaultValue() {"),
+    ];
+    for (expected, marker) in cases {
+        let hover = hover_at(
+            &mut workspace,
+            &path,
+            source,
+            marker,
+            marker.find(expected.split_whitespace().last().unwrap_or("")).unwrap_or(0),
+        );
+        assert!(hover.contains(expected), "missing {expected:?}: {hover}");
+    }
+}
+
+#[test]
+fn hover_header_shows_qualified_owner_type() {
+    let source = r#"class Outer {
+    static class Inner {
+    }
+}
+
+class HeaderProbe {
+    void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "HeaderProbe", source);
+    let method = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "void method() {",
+        "void ".len(),
+    );
+    assert!(method.contains("HeaderProbe\n"), "{method}");
+    assert!(method.contains("```java\nvoid method()"), "{method}");
+
+    let nested = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "class Inner {",
+        "class ".len(),
+    );
+    assert!(nested.contains("Outer.Inner\n"), "{nested}");
+}
+
+#[test]
+fn hover_source_annotation_distinguishes_project_and_jdk() {
+    let source = r#"class SourceProbe {
+    Object object;
+
+    void projectMethod() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "SourceProbe", source);
+    let project = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "void projectMethod() {",
+        "void ".len(),
+    );
+    assert!(
+        project.contains("*Source: ") && project.contains("SourceProbe.java"),
+        "{project}"
+    );
+
+    if jdk_src_available() {
+        let jdk = hover_at(
+            &mut workspace,
+            &path,
+            source,
+            "Object object;",
+            0,
+        );
+        assert!(jdk.contains("java.lang.Object"), "{jdk}");
+        assert!(jdk.contains("src.zip"), "{jdk}");
+    }
+}
+
+#[test]
+fn completion_detail_stays_lean_without_modifiers() {
+    let source_with_cursor = r#"class CompletionLean {
+    public void visibleMethod() {
+    }
+
+    void caller() {
+        vi|
+    }
+}
+"#;
+    let cursor = source_with_cursor.find('|').unwrap();
+    let source = source_with_cursor.replacen('|', "", 1);
+    let before = &source[..cursor];
+    let line = before.matches('\n').count() as u32;
+    let column = before
+        .rsplit('\n')
+        .next()
+        .unwrap()
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum();
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "CompletionLean", &source);
+    let items = WorkspaceService::completion(&mut workspace, &path, Position::new(line, column));
+    let item = items
+        .iter()
+        .find(|item| item.label == "visibleMethod")
+        .unwrap_or_else(|| panic!("visibleMethod missing from {items:?}"));
+    let detail = item.detail.clone().unwrap_or_default();
+    assert_eq!(detail, "void", "completion detail should stay lean: {detail}");
+    assert!(!detail.contains("public "), "completion detail has modifier: {detail}");
 }
 
 fn jdk_src_available() -> bool {

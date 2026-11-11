@@ -120,10 +120,9 @@ pub fn overriding_method_entries(
             {
                 continue;
             }
-            let parent_name = index.display_name(parent_record);
-            let parent_simple = parent_name.rsplit('.').next().unwrap_or(&parent_name);
+            let parent_name = parent_record.flat_name.replace('$', ".");
             let detail = &candidate_record.detail;
-            let display = format!("{parent_simple}#{detail}");
+            let display = format!("{parent_name}#{detail}");
             if result.iter().any(|entry| entry.display == display) {
                 continue;
             }

@@ -14,6 +14,8 @@ mod source;
 mod super_methods;
 mod symbols;
 
+pub(crate) use super_methods::same_override_display;
+
 use crate::compiler_context::CompilerContext;
 use crate::ids::SymbolId;
 
@@ -22,7 +24,7 @@ use crate::ids::SymbolId;
 ///
 /// Shared by super-method navigation and constructor navigation: both choose
 /// between the JDK `src.zip` and a class-path `-sources.jar`.
-pub(super) fn is_system_module_class(ctx: &mut CompilerContext, class: SymbolId) -> bool {
+pub(crate) fn is_system_module_class(ctx: &mut CompilerContext, class: SymbolId) -> bool {
     let mut current = class;
     loop {
         let symbol = ctx.sym(current);

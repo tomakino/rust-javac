@@ -18,10 +18,12 @@ struct OverrideSection {
 /// distinct avoids sentinel checks (the old code treated the Overrides
 /// separator as "documentation exists" and skipped index docs).
 struct HoverSections {
+    declaring_type: Option<String>,
     signature: String,
     documentation: Option<String>,
     inherited_from: Option<String>,
     overrides: Vec<OverrideSection>,
+    source: Option<String>,
 }
 
 impl FileAnalysis {
@@ -71,19 +73,39 @@ impl FileAnalysis {
 
         let mut documentation = symbol.doc.clone();
         let mut inherited_from = None;
-        if let Some(symbol) = compiler_symbol
-            && let Some(resolved) = self.documentation_for_with_index(
-                symbol,
+        let mut hover_header = None;
+        if let Some(symbol_id) = compiler_symbol {
+            hover_header = self.hover_declaration(symbol_id, file);
+            if let Some(resolved) = self.documentation_for_with_index(
+                symbol_id,
                 index,
                 index_symbol,
                 index_javadoc.as_deref(),
-            )
-        {
-            documentation = Some(resolved.text);
-            inherited_from = resolved.inherited_from;
+            ) {
+                documentation = Some(resolved.text);
+                inherited_from = resolved.inherited_from;
+            }
         }
         if documentation.is_none() {
             documentation = index_javadoc;
+        }
+
+        let declaring_type = hover_header
+            .as_ref()
+            .and_then(|header| header.declaring_type.clone());
+        let source = hover_header.as_ref().and_then(|header| header.source.clone());
+        let mut signature = symbol.detail.clone();
+        if let Some(header) = &hover_header {
+            if symbol.kind == "class" {
+                let keyword = class_keyword(self, compiler_symbol);
+                signature = if header.modifiers.is_empty() {
+                    format!("{keyword} {}", symbol.name)
+                } else {
+                    format!("{} {keyword} {}", header.modifiers, symbol.name)
+                };
+            } else if !header.modifiers.is_empty() {
+                signature = format!("{} {}", header.modifiers, signature);
+            }
         }
 
         let mut overrides: Vec<OverrideSection> = Vec::new();
@@ -97,10 +119,21 @@ impl FileAnalysis {
                 }
             }
             if let (Some(index), Some(index_symbol)) = (index, index_symbol) {
-                let idx_entries = crate::workspace::index::query::overriding_method_entries(index, index_symbol);
-                for entry in idx_entries
-                {
-                    if overrides.iter().any(|existing| existing.display == entry.display) {
+                let idx_entries = crate::workspace::index::query::overriding_method_entries(
+                    index,
+                    index_symbol,
+                );
+                for entry in idx_entries {
+                    if let Some(existing) = overrides.iter_mut().find(|existing| {
+                        crate::analysis::features::navigation::same_override_display(
+                            &existing.display,
+                            &entry.display,
+                        )
+                    }) {
+                        // The index carries the fully qualified owner even when
+                        // the compiler's flat name lost the package.
+                        existing.display = entry.display;
+                        existing.location = entry.location;
                         continue;
                     }
                     overrides.push(OverrideSection {
@@ -112,17 +145,43 @@ impl FileAnalysis {
         }
 
         Some(render_hover(HoverSections {
-            signature: symbol.detail,
+            declaring_type,
+            signature,
             documentation,
             inherited_from,
             overrides,
+            source,
         }))
+    }
+}
+
+fn class_keyword(analysis: &FileAnalysis, symbol: Option<crate::ids::SymbolId>) -> &'static str {
+    use crate::code::flags;
+    let Some(symbol) = symbol else {
+        return "class";
+    };
+    let flags_value = analysis.compiler.ctx.sym(symbol).flags_field;
+    if flags_value & flags::ANNOTATION as i64 != 0 {
+        "@interface"
+    } else if flags_value & flags::ENUM as i64 != 0 {
+        "enum"
+    } else if flags_value & flags::INTERFACE as i64 != 0 {
+        "interface"
+    } else if flags_value & flags::RECORD != 0 {
+        "record"
+    } else {
+        "class"
     }
 }
 
 fn render_hover(sections: HoverSections) -> String {
     let newline = char::from(10);
-    let mut text = String::from("```java");
+    let mut text = String::new();
+    if let Some(declaring_type) = sections.declaring_type {
+        text.push_str(&declaring_type);
+        text.push_str("\n\n");
+    }
+    text.push_str("```java");
     text.push(newline);
     text.push_str(&sections.signature);
     text.push(newline);
@@ -153,6 +212,11 @@ fn render_hover(sections: HoverSections) -> String {
                 sections.overrides.len() - 5
             ));
         }
+    }
+    if let Some(source) = sections.source {
+        text.push_str("\n\n*Source: ");
+        text.push_str(&source);
+        text.push('*');
     }
     text
 }

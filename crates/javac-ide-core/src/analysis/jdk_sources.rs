@@ -140,3 +140,42 @@ fn location_at_offset(
 pub(crate) fn default_jdk_src() -> Option<PathBuf> {
     super::source_files::jdk_src_zip()
 }
+
+/// Major JDK version from the platform/`JAVA_HOME` `release` file, when
+/// available. `None` means the source annotation omits the version rather
+/// than guessing it from a path.
+pub(crate) fn jdk_release_version() -> Option<String> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Some(platform) = std::env::var_os("RAVAC_PLATFORM_DIR") {
+        roots.push(PathBuf::from(platform));
+    }
+    if let Some(home) = std::env::var_os("JAVA_HOME") {
+        roots.push(PathBuf::from(home));
+    }
+    if let Some(src) = default_jdk_src() {
+        if let Some(parent) = src.parent() {
+            roots.push(parent.to_path_buf());
+            if parent.file_name().is_some_and(|name| name == "lib")
+                && let Some(home) = parent.parent()
+            {
+                roots.push(home.to_path_buf());
+            }
+        }
+    }
+    for root in roots {
+        let Ok(text) = std::fs::read_to_string(root.join("release")) else {
+            continue;
+        };
+        if let Some(value) = text
+            .lines()
+            .find_map(|line| line.strip_prefix("JAVA_VERSION="))
+        {
+            let value = value.trim().trim_matches('"');
+            let major = value.split('.').next().unwrap_or(value);
+            if !major.is_empty() {
+                return Some(major.to_string());
+            }
+        }
+    }
+    None
+}

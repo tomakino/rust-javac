@@ -38,6 +38,13 @@ pub(crate) struct ResolvedDocumentation {
     pub inherited_from: Option<String>,
 }
 
+/// Hover header/source data derived from compiler symbols (never text scans).
+pub(crate) struct HoverDeclaration {
+    pub declaring_type: Option<String>,
+    pub modifiers: String,
+    pub source: Option<String>,
+}
+
 impl FileAnalysis {
     pub(crate) fn trace_classes_for(&mut self, source: &Path) {
         self.traced.clear();
@@ -318,8 +325,23 @@ impl FileAnalysis {
         }
 
         let mut parents: Vec<(String, String)> = Vec::new();
+        let index_entries = match (index, index_symbol) {
+            (Some(index), Some(index_symbol)) => {
+                crate::workspace::index::query::overriding_method_entries(index, index_symbol)
+            }
+            _ => Vec::new(),
+        };
         let overrides = self.overridden_method_entries(symbol);
         for entry in overrides {
+            if index_entries.iter().any(|index_entry| {
+                index_entry.javadoc.is_some()
+                    && crate::analysis::features::navigation::same_override_display(
+                        &entry.display,
+                        &index_entry.display,
+                    )
+            }) {
+                continue;
+            }
             if let Some(resolved) =
                 self.resolve_documentation(entry.symbol, index, None, None, stack)
                 && !resolved.text.trim().is_empty()
@@ -327,12 +349,8 @@ impl FileAnalysis {
                 parents.push((entry.display, resolved.text));
             }
         }
-        if let Some(index) = index
-            && let Some(index_symbol) = index_symbol
-        {
-            for entry in
-                crate::workspace::index::query::overriding_method_entries(index, index_symbol)
-            {
+        if let Some(index) = index {
+            for entry in index_entries {
                 let symbol = entry.symbol;
                 if let Some(javadoc) = entry.javadoc
                     && !javadoc.trim().is_empty()
@@ -408,6 +426,123 @@ impl FileAnalysis {
         };
         visiting.remove(&symbol);
         expanded
+    }
+
+    /// Hover-only declaration metadata: owner-qualified type, modifiers and
+    /// declaration source. Completion keeps using the lean `SymbolInfo.detail`.
+    pub(crate) fn hover_declaration(
+        &mut self,
+        symbol: crate::ids::SymbolId,
+        current_file: &Path,
+    ) -> Option<HoverDeclaration> {
+        let record = self.compiler.ctx.sym(symbol);
+        let owner = if matches!(record.kind_data, SymbolKind::ClassSymbol { .. }) {
+            symbol
+        } else {
+            record.owner?
+        };
+        let (declaring_type, sourcefile) = match &self.compiler.ctx.sym(owner).kind_data {
+            SymbolKind::ClassSymbol {
+                fullname,
+                sourcefile,
+                ..
+            } => (
+                Some(fullname.to_string().replace('$', ".")),
+                sourcefile.clone(),
+            ),
+            _ => return None,
+        };
+        let modifiers =
+            crate::analysis::signatures::modifiers_for_symbol(&self.compiler.ctx, symbol);
+        let source_path = sourcefile.map(|file| {
+            let path = PathBuf::from(file.get_name().to_string_lossy());
+            if path.is_relative() && current_file.file_name() == path.file_name() {
+                current_file.to_path_buf()
+            } else {
+                path
+            }
+        });
+        let is_jdk = crate::analysis::features::navigation::is_system_module_class(
+            &mut self.compiler.ctx,
+            owner,
+        );
+        let source = if is_jdk {
+            let mut label = String::from("src.zip");
+            if let Some(version) = crate::analysis::jdk_sources::jdk_release_version() {
+                label.push_str(&format!(" (JDK {version})"));
+            }
+            Some(label)
+        } else if let Some(path) = source_path {
+            let project_source = self
+                .config
+                .source_path
+                .iter()
+                .any(|root| path.starts_with(root))
+                || self
+                    .texts
+                    .keys()
+                    .any(|candidate| canonical(candidate) == canonical(&path));
+            if project_source {
+                self.project_relative_path(&path)
+                    .or_else(|| self.package_source_relative(owner, &path))
+            } else {
+                self.package_source_relative(owner, &path)
+                    .map(|path| format!("{path} (sources jar)"))
+            }
+        } else {
+            None
+        };
+        Some(HoverDeclaration {
+            declaring_type,
+            modifiers,
+            source,
+        })
+    }
+
+    fn project_relative_path(&self, path: &Path) -> Option<String> {
+        for root in &self.config.source_path {
+            if let Ok(relative) = path.strip_prefix(root) {
+                return Some(relative.to_string_lossy().replace('\\', "/"));
+            }
+        }
+        let key = canonical(path);
+        if self
+            .texts
+            .keys()
+            .any(|candidate| canonical(candidate) == key)
+        {
+            if let Ok(cwd) = std::env::current_dir()
+                && let Ok(relative) = path.strip_prefix(&cwd)
+            {
+                return Some(relative.to_string_lossy().replace('\\', "/"));
+            }
+        }
+        None
+    }
+
+    /// Project-relative path derived from the symbol package and source file
+    /// name when the compiler's SourceFile does not include the source root.
+    fn package_source_relative(&self, owner: crate::ids::SymbolId, path: &Path) -> Option<String> {
+        let file_name = path.file_name()?.to_string_lossy();
+        let mut package = String::new();
+        let mut current = Some(owner);
+        while let Some(symbol) = current {
+            let record = self.compiler.ctx.sym(symbol);
+            if let SymbolKind::PackageSymbol { fullname, .. } = &record.kind_data {
+                package = fullname.to_string();
+                break;
+            }
+            current = record.owner;
+        }
+        if package.is_empty() {
+            Some(file_name.to_string())
+        } else {
+            Some(format!(
+                "{}/{}",
+                package.replace('.', "/"),
+                file_name
+            ))
+        }
     }
 
     /// `SymbolInfo` for a compiler symbol (hover/definition). Returns `None`
