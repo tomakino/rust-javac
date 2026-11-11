@@ -10,6 +10,8 @@ use javac_analysis_api::{
     TextEdit, TypeHierarchyItem, WorkspaceConfiguration, WorkspaceService, WorkspaceSymbol,
 };
 
+use crate::analysis::uri::file_uri;
+
 use super::index::{self, query};
 use super::state::{empty_index, Workspace};
 
@@ -745,38 +747,6 @@ fn retain_named_symbols(symbols: &mut Vec<javac_analysis_api::DocumentSymbol>) {
         retain_named_symbols(&mut symbol.children);
     }
 }
-fn file_uri(path: &Path) -> String {
-    // Percent-encode everything except URI path characters, so Chinese names,
-    // spaces, `#` and `%` survive as a valid file URI.
-    let text = path.to_string_lossy().replace('\\', "/");
-    let mut uri = String::from("file:///");
-    for byte in text.bytes() {
-        let keep = byte.is_ascii_alphanumeric()
-            || matches!(byte, b'/' | b':' | b'-' | b'_' | b'.' | b'~');
-        if keep {
-            uri.push(byte as char);
-        } else {
-            uri.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    uri
-}
-
-#[cfg(test)]
-mod file_uri_tests {
-    use super::file_uri;
-
-    #[test]
-    fn file_uri_percent_encodes_unicode_space_hash_percent() {
-        assert_eq!(
-            file_uri(std::path::Path::new("C:/中文 目录/a#b%.java")),
-            "file:///C:/%E4%B8%AD%E6%96%87%20%E7%9B%AE%E5%BD%95/a%23b%25.java"
-        );
-    }
-}
-
-/// `http(s)://` links. Scanning text is intentional and unambiguous here
-/// (a URL has no compiler representation, unlike the semantic decisions).
 fn url_links(text: &str) -> Vec<DocumentLink> {
     let mut links = Vec::new();
     for (line_index, line) in text.lines().enumerate() {

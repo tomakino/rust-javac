@@ -244,6 +244,8 @@ impl FileAnalysis {
         let mut sites = Vec::new();
         let mut stack = vec![class];
         let mut visited = HashSet::new();
+        let mut scheduled = HashSet::new();
+        scheduled.insert(class);
         while let Some(current) = stack.pop() {
             if !visited.insert(current) {
                 continue;
@@ -255,8 +257,10 @@ impl FileAnalysis {
             let types = Rc::clone(&self.compiler.types);
             let ctx = &mut self.compiler.ctx;
             let super_ty = types.supertype(ctx, &syms, ty, None);
+            let iface_list = types.interfaces(ctx, &syms, ty);
             if let Some(sym) = ctx.typ(super_ty).tsym
-                && visited.insert(sym)
+                && !visited.contains(&sym)
+                && scheduled.insert(sym)
             {
                 sites.push(SuperSite {
                     type_id: super_ty,
@@ -264,16 +268,21 @@ impl FileAnalysis {
                 });
                 stack.push(sym);
             }
-            for interface_ty in types.interfaces(ctx, &syms, ty).iter() {
-                if let Some(sym) = ctx.typ(interface_ty).tsym
-                    && visited.insert(sym)
-                {
-                    sites.push(SuperSite {
-                        type_id: interface_ty,
-                        class: sym,
-                    });
-                    stack.push(sym);
+            // Mark symbols as visited only when they are popped. Inserting
+            // them here made every queued interface "already visited" on pop,
+            // so `interface Mid extends Root` was never traversed.
+            for interface_ty in iface_list.iter() {
+                let Some(sym) = ctx.typ(interface_ty).tsym else {
+                    continue;
+                };
+                if visited.contains(&sym) || !scheduled.insert(sym) {
+                    continue;
                 }
+                sites.push(SuperSite {
+                    type_id: interface_ty,
+                    class: sym,
+                });
+                stack.push(sym);
             }
         }
         sites

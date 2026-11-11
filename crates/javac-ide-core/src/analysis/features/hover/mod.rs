@@ -168,20 +168,18 @@ fn override_markdown(entry: &OverrideSection) -> String {
 }
 
 /// `file://` URI with a line anchor; VS Code and other clients jump to the
-/// declaration when the link is activated.
+/// declaration when the link is activated. Path encoding is shared with the
+/// document-link service so `#`, `%`, spaces and non-ASCII names are safe.
 fn location_uri(location: &Location) -> String {
-    let mut path = location.file.to_string_lossy().replace('\\', "/");
-    if !path.starts_with('/') {
-        path.insert(0, '/');
-    }
-    let path = path.replace(' ', "%20");
+    let mut uri = crate::analysis::uri::file_uri(&location.file);
     let start = location.range.start.line + 1;
     let end = location.range.end.line + 1;
     if start == end {
-        format!("file://{path}#L{start}")
+        uri.push_str(&format!("#L{start}"));
     } else {
-        format!("file://{path}#L{start}-L{end}")
+        uri.push_str(&format!("#L{start}-L{end}"));
     }
+    uri
 }
 
 /// Whether the cursor word is introduced by the `new` keyword. Enum
@@ -230,5 +228,21 @@ mod tests {
             location_uri(&location),
             "file:///C:/tmp/Base.java#L4"
         );
+    }
+
+    #[test]
+    fn location_uri_percent_encodes_special_path_and_keeps_anchor() {
+        let location = Location {
+            file: PathBuf::from("C:/中文 目录/a#b%.java"),
+            range: javac_analysis_api::Range::new(
+                javac_analysis_api::Position::new(3, 4),
+                javac_analysis_api::Position::new(3, 9),
+            ),
+        };
+        let uri = location_uri(&location);
+        let parsed = url::Url::parse(&uri).expect("hover link is a standard URI");
+        assert_eq!(parsed.scheme(), "file");
+        assert_eq!(parsed.fragment(), Some("L4"));
+        assert!(uri.contains("%E4%B8%AD%E6%96%87%20%E7%9B%AE%E5%BD%95/a%23b%25.java#L4"), "{uri}");
     }
 }

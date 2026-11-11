@@ -18,6 +18,7 @@ pub(crate) mod positions;
 pub(crate) mod symbols;
 pub(crate) mod signatures;
 pub(crate) mod type_names;
+pub(crate) mod uri;
 
 pub use crate::workspace::analysis::{AnalysisConfig, AnalysisResult, FileAnalysis};
 pub(crate) use positions::*;

@@ -487,7 +487,21 @@ def main():
             details.append(
                 "toString-inherited=" + ("ok" if to_string_ok else repr(to_string_value[:120]))
             )
-            ok = ok and to_string_ok
+            link_start = to_string_value.find("](file://")
+            uri_ok = False
+            if link_start >= 0:
+                link_end = to_string_value.find(")", link_start)
+                if link_end > link_start:
+                    link_uri = to_string_value[link_start + 2 : link_end]
+                    parsed = urlparse(link_uri)
+                    uri_ok = parsed.scheme == "file" and (parsed.fragment or "").startswith("L")
+            details.append("toString-uri=" + ("ok" if uri_ok else "bad"))
+            tags_ok = all(
+                label in to_string_value
+                for label in ["**API Note**", "**Implementation Note**", "**Returns**"]
+            ) and "**@apiNote**" not in to_string_value
+            details.append("toString-tags=" + ("ok" if tags_ok else "bad"))
+            ok = ok and to_string_ok and uri_ok and tags_ok
             return ok, " ".join(details)
 
         safe(report, 4, "hover", item_hover)

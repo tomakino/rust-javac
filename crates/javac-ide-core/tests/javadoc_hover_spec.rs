@@ -524,19 +524,19 @@ fn undocumented_method_without_parent_has_no_empty_doc_section() {
 
 #[test]
 fn diamond_override_is_deduplicated() {
-    let source = r#"interface LeftDoc {
-    /** Left doc. */
+    let source = r#"interface RootDoc {
+    /** Root doc. */
     default void shared() {
     }
 }
 
-interface RightDoc {
-    /** Right doc. */
-    default void shared() {
-    }
+interface Left extends RootDoc {
 }
 
-class Diamond implements LeftDoc, RightDoc {
+interface Right extends RootDoc {
+}
+
+class Diamond implements Left, Right {
     @Override
     public void shared() {
     }
@@ -551,23 +551,12 @@ class Diamond implements LeftDoc, RightDoc {
         "public void shared() {",
         "public void ".len(),
     );
-    assert!(
-        hover.contains("Left doc.") || hover.contains("Right doc."),
-        "{hover}"
-    );
-    let overrides = hover
-        .split("**Overrides:**")
-        .nth(1)
-        .unwrap_or_else(|| panic!("no overrides section: {hover}"));
+    assert!(hover.contains("Root doc."), "{hover}");
+    // One occurrence in "Inherited from …", one in the Overrides link.
     assert_eq!(
-        overrides.matches("LeftDoc#shared()").count(),
-        1,
-        "left interface duplicated: {overrides}"
-    );
-    assert_eq!(
-        overrides.matches("RightDoc#shared()").count(),
-        1,
-        "right interface duplicated: {overrides}"
+        hover.matches("RootDoc#shared()").count(),
+        2,
+        "diamond override was not deduplicated: {hover}"
     );
 }
 
@@ -717,6 +706,133 @@ fn overrides_are_capped_at_five_with_a_remainder_count() {
                 .count(),
         5,
         "more than five override entries rendered: {overrides}"
+    );
+}
+
+#[test]
+fn api_and_impl_tags_use_the_same_no_at_label_style_as_returns() {
+    let source = r#"class Tagged {
+    /**
+     * Tagged body.
+     * @apiNote See {@link java.util.List} and <a href="https://example.com">site</a>.
+     * @implSpec Keep {@link java.util.Map}.
+     * @return value
+     */
+    int tagged() {
+        return 1;
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "Tagged", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "int tagged() {",
+        "int ".len(),
+    );
+    for expected in [
+        "- **API Note** See",
+        "`java.util.List`",
+        "[site](https://example.com)",
+        "- **Implementation Note** Keep",
+        "`java.util.Map`",
+        "- **Returns** value",
+    ] {
+        assert!(hover.contains(expected), "missing {expected:?}: {hover}");
+    }
+    assert!(!hover.contains("**@apiNote**"), "{hover}");
+    assert!(!hover.contains("**@implSpec**"), "{hover}");
+}
+
+#[test]
+fn cross_file_index_inherit_doc_expands_the_parent_chain() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("target")
+        .join("tmp")
+        .join("javadoc-spec")
+        .join("cross-chain");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("p")).unwrap();
+    std::fs::write(
+        root.join("p/Root.java"),
+        "package p;\npublic class Root {\n    /** Root chain doc. */\n    public String value() { return \"\"; }\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("p/Mid.java"),
+        "package p;\npublic class Mid extends Root {\n    /** {@inheritDoc} */\n    @Override\n    public String value() { return \"mid\"; }\n}\n",
+    )
+    .unwrap();
+    let child_source = "package p;\npublic class Child extends Mid {\n    @Override\n    public String value() { return \"child\"; }\n}\n";
+    let child_path = root.join("p/Child.java");
+    std::fs::write(&child_path, child_source).unwrap();
+    let mut workspace = project_session(&root);
+    workspace.wait_for_index();
+    WorkspaceService::diagnostics(&mut workspace, &child_path, Some(child_source));
+
+    let hover = WorkspaceService::hover(
+        &mut workspace,
+        &child_path,
+        position_of(
+            child_source,
+            "public String value() { return \"child\"; }",
+            "public String ".len(),
+        ),
+    )
+    .expect("cross-file chain hover");
+    assert!(hover.contains("Root chain doc."), "{hover}");
+    assert!(
+        hover.contains("Inherited from Mid#value()"),
+        "{hover}"
+    );
+    assert!(!hover.contains("{@inheritDoc: unresolved}"), "{hover}");
+}
+
+#[test]
+fn cross_file_index_inherit_doc_without_parent_is_unresolved() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("target")
+        .join("tmp")
+        .join("javadoc-spec")
+        .join("cross-unresolved");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("p")).unwrap();
+    std::fs::write(
+        root.join("p/Root.java"),
+        "package p;\npublic class Root {\n    public String value() { return \"\"; }\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("p/Mid.java"),
+        "package p;\npublic class Mid extends Root {\n    /** {@inheritDoc} */\n    @Override\n    public String value() { return \"mid\"; }\n}\n",
+    )
+    .unwrap();
+    let child_source = "package p;\npublic class Child extends Mid {\n    @Override\n    public String value() { return \"child\"; }\n}\n";
+    let child_path = root.join("p/Child.java");
+    std::fs::write(&child_path, child_source).unwrap();
+    let mut workspace = project_session(&root);
+    workspace.wait_for_index();
+    WorkspaceService::diagnostics(&mut workspace, &child_path, Some(child_source));
+
+    let hover = WorkspaceService::hover(
+        &mut workspace,
+        &child_path,
+        position_of(
+            child_source,
+            "public String value() { return \"child\"; }",
+            "public String ".len(),
+        ),
+    )
+    .expect("cross-file unresolved hover");
+    assert!(
+        hover.contains("{@inheritDoc: unresolved}"),
+        "index parent inheritDoc was silently dropped: {hover}"
     );
 }
 

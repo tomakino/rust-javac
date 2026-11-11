@@ -227,6 +227,7 @@ dependencies = [
  "javac-zip",
  "sys-locale",
  "unic-langid",
+ "url",
 ]
 
 [[package]]

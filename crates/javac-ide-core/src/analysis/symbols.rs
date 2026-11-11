@@ -333,10 +333,17 @@ impl FileAnalysis {
             for entry in
                 crate::workspace::index::query::overriding_method_entries(index, index_symbol)
             {
+                let symbol = entry.symbol;
                 if let Some(javadoc) = entry.javadoc
                     && !javadoc.trim().is_empty()
                     && !parents.iter().any(|(label, _)| label == &entry.display)
                 {
+                    let javadoc = Self::expand_index_javadoc(
+                        index,
+                        symbol,
+                        &javadoc,
+                        &mut std::collections::HashSet::new(),
+                    );
                     parents.push((entry.display, javadoc));
                 }
             }
@@ -368,6 +375,39 @@ impl FileAnalysis {
         };
         stack.pop();
         result
+    }
+
+    /// Expand `{@inheritDoc}` in a parent Javadoc that came from the project
+    /// index. Index docs are already rendered Markdown, so this only resolves
+    /// the marker recursively through index supertypes. `visiting` guards
+    /// malformed cyclic project hierarchies.
+    fn expand_index_javadoc(
+        index: &crate::workspace::index::model::ProjectIndex,
+        symbol: crate::workspace::index::key::SymbolId,
+        javadoc: &str,
+        visiting: &mut std::collections::HashSet<crate::workspace::index::key::SymbolId>,
+    ) -> String {
+        let marker = crate::analysis::doc_render::INHERIT_DOC_MARKER;
+        if !javadoc.contains(marker) {
+            return javadoc.to_string();
+        }
+        if !visiting.insert(symbol) {
+            return javadoc.replace(marker, "{@inheritDoc: unresolved}");
+        }
+        let parent_doc = crate::workspace::index::query::overriding_method_entries(index, symbol)
+            .into_iter()
+            .find_map(|entry| {
+                entry
+                    .javadoc
+                    .filter(|doc| !doc.trim().is_empty())
+                    .map(|doc| Self::expand_index_javadoc(index, entry.symbol, &doc, visiting))
+            });
+        let expanded = match parent_doc {
+            Some(parent_doc) => javadoc.replace(marker, &parent_doc),
+            None => javadoc.replace(marker, "{@inheritDoc: unresolved}"),
+        };
+        visiting.remove(&symbol);
+        expanded
     }
 
     /// `SymbolInfo` for a compiler symbol (hover/definition). Returns `None`

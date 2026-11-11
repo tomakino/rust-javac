@@ -21,5 +21,7 @@ sys-locale.workspace = true
 unic-langid.workspace = true
 
 [dev-dependencies]
+# Standard URI parsing for the shared file_uri helper's encoding test.
+url = "2.5.8"
 # Baseline JDK class bytes for the PoolReader/ModuleNameReader tests.
 javac-classpath.workspace = true

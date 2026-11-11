@@ -611,6 +611,9 @@ fn attribute(attrs: &List<Rc<DCTree>>, name: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 fn render_tags(comment: &DCDocComment) -> String {
+    // One display convention for every block tag: the rendered label never
+    // contains `@`. Known JDK tags use their documentation names (`Returns`,
+    // `API Note`, ...); unknown tags are title-cased from the source name.
     let mut lines: Vec<String> = Vec::new();
     for tag in comment.tags.iter() {
         let line = match &tag.kind {
@@ -656,8 +659,8 @@ fn render_tags(comment: &DCDocComment) -> String {
                 Some(format!("- **Deprecated** {}", list_trimmed(body)))
             }
             DCKind::UnknownBlockTag { name, content } => Some(format!(
-                "- **@{}** {}",
-                name.to_java_string().to_string_lossy(),
+                "- **{}** {}",
+                block_tag_label(&name.to_java_string().to_string_lossy()),
                 list_trimmed(content)
             )),
             _ => None,
@@ -667,6 +670,52 @@ fn render_tags(comment: &DCDocComment) -> String {
         }
     }
     lines.join("\n")
+}
+
+fn block_tag_label(name: &str) -> String {
+    let name = name.trim().trim_start_matches('@');
+    match name {
+        "apiNote" => return "API Note".to_string(),
+        // Javadoc calls this "Implementation Requirements"; hover uses the
+        // parent-specified "Implementation Note" wording, matching @implNote.
+        "implSpec" | "implNote" => return "Implementation Note".to_string(),
+        _ => {}
+    }
+    let mut words: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for (index, ch) in name.chars().enumerate() {
+        let boundary = index > 0
+            && ch.is_ascii_uppercase()
+            && current.chars().last().is_some_and(|last| last.is_ascii_lowercase());
+        if matches!(ch, '_' | '-' | ' ') || boundary {
+            if !current.is_empty() {
+                words.push(std::mem::take(&mut current));
+            }
+            if !matches!(ch, '_' | '-' | ' ') {
+                current.push(ch);
+            }
+        } else {
+            current.push(ch);
+        }
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+    words
+        .into_iter()
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => {
+                    let mut out = first.to_uppercase().to_string();
+                    out.push_str(chars.as_str());
+                    out
+                }
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 // ---------------------------------------------------------------------------

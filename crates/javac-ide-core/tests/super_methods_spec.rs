@@ -295,6 +295,21 @@ fn multiple_interfaces_return_all() {
 }
 
 #[test]
+fn transitive_interface_returns_root_method() {
+    let root = fixture("transitive-interface");
+    let base = "interface Root { void run(); }\n";
+    let mid = "interface Mid extends Root {}\n";
+    let sub = "class Impl implements Mid { public void run() {} }\n";
+    let mut workspace = workspace_with(&root, &[("Root.java", base), ("Mid.java", mid), ("Impl.java", sub)]);
+    let supers = workspace.super_methods(&root.join("Impl.java"), method_position(sub, "void "));
+    assert_eq!(supers.len(), 1, "{supers:?}");
+    assert!(
+        supers[0].file.file_name().unwrap().to_string_lossy() == "Root.java",
+        "{supers:?}"
+    );
+}
+
+#[test]
 fn multi_level_inheritance_returns_direct_parent() {
     let root = fixture("multi-level");
     let base = "class Base { void f() {} }\n";
