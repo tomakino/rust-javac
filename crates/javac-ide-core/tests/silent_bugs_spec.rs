@@ -2,7 +2,7 @@
 //! would mislead an editor.
 
 mod common;
-use common::platform_path;
+use common::{platform_path, with_env_vars};
 
 use std::path::{Path, PathBuf};
 
@@ -533,18 +533,19 @@ fn format_preserves_crlf() {
     if !jar.exists() {
         return; // formatting tool not vendored in this checkout
     }
-    unsafe { std::env::set_var("RAVAC_FORMAT_JAR", &jar); }
-    let root = fixture("format-crlf");
-    let path = root.join("A.java");
-    let text = "class A{\r\nint x;\r\n}\r\n";
-    std::fs::write(&path, text).unwrap();
-    let mut workspace = Workspace::new(config(&root));
-    workspace.wait_for_index();
-    let formatted = workspace.format(&path, text).expect("formatted output");
-    assert!(
-        formatted.contains("\r\n"),
-        "CRLF was lost by formatting: {formatted:?}"
-    );
+    with_env_vars(&[("RAVAC_FORMAT_JAR", jar.as_os_str())], || {
+        let root = fixture("format-crlf");
+        let path = root.join("A.java");
+        let text = "class A{\r\nint x;\r\n}\r\n";
+        std::fs::write(&path, text).unwrap();
+        let mut workspace = Workspace::new(config(&root));
+        workspace.wait_for_index();
+        let formatted = workspace.format(&path, text).expect("formatted output");
+        assert!(
+            formatted.contains("\r\n"),
+            "CRLF was lost by formatting: {formatted:?}"
+        );
+    });
 }
 
 #[test]

@@ -1,7 +1,7 @@
 //! Project-index specification tests (docs/IDE_INDEX_PLAN.md §10).
 
 mod common;
-use common::platform_path;
+use common::{platform_path, with_env_vars};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -363,32 +363,36 @@ fn disk_roundtrip_and_hash_mismatch_fallback() {
     // Isolate the cache directory so the test never touches the real one.
     let cache = root.join("cache");
     std::fs::create_dir_all(&cache).unwrap();
-    unsafe {
-        std::env::set_var("LOCALAPPDATA", &cache);
-        std::env::set_var("XDG_CACHE_HOME", &cache);
-    }
-    let config = config(&root, &output);
-    let index = build_one(&config, 8);
-    let path = index::dump::cache_path(index::dump::workspace_hash(
-        &WorkspaceModel::from_config(&config),
-    ))
-    .expect("cache path");
-    index::dump::save(&index, &path).unwrap();
-    let loaded = index::dump::load(&WorkspaceModel::from_config(&config)).expect("load");
-    assert_eq!(loaded.symbols.len(), index.symbols.len());
-    assert_eq!(loaded.files.len(), index.files.len());
-    let loaded_a = loaded.symbols_named("A").into_iter().next().expect("A");
-    assert!(
-        loaded_a.javadoc.as_deref().unwrap_or("").contains("A doc"),
-        "javadoc lost on roundtrip: {:?}",
-        loaded_a.javadoc
-    );
+    with_env_vars(
+        &[
+            ("LOCALAPPDATA", cache.as_os_str()),
+            ("XDG_CACHE_HOME", cache.as_os_str()),
+        ],
+        || {
+            let config = config(&root, &output);
+            let index = build_one(&config, 8);
+            let path = index::dump::cache_path(index::dump::workspace_hash(
+                &WorkspaceModel::from_config(&config),
+            ))
+            .expect("cache path");
+            index::dump::save(&index, &path).unwrap();
+            let loaded = index::dump::load(&WorkspaceModel::from_config(&config)).expect("load");
+            assert_eq!(loaded.symbols.len(), index.symbols.len());
+            assert_eq!(loaded.files.len(), index.files.len());
+            let loaded_a = loaded.symbols_named("A").into_iter().next().expect("A");
+            assert!(
+                loaded_a.javadoc.as_deref().unwrap_or("").contains("A doc"),
+                "javadoc lost on roundtrip: {:?}",
+                loaded_a.javadoc
+            );
 
-    // Change a file without rebuilding: the recorded hash no longer matches.
-    std::fs::write(root.join("A.java"), "class A { int other; }").unwrap();
-    assert!(
-        index::dump::load(&WorkspaceModel::from_config(&config)).is_none(),
-        "a stale file hash must discard the cache"
+            // Change a file without rebuilding: the recorded hash no longer matches.
+            std::fs::write(root.join("A.java"), "class A { int other; }").unwrap();
+            assert!(
+                index::dump::load(&WorkspaceModel::from_config(&config)).is_none(),
+                "a stale file hash must discard the cache"
+            );
+        },
     );
 }
 
