@@ -388,7 +388,7 @@ fn inline(text: &str) -> String {
         let after = &rest[position + 2..];
         let Some(end) = after.find('}') else {
             out.push_str(&rest[position..]);
-            return strip_html(&out);
+            return out;
         };
         let (name, body) = split_first_word(&after[..end]);
         match name {
@@ -408,37 +408,6 @@ fn inline(text: &str) -> String {
             }
             "inheritDoc" => {}
             _ => out.push_str(body),
-        }
-        rest = &after[end + 1..];
-    }
-    out.push_str(rest);
-    strip_html(&out)
-}
-
-fn strip_html(text: &str) -> String {
-    let mut out = String::new();
-    let mut rest = text;
-    while let Some(position) = rest.find('<') {
-        out.push_str(&rest[..position]);
-        let after = &rest[position..];
-        let Some(end) = after.find('>') else {
-            out.push_str(after);
-            return out;
-        };
-        let tag = after[1..end].trim();
-        let name = tag
-            .trim_start_matches('/')
-            .split(|ch: char| !ch.is_ascii_alphanumeric())
-            .next()
-            .unwrap_or("");
-        match name {
-            "p" => out.push_str("\n\n"),
-            "br" => out.push('\n'),
-            "code" => out.push('`'),
-            "pre" => out.push_str("\n\n"),
-            "b" | "strong" | "i" | "em" | "ul" | "ol" | "li" | "a" | "table" | "tr"
-            | "td" | "th" | "caption" | "blockquote" | "sup" | "sub" | "hr" => {}
-            _ => out.push_str(&after[..=end]),
         }
         rest = &after[end + 1..];
     }
@@ -533,5 +502,9 @@ public class Thing {
         let class_doc = docs.class_doc.expect("doc");
         assert!(class_doc.contains("java.util.Base64.Decoder"), "{class_doc}");
         assert!(class_doc.contains("`Base64`"), "{class_doc}");
+        assert!(
+            class_doc.contains("<p>Second paragraph.</p>"),
+            "paragraph structure lost: {class_doc}"
+        );
     }
 }

@@ -440,6 +440,10 @@ fn build_document_symbol(
             Position::new(start_line, start_col),
             Position::new(end_line, end_col),
         ),
+        detail: record
+            .javadoc
+            .clone()
+            .or_else(|| Some(record.detail.clone())),
         children,
     })
 }

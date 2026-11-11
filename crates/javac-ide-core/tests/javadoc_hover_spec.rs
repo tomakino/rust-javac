@@ -1,0 +1,264 @@
+//! Javadoc delivery: hover (declaration and reference), declaration kinds,
+//! tag rendering, and the JDK src.zip fallback.
+
+use std::path::{Path, PathBuf};
+
+use javac_analysis_api::{Position, WorkspaceService};
+
+use javac_ide_core::analysis::AnalysisConfig;
+use javac_ide_core::workspace::Workspace;
+
+fn platform_dir() {
+    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("target")
+            .join("debug");
+        unsafe {
+            std::env::set_var("RAVAC_PLATFORM_DIR", &root);
+        }
+    }
+}
+
+fn session() -> Workspace {
+    platform_dir();
+    let output = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("target")
+        .join("tmp")
+        .join("javadoc-spec");
+    Workspace::new(AnalysisConfig {
+        class_path: Vec::new(),
+        output_dir: output,
+        source_level: "17".to_string(),
+        source_path: Vec::new(),
+    })
+}
+
+fn overlay(session: &mut Workspace, name: &str, source: &str) -> PathBuf {
+    let path = PathBuf::from(format!("target/tmp/javadoc-spec/{name}.java"));
+    std::fs::create_dir_all("target/tmp/javadoc-spec").unwrap();
+    std::fs::write(&path, source).unwrap();
+    WorkspaceService::diagnostics(session, &path, Some(source));
+    path
+}
+
+fn position_of(text: &str, marker: &str, offset: usize) -> Position {
+    let start = text
+        .find(marker)
+        .unwrap_or_else(|| panic!("marker not found: {marker}"))
+        + offset;
+    let prefix = &text[..start];
+    let line = prefix.matches('\n').count() as u32;
+    let column: u32 = prefix
+        .rsplit('\n')
+        .next()
+        .unwrap()
+        .encode_utf16()
+        .count() as u32;
+    Position::new(line, column)
+}
+
+fn hover_at(session: &mut Workspace, path: &Path, text: &str, marker: &str, offset: usize) -> String {
+    let hover = WorkspaceService::hover(session, path, position_of(text, marker, offset))
+        .unwrap_or_else(|| panic!("no hover for {marker}"));
+    hover
+}
+
+const SOURCE: &str = r#"/** Class doc. Second sentence for the class. */
+class Doc {
+    /** Field doc. */
+    int value;
+
+    /** Constructor doc with {@link Doc}. */
+    Doc() {
+    }
+
+    /**
+     * Method doc. More detail.
+     *
+     * <ul><li>item one</li></ul>
+     *
+     * @param x the x value
+     * @return the result
+     * @throws IllegalStateException when bad
+     * @deprecated use something else
+     */
+    int method(int x) {
+        return x;
+    }
+
+    void plain() {
+    }
+
+    void use() {
+        method(1);
+    }
+
+    /** Enum doc. */
+    enum Color {
+        /** Constant doc. */
+        RED
+    }
+
+    /** Annotation doc. */
+    @interface Marker {
+        /** Element doc. */
+        int value();
+    }
+
+    /** Record doc. */
+    record Point(/** Component doc. */ int x) {
+    }
+}
+"#;
+
+#[test]
+fn hover_shows_javadoc_for_every_declaration_kind() {
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "Doc", SOURCE);
+
+    let cases = [
+        ("class", "class Doc {", "Doc", "Class doc. Second sentence for the class."),
+        ("field", "int value;", "value", "Field doc."),
+        ("constructor", "Doc() {", "Doc", "Constructor doc"),
+        ("method", "int method(int x) {", "method", "Method doc. More detail."),
+        ("enum", "enum Color {", "Color", "Enum doc."),
+        ("enum constant", "RED", "RED", "Constant doc."),
+        ("annotation", "@interface Marker {", "Marker", "Annotation doc."),
+        ("annotation element", "int value();", "value", "Element doc."),
+        ("record", "record Point(", "Point", "Record doc."),
+        ("record component", "int x) {", "x", "Component doc."),
+    ];
+    for (label, marker, word, expected) in cases {
+        let hover = hover_at(
+            &mut workspace,
+            &path,
+            SOURCE,
+            marker,
+            marker.find(word).unwrap_or_else(|| panic!("{label}: word")),
+        );
+        assert!(hover.contains(expected), "{label} hover: {hover}");
+    }
+}
+
+#[test]
+fn hover_renders_tags_links_lists_and_skips_empty_sections() {
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "Doc", SOURCE);
+
+    let method = hover_at(&mut workspace, &path, SOURCE, "int method(int x) {", 4);
+    for expected in [
+        "Method doc.",
+        "More detail.",
+        "<ul>",
+        "<li>item one</li>",
+        "- **x** the x value",
+        "- **Returns** the result",
+        "- **Throws** IllegalStateException when bad",
+        "- **Deprecated** use something else",
+    ] {
+        assert!(method.contains(expected), "method hover missing {expected}: {method}");
+    }
+
+    let constructor = hover_at(&mut workspace, &path, SOURCE, "Doc() {", 0);
+    assert!(constructor.contains("Constructor doc"), "{constructor}");
+    assert!(constructor.contains("`Doc`"), "link target lost: {constructor}");
+    assert!(constructor.contains("<ul>") == false, "{constructor}");
+
+    let plain = hover_at(&mut workspace, &path, SOURCE, "void plain() {", 5);
+    assert!(!plain.contains("\n---\n"), "empty doc section: {plain}");
+}
+
+#[test]
+fn signature_help_and_outline_carry_javadoc() {
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "Doc", SOURCE);
+
+    let help_position = position_of(SOURCE, "method(1);", "method(".len());
+    let help = WorkspaceService::signature_help(&mut workspace, &path, help_position)
+        .expect("signature help");
+    let documentation = help.signatures[0]
+        .documentation
+        .as_deref()
+        .unwrap_or("");
+    assert!(
+        documentation.contains("Method doc. More detail."),
+        "signature help doc: {documentation}"
+    );
+
+    let symbols = WorkspaceService::document_symbols(&mut workspace, &path);
+    let class = symbols
+        .iter()
+        .find(|symbol| symbol.name == "Doc")
+        .expect("class symbol");
+    assert!(
+        class.detail.as_deref().unwrap_or("").contains("Class doc."),
+        "class outline detail: {:?}",
+        class.detail
+    );
+    let method = class
+        .children
+        .iter()
+        .find(|symbol| symbol.name == "method")
+        .expect("method symbol");
+    assert!(
+        method
+            .detail
+            .as_deref()
+            .unwrap_or("")
+            .contains("Method doc. More detail."),
+        "method outline detail: {:?}",
+        method.detail
+    );
+}
+
+fn jdk_src_available() -> bool {
+    if let Some(platform) = std::env::var_os("RAVAC_PLATFORM_DIR") {
+        if PathBuf::from(platform).join("src.zip").is_file() {
+            return true;
+        }
+    }
+    if let Some(path) = std::env::var_os("RAVAC_JDK_SRC") {
+        return PathBuf::from(path).exists();
+    }
+    std::env::var_os("JAVA_HOME")
+        .map(|home| PathBuf::from(home).join("lib").join("src.zip").is_file())
+        .unwrap_or(false)
+}
+
+#[test]
+fn hover_reads_javadoc_of_class_path_symbols_from_the_jdk_sources() {
+    if !jdk_src_available() {
+        return;
+    }
+    let source = "class JdkDoc {\n    java.io.Writer writer;\n}\n";
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "JdkDoc", source);
+    let hover = hover_at(&mut workspace, &path, source, "java.io.Writer writer", "java.io.".len());
+    assert!(
+        hover.contains("Abstract class for writing to character streams"),
+        "JDK hover: {hover}"
+    );
+}
+
+#[test]
+fn reference_hover_shows_the_declaration_javadoc() {
+    let source = r#"/** Class doc. */
+class Caller {
+    /** Callee doc. */
+    void callee() {
+    }
+
+    void use() {
+        callee();
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "Caller", source);
+    let hover = hover_at(&mut workspace, &path, source, "        callee();", 8);
+    assert!(hover.contains("Callee doc."), "reference hover: {hover}");
+}

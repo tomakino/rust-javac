@@ -10,8 +10,21 @@ pub(crate) fn format_doc_comment(tree: &DCTree) -> Option<String> {
         return None;
     };
     let mut out = String::new();
-    let body = render_nodes(&comment.body);
-    let body = body.trim();
+    // `body` is the part after the first sentence (DocTreeMaker::split_body);
+    // hover shows the whole Javadoc, so render `full_body` and fall back to
+    // first sentence + body for tables that only carry the split form.
+    let body_text = if !comment.full_body.is_empty() {
+        render_nodes(&comment.full_body)
+    } else if !comment.first_sentence.is_empty() || !comment.body.is_empty() {
+        format!(
+            "{}{}",
+            render_nodes(&comment.first_sentence),
+            render_nodes(&comment.body)
+        )
+    } else {
+        String::new()
+    };
+    let body = body_text.trim();
     if !body.is_empty() {
         out.push_str(body);
     }
@@ -80,13 +93,22 @@ fn render_nodes(nodes: &crate::util::list::List<Rc<DCTree>>) -> String {
 fn render_one(node: &DCTree) -> String {
     match &node.kind {
         DCKind::Text { text } => text.to_string_lossy(),
-        DCKind::Literal { body, .. } => render_one(body),
+        DCKind::Literal { kind, body, .. } => {
+            let text = render_one(body);
+            if *kind == javac_source::doctree::doc_tree::Kind::CODE {
+                format!("`{text}`")
+            } else {
+                text
+            }
+        }
         DCKind::Link {
             reference, label, ..
         } => {
             let label_text = render_nodes(label);
             if label_text.trim().is_empty() {
-                render_one(reference)
+                // Keep the Javadoc target visible: a code span survives
+                // Markdown rendering and does not pretend to be a URL.
+                format!("`{}`", render_one(reference).trim())
             } else {
                 label_text
             }

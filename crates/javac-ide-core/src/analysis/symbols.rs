@@ -104,15 +104,26 @@ impl FileAnalysis {
             column.saturating_sub(1) as u32,
         );
         if let Some((symbol, _)) = self.symbol_id_at(source, position) {
-            // `pos` is the declaration position, never the reference position:
-            // go-to-definition uses it, so a class-path symbol without a tree
-            // here keeps -1 instead of jumping to the cursor.
-            let declaration =
-                crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, symbol)
-                    .map(|position| position as i32)
-                    .unwrap_or(-1);
-            if let Some(info) = self.symbol_info(symbol, declaration) {
-                return Some(info);
+            let record = self.compiler.ctx.sym(symbol);
+            let symbol_name = record.name.to_java_string().to_string_lossy();
+            // Enum constants are generated as constructor calls, so reference
+            // attribution can land on the enum type instead of the constant.
+            // Do not accept a type whose simple name is not the cursor word;
+            // the declaration fallback below resolves the constant itself.
+            let typed_name_mismatch = matches!(record.kind_data, SymbolKind::ClassSymbol { .. })
+                && !symbol_name.is_empty()
+                && symbol_name != word;
+            if !typed_name_mismatch {
+                // `pos` is the declaration position, never the reference position:
+                // go-to-definition uses it, so a class-path symbol without a tree
+                // here keeps -1 instead of jumping to the cursor.
+                let declaration =
+                    crate::analysis::positions::name_start_of_symbol(&self.compiler.ctx, symbol)
+                        .map(|position| position as i32)
+                        .unwrap_or(-1);
+                if let Some(info) = self.symbol_info(symbol, declaration) {
+                    return Some(info);
+                }
             }
         }
         // Fallback: declarations matched by name + nearest position.
@@ -126,17 +137,123 @@ impl FileAnalysis {
             .or_else(|| self.symbols().into_iter().find(|symbol| symbol.name == word))
     }
 
+    /// Javadoc of a compiler symbol: project declarations first, then the JDK
+    /// sources for class-path symbols.
+    pub(crate) fn documentation_for(&mut self, symbol: crate::ids::SymbolId) -> Option<String> {
+        let docs = self.doc_comments_for_traced();
+        if let Some(doc) = docs.get(&symbol) {
+            return Some(doc.clone());
+        }
+        // A record component owns a synthetic field/accessor/constructor
+        // parameter with a different symbol id; its Javadoc is attached to the
+        // component declaration. Enclosing class flat names are stable across
+        // analysis rounds, so match those instead of symbol ids.
+        let known_name = self
+            .compiler
+            .ctx
+            .sym(symbol)
+            .name
+            .to_java_string()
+            .to_string_lossy()
+            .to_string();
+        let mut enclosing: Vec<String> = Vec::new();
+        let mut owner = self.compiler.ctx.sym(symbol).owner;
+        while let Some(current) = owner {
+            let record = self.compiler.ctx.sym(current);
+            if let SymbolKind::ClassSymbol { flatname, .. } = &record.kind_data {
+                enclosing.push(flatname.to_string());
+            }
+            owner = record.owner;
+        }
+        if !enclosing.is_empty() {
+            for (candidate, doc) in docs.iter() {
+                let record = self.compiler.ctx.sym(*candidate);
+                let same_name = record.name.to_java_string().to_string_lossy() == known_name;
+                if !same_name
+                    || !matches!(record.kind_data, SymbolKind::VarSymbol { .. })
+                    || record.flags_field & crate::code::flags::RECORD == 0
+                {
+                    continue;
+                }
+                let mut target = record.owner;
+                while let Some(current) = target {
+                    let owner = self.compiler.ctx.sym(current);
+                    if let SymbolKind::ClassSymbol { flatname, .. } = &owner.kind_data
+                        && enclosing.iter().any(|flat| flat == &flatname.to_string())
+                    {
+                        return Some(doc.clone());
+                    }
+                    target = owner.owner;
+                }
+            }
+        }
+        let ctx = &self.compiler.ctx;
+        let record = ctx.sym(symbol);
+        let (class_flat, class_simple) = match &record.kind_data {
+            SymbolKind::ClassSymbol { flatname, .. } => {
+                let flat = flatname.to_string();
+                let simple = flat.rsplit(['.', '$']).next().unwrap_or(&flat).to_string();
+                (flat, simple)
+            }
+            _ => {
+                let owner = record.owner?;
+                let SymbolKind::ClassSymbol { flatname, .. } = &ctx.sym(owner).kind_data else {
+                    return None;
+                };
+                let flat = flatname.to_string();
+                let simple = flat.rsplit(['.', '$']).next().unwrap_or(&flat).to_string();
+                (flat, simple)
+            }
+        };
+        let outer = class_flat
+            .split('$')
+            .next()
+            .unwrap_or(&class_flat)
+            .to_string();
+        let mut member_name = None;
+        let mut arity = None;
+        match &record.kind_data {
+            SymbolKind::ClassSymbol { .. } => {}
+            SymbolKind::MethodSymbol { params, .. } => {
+                let name = record
+                    .name
+                    .to_java_string()
+                    .to_string_lossy()
+                    .to_string();
+                member_name = Some(if name == "<init>" { class_simple } else { name });
+                arity = Some(params.size().max(0) as usize);
+            }
+            SymbolKind::VarSymbol { .. } => {
+                member_name = Some(
+                    record
+                        .name
+                        .to_java_string()
+                        .to_string_lossy()
+                        .to_string(),
+                );
+            }
+            _ => return None,
+        }
+        let cache = self
+            .jdk_docs
+            .get_or_insert_with(crate::analysis::jdk_docs::JdkDocCache::new);
+        match (member_name, arity) {
+            (None, _) => cache.class_doc(&outer),
+            (Some(name), Some(arity)) => cache.member_doc(&outer, &name, Some(arity)),
+            (Some(name), None) => cache.member_doc(&outer, &name, None),
+        }
+    }
+
     /// `SymbolInfo` for a compiler symbol (hover/definition). Returns `None`
-    /// for nameless synthetic symbols (constructors included).
+    /// for nameless synthetic symbols.
     pub(crate) fn symbol_info(
         &mut self,
         symbol: crate::ids::SymbolId,
         declaration: i32,
     ) -> Option<SymbolInfo> {
-        // Hover shows the declaration Javadoc; reuse the analysis document
-        // cache instead of dropping it (the index fallback no longer runs for
-        // every hover).
-        let doc = self.doc_comments_for_traced().get(&symbol).cloned();
+        // Hover shows the declaration Javadoc; project declarations come from
+        // the analysis doc table, class-path symbols from the JDK sources.
+        let doc = self.documentation_for(symbol);
         let ctx = &self.compiler.ctx;
         let record = ctx.sym(symbol);
         let name = record.name.to_java_string().to_string_lossy().to_string();

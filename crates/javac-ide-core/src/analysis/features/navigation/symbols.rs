@@ -24,6 +24,7 @@ impl FileAnalysis {
                 name: symbol.name.clone(),
                 kind: super::super::map_kind(symbol.kind),
                 range,
+                detail: symbol.doc.clone().or_else(|| Some(symbol.detail.clone())),
                 children: Vec::new(),
             };
             if symbol.kind == "class" {

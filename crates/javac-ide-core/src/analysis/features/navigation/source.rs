@@ -37,6 +37,21 @@ impl FileAnalysis {
         let cursor = line_offset(&text, line, column);
         let start_byte = word_start_offset(&text, cursor);
         let start = crate::analysis::positions::byte_to_utf16(&text, start_byte);
+        // Declarations win over reference attribution: enum constants are
+        // generated as constructor calls whose identifier is attributed to the
+        // enum type, while the useful hover symbol is the constant itself.
+        // Some declarations (enum constants) have no published tree position,
+        // so their name is located from the declaration tree in the text.
+        for index in 0..self.compiler.ctx.trees.len() {
+            if let Some(symbol) = declaration_name_at(
+                &self.compiler.ctx,
+                &text,
+                crate::ids::TreeId::new(index as u32),
+                start,
+            ) {
+                return Some((symbol, start));
+            }
+        }
         // A reference under the cursor (root may be absent for extracted/JDK
         // sources, in which case the declaration fallback below still applies).
         if let Some(root) = self.latest_root_for(file) {
@@ -65,37 +80,6 @@ impl FileAnalysis {
             static_import_member_at(&mut self.compiler.ctx, &text, &word, start, line)
         {
             return Some((symbol, position));
-        }
-        // Declarations have exact symbol positions even when their tree has no
-        // reliable token position (for example a field access node).
-        for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {
-            let symbol = match &tree.kind {
-                crate::tree::jc_tree::TreeKind::VariableDecl {
-                    sym: Some(sym),
-                    decl_pos,
-                    ..
-                } if *decl_pos == start as i32 => Some(*sym),
-                crate::tree::jc_tree::TreeKind::MethodDecl { sym: Some(sym), .. }
-                | crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. } => {
-                    (self.compiler.ctx.sym(*sym).pos.get() == start as i32).then_some(*sym)
-                }
-                _ => None,
-            };
-            if let Some(symbol) = symbol {
-                return Some((symbol, start));
-            }
-            // Extracted JDK sources have no reference root and some parser
-            // decl positions are not published: locate the declaration name by
-            // the tree start plus the symbol name in the text (last resort, the
-            // declaration tree itself is the AST evidence).
-            if let Some(symbol) = declaration_name_at(
-                &self.compiler.ctx,
-                &text,
-                crate::ids::TreeId::new(index as u32),
-                start,
-            ) {
-                return Some((symbol, start));
-            }
         }
         None
     }

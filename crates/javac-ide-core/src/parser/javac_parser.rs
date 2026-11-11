@@ -6101,6 +6101,14 @@ impl JavacParser {
         lambda_parameter: bool,
         record_component: bool,
     ) -> TreeId {
+        // Record components are declared like fields but javac's parser does
+        // not attach the preceding doc comment; keep it on the component tree
+        // so hover/outline can show it (AST doc table, not a line scan).
+        let dc = if record_component {
+            self.token.comment(CommentStyle::JAVADOC)
+        } else {
+            None
+        };
         // Java: JCModifiers mods = !recordComponent ? optFinal(Flags.PARAMETER) : modifiersOpt();
         let mods = if !record_component {
             self.opt_final(ctx, Flags::PARAMETER)
@@ -6145,7 +6153,17 @@ impl JavacParser {
             }
             self.type_annotations_pushed_back = List::nil();
         }
-        self.variable_declarator_id_full(ctx, mods, Some(type_), lambda_parameter, record_component)
+        let result = self.variable_declarator_id_full(
+            ctx,
+            mods,
+            Some(type_),
+            lambda_parameter,
+            record_component,
+        );
+        if record_component {
+            self.attach(result, dc);
+        }
+        result
     }
 
     /// Java: JCVariableDecl variableDeclaratorId(JCModifiers mods, JCExpression type,

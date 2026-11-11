@@ -92,7 +92,11 @@ impl FileAnalysis {
             }
             let label = symbol.detail;
             let parameters = signature_parameters(&label);
-            signatures.push(SignatureInformation { label, parameters });
+            signatures.push(SignatureInformation {
+                label,
+                parameters,
+                documentation: symbol.doc,
+            });
         }
         if signatures.is_empty() {
             return None;
@@ -219,7 +223,7 @@ impl FileAnalysis {
     /// A `SignatureInformation` built from the resolved symbol (parameter names
     /// come from source/class-file symbols, not from the hover detail string).
     fn signature_information(
-        &self,
+        &mut self,
         symbol: SymbolId,
         _constructor: bool,
     ) -> Option<SignatureInformation> {
@@ -228,9 +232,11 @@ impl FileAnalysis {
             symbol,
             crate::analysis::signatures::ParameterNames::Verbatim,
         )?;
+        let documentation = self.documentation_for(symbol);
         Some(SignatureInformation {
             label: parts.label(),
             parameters: parts.parameters,
+            documentation,
         })
     }
 
@@ -538,10 +544,12 @@ mod tests {
         let int_signature = SignatureInformation {
             label: "void over(int a)".to_string(),
             parameters: vec!["int a".to_string()],
+            documentation: None,
         };
         let string_signature = SignatureInformation {
             label: "void over(String a)".to_string(),
             parameters: vec!["String a".to_string()],
+            documentation: None,
         };
         let signatures = vec![string_signature, int_signature];
         assert_eq!(

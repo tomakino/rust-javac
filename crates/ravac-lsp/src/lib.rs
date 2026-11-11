@@ -1036,10 +1036,17 @@ fn signature_help(host: &mut dyn WorkspaceService, message: &Value) -> Value {
                 .signatures
                 .iter()
                 .map(|signature| {
-                    json!({
+                    let mut value = json!({
                         "label": signature.label,
                         "parameters": signature.parameters.iter().map(|parameter| json!({ "label": parameter })).collect::<Vec<_>>(),
-                    })
+                    });
+                    if let Some(documentation) = &signature.documentation {
+                        value["documentation"] = json!({
+                            "kind": "markdown",
+                            "value": documentation,
+                        });
+                    }
+                    value
                 })
                 .collect();
             json!({
@@ -1336,6 +1343,7 @@ fn document_symbol_json(symbol: &javac_analysis_api::DocumentSymbol) -> Value {
         "kind": symbol_kind_number(symbol.kind),
         "range": range_json(symbol.range),
         "selectionRange": range_json(symbol.range),
+        "detail": symbol.detail,
         "children": symbol.children.iter().map(document_symbol_json).collect::<Vec<_>>(),
     })
 }

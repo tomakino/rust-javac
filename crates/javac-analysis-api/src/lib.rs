@@ -100,6 +100,8 @@ pub struct DocumentSymbol {
     pub name: String,
     pub kind: SymbolKind,
     pub range: Range,
+    /// Javadoc of the declaration, when present (rendered Markdown).
+    pub detail: Option<String>,
     pub children: Vec<DocumentSymbol>,
 }
 
@@ -194,6 +196,8 @@ pub struct CodeAction {
 pub struct SignatureInformation {
     pub label: String,
     pub parameters: Vec<String>,
+    /// Javadoc of the callable, rendered as Markdown.
+    pub documentation: Option<String>,
 }
 
 /// Signature help result.

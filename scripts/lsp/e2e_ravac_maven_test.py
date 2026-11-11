@@ -340,6 +340,11 @@ def main():
             "public JsonReader newJsonReader(Reader reader)",
             offset=len("public JsonReader "),
         )
+        new_json_writer = position_of(
+            gson_text,
+            "public JsonWriter newJsonWriter(Writer writer)",
+            offset=len("public JsonWriter "),
+        )
         to_json_typed = position_of(gson_text, "public String toJson(Object src, Type typeOfSrc)")
         to_json_typed = (to_json_typed[0], to_json_typed[1] + len("public String "))
         type_token_get = position_of(gson_text, "TypeToken.get(typeOfSrc)", offset=len("TypeToken."))
@@ -413,6 +418,22 @@ def main():
             )
             details.append("newJsonReader=" + ("ok" if signature_ok else repr(signature_value[:80])))
             ok = ok and signature_ok
+            writer_hover = lsp.request(
+                "textDocument/hover",
+                {
+                    "textDocument": {"uri": lsp.uri(GSON_PATH)},
+                    "position": {"line": new_json_writer[0], "character": new_json_writer[1]},
+                },
+            )
+            writer_value = ((writer_hover or {}).get("contents") or {}).get("value") or ""
+            writer_ok = (
+                "JsonWriter newJsonWriter(Writer writer)" in writer_value
+                and "Returns a new JSON writer configured" in writer_value
+                and "<ul>" in writer_value
+                and "GsonBuilder#disableHtmlEscaping()" in writer_value
+            )
+            details.append("newJsonWriter-doc=" + ("ok" if writer_ok else repr(writer_value[:80])))
+            ok = ok and writer_ok
             return ok, " ".join(details)
 
         safe(report, 4, "hover", item_hover)

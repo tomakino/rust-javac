@@ -499,10 +499,27 @@ impl WorkspaceService for Workspace {
         // Prefer the transient analysis: only it renders the faithful
         // declaration signature (parameter names, generic parameters). The
         // index keeps a summary detail that cannot reconstruct it.
-        if let Some(hover) = self
+        if let Some(mut hover) = self
             .with_analysis(file, None, |analysis, _| analysis.hover_impl(file, position))
             .flatten()
         {
+            // Symbols declared in another project file have no analysis tree
+            // here; their Javadoc lives in the index.
+            if !hover.contains("\n---\n") {
+                self.ensure_index();
+                let snapshot = self.index.snapshot();
+                if !self.has_unsaved_edits()
+                    && !snapshot.files.is_empty()
+                    && let Some(text) = self.text_of(file)
+                    && let Some(file_id) = snapshot.file_id_for_path(file)
+                    && let Some(symbol) = query::symbol_at(&snapshot, file_id, &text, position)
+                    && let Some(record) = snapshot.symbol(symbol)
+                    && let Some(javadoc) = &record.javadoc
+                {
+                    hover.push_str("\n\n---\n\n");
+                    hover.push_str(javadoc);
+                }
+            }
             return Some(hover);
         }
         self.ensure_index();

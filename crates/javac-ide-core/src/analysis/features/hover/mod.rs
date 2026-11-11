@@ -23,11 +23,14 @@ impl FileAnalysis {
         if in_literal_or_comment(&text, line_offset(&text, line, column)) {
             return None;
         }
-        let symbol = match self.new_class_call_at(&text, position) {
+        let symbol = match self
+            .new_class_call_at(&text, position)
+            .filter(|call| !call.anonymous && preceded_by_new_keyword(&text, position))
+        {
             // `new T(...)`: the cursor is on the type name, but the useful
             // signature is the selected constructor.
-            Some(call) if !call.anonymous => self.symbol_info(call.constructor, -1)?,
-            _ => FileAnalysis::symbol_at(self, file, line, column)?,
+            Some(call) => self.symbol_info(call.constructor, -1)?,
+            None => FileAnalysis::symbol_at(self, file, line, column)?,
         };
         let newline = char::from(10);
         let mut text = String::from("```java");
@@ -65,5 +68,22 @@ impl FileAnalysis {
             }
         }
         Some(text)
+    }
+}
+
+/// Whether the cursor word is introduced by the `new` keyword. Enum
+/// constants also have a synthetic constructor call, but their position is
+/// not a `new` expression.
+fn preceded_by_new_keyword(text: &str, position: javac_analysis_api::Position) -> bool {
+    let line = position.line as usize + 1;
+    let column = position.column as usize + 1;
+    let offset = line_offset(text, line, column).min(text.len());
+    let before = text[..offset].trim_end();
+    let Some(prefix) = before.strip_suffix("new") else {
+        return false;
+    };
+    match prefix.chars().next_back() {
+        Some(c) => !(c.is_alphanumeric() || c == '_' || c == '$'),
+        None => true,
     }
 }
