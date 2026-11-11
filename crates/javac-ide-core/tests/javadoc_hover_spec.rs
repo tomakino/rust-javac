@@ -1086,6 +1086,39 @@ fn completion_detail_stays_lean_without_modifiers() {
     assert!(!detail.contains("public "), "completion detail has modifier: {detail}");
 }
 
+#[test]
+fn tag_block_content_has_no_blockquote_prefix() {
+    let source = r#"class TagBlocks {
+    /**
+     * Body.
+     * @implSpec
+     * Value:
+     * <pre>
+     * getClass().getName()
+     * </pre>
+     *
+     * <blockquote>quoted prose</blockquote>
+     */
+    public void method() {
+    }
+}
+"#;
+    let mut workspace = session();
+    let path = overlay(&mut workspace, "TagBlocks", source);
+    let hover = hover_at(
+        &mut workspace,
+        &path,
+        source,
+        "public void method() {",
+        "public void ".len(),
+    );
+    assert!(hover.contains("**Implementation Requirements**"), "{hover}");
+    assert!(hover.contains("```\ngetClass().getName()\n```"), "{hover}");
+    assert!(!hover.contains("> ```"), "tag code block was quoted: {hover}");
+    // An explicit prose blockquote still uses the quote prefix.
+    assert!(hover.contains("> quoted prose"), "{hover}");
+}
+
 fn jdk_src_available() -> bool {
     if let Some(platform) = std::env::var_os("RAVAC_PLATFORM_DIR") {
         if PathBuf::from(platform).join("src.zip").is_file() {

@@ -499,6 +499,12 @@ def main():
                     parsed = urlparse(link_uri)
                     uri_ok = parsed.scheme == "file" and (parsed.fragment or "").startswith("L")
             details.append("toString-uri=" + ("ok" if uri_ok else "bad"))
+            code_ok = (
+                "```\ngetClass().getName() + '@' + Integer.toHexString(hashCode())\n```"
+                in to_string_value
+                and "> ```" not in to_string_value
+            )
+            details.append("toString-code=" + ("ok" if code_ok else "bad"))
             tags_ok = all(
                 label in to_string_value
                 for label in [
@@ -545,7 +551,7 @@ def main():
                 and "**Implementation Requirements**" in snippet_value
             )
             details.append("snippet=" + ("ok" if snippet_ok else repr(snippet_value[:100])))
-            ok = ok and to_string_ok and uri_ok and tags_ok and snippet_ok
+            ok = ok and to_string_ok and uri_ok and tags_ok and code_ok and snippet_ok
             return ok, " ".join(details)
 
         safe(report, 4, "hover", item_hover)

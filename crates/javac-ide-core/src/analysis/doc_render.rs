@@ -337,6 +337,13 @@ fn render_pre(nodes: &[Rc<DCTree>]) -> String {
 }
 
 fn render_blockquote(nodes: &[Rc<DCTree>]) -> String {
+    // IDEA renders a quote that contains only a code block as that code block,
+    // not as a Markdown blockquote with `>` prefixes. The JDK writes its
+    // @implSpec code as `<blockquote><pre>…</pre></blockquote>`, so unwrap
+    // this one structural case; prose blockquotes keep the prefix.
+    if let Some(pre) = only_pre_block(nodes) {
+        return render_pre(pre);
+    }
     let inner = render_blocks(nodes);
     inner
         .lines()
@@ -349,6 +356,29 @@ fn render_blockquote(nodes: &[Rc<DCTree>]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn only_pre_block(nodes: &[Rc<DCTree>]) -> Option<&[Rc<DCTree>]> {
+    let mut index = 0usize;
+    let mut found = None;
+    while index < nodes.len() {
+        match &nodes[index].kind {
+            DCKind::Text { text } if text.to_string_lossy().trim().is_empty() => {}
+            DCKind::EndElement { .. } => {}
+            DCKind::StartElement { name, .. } if lower(name) == "pre" => {
+                if found.is_some() {
+                    return None;
+                }
+                let (end, next) = element_range(nodes, index, "pre");
+                found = Some(&nodes[index + 1..end]);
+                index = next;
+                continue;
+            }
+            _ => return None,
+        }
+        index += 1;
+    }
+    found
 }
 
 fn render_table(nodes: &[Rc<DCTree>]) -> String {
@@ -505,7 +535,21 @@ fn normalize_inline_text(text: &str) -> String {
 }
 
 fn list_trimmed(list: &List<Rc<DCTree>>) -> String {
-    inline_trimmed(&nodes(list))
+    let nodes = nodes(list);
+    if nodes.iter().any(|node| {
+        matches!(
+            &node.kind,
+            DCKind::StartElement { name, .. }
+                if is_block_tag(&lower(name))
+        )
+    }) {
+        // Tag descriptions can contain real block content (the JDK uses
+        // `<blockquote><pre>` in @implSpec). Render that through the block
+        // renderer; inline text keeps the existing inline path.
+        render_blocks(&nodes)
+    } else {
+        inline_trimmed(&nodes)
+    }
 }
 
 fn render_inline_node(node: &DCTree) -> String {
