@@ -3,6 +3,9 @@
 //!
 //! Mirrors `scripts/lsp/probe_d5_navigation.py` through the library API.
 
+mod common;
+use common::platform_dir;
+
 use std::path::{Path, PathBuf};
 
 use javac_analysis_api::{FoldingRangeKind, Position, SelectionRange, WorkspaceService};
@@ -85,19 +88,6 @@ const ADD_IMPORT: &str = "package com.example.app;\n\npublic class AddImport {\n
 
 const MAIN_REL: &str = "src/main/java/com/example/app/App.java";
 const GENERATE_REL: &str = "src/main/java/com/example/app/GenerateTarget.java";
-
-fn platform_dir() {
-    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug");
-        unsafe {
-            std::env::set_var("RAVAC_PLATFORM_DIR", &root);
-        }
-    }
-}
 
 fn jdk_src_available() -> bool {
     if let Some(path) = std::env::var_os("RAVAC_JDK_SRC") {

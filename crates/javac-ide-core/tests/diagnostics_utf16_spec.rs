@@ -1,6 +1,9 @@
 //! Diagnostic conversion must use UTF-16 (Java char) offsets, never byte
 //! offsets, on text that contains multi-byte characters.
 
+mod common;
+use common::platform_path;
+
 use std::path::{Path, PathBuf};
 
 use javac_analysis_api::{Severity, WorkspaceService};
@@ -8,20 +11,6 @@ use javac_analysis_api::{Severity, WorkspaceService};
 use javac_ide_core::analysis::AnalysisConfig;
 use javac_ide_core::workspace::analysis::FileAnalysis;
 use javac_ide_core::workspace::Workspace;
-
-fn platform_dir() -> PathBuf {
-    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug");
-        unsafe {
-            std::env::set_var("RAVAC_PLATFORM_DIR", &root);
-        }
-    }
-    PathBuf::from(std::env::var_os("RAVAC_PLATFORM_DIR").expect("platform dir"))
-}
 
 fn session(name: &str, source: &str) -> (FileAnalysis, PathBuf) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -46,7 +35,7 @@ fn session(name: &str, source: &str) -> (FileAnalysis, PathBuf) {
 
 #[test]
 fn error_after_chinese_and_emoji_uses_utf16_columns() {
-    platform_dir();
+    platform_path();
     let source = "class Zhong {\n    // 中文注释，包含中文逗号，\n    String s = \"中文，😀\";\n    void f() { missing++; }\n}\n";
     let (mut analysis, path) = session("chinese", source);
     let diagnostics = analysis.diagnostics(&path, None);
@@ -65,7 +54,7 @@ fn error_after_chinese_and_emoji_uses_utf16_columns() {
 
 #[test]
 fn error_inside_a_line_after_emoji_uses_utf16_columns() {
-    platform_dir();
+    platform_path();
     let source = "class Zhong {\n    void f() { String s = \"😀\"; missing++; }\n}\n";
     let (mut analysis, path) = session("emoji", source);
     let diagnostics = analysis.diagnostics(&path, None);
@@ -92,7 +81,7 @@ fn error_inside_a_line_after_emoji_uses_utf16_columns() {
 
 #[test]
 fn diagnostics_skip_files_outside_the_source_roots() {
-    platform_dir();
+    platform_path();
     let base = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")

@@ -1,5 +1,8 @@
 //! Inlay hint specification tests.
 
+mod common;
+use common::platform_dir;
+
 use std::path::PathBuf;
 
 use javac_analysis_api::{WorkspaceService, InlayHintKind};
@@ -8,16 +11,7 @@ use javac_ide_core::analysis::AnalysisConfig;
 use javac_ide_core::workspace::Workspace;
 
 fn session() -> Workspace {
-    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug");
-        unsafe {
-            std::env::set_var("RAVAC_PLATFORM_DIR", root);
-        }
-    }
+    platform_dir();
     let output = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")

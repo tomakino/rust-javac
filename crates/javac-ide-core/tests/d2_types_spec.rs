@@ -5,6 +5,9 @@
 //! the library API; every fixture project lives in a unique directory so the
 //! on-disk index cache cannot shadow the current build.
 
+mod common;
+use common::platform_dir;
+
 use std::path::{Path, PathBuf};
 
 use javac_analysis_api::{Location, Position, WorkspaceService};
@@ -167,19 +170,6 @@ fn fixture_files() -> Vec<(&'static str, &'static str)> {
         ("src/main/java/com/example/base/Sub.java", SUB),
         (MAIN_REL, MAIN),
     ]
-}
-
-fn platform_dir() {
-    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug");
-        unsafe {
-            std::env::set_var("RAVAC_PLATFORM_DIR", &root);
-        }
-    }
 }
 
 fn text_of(relative: &str) -> &'static str {

@@ -5,6 +5,9 @@
 //! and `selection_range` consults that AST table first; these tests pin the
 //! observable result for `a.b`, `a.b.c`, `this.x` and `super.x`.
 
+mod common;
+use common::platform_dir;
+
 use std::path::PathBuf;
 
 use javac_analysis_api::{Position, WorkspaceService};
@@ -37,19 +40,6 @@ class A extends Base {
     }
 }
 "#;
-
-fn platform_dir() {
-    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug");
-        unsafe {
-            std::env::set_var("RAVAC_PLATFORM_DIR", &root);
-        }
-    }
-}
 
 fn workspace_with(name: &str) -> (Workspace, PathBuf) {
     platform_dir();

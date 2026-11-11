@@ -1,5 +1,8 @@
 //! Re-analysis after edits must match javac: no spurious override errors.
 
+mod common;
+use common::platform_dir;
+
 use std::path::{Path, PathBuf};
 
 use javac_analysis_api::WorkspaceService;
@@ -54,19 +57,6 @@ class Probe {
     }
 }
 "#;
-
-fn platform_dir() {
-    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug");
-        unsafe {
-            std::env::set_var("RAVAC_PLATFORM_DIR", &root);
-        }
-    }
-}
 
 fn javac() -> Option<PathBuf> {
     let home = std::env::var_os("JAVA_HOME")?;

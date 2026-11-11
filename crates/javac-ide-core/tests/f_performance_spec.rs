@@ -5,6 +5,9 @@
 //! classes in batches of 128, wait for the index and check cross-file
 //! resolution + a mixed-request round.
 
+mod common;
+use common::platform_dir;
+
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -12,19 +15,6 @@ use javac_analysis_api::{Position, WorkspaceService};
 
 use javac_ide_core::project::{self, LoadContext};
 use javac_ide_core::workspace::Workspace;
-
-fn platform_dir() {
-    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug");
-        unsafe {
-            std::env::set_var("RAVAC_PLATFORM_DIR", &root);
-        }
-    }
-}
 
 fn gen_project(name: &str, count: usize, chained: bool) -> (PathBuf, Vec<PathBuf>) {
     platform_dir();

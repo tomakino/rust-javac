@@ -4,25 +4,15 @@
 //! syntax errors, unresolved symbols, empty/comment-only files, BOM/CRLF
 //! positions and non-UTF-8 bytes must degrade without panicking.
 
+mod common;
+use common::platform_dir;
+
 use std::path::PathBuf;
 
 use javac_analysis_api::{Position, WorkspaceService};
 
 use javac_ide_core::analysis::AnalysisConfig;
 use javac_ide_core::workspace::Workspace;
-
-fn platform_dir() {
-    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug");
-        unsafe {
-            std::env::set_var("RAVAC_PLATFORM_DIR", &root);
-        }
-    }
-}
 
 fn workspace_with_bytes(name: &str, bytes: &[u8]) -> (Workspace, PathBuf) {
     platform_dir();

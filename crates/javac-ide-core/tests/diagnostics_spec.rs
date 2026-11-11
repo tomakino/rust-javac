@@ -1,5 +1,8 @@
 //! Diagnostic range and quick-fix tests through `FileAnalysis`.
 
+mod common;
+use common::platform_dir;
+
 use std::path::PathBuf;
 
 use javac_analysis_api::Position;
@@ -8,16 +11,7 @@ use javac_ide_core::analysis::AnalysisConfig;
 use javac_ide_core::workspace::analysis::FileAnalysis;
 
 fn analysis(extra_source: &str) -> (FileAnalysis, PathBuf, String) {
-    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug");
-        unsafe {
-            std::env::set_var("RAVAC_PLATFORM_DIR", root);
-        }
-    }
+    platform_dir();
     let output = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")

@@ -1,5 +1,8 @@
 //! M3 code actions: Add import / Remove unused import (12 matrix items).
 
+mod common;
+use common::platform_dir;
+
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -7,19 +10,6 @@ use javac_analysis_api::{Position, TextEdit};
 
 use javac_ide_core::analysis::AnalysisConfig;
 use javac_ide_core::workspace::analysis::FileAnalysis;
-
-fn platform_dir() {
-    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug");
-        unsafe {
-            std::env::set_var("RAVAC_PLATFORM_DIR", &root);
-        }
-    }
-}
 
 fn javac() -> Option<PathBuf> {
     let home = std::env::var_os("JAVA_HOME")?;

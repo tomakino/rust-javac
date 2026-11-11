@@ -4,6 +4,9 @@
 //! empty results, document-symbol ranges and the constructor/keyword behaviour
 //! that made `class` jump to `Object`.
 
+mod common;
+use common::platform_dir;
+
 use std::path::PathBuf;
 
 use javac_analysis_api::{Position, WorkspaceService};
@@ -32,19 +35,6 @@ class Second {
 "#;
 
 const EMPTY: &str = "package com.example.app;\n\npublic class Empty {\n}\n";
-
-fn platform_dir() {
-    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug");
-        unsafe {
-            std::env::set_var("RAVAC_PLATFORM_DIR", &root);
-        }
-    }
-}
 
 fn workspace_with(name: &str) -> (Workspace, PathBuf, PathBuf) {
     platform_dir();

@@ -1,5 +1,8 @@
 //! Incremental add/edit/delete coverage (plan §7).
 
+mod common;
+use common::platform_path;
+
 use std::path::{Path, PathBuf};
 
 use javac_analysis_api::{Position, WorkspaceService};
@@ -8,20 +11,6 @@ use javac_ide_core::analysis::AnalysisConfig;
 use javac_ide_core::workspace::index::{self, IndexLimits, ProjectIndex};
 use javac_ide_core::workspace::model::{hash_text, WorkspaceModel};
 use javac_ide_core::workspace::Workspace;
-
-fn platform_dir() -> PathBuf {
-    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug");
-        unsafe {
-            std::env::set_var("RAVAC_PLATFORM_DIR", &root);
-        }
-    }
-    PathBuf::from(std::env::var_os("RAVAC_PLATFORM_DIR").expect("platform dir"))
-}
 
 fn fixture(name: &str) -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -37,7 +26,7 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 fn config(source: &Path, output: &Path) -> AnalysisConfig {
-    platform_dir();
+    platform_path();
     AnalysisConfig {
         class_path: Vec::new(),
         output_dir: output.to_path_buf(),

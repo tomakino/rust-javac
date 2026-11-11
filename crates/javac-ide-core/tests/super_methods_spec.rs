@@ -1,25 +1,15 @@
 //! Super-method navigation: erased signatures, generics, varargs, bridges,
 //! multiple interfaces, JDK and classpath sources.
 
+mod common;
+use common::platform_dir;
+
 use std::path::{Path, PathBuf};
 
 use javac_analysis_api::{Position, WorkspaceService};
 
 use javac_ide_core::analysis::AnalysisConfig;
 use javac_ide_core::workspace::Workspace;
-
-fn platform_dir() {
-    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug");
-        unsafe {
-            std::env::set_var("RAVAC_PLATFORM_DIR", &root);
-        }
-    }
-}
 
 fn fixture(name: &str) -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))

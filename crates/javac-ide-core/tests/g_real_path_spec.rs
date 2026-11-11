@@ -4,6 +4,9 @@
 //! (App/Helper/User) exercises cross-file definition, references, rename,
 //! import definition and the save -> index refresh.
 
+mod common;
+use common::platform_dir;
+
 use std::path::{Path, PathBuf};
 
 use javac_analysis_api::{Position, WorkspaceService};
@@ -59,19 +62,6 @@ public class User {
 const APP_PATH: &str = "src/main/java/com/example/app/App.java";
 const HELPER_PATH: &str = "src/main/java/com/example/base/Helper.java";
 const USER_PATH: &str = "src/main/java/com/example/other/User.java";
-
-fn platform_dir() {
-    if std::env::var_os("RAVAC_PLATFORM_DIR").is_none() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug");
-        unsafe {
-            std::env::set_var("RAVAC_PLATFORM_DIR", &root);
-        }
-    }
-}
 
 fn fixture(name: &str) -> (PathBuf, Workspace) {
     platform_dir();
