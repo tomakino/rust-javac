@@ -1,298 +1,158 @@
 # rust-javac
 
-**A Rust reimplementation of the JDK 17 `javac` compiler.**
+用 Rust 重写的 JDK 17 `javac` 编译器。
 
-This project reimplements the Java compiler rather than wrapping it: the parser, symbol
-entering, attribution, flow analysis, lowering, bytecode generation, class-file writing
-and diagnostic machinery are implemented in Rust. The goal is to reproduce the reference
-compiler's observable behavior — class-file bytes, diagnostics and exit codes — and to
-verify it by automated comparison on fixed corpora.
+解析、符号录入、标注、流分析、transTypes、lower、字节码生成、class 文件写出和诊断机制全部由 Rust 实现，不调用也不包装 javac。验收标准是行为等价：class 文件 SHA-256 一致、`-XDrawDiagnostics` 输出逐行一致（文本、位置、数量、顺序）、命令输出与退出码一致。
 
-- Reference implementation: jdk17u commit `982d53c` (Temurin 17.0.19+10)
-- Language levels: Java 9–17, module system, `--release` via ct.sym
-- Verification: SHA-256 per class file; line-by-line diagnostic comparison
+- 参考实现：jdk17u `982d53c`（Temurin 17.0.19+10）
+- 语言级别：Java 9–17，模块系统，`--release` 通过 ct.sym 提供 7–17 平台视图
+- 对比语料：Gson、Guava、OkHttp、commons-lang3、JUnit 5，JDK 的 `jdk.compiler` / `java.base` / `java.desktop`，langtools 诊断样例，43 个语言特性用例
 
----
+## 快速开始
 
-## Contents
+```powershell
+cargo build -p rust-javac
+target\debug\ravac.exe -d out Hello.java
+```
 
-1. [Architecture](#1-architecture)
-2. [Compatibility and verification](#2-compatibility-and-verification)
-3. [Command-line interface](#3-command-line-interface)
-4. [Build and distribution](#4-build-and-distribution)
-5. [Validation results](#5-validation-results)
-6. [Testing](#6-testing)
-7. [Limitations](#7-limitations)
-8. [Documentation](#8-documentation)
-9. [Disclaimer](#9-disclaimer)
-10. [License](#10-license)
+`build.rs` 会从 `JAVA_HOME` 硬链接 `lib/modules` 和 `lib/ct.sym` 到 `target\<profile>\`。运行时只读可执行文件旁的 `modules`、`ct.sym`（`bin/` 布局则读上一级），不查 `JAVA_HOME`、`PATH`，也不扫描文件系统；`RAVAC_PLATFORM_DIR` 可覆盖平台目录。
 
----
+## 架构
 
-## 1. Architecture
+14 个 crate 对应 `jdk.compiler` 的子系统：
 
-The implementation is organized as 14 crates mirroring the subsystems of `jdk.compiler`.
-
-| Crate             | Corresponding javac component                         |
+| Crate             | 对应的 javac 组件                                     |
 |:------------------|:------------------------------------------------------|
 | `javac-core`      | `com.sun.tools.javac.{parser, comp, jvm, code, main}` |
-| `javac-tools`     | `javax.tools` (file manager API)                      |
-| `javac-source`    | `com.sun.source` (tree API)                           |
-| `javac-jimage`    | `jdk.internal.jimage` (`lib/modules` reader)          |
-| `javac-ctsym`     | ct.sym reader (`--release` platform view)             |
-| `javac-classpath` | class path and module path handling                   |
-| `javac-charset`   | charset support                                       |
-| `javac-unicode`   | Unicode tables                                        |
-| `javac-floating`  | floating-point and `BigDecimal` helpers               |
-| `javac-jmod`      | jmod archive reader                                   |
-| `javac-zip`       | zip reader                                            |
-| `javac-fs`        | file-system abstraction                               |
-| `javac-strings`   | string utilities                                      |
-| `rust-javac`      | CLI (equivalent of `com.sun.tools.javac.Main`)        |
+| `javac-tools`     | `javax.tools`（文件管理器 API）                       |
+| `javac-source`    | `com.sun.source`（tree API）                          |
+| `javac-jimage`    | `jdk.internal.jimage`（`lib/modules` 读取）           |
+| `javac-ctsym`     | ct.sym 读取（`--release` 平台视图）                   |
+| `javac-classpath` | class path / module path                              |
+| `javac-charset`   | 字符集                                                |
+| `javac-unicode`   | Unicode 表                                            |
+| `javac-floating`  | 浮点与 `BigDecimal` 辅助                              |
+| `javac-jmod`      | jmod 读取                                             |
+| `javac-zip`       | zip 读取                                              |
+| `javac-fs`        | 文件系统抽象                                          |
+| `javac-strings`   | 字符串工具                                            |
+| `rust-javac`      | CLI（对应 `com.sun.tools.javac.Main`）                |
 
-The pipeline follows javac's phase structure: parse → enter → attribute → flow →
-transTypes → lower → generate. Diagnostics pass through a ported `Log` and
-resource-bundle layer; the official `.properties` language bundles are embedded and
-parsed lazily.
+流水线沿用 javac 的阶段划分：parse → enter → attribute → flow → transTypes → lower → generate。诊断经过移植的 `Log` 与资源包层，官方 `.properties` 语言包内嵌并延迟解析。
 
-## 2. Compatibility and verification
-
-### Class files
-
-Each output class is compared with the reference compiler by SHA-256. The comparison
-covers the constant pool (contents and ordering), the attribute tables (`LineNumberTable`, `LocalVariableTable`,
-`StackMapTable`, `BootstrapMethods`,
-`InnerClasses`, `Signature`, `NestMembers`, `Record`, `PermittedSubclasses`, module
-attributes) and the class-file version fields.
-
-### Conditions
-
-A SHA-256 comparison is meaningful only when both compilers see the same inputs. Every
-run reported below used:
-
-- reference compiler: `javac 17.0.19` (Temurin 17.0.19+10) running on Windows x64;
-- platform data: the same JDK's `lib/modules` and `lib/ct.sym` — the two files the
-  packaged compiler reads;
-- options: the default `-source`/`-target` (17) plus, on Gson 2.10.1 (81 sources →
-  208 classes): `-g`, `-g:none`, `-g:source`, `-g:lines`, `-g:vars`,
-  `-g:source,lines,vars`; `--release 11/17`; `-parameters`; `-encoding UTF-8`;
-  `-Xmaxerrs 3`; `-Xdiags:compact`; `-Xlint:all`; `-Xlint:none`; `-nowarn`;
-  `-sourcepath`; `-s`; `-h`; `@argfile`; and direct command-line arguments;
-- `-source 8`: verified separately (80 sources without `module-info.java`, 207 classes).
-
-A different `javac` patch release or a different platform-data set can produce
-different bytes; the claim does not extend to those combinations. `--release 8` fails
-on the Gson corpus in both compilers (module-info is not valid for release 8), so it
-does not contribute a byte comparison.
-
-### Diagnostics
-
-The output of both compilers is normalized (temporary and source paths, line endings,
-timing values) and compared line by line: message text, source position, caret
-placement, note/warning/error counts and the process exit code (0/1/2/3/4).
-
-### Scope
-
-- real-world projects: Gson 2.10.1, Guava 33.4.0, OkHttp 3.14.9, commons-lang3 3.12.0,
-  JUnit 5.10.2;
-- the JDK's own sources: `jdk.compiler`, `java.base` and `java.desktop`, compiled
-  module-wide with javac as the reference;
-- the diagnostic example corpus (langtools), 602 comparable cases;
-- 43 language-feature cases spanning Java 9–17.
-
-## 3. Command-line interface
-
-`ravac` accepts the javac 17 command-line interface:
+## 命令行
 
 ```text
 ravac [options] <source files>
 ravac @argfile
 ```
 
-### Options
-
-| Option                                     | Meaning                                      |
-|:-------------------------------------------|:---------------------------------------------|
-| `-d <dir>`                                 | output directory for class files             |
-| `-cp`, `-classpath`, `--class-path <path>` | class search path                            |
-| `-sourcepath <path>`                       | source search path                           |
-| `--release <n>`                            | platform and language level (7–17)           |
-| `-source <n>`, `-target <n>`               | language level / class-file version          |
-| `-g`, `-g:none`, `-g:source,lines,vars`    | debug information                            |
-| `-Xlint[:<group>]`, `-nowarn`              | lint warnings                                |
-| `-verbose`                                 | print loaded files and modules               |
-| `-s <dir>`, `-h <dir>`                     | source output / native header output         |
-| `@<file>`                                  | read options and files from an argument file |
-| `-J-Duser.language=<locale>`               | diagnostic locale                            |
-| `-XDrawDiagnostics`                        | raw diagnostic format                        |
-
-### Examples
+| 选项                                       | 含义                              |
+|:-------------------------------------------|:----------------------------------|
+| `-d <dir>`                                 | class 文件输出目录                |
+| `-cp`, `-classpath`, `--class-path <path>` | class 搜索路径                    |
+| `-sourcepath <path>`                       | 源码搜索路径                      |
+| `--release <n>`                            | 平台与语言级别（7–17）            |
+| `-source <n>`, `-target <n>`               | 语言级别 / class 文件版本         |
+| `-g`, `-g:none`, `-g:source,lines,vars`    | 调试信息                          |
+| `-Xlint[:<group>]`, `-nowarn`              | lint 警告                         |
+| `-verbose`                                 | 打印加载的文件与模块              |
+| `-s <dir>`, `-h <dir>`                     | 源码输出 / 本地头文件输出         |
+| `@<file>`                                  | 从参数文件读取选项和源文件        |
+| `-J-Duser.language=<locale>`               | 诊断语言                          |
+| `-XDrawDiagnostics`                        | 原始诊断格式                      |
 
 ```powershell
-# one file
-ravac -d out Hello.java
-
-# several files with a class path
 ravac -d out -cp "lib/*" src/A.java src/B.java
-
-# platform view
 ravac --release 11 -d out src/Main.java
-
-# argument file
-ravac @sources.txt
 ```
 
-### Exit codes
+| 退出码 | 含义           |
+|:------:|:---------------|
+|   0    | 成功           |
+|   1    | 编译错误       |
+|   2    | 命令行参数错误 |
+|   3    | 系统错误       |
+|   4    | 内部错误       |
 
-| Code | Meaning              |
-|:----:|:---------------------|
-|  0   | success              |
-|  1   | compilation error    |
-|  2   | invalid command line |
-|  3   | system error         |
-|  4   | internal error       |
+`ravac --help` 列出完整选项。注解处理、`--enable-preview`、`-Xplugin`、`-Xdoclint`、`-Xprint` 未实现（见“限制”）。
 
-`ravac --help` lists the full option set. Annotation processing,
-`--enable-preview`, `-Xplugin` and `-Xdoclint` are not implemented; see section 7.
+## 构建与分发
 
-## 4. Build and distribution
-
-### Requirements
-
-| Component   | Version                                                | Purpose                              |
-|:------------|:-------------------------------------------------------|:-------------------------------------|
-| Rust        | `nightly-2026-11-01` (pinned in `rust-toolchain.toml`) | build                                |
-| JDK 17      | Temurin 17.0.19+10                                     | platform data and reference compiler |
-| Python      | 3.8+                                                   | test and packaging scripts           |
-| Android NDK | API 21+                                                | `android-arm64` packages only        |
-
-### Reference environment
-
-The validation results in section 5 were produced on this machine:
-
-| Component     | Value                                                         |
-|:--------------|:--------------------------------------------------------------|
-| OS            | Windows x64                                                   |
-| Rust          | 1.101.0-nightly (2026-10-31), pinned by `rust-toolchain.toml` |
-| JDK           | Temurin 17.0.19+10                                            |
-| Python        | 3.13.6                                                        |
-| Android NDK   | 30.0.16248370                                                 |
-| Build profile | `dev` (debug)                                                 |
-
-Tests and scripts pin `-J-Duser.language=en -J-Duser.country=US` so diagnostics are
-compared against the English baselines regardless of the host locale.
-
-### Environment variables
-
-| Variable                                                                      | Scope                       | Purpose                                                                                           |
-|:------------------------------------------------------------------------------|:----------------------------|:--------------------------------------------------------------------------------------------------|
-| `JAVA_HOME`                                                                   | build, tests, packaging     | JDK providing `lib/modules` and `lib/ct.sym`; also locates `javac` for parity checks              |
-| `RAVAC_PLATFORM_DIR`                                                          | `ravac` at run time         | overrides the platform directory (must contain `modules`); the only variable read by the compiler |
-| `BUILD_DATE`                                                                  | build (`build.rs`)          | overrides the `-version` build date (default: UTC build day)                                      |
-| `ANDROID_NDK_HOME`, `ANDROID_HOME`                                            | packaging                   | alternative NDK locations (default: `%LOCALAPPDATA%\Android\Sdk\ndk`)                             |
-| `TEMP`, `TMP`                                                                 | tests (Windows)             | writable temporary directory; point inside the repository when the system temp is restricted      |
-| `RUSTUP_DIST_SERVER`                                                          | toolchain installation      | mirror used by rustup                                                                             |
-| `DIAG_EXAMPLES_FILTER`, `DIAG_EXAMPLES_VERBOSE`, `DIAG_EXAMPLES_TIMEOUT_SECS` | `scripts/check_examples.py` | case filter, verbosity, per-case timeout                                                          |
-
-### Build
+需要 Rust nightly-2026-11-01（`rust-toolchain.toml` 固定）、JDK 17（提供平台数据和参考编译器）、Python 3.8+（脚本）；打 `android-arm64` 包另需 Android NDK（API 21+）。
 
 ```powershell
 cargo build -p rust-javac
-```
-
-`build.rs` links the baseline JDK's `lib/modules` and `lib/ct.sym` into
-`target/<profile>/`, so the development binary is self-contained as well.
-
-### Distribution
-
-```powershell
 py scripts/package.py --build --release --platforms all
 ```
 
-| Platform        | Linkage | Runtime library |
-|:----------------|:--------|:----------------|
-| `windows-amd64` | native  | msvcrt          |
-| `linux-amd64`   | static  | musl            |
-| `linux-arm64`   | static  | musl            |
-| `android-arm64` | dynamic | Bionic (NDK)    |
+| 平台            | 链接方式 | 运行时库     |
+|:----------------|:---------|:-------------|
+| `windows-amd64` | 原生     | msvcrt       |
+| `linux-amd64`   | 静态     | musl         |
+| `linux-arm64`   | 静态     | musl         |
+| `android-arm64` | 动态     | Bionic（NDK）|
 
-A distribution contains the compiler and the two data files it reads:
+分发包包含编译器及它读取的两个数据文件：
 
 ```text
 ravac-17.0.19-windows-amd64/
 ├─ ravac.exe
-├─ modules      jimage: system classes for every module
-└─ ct.sym       platform signatures for --release 7–17
+├─ modules      jimage：各模块的系统类
+└─ ct.sym       --release 7–17 的平台签名
 ```
 
-The platform directory is resolved deterministically: `RAVAC_PLATFORM_DIR` if set,
-otherwise the executable's directory (or its parent for a `bin/` layout), otherwise an
-error. The compiler does not consult `JAVA_HOME`, `PATH` or installation directories,
-and does not scan the file system for a JDK.
+## 验证结果
 
-## 5. Validation results
+以下为固定语料、固定选项、固定参考编译器（Temurin 17.0.19+10，Windows x64）下的采样结果，不代表任意程序都等价。对比的选项组合包括默认 `-source`/`-target 17`、`-g` 系列、`--release 11/17`、`-parameters`、`-encoding UTF-8`、`-Xmaxerrs`、`-Xdiags:compact`、`-Xlint` 系列、`-nowarn`、`-sourcepath`、`-s`、`-h`、`@argfile`，以及 Gson 上的 `-source 8`。
 
-Results of the last full runs. These are sampled verifications on the listed corpora,
-not a proof of equivalence for arbitrary programs:
+| 对象                    | 规模                             | 结果             |
+|:------------------------|:---------------------------------|:-----------------|
+| `javac-core` 单元测试   | 750                              | 750 通过         |
+| Gson 2.10.1             | 208 个 class                     | 全部一致         |
+| Guava 33.4.0            | 1970 个 class                    | 全部一致         |
+| OkHttp 3.14.9           | 542 个 class                     | 全部一致         |
+| commons-lang3 3.12.0    | 359 个 class                     | 全部一致         |
+| JUnit 5.10.2            | 625 个 class                     | 全部一致         |
+| `jdk.compiler`          | 1637 个 class                    | 全部一致         |
+| `java.base`             | 3067 个源文件（6410 个 class）   | 全部一致         |
+| `java.desktop`          | 2617 个源文件（5393 个 class）   | 全部一致         |
+| 诊断样例语料            | 602 个可对比用例                 | 602 一致         |
 
-| Subject                 | Scope                            | Result                          |
-|:------------------------|:---------------------------------|:--------------------------------|
-| `javac-core` unit tests | 750 tests                        | 750 passed                      |
-| Gson 2.10.1             | 208 classes                      | 208 matched                     |
-| Guava 33.4.0            | 1970 classes                     | 1970 matched                    |
-| OkHttp 3.14.9           | 542 classes                      | 542 matched                     |
-| commons-lang3 3.12.0    | 359 classes                      | 359 matched                     |
-| JUnit 5.10.2            | 625 classes                      | 625 matched                     |
-| `jdk.compiler`          | 1637 classes                     | all matched                     |
-| `java.base`             | 3067 source files (6410 classes) | all matched                     |
-| `java.desktop`          | 2617 source files (5393 classes) | all matched                     |
-| Diagnostic corpus       | 602 comparable cases             | 602 matched (last recorded run) |
-
-## 6. Testing
+## 测试
 
 ```powershell
-py scripts/gate.py --run              # level inferred from the working-tree diff
-py scripts/gate.py --level L3 --run   # full gate
+py scripts/gate.py --run              # 按工作区改动推断级别
+py scripts/gate.py --level L3 --run   # 全量
 ```
 
-| Level | Coverage                                       |
-|:-----:|:-----------------------------------------------|
-|  L0   | `cargo test -p javac-core --lib`               |
-|  L1   | L0, repro programs, Gson                       |
-|  L2   | L1, jdk.compiler, Guava, OkHttp                |
-|  L3   | workspace tests, all corpora and module checks |
+| 级别 | 覆盖                                             |
+|:----:|:-------------------------------------------------|
+| L0   | `cargo test -p javac-core --lib`                 |
+| L1   | L0、repro 程序、Gson                             |
+| L2   | L1、`jdk.compiler`、Guava、OkHttp                |
+| L3   | 工作区全部测试、所有语料与模块检查               |
 
-## 7. Limitations
+## 限制
 
-The following are intentionally out of scope and rejected at the command line:
+以下能力有意不实现，命令行直接拒绝：
 
-| Option                             | Reason                                           |
-|:-----------------------------------|:-------------------------------------------------|
-| `-proc:*`, `-processor*`, `-A*`    | `javax.annotation.processing` is not implemented |
-| `--enable-preview`                 | preview class files are not byte-compatible      |
-| `-Xplugin`, `-Xdoclint`, `-Xprint` | not implemented                                  |
+| 选项                               | 原因                                       |
+|:-----------------------------------|:-------------------------------------------|
+| `-proc:*`, `-processor*`, `-A*`    | 未实现 `javax.annotation.processing`       |
+| `--enable-preview`                 | preview class 文件不保证字节一致           |
+| `-Xplugin`, `-Xdoclint`, `-Xprint` | 未实现                                     |
 
-Custom file managers and JVM stack-trace diagnostics (`-doe`) are likewise unsupported;
-the diagnostic corpus skips the corresponding cases.
+自定义文件管理器和 JVM 栈追踪诊断（`-doe`）同样不支持，诊断语料跳过对应用例。
 
-## 8. Documentation
+## 文档
 
-See [AGENTS.md](AGENTS.md) for collaboration rules and repository conventions.
+协作规则与仓库约定见 [AGENTS.md](AGENTS.md)。
 
-## 9. Disclaimer
+## 免责声明
 
-This is an independent reimplementation, not affiliated with, endorsed by or sponsored by
-Oracle, the OpenJDK project or the Eclipse Adoptium project.
+独立重实现，与 Oracle、OpenJDK、Eclipse Adoptium 无关。它不是 javac 的完整替代：注解处理、preview 特性和插件均未实现，不追求覆盖 javac 的所有模式。验证结果只描述上文列出的语料、选项、参考编译器与宿主平台，不构成对任意程序的保证，也不适用于安全关键或受监管场景。
 
-It is **not a substitute for javac**: annotation processing, preview features and plugins
-are not implemented, and the project does not aim to cover every javac mode. Use the
-official JDK compiler where full javac compatibility is required.
+## 许可证
 
-The verification results describe **samples** — specific corpora, option combinations, a
-specific reference compiler (Temurin 17.0.19+10) and host platform — and are not a
-guarantee for arbitrary programs or configurations. The software may contain defects and
-is not certified for safety-critical, regulated or otherwise production-critical use.
-
-## 10. License
-
-GPL-2.0-only WITH Classpath-exception-2.0. See [LICENSE](LICENSE).
+GPL-2.0-only WITH Classpath-exception-2.0，见 [LICENSE](LICENSE)。
