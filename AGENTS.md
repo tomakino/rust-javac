@@ -1,9 +1,5 @@
 # AGENTS.md — Collaboration rules
 
-> **工程标准（唯一标准）**：性能预算、架构红线、审核清单、已知差距见
-> [`docs/ENGINEERING_STANDARD.md`](docs/ENGINEERING_STANDARD.md)。
-> 每轮交付必须对照执行；本文件与工程标准冲突时，以工程标准为准。
-
 Guidance for AI agents and contributors working in this repository. The rules are general and
 apply to any task.
 
