@@ -5,7 +5,7 @@ Levels (see docs/STYLE.md):
   none  no code changed (docs only)
   L0    cargo test -p javac-core --lib
   L1    L0 + repros + gson              (~15s)
-  L2    L1 + guava + okhttp             (~50s)
+  L2    L1 + guava + okhttp + rxjava + spring  (~85s)
   L3    everything (feature/cli/examples + all above)  (merge points only)
 
 Known failures: repros and the diagnostic corpus have accepted, tracked
@@ -58,6 +58,8 @@ COMMANDS: dict[str, list[list[str]]] = {
         [sys.executable, "scripts/check_jdkcompiler.py"],
         [sys.executable, "scripts/check_guava.py"],
         [sys.executable, "scripts/check_okhttp.py"],
+        [sys.executable, "scripts/check_rxjava.py"],
+        [sys.executable, "scripts/check_spring.py"],
     ],
     "L3": [
         # Every crate's unit tests plus the rust-javac integration tests.
@@ -69,6 +71,8 @@ COMMANDS: dict[str, list[list[str]]] = {
         [sys.executable, "scripts/check_jdkcompiler.py"],
         [sys.executable, "scripts/check_guava.py"],
         [sys.executable, "scripts/check_okhttp.py"],
+        [sys.executable, "scripts/check_rxjava.py"],
+        [sys.executable, "scripts/check_spring.py"],
         [sys.executable, "scripts/check_commons_lang3.py"],
         [sys.executable, "scripts/check_junit5.py"],
         [sys.executable, "scripts/check_java_base.py"],

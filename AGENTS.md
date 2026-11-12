@@ -45,9 +45,9 @@ py scripts/gate.py --level L2 --run    # 强制级别
 
 冒烟：`target\debug\ravac.exe -d out Hello.java`；或跑单个语料检查器，如 `py scripts/check_gson.py --build`（退出码 0 一致、1 有差异、2 环境缺失）。
 
-平台数据：不入库。首次构建前用 `cargo xtask gen-platform --out internal\platform\17.0.19+10\modules` 生成，并把 `$env:JAVA_HOME\lib\ct.sym` 复制到同目录；`--check` 校验本地文件。禁止把这两个二进制提交进 Git。
+平台数据：不自动提交，也不加入 `.gitignore`；生成后保持 untracked（出现在 `git status`），提交这两个二进制必须由用户明确要求。首次构建前用 `cargo xtask gen-platform --out internal\platform\17.0.19+10\modules` 和 `cargo xtask gen-ct-sym --out internal\platform\17.0.19+10\ct.sym` 生成；`--check` 校验本地文件。
 
-级别：L0 单测；L1 = L0 + repro + Gson（约 15s）；L2 = L1 + jdk.compiler + Guava + OkHttp（约 50s）；L3 = 全部测试、全部语料与模块检查。改 parser/CLI 用 L1，改 attr/flow/lower/codegen 用 L2，纯文档改动无需测试。gate 接受已登记的已知失败，出现新的失败名即视为失败。
+级别：L0 单测；L1 = L0 + repro + Gson（约 15s）；L2 = L1 + jdk.compiler + Guava + OkHttp + RxJava + Spring（约 85s）；L3 = 全部测试、全部语料与模块检查。改 parser/CLI 用 L1，改 attr/flow/lower/codegen 用 L2，纯文档改动无需测试。gate 接受已登记的已知失败，出现新的失败名即视为失败。
 
 ## 项目规则
 
