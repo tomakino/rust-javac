@@ -346,10 +346,37 @@ impl WorkspaceService for Workspace {
         }
         // Unsaved/overlay file not in the index: analyze it once and read the
         // typed symbol position (never a text match).
-        self.with_analysis(file, None, |analysis, _| {
-            analysis.definition_impl(file, position)
-        })
-        .flatten()
+        if let Some(location) = self
+            .with_analysis(file, None, |analysis, _| {
+                analysis.definition_impl(file, position)
+            })
+            .flatten()
+        {
+            return Some(location);
+        }
+        // The first query after a project opens can land while the background
+        // index build is still running. The compiler then knows the symbol (it
+        // is on the source path) but has no declaration tree for it, and the
+        // index has no record yet, so the query would report "no definition".
+        // Wait for the index once and answer from it instead.
+        if !matches!(
+            self.index.snapshot().status,
+            crate::workspace::index::model::IndexStatus::Ready
+        ) {
+            self.wait_for_index();
+            let snapshot = self.index.snapshot();
+            if !self.has_unsaved_edits()
+                && let Some(text) = self.text_of(file)
+                && let Some(file_id) = snapshot.file_id_for_path(file)
+                && let Some(location) =
+                    query::definition(&snapshot, file_id, &text, position, &|id| {
+                        self.text_of_id(id)
+                    })
+            {
+                return Some(location);
+            }
+        }
+        None
     }
 
     fn type_definition(&mut self, file: &Path, position: Position) -> Option<Location> {
