@@ -17,7 +17,6 @@ members = [
     "crates/javac-project-api",
     "crates/javac-ide-core",
     "crates/javac-build-maven",
-    "crates/ravac-lsp",
     "crates/javac-floating",
     "crates/rust-javac",
     "xtask",
