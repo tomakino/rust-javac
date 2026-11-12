@@ -615,7 +615,7 @@ mod name_start_tests {
         let key = std::path::PathBuf::from(crate::analysis::canonical(&path));
         analysis.texts.insert(key, text.to_string());
         analysis.compiler.overlay_text = Some((path.clone(), text.to_string()));
-        let _ = analysis.compiler.compile_files(&[path.clone()]);
+        let _ = analysis.compiler.analyze_frontend(&[path.clone()]);
 
         let mut class_symbol = None;
         let mut constant_tree = None;
@@ -704,7 +704,7 @@ mod name_start_tests {
         let mut analysis = FileAnalysis::new(config);
         analysis.texts.insert(path.clone(), text.to_string());
         analysis.compiler.overlay_text = Some((path.clone(), text.to_string()));
-        let _ = analysis.compiler.compile_files(&[path.clone()]);
+        let _ = analysis.compiler.analyze_frontend(&[path.clone()]);
         let mut checked = 0;
         for index in 0..analysis.compiler.ctx.trees.len() {
             let tree = crate::ids::TreeId::new(index as u32);

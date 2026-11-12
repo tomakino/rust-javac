@@ -16,7 +16,7 @@ use crate::code::scope::LookupKind;
 use crate::code::symbol::SymbolKind;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{SymbolId as CompilerSymbolId, TreeId};
-use crate::main::mini_compiler::MiniCompiler;
+use crate::main::mini_compiler::AnalysisSession;
 use crate::tree::doc_comment_table::DocCommentTable;
 use crate::tree::jc_tree::TreeKind;
 use crate::tree::tree_scanner::TreeScannerVisitor;
@@ -314,7 +314,7 @@ impl IndexBuilder {
                 session.compiler.overlay_text = Some((path.clone(), text.clone()));
             }
         }
-        let compiled = session.compiler.compile_files(batch);
+        let compiled = session.compiler.analyze_frontend(batch);
         // AST name data for this batch: declaring trees and the parser name
         // tables published on the compilation units.
         self.symbol_trees.clear();
@@ -1246,7 +1246,7 @@ pub(crate) fn hash_text(text: &str) -> u64 {
 ///
 /// A compilation unit is created *after* its children in the tree arena, so
 /// tree ids cannot delimit units; tables are associated by source file.
-pub(crate) fn collect_javadocs(compiler: &mut MiniCompiler) -> HashMap<CompilerSymbolId, String> {
+pub(crate) fn collect_javadocs(compiler: &mut AnalysisSession) -> HashMap<CompilerSymbolId, String> {
     let mut tables: HashMap<PathBuf, Rc<RefCell<dyn DocCommentTable>>> = HashMap::new();
     for index in 0..compiler.ctx.trees.len() {
         let tree_id = TreeId::new(index as u32);

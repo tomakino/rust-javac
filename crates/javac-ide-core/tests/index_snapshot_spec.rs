@@ -51,7 +51,7 @@ fn queries_serve_the_previous_snapshot_during_a_build() {
     // Make the rebuild observable, then start it.
     workspace.set_build_delay_for_tests(Duration::from_millis(500));
     std::fs::write(root.join("A.java"), "class A { int newValue; }").unwrap();
-    workspace.rebuild();
+    workspace.reset_frontend();
     assert!(workspace.is_building(), "background build did not start");
 
     let started = Instant::now();

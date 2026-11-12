@@ -635,7 +635,7 @@ impl WorkspaceService for Workspace {
         for path in paths {
             self.overlays.remove(path);
         }
-        self.rebuild();
+        self.reset_frontend();
     }
 
     fn index_generation(&self) -> u64 {
@@ -694,7 +694,7 @@ impl WorkspaceService for Workspace {
             // it and rebuild before answering the next index query.
             self.discard_build();
             self.index.publish(empty_index(index::IndexStatus::Building));
-            self.rebuild();
+            self.reset_frontend();
         }
     }
 }

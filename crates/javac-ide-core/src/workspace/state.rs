@@ -687,8 +687,9 @@ impl Workspace {
         self.full_rebuilds += 1;
     }
 
-    /// Force a rebuild after external changes (pom/classpath/file watchers).
-    pub fn rebuild(&mut self) {
+    /// Force a frontend reset after external changes (pom/classpath/file watchers).
+    /// This marks the workspace dirty and starts a background index rebuild.
+    pub fn reset_frontend(&mut self) {
         self.poll_build();
         self.dirty = true;
         self.start_background_build();
@@ -741,7 +742,7 @@ impl Workspace {
                     // reported spurious override errors for class-path
                     // dependencies. Hint memory survives the rebuild.
                     let hints = std::mem::take(&mut analysis.inlay_hint_cache);
-                    analysis.rebuild();
+                    analysis.reset_frontend();
                     analysis.inlay_hint_cache = hints;
                     analysis.texts = overlays.clone();
                     analysis.texts.insert(key.clone(), text.clone());

@@ -4,14 +4,14 @@
 //! which is designed to keep producing tokens across incomplete source. This
 //! module only adapts that stream; it contains no lexer of its own.
 
-use crate::main::mini_compiler::MiniCompiler;
+use crate::main::mini_compiler::AnalysisSession;
 use crate::parser::lexer::Lexer;
 use crate::parser::tokens::{Token, TokenKind};
 use crate::util::java_string::JavaString;
 
 /// Tokenize the whole buffer, including tokens after the cursor (needed to
 /// detect a cursor inside a string/char literal).
-pub(crate) fn tokenize(compiler: &MiniCompiler, text: &str) -> Vec<Token> {
+pub(crate) fn tokenize(compiler: &AnalysisSession, text: &str) -> Vec<Token> {
     let input = JavaString::from(text);
     let mut scanner = compiler
         .parser_factory

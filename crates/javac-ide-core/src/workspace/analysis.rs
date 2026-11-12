@@ -1,9 +1,9 @@
 //! Temporary, per-file analysis.
 //!
-//! A [`FileAnalysis`] owns a throw-away [`MiniCompiler`] that is scoped to one
-//! file. It answers the queries that need real type information (diagnostics,
-//! completion receiver/expected type, hover, inlay hints, signature help) and
-//! is never stored in the project index.
+//! A [`FileAnalysis`] owns a throw-away [`AnalysisSession`] scoped to one file.
+//! It answers the queries that need real type information (diagnostics,
+//! completion receiver/expected type, hover, inlay hints, signature help) and is
+//! never stored in the project index.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -13,7 +13,7 @@ use javac_analysis_api::Diagnostic;
 
 use crate::code::symbol::SymbolKind;
 use crate::ids::{SymbolId, TreeId};
-use crate::main::mini_compiler::MiniCompiler;
+use crate::main::mini_compiler::AnalysisSession;
 use crate::parser::parser::Parser;
 use crate::tree::jc_tree::TreeKind;
 use crate::util::list::List;
@@ -58,7 +58,7 @@ pub(crate) struct CachedFile {
 /// A transient analysis of exactly one file.
 pub struct FileAnalysis {
     pub(crate) config: AnalysisConfig,
-    pub(crate) compiler: MiniCompiler,
+    pub(crate) compiler: AnalysisSession,
     pub(crate) initialized: bool,
     pub(crate) traced: Vec<TracedClass>,
     pub(crate) cache: Option<CachedFile>,
@@ -150,7 +150,9 @@ impl FileAnalysis {
         self.text_hash = text_hash;
     }
 
-    pub(crate) fn rebuild(&mut self) {
+    /// Reset the frontend session (parse + enter + attribute) and its
+    /// context-dependent caches; the next query re-analyzes the file.
+    pub(crate) fn reset_frontend(&mut self) {
         self.compiler = build_compiler(&self.config);
         self.initialized = false;
         self.traced.clear();
@@ -263,13 +265,13 @@ impl FileAnalysis {
             self.compiler.types.reset_caches();
         }
         if self.initialized && self.config.source_path.is_empty() {
-            // Reusing the previous compiler round reported spurious override
+            // Reusing the previous frontend round reported spurious override
             // errors when dependencies come from the class path (generic
             // supertypes read from class files). A fresh round matches javac;
-            // class-path analysis does not implicitly compile sources, so the
-            // rebuild stays cheap. Source-path mode keeps the incremental
-            // round (it would otherwise re-run implicit compilation).
-            self.rebuild();
+            // class-path analysis does not implicitly analyze sources, so
+            // resetting the frontend stays cheap. Source-path mode keeps the
+            // incremental round (it would otherwise rerun implicit analysis).
+            self.reset_frontend();
             self.compiler.set_overlays(&self.texts);
             let key = PathBuf::from(canonical(source));
             if let Some(text) = self.texts.get(&key) {
@@ -277,7 +279,7 @@ impl FileAnalysis {
             }
         }
         if !self.initialized {
-            let _ = self.compiler.compile_files(&[source.to_path_buf()]);
+            let _ = self.compiler.analyze_frontend(&[source.to_path_buf()]);
             self.initialized = true;
             self.trace_classes_for(source);
             let result = self.result();
@@ -505,11 +507,11 @@ pub fn join_class_path(entries: &[PathBuf]) -> String {
         .join(separator)
 }
 
-pub(crate) fn build_compiler(config: &AnalysisConfig) -> MiniCompiler {
+pub(crate) fn build_compiler(config: &AnalysisConfig) -> AnalysisSession {
     let class_path = join_class_path(&config.class_path);
     let source_level = config.source_level.clone();
     let source_path = join_class_path(&config.source_path);
-    MiniCompiler::new_with_options(&config.output_dir, |options| {
+    AnalysisSession::new_with_options(&config.output_dir, |options| {
         if !class_path.is_empty() {
             options.put("--class-path", class_path.clone());
         }

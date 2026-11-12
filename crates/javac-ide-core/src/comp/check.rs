@@ -11737,7 +11737,7 @@ mod diagnostics_tests {
 
     use super::*;
 
-    /// Compile the given sources through the wired MiniCompiler with a deferred
+    /// Run the frontend through the wired AnalysisSession with a deferred
     /// diagnostic handler installed and return the captured diagnostics.
     ///
     /// # Arguments
@@ -11745,7 +11745,7 @@ mod diagnostics_tests {
     ///   - configure: option installer used before Lint is created.
     ///
     /// # Returns
-    ///   - the compiler and the captured diagnostics.
+    ///   - the analysis session and the captured diagnostics.
     ///
     /// # Panics
     ///   - a filesystem or compiler invariant is violated.
@@ -11753,7 +11753,7 @@ mod diagnostics_tests {
         sources: &[(&str, &str)],
         configure: impl FnOnce(&crate::util::options::Options),
     ) -> (
-        crate::main::mini_compiler::MiniCompiler,
+        crate::main::mini_compiler::AnalysisSession,
         Vec<JCDiagnostic>,
     ) {
         use javac_tools::tools::standard_java_file_manager::StandardJavaFileManager;
@@ -11779,7 +11779,7 @@ mod diagnostics_tests {
             files.push(file);
         }
         let mut compiler =
-            crate::main::mini_compiler::MiniCompiler::new_with_options(&out, configure);
+            crate::main::mini_compiler::AnalysisSession::new_with_options(&out, configure);
         let sp = javac_tools::tools::standard_location::StandardLocation::location_for(
             &javac_strings::JavaString::from("SOURCE_PATH"),
         );
@@ -11794,7 +11794,7 @@ mod diagnostics_tests {
                 deferred: std::collections::VecDeque::new(),
                 filter: None,
             });
-        let _ = compiler.compile_files(&files);
+        let _ = compiler.analyze_frontend(&files);
         let diagnostics = compiler.log.take_deferred_diagnostics();
         compiler.log.pop_diagnostic_handler();
         (compiler, diagnostics)

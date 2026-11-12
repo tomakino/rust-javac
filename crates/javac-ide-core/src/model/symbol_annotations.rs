@@ -1111,7 +1111,7 @@ mod tests {
     fn compile_annotation_source(
         source: &str,
     ) -> (
-        crate::main::mini_compiler::MiniCompiler,
+        crate::main::mini_compiler::AnalysisSession,
         Vec<crate::main::mini_compiler::CompiledClass>,
     ) {
         use javac_tools::tools::standard_java_file_manager::StandardJavaFileManager;
@@ -1129,7 +1129,7 @@ mod tests {
         std::fs::create_dir_all(&src).expect("src");
         let file = src.join("A.java");
         std::fs::write(&file, source).expect("write");
-        let mut compiler = crate::main::mini_compiler::MiniCompiler::new(&out);
+        let mut compiler = crate::main::mini_compiler::AnalysisSession::new(&out);
         let sp = javac_tools::tools::standard_location::StandardLocation::location_for(
             &JavaString::from("SOURCE_PATH"),
         );
@@ -1138,7 +1138,7 @@ mod tests {
             .set_location(&*sp, Some(&[src]))
             .expect("source path");
         let compiled = compiler
-            .compile_files(&[file])
+            .analyze_frontend(&[file])
             .expect("annotation compilation");
         assert_eq!(compiler.error_count(), 0);
         (compiler, compiled)

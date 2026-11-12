@@ -11,7 +11,7 @@ use crate::code::scope::LookupKind;
 use crate::code::symbol::SymbolKind;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{SymbolId as CompilerSymbolId, TreeId};
-use crate::main::mini_compiler::MiniCompiler;
+use crate::main::mini_compiler::AnalysisSession;
 use crate::tree::jc_tree::TreeKind;
 use crate::tree::tree_scanner::TreeScannerVisitor;
 use crate::workspace::analysis::FileAnalysis;
@@ -91,7 +91,7 @@ pub fn extract_file(
     let key = PathBuf::from(canonical(path));
     analysis.texts.insert(key.clone(), text.to_string());
     analysis.compiler.overlay_text = Some((key, text.to_string()));
-    let compiled = analysis.compiler.compile_files(&[path.to_path_buf()]);
+    let compiled = analysis.compiler.analyze_frontend(&[path.to_path_buf()]);
     let failed = compiled.is_err() || analysis.compiler.log.nerrors.get() > 0;
     if failed {
         return ExtractedFile {
@@ -220,7 +220,7 @@ pub fn extract_file(
 }
 
 fn collect_class(
-    compiler: &mut MiniCompiler,
+    compiler: &mut AnalysisSession,
     class: CompilerSymbolId,
     target: &Path,
     file: FileId,
