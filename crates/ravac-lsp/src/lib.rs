@@ -62,11 +62,20 @@ pub fn run(
                         &root,
                         &javac_ide_core::project::LoadContext::default(),
                     );
-                    *host = Box::new(javac_ide_core::workspace::Workspace::new_from_project(
-                        &model,
-                        output_dir,
-                        None,
-                    ));
+                    let mut workspace =
+                        javac_ide_core::workspace::Workspace::new_from_project(
+                            &model,
+                            output_dir,
+                            None,
+                        );
+                    // Build the index before answering initialize. Clients send
+                    // their first navigation request right after startup; a
+                    // query that waits for the background build can outlive the
+                    // client's request timeout and surface as "no definition
+                    // found". One synchronous build here keeps later queries
+                    // fast without stalling them.
+                    workspace.wait_for_index();
+                    *host = Box::new(workspace);
                     let source_level = host.configuration().source_level;
                     let (sources, class_path, has_output, level) =
                         artifact_inputs(&model, &source_level);
