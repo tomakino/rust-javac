@@ -146,7 +146,8 @@ pub fn extract_file(
         if PathBuf::from(canonical(Path::new(&source))) != target {
             continue;
         }
-        let mut collector = OccurrenceCollector::new(file, text.to_string());
+        let tokens = crate::analysis::features::completion::token_stream::tokenize(&analysis.compiler, text);
+        let mut collector = OccurrenceCollector::new(file, text.to_string(), tokens);
         collector.scan(&mut analysis.compiler.ctx, Some(unit));
         for raw in &collector.raw {
             if raw.position < 0 {

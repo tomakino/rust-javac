@@ -19,6 +19,7 @@ impl FileAnalysis {
         position: Position,
         character: char,
     ) -> Vec<TextEdit> {
+        let _ = self.analyze(file);
         let key = PathBuf::from(canonical(file));
         let text = self
             .texts
@@ -34,9 +35,19 @@ impl FileAnalysis {
         let masked = crate::analysis::inspections::mask_non_code(&text);
         let masked_lines: Vec<&str> = masked.lines().collect();
         let masked_line = masked_lines.get(line_index).copied().unwrap_or("");
+        let tokens = super::completion::token_stream::tokenize(&self.compiler, &text);
+        let token_on_line = |kind: crate::parser::tokens::TokenKind, line: usize| {
+            tokens.iter().any(|token| {
+                token.pos >= 0
+                    && token.kind == kind
+                    && crate::analysis::positions::offset_to_line_col(&text, token.pos as usize).0
+                        as usize
+                        == line
+            })
+        };
         let triggered = match character {
-            '}' => masked_line.trim_start().starts_with('}'),
-            ';' => line.trim_end().ends_with(';'),
+            '}' => token_on_line(crate::parser::tokens::TokenKind::RBRACE, line_index),
+            ';' => token_on_line(crate::parser::tokens::TokenKind::SEMI, line_index),
             '\n' => true,
             _ => false,
         };
@@ -52,7 +63,9 @@ impl FileAnalysis {
             ';' => previous_indent(&lines, line_index),
             '\n' => {
                 let previous = previous_indent(&lines, line_index);
-                if opens_block(&masked_lines, line_index) || opens_case(&masked_lines, line_index) {
+                if opens_block(&tokens, &text, line_index)
+                    || opens_case(&self.compiler.ctx, &text, line_index)
+                {
                     previous + INDENT
                 } else {
                     previous
@@ -100,26 +113,37 @@ fn previous_indent(lines: &[&str], line_index: usize) -> usize {
         .unwrap_or(0)
 }
 
-fn opens_block(lines: &[&str], line_index: usize) -> bool {
-    line_index
-        .checked_sub(1)
-        .and_then(|index| lines.get(index))
-        .map(|line| line.trim_end().ends_with('{'))
-        .unwrap_or(false)
+fn opens_block(
+    tokens: &[crate::parser::tokens::Token],
+    text: &str,
+    line_index: usize,
+) -> bool {
+    let Some(previous) = line_index.checked_sub(1) else {
+        return false;
+    };
+    tokens.iter().any(|token| {
+        token.pos >= 0
+            && token.kind == crate::parser::tokens::TokenKind::LBRACE
+            && crate::analysis::positions::offset_to_line_col(text, token.pos as usize).0
+                as usize
+                == previous
+    })
 }
 
-/// Plan 9.2: a `case X:` / `default:` label opens an indented body.
-fn opens_case(lines: &[&str], line_index: usize) -> bool {
-    line_index
-        .checked_sub(1)
-        .and_then(|index| lines.get(index))
-        .map(|line| {
-            let trimmed = line.trim_end();
-            if !trimmed.ends_with(':') {
-                return false;
-            }
-            let head = trimmed.trim_start();
-            head.starts_with("case ") || head.starts_with("default")
-        })
-        .unwrap_or(false)
+/// Plan 9.2: a `case`/`default` AST node opens an indented body.
+fn opens_case(
+    ctx: &crate::compiler_context::CompilerContext,
+    text: &str,
+    line_index: usize,
+) -> bool {
+    let Some(previous) = line_index.checked_sub(1) else {
+        return false;
+    };
+    ctx.trees.iter().any(|tree| {
+        matches!(tree.kind, crate::tree::jc_tree::TreeKind::Case { .. })
+            && tree.pos >= 0
+            && crate::analysis::positions::offset_to_line_col(text, tree.pos as usize).0
+                as usize
+                == previous
+    })
 }

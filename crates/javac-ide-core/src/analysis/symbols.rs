@@ -336,9 +336,9 @@ impl FileAnalysis {
         for entry in overrides {
             if index_entries.iter().any(|index_entry| {
                 index_entry.javadoc.is_some()
-                    && crate::analysis::features::navigation::same_override_display(
-                        &entry.display,
-                        &index_entry.display,
+                    && crate::analysis::features::navigation::same_override_method(
+                        (&entry.owner, &entry.member, &entry.signature),
+                        (&index_entry.owner, &index_entry.member, &index_entry.signature),
                     )
             }) {
                 continue;

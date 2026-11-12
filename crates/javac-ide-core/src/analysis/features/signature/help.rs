@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use javac_analysis_api::{SignatureHelp, SignatureInformation};
+use javac_analysis_api::{ParameterInformation, SignatureHelp, SignatureInformation};
 
 use super::super::super::{canonical, FileAnalysis};
 
@@ -46,16 +46,22 @@ impl FileAnalysis {
             position.line as usize + 1,
             position.column as usize + 1,
         );
-        let open = call_open_offset(&text, cursor)?;
+        let tokens = super::super::completion::token_stream::tokenize(&self.compiler, &text);
+        let cursor_utf16 = crate::analysis::positions::byte_to_utf16(&text, cursor) as i32;
+        let open_index = open_paren_token(&tokens, cursor_utf16)?;
+        let open = tokens[open_index].pos as usize;
+        let name = ident_before_token(&tokens, open_index)?;
         // Editing a declaration's parameter list is not a call.
-        if is_declaration_paren(&text, open) {
+        if is_declaration_paren(
+            &self.compiler.ctx,
+            self.latest_root_for(file),
+            &tokens,
+            open_index,
+            &name,
+        ) {
             return None;
         }
-        let name = ident_before(&text, open);
-        if name.is_empty() {
-            return None;
-        }
-        let active_parameter = parameter_index(&text[open + 1..cursor]);
+        let active_parameter = parameter_index_tokens(&tokens, open_index, cursor_utf16);
         if let Some(call) = self.call_at(open, &name) {
             let signatures: Vec<SignatureInformation> = call
                 .candidates
@@ -85,13 +91,17 @@ impl FileAnalysis {
     }
 
     fn declared_method_signatures(&mut self, name: &str, active_parameter: u32) -> Option<SignatureHelp> {
+        let ast_parameters = self.declared_method_parameters(name);
         let mut signatures = Vec::new();
-        for symbol in self.symbols() {
+        for (index, symbol) in self.symbols().into_iter().enumerate() {
             if symbol.kind != "method" || symbol.name != name {
                 continue;
             }
             let label = symbol.detail;
-            let parameters = signature_parameters(&label);
+            let parameters = ast_parameters
+                .get(index)
+                .map(|(_, parameters)| parameters.clone())
+                .unwrap_or_default();
             signatures.push(SignatureInformation {
                 label,
                 parameters,
@@ -110,6 +120,48 @@ impl FileAnalysis {
             active_signature,
             active_parameter,
         })
+    }
+
+    /// Parameter lists of methods declared in this file, keyed by method name.
+    fn declared_method_parameters(&self, name: &str) -> Vec<(String, Vec<ParameterInformation>)> {
+        let ctx = &self.compiler.ctx;
+        let mut result = Vec::new();
+        for tree in ctx.trees.iter() {
+            let TreeKind::MethodDecl { name: method_name, params, .. } = &tree.kind else {
+                continue;
+            };
+            let method_name = method_name.to_java_string().to_string_lossy().to_string();
+            if method_name != name {
+                continue;
+            }
+            let count = params.size() as usize;
+            let mut parameters = Vec::new();
+            for (index, param) in params.iter().enumerate() {
+                let TreeKind::VariableDecl { name, vartype, sym, .. } = &ctx.tree(param).kind else {
+                    continue;
+                };
+                let type_id = vartype
+                    .and_then(|vartype| ctx.tree(vartype).ty)
+                    .or_else(|| sym.map(|sym| ctx.sym(sym).ty).flatten());
+                let varargs = index + 1 == count
+                    && sym.is_some_and(|sym| ctx.sym(sym).flags_field & crate::code::flags::VARARGS as i64 != 0);
+                parameters.push(ParameterInformation {
+                    type_name: type_id
+                        .map(|ty| {
+                            if varargs {
+                                crate::analysis::signatures::varargs_element_type(ctx, ty)
+                            } else {
+                                crate::analysis::type_names::type_name(ctx, ty)
+                            }
+                        })
+                        .unwrap_or_else(|| "?".to_string()),
+                    name: Some(name.to_java_string().to_string_lossy().to_string()),
+                    varargs,
+                });
+            }
+            result.push((method_name, parameters));
+        }
+        result
     }
 
     fn call_at(&mut self, open: usize, name: &str) -> Option<CallAt> {
@@ -235,7 +287,7 @@ impl FileAnalysis {
         let documentation = self.documentation_for(symbol);
         Some(SignatureInformation {
             label: parts.label(),
-            parameters: parts.parameters,
+            parameters: parts.parameter_info,
             documentation,
         })
     }
@@ -338,185 +390,134 @@ fn signature_score(
     signature: &SignatureInformation,
     argument_types: &[Option<String>],
 ) -> Option<i32> {
-    let parameter_types: Vec<&str> = signature
-        .parameters
-        .iter()
-        .map(|label| label.split_once(' ').map(|(ty, _)| ty).unwrap_or(label))
-        .collect();
-    let varargs = parameter_types
-        .last()
-        .is_some_and(|ty| ty.ends_with("..."));
-    if !varargs && parameter_types.len() != argument_types.len() {
+    let parameter_count = signature.parameters.len();
+    let varargs = signature.parameters.last().is_some_and(|parameter| parameter.varargs);
+    if !varargs && parameter_count != argument_types.len() {
         return None;
     }
-    if varargs && argument_types.len() + 1 < parameter_types.len() {
+    if varargs && argument_types.len() + 1 < parameter_count {
         return None;
     }
     let mut score = 0i32;
     for (index, argument) in argument_types.iter().enumerate() {
         let argument = argument.as_deref()?;
-        let parameter = if index < parameter_types.len() {
-            parameter_types[index]
+        let parameter = if index < parameter_count {
+            &signature.parameters[index]
         } else {
-            *parameter_types.last()?
+            signature.parameters.last()?
         };
-        let parameter = parameter.trim_end_matches("...");
-        let same = argument == parameter
-            || argument.ends_with(&format!(".{parameter}"))
-            || parameter.ends_with(&format!(".{argument}"))
-            || parameter == "Object";
+        let same = simple_type_name(argument) == simple_type_name(&parameter.type_name)
+            || parameter.type_name == "Object";
         score += if same { 2 } else { -1 };
     }
     Some(score)
 }
 
-fn ident_before(text: &str, open: usize) -> String {
-    let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
-    text[..open]
-        .chars()
-        .rev()
-        .take_while(|c| is_ident(*c))
-        .collect::<String>()
-        .chars()
-        .rev()
-        .collect()
+/// Head type without package qualifiers or type arguments.
+fn simple_type_name(text: &str) -> &str {
+    let head = text.split('<').next().unwrap_or(text);
+    let head = head.split('[').next().unwrap_or(head);
+    head.rsplit('.').next().unwrap_or(head)
 }
 
-/// Whether the parenthesized list at `open` belongs to a declaration.
-///
-/// A declaration is preceded by a type/modifier (`void f(`); a call is
-/// preceded by an operator, `.`, `new`, `return`, or starts the statement.
-fn is_declaration_paren(text: &str, open: usize) -> bool {
-    let is_ident = |ch: char| ch.is_alphanumeric() || ch == '_' || ch == '$';
-    let before = text[..open].trim_end();
-    let name_start = before
-        .rfind(|ch: char| !is_ident(ch))
-        .map(|index| index + 1)
-        .unwrap_or(0);
-    let name = &before[name_start..];
-    if name.is_empty() {
-        return false;
-    }
-    let prefix = before[..name_start].trim_end();
-    if prefix.is_empty() {
-        // Statement-leading call, e.g. `f(1);`.
-        return false;
-    }
-    let last = prefix.chars().next_back().expect("non-empty prefix");
-    if !is_ident(last) {
-        return false;
-    }
-    let token_start = prefix
-        .rfind(|ch: char| !is_ident(ch))
-        .map(|index| index + 1)
-        .unwrap_or(0);
-    let token = &prefix[token_start..];
-    !matches!(
-        token,
-        "new" | "return"
-            | "throw"
-            | "if"
-            | "while"
-            | "for"
-            | "switch"
-            | "catch"
-            | "synchronized"
-            | "assert"
-            | "case"
-            | "else"
-            | "yield"
-            | "do"
-            | "try"
-            | "finally"
-            | "instanceof"
-            | "super"
-            | "this"
-    )
-}
-
-/// The byte offset of the `(` that opens the call containing `cursor`.
-///
-/// Scans backwards to support calls that span multiple lines, and stops at a
-/// statement boundary when the parentheses are balanced.
-fn call_open_offset(text: &str, cursor: usize) -> Option<usize> {
-    let cursor = cursor.min(text.len());
-    let mut depth = 0i32;
-    for (index, ch) in text[..cursor].char_indices().rev() {
-        match ch {
-            ')' => depth += 1,
-            '(' => {
-                if depth == 0 {
-                    return Some(index);
-                }
-                depth -= 1;
+fn open_paren_token(tokens: &[crate::parser::tokens::Token], cursor: i32) -> Option<usize> {
+    let mut stack = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        if token.pos >= cursor {
+            break;
+        }
+        match token.kind {
+            crate::parser::tokens::TokenKind::LPAREN => stack.push(index),
+            crate::parser::tokens::TokenKind::RPAREN => {
+                stack.pop();
             }
-            ';' | '{' | '}' if depth == 0 => return None,
             _ => {}
         }
     }
-    None
+    stack.last().copied()
 }
 
-/// Zero-based index of the argument at the cursor.
-///
-/// Commas inside nested calls, strings, characters, and comments are ignored.
-fn parameter_index(text: &str) -> u32 {
+fn ident_before_token(
+    tokens: &[crate::parser::tokens::Token],
+    open: usize,
+) -> Option<String> {
+    let token = tokens.get(open.checked_sub(1)?)?;
+    if token.kind != crate::parser::tokens::TokenKind::IDENTIFIER {
+        return None;
+    }
+    let name = token.name().to_java_string().to_string_lossy().to_string();
+    (!name.is_empty()).then_some(name)
+}
+
+/// Whether the `(` token belongs to a method declaration's parameter list.
+/// Only methods in the current compilation unit are considered.
+fn is_declaration_paren(
+    ctx: &crate::compiler_context::CompilerContext,
+    root: Option<TreeId>,
+    tokens: &[crate::parser::tokens::Token],
+    open_token: usize,
+    name: &str,
+) -> bool {
+    let Some(root) = root else {
+        return false;
+    };
+    let Some(open) = tokens.get(open_token).map(|token| token.pos) else {
+        return false;
+    };
+    let TreeKind::CompilationUnit { defs, .. } = &ctx.tree(root).kind else {
+        return false;
+    };
+    defs.iter()
+        .any(|def| class_has_declaration_paren(ctx, def, open, name))
+}
+
+fn class_has_declaration_paren(
+    ctx: &crate::compiler_context::CompilerContext,
+    tree: TreeId,
+    open: i32,
+    name: &str,
+) -> bool {
+    match &ctx.tree(tree).kind {
+        TreeKind::ClassDecl { defs, .. } => defs.iter().any(|def| match &ctx.tree(def).kind {
+            TreeKind::ClassDecl { .. } => class_has_declaration_paren(ctx, def, open, name),
+            TreeKind::MethodDecl {
+                name: method_name,
+                body,
+                ..
+            } => {
+                method_name.to_java_string().to_string_lossy() == name
+                    && match body {
+                        Some(body) => open < tree_info::get_start_pos(ctx, *body),
+                        None => true,
+                    }
+            }
+            _ => false,
+        }),
+        _ => false,
+    }
+}
+
+/// Zero-based argument index from the tokens between the open paren and the
+/// cursor; nested parentheses do not contribute commas.
+fn parameter_index_tokens(
+    tokens: &[crate::parser::tokens::Token],
+    open: usize,
+    cursor: i32,
+) -> u32 {
     let mut depth = 0i32;
     let mut count = 0u32;
-    let mut chars = text.chars().peekable();
-    while let Some(ch) = chars.next() {
-        match ch {
-            '"' => skip_string(&mut chars, '"'),
-            '\'' => skip_string(&mut chars, '\''),
-            '/' if chars.peek() == Some(&'/') => {
-                for c in chars.by_ref() {
-                    if c == '\n' {
-                        break;
-                    }
-                }
-            }
-            '/' if chars.peek() == Some(&'*') => {
-                chars.next();
-                let mut previous = '\0';
-                for c in chars.by_ref() {
-                    if previous == '*' && c == '/' {
-                        break;
-                    }
-                    previous = c;
-                }
-            }
-            '(' | '[' | '{' => depth += 1,
-            ')' | ']' | '}' => depth -= 1,
-            ',' if depth == 0 => count += 1,
+    for token in tokens.iter().skip(open + 1) {
+        if token.pos >= cursor {
+            break;
+        }
+        match token.kind {
+            crate::parser::tokens::TokenKind::LPAREN => depth += 1,
+            crate::parser::tokens::TokenKind::RPAREN => depth -= 1,
+            crate::parser::tokens::TokenKind::COMMA if depth == 0 => count += 1,
             _ => {}
         }
     }
     count
-}
-
-fn skip_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>, quote: char) {
-    while let Some(ch) = chars.next() {
-        if ch == '\\' {
-            chars.next();
-        } else if ch == quote {
-            break;
-        }
-    }
-}
-
-/// Split the parameter list out of a method signature label.
-fn signature_parameters(label: &str) -> Vec<String> {
-    let Some(open) = label.find('(') else {
-        return Vec::new();
-    };
-    let Some(close) = label[open..].find(')') else {
-        return Vec::new();
-    };
-    let inner = &label[open + 1..open + close];
-    if inner.trim().is_empty() {
-        return Vec::new();
-    }
-    inner.split(", ").map(str::to_string).collect()
 }
 
 #[cfg(test)]
@@ -524,49 +525,53 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nested_calls_do_not_count_inner_commas() {
-        assert_eq!(parameter_index("g(1, 2), "), 1);
-        assert_eq!(parameter_index("\"a,b\", "), 1);
-        assert_eq!(parameter_index("(1, 2), "), 1);
-        assert_eq!(parameter_index("1, \"x,y\", "), 2);
-    }
-
-    #[test]
-    fn multi_line_calls_find_the_open_paren() {
-        let text = "class A {\n    void g() { f(\n        1,\n    }\n}\n";
-        let cursor = text.find("1,").unwrap();
-        let open = call_open_offset(text, cursor).expect("open");
-        assert_eq!(&text[open..open + 1], "(");
-    }
-
-    #[test]
     fn overload_score_prefers_the_argument_type() {
         let int_signature = SignatureInformation {
             label: "void over(int a)".to_string(),
-            parameters: vec!["int a".to_string()],
+            parameters: vec![ParameterInformation {
+                type_name: "int".to_string(),
+                name: Some("a".to_string()),
+                varargs: false,
+            }],
             documentation: None,
         };
         let string_signature = SignatureInformation {
             label: "void over(String a)".to_string(),
-            parameters: vec!["String a".to_string()],
+            parameters: vec![ParameterInformation {
+                type_name: "String".to_string(),
+                name: Some("a".to_string()),
+                varargs: false,
+            }],
             documentation: None,
         };
         let signatures = vec![string_signature, int_signature];
         assert_eq!(
-            choose_signature(
-                &signatures,
-                &[Some("int".to_string())],
-                0
-            ),
+            choose_signature(&signatures, &[Some("int".to_string())], 0),
             1
         );
         assert_eq!(
-            choose_signature(
-                &signatures,
-                &[Some("String".to_string())],
-                0
-            ),
+            choose_signature(&signatures, &[Some("String".to_string())], 0),
             0
+        );
+    }
+
+    #[test]
+    fn varargs_signature_accepts_extra_arguments() {
+        let signature = SignatureInformation {
+            label: "void f(String... names)".to_string(),
+            parameters: vec![ParameterInformation {
+                type_name: "String".to_string(),
+                name: Some("names".to_string()),
+                varargs: true,
+            }],
+            documentation: None,
+        };
+        assert_eq!(
+            signature_score(
+                &signature,
+                &[Some("String".to_string()), Some("String".to_string())],
+            ),
+            Some(4)
         );
     }
 }

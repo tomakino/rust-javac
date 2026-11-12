@@ -6,6 +6,7 @@ use common::platform_dir;
 use std::path::{Path, PathBuf};
 
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use javac_analysis_api::Position;
 
@@ -37,7 +38,9 @@ fn config(root: &Path) -> AnalysisConfig {
 
 fn edit_text(text: &str, line: u32, character: char) -> String {
     // A per-case directory: the tests run in parallel.
+    static NEXT_CASE: AtomicU64 = AtomicU64::new(0);
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    NEXT_CASE.fetch_add(1, Ordering::Relaxed).hash(&mut hasher);
     text.hash(&mut hasher);
     line.hash(&mut hasher);
     character.hash(&mut hasher);

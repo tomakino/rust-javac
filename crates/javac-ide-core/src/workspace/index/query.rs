@@ -96,6 +96,9 @@ pub fn symbol_location(
 #[derive(Debug, Clone)]
 pub struct OverridingMethod {
     pub symbol: SymbolId,
+    pub owner: String,
+    pub member: String,
+    pub signature: String,
     pub display: String,
     pub location: Option<Location>,
     pub javadoc: Option<String>,
@@ -159,6 +162,9 @@ pub fn overriding_method_entries(
             }
             result.push(OverridingMethod {
                 symbol: *candidate,
+                owner: parent_name.clone(),
+                member: index.name(candidate_record.key.name).to_string(),
+                signature: index.signature(candidate_record.key.signature).to_string(),
                 display,
                 location: symbol_location(index, *candidate, &|file_id| {
                     index

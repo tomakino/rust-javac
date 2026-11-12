@@ -15,6 +15,7 @@ use crate::tree::jc_tree::TreeKind;
 use crate::tree::tree_info;
 
 use super::type_names::type_name;
+use javac_analysis_api::ParameterInformation;
 
 /// How parameter names are rendered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +39,8 @@ pub(crate) struct MethodSignature {
     pub(crate) name: String,
     /// Rendered `type name` parameters.
     pub(crate) parameters: Vec<String>,
+    /// Structured parameters for signature help.
+    pub(crate) parameter_info: Vec<ParameterInformation>,
 }
 
 impl MethodSignature {
@@ -86,10 +89,27 @@ fn parameter_name(raw: &str, index: usize, names: ParameterNames) -> Option<Stri
     }
 }
 
-fn varargs_type(text: String) -> String {
-    match text.strip_suffix("[]") {
-        Some(base) => format!("{base}..."),
-        None => text,
+fn varargs_type(ctx: &CompilerContext, ty: crate::ids::TypeId) -> String {
+    match &ctx.typ(ty).kind {
+        TypeKindData::ArrayType {
+            elemtype: Some(elemtype),
+            ..
+        } if ctx.typ(ty).tag == crate::code::type_tag::TypeTag::ARRAY => {
+            format!("{}...", type_name(ctx, *elemtype))
+        }
+        _ => type_name(ctx, ty),
+    }
+}
+
+pub(crate) fn varargs_element_type(ctx: &CompilerContext, ty: crate::ids::TypeId) -> String {
+    match &ctx.typ(ty).kind {
+        TypeKindData::ArrayType {
+            elemtype: Some(elemtype),
+            ..
+        } if ctx.typ(ty).tag == crate::code::type_tag::TypeTag::ARRAY => {
+            type_name(ctx, *elemtype)
+        }
+        _ => type_name(ctx, ty),
     }
 }
 
@@ -149,24 +169,41 @@ pub(crate) fn signature_parts(
 
     let varargs = record.flags_field & (flags::VARARGS as i64) != 0;
     let mut parameters = Vec::new();
+    let mut parameter_info = Vec::new();
     let parameter_symbols: Vec<SymbolId> = params.iter().collect();
     if !parameter_symbols.is_empty() {
         let count = parameter_symbols.len();
         for (index, param) in parameter_symbols.into_iter().enumerate() {
             let param_record = ctx.sym(param);
-            let mut ty = param_record
-                .ty
+            let ty_id = param_record.ty.or_else(|| {
+                (index < argtypes.length() as usize)
+                    .then(|| argtypes.get(index as i32))
+            });
+            let mut ty = ty_id
                 .map(|ty| type_name(ctx, ty))
-                .or_else(|| {
-                    (index < argtypes.length() as usize)
-                        .then(|| type_name(ctx, argtypes.get(index as i32)))
-                })
                 .unwrap_or_else(|| "?".to_string());
-            if varargs && index + 1 == count {
-                ty = varargs_type(ty);
+            let is_varargs = varargs && index + 1 == count;
+            if is_varargs {
+                if let Some(ty_id) = ty_id {
+                    ty = varargs_type(ctx, ty_id);
+                }
             }
             let raw = param_record.name.to_java_string().to_string_lossy();
-            parameters.push(match parameter_name(&raw, index, names) {
+            let param_name = parameter_name(&raw, index, names);
+            parameter_info.push(ParameterInformation {
+                type_name: ty_id
+                    .map(|ty_id| {
+                        if is_varargs {
+                            varargs_element_type(ctx, ty_id)
+                        } else {
+                            type_name(ctx, ty_id)
+                        }
+                    })
+                    .unwrap_or_else(|| "?".to_string()),
+                name: param_name.clone(),
+                varargs: is_varargs,
+            });
+            parameters.push(match param_name {
                 Some(param_name) => format!("{ty} {param_name}"),
                 None => ty,
             });
@@ -174,14 +211,28 @@ pub(crate) fn signature_parts(
     } else {
         let count = argtypes.length() as usize;
         for (index, ty) in argtypes.iter().enumerate() {
+            let is_varargs = varargs && index + 1 == count;
             let mut text = type_name(ctx, ty);
-            if varargs && index + 1 == count {
-                text = varargs_type(text);
+            if is_varargs {
+                text = varargs_type(ctx, ty);
             }
-            parameters.push(match names {
-                ParameterNames::Real => text,
-                ParameterNames::Positional => format!("{text} p{index}"),
-                ParameterNames::Verbatim => format!("{text} arg{index}"),
+            let param_name = match names {
+                ParameterNames::Real => None,
+                ParameterNames::Positional => Some(format!("p{index}")),
+                ParameterNames::Verbatim => Some(format!("arg{index}")),
+            };
+            parameter_info.push(ParameterInformation {
+                type_name: if is_varargs {
+                    varargs_element_type(ctx, ty)
+                } else {
+                    type_name(ctx, ty)
+                },
+                name: param_name.clone(),
+                varargs: is_varargs,
+            });
+            parameters.push(match param_name {
+                Some(param_name) => format!("{text} {param_name}"),
+                None => text,
             });
         }
     }
@@ -200,6 +251,7 @@ pub(crate) fn signature_parts(
         return_type,
         name,
         parameters,
+        parameter_info,
     })
 }
 

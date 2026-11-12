@@ -475,11 +475,14 @@ fn offset_in(text: &str, position: &Value) -> Option<usize> {
     for (index, current) in text.split_inclusive(char::from(10)).enumerate() {
         if index == line {
             let mut column = 0;
-            for (byte, ch) in current.char_indices() {
+            let mut byte = 0;
+            while byte < current.len() {
                 if column >= character {
                     return Some(offset + byte);
                 }
+                let ch = current[byte..].chars().next()?;
                 column += ch.len_utf16();
+                byte += ch.len_utf8();
             }
             return Some(offset + current.len());
         }
@@ -824,6 +827,7 @@ fn code_action(host: &mut dyn WorkspaceService, message: &Value) -> Value {
     if let Some(edit) = host.organize_imports(&path).first() {
         actions.push(javac_analysis_api::CodeAction {
             title: "Organize imports".to_string(),
+            kind: javac_analysis_api::CodeActionKind::OrganizeImports,
             edits: vec![edit.clone()],
             diagnostics: Vec::new(),
         });
@@ -847,12 +851,12 @@ fn code_action(host: &mut dyn WorkspaceService, message: &Value) -> Value {
                     .collect();
                 json!({
                     "title": action.title,
-                    "kind": if action.title == "Organize imports" {
-                        "source.organizeImports"
-                    } else if action.title.starts_with("Generate") {
-                        "refactor"
-                    } else {
-                        "quickfix"
+                    "kind": match action.kind {
+                        javac_analysis_api::CodeActionKind::OrganizeImports => {
+                            "source.organizeImports"
+                        }
+                        javac_analysis_api::CodeActionKind::Generate => "refactor",
+                        javac_analysis_api::CodeActionKind::QuickFix => "quickfix",
                     },
                     "diagnostics": action
                         .diagnostics
@@ -1050,7 +1054,17 @@ fn signature_help(host: &mut dyn WorkspaceService, message: &Value) -> Value {
                 .map(|signature| {
                     let mut value = json!({
                         "label": signature.label,
-                        "parameters": signature.parameters.iter().map(|parameter| json!({ "label": parameter })).collect::<Vec<_>>(),
+                        "parameters": signature.parameters.iter().map(|parameter| {
+                            let mut label = parameter.type_name.clone();
+                            if parameter.varargs {
+                                label.push_str("...");
+                            }
+                            if let Some(name) = &parameter.name {
+                                label.push(' ');
+                                label.push_str(name);
+                            }
+                            json!({ "label": label })
+                        }).collect::<Vec<_>>(),
                     });
                     if let Some(documentation) = &signature.documentation {
                         value["documentation"] = json!({

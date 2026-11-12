@@ -413,7 +413,8 @@ impl IndexBuilder {
                     continue;
                 };
                 let text = self.texts.get(&file_id).cloned().unwrap_or_default();
-                let mut collector = OccurrenceCollector::new(file_id, text);
+                let tokens = crate::analysis::features::completion::token_stream::tokenize(&compiler, &text);
+                let mut collector = OccurrenceCollector::new(file_id, text, tokens);
                 collector.scan(&mut compiler.ctx, Some(unit));
                 let raw = std::mem::take(&mut collector.raw);
                 for occurrence in raw {
@@ -723,25 +724,39 @@ pub(crate) struct RawOccurrence {
 pub(crate) struct OccurrenceCollector {
     file: FileId,
     text: String,
+    tokens: Vec<crate::parser::tokens::Token>,
     pub(crate) raw: Vec<RawOccurrence>,
 }
 
 impl OccurrenceCollector {
-    pub(crate) fn new(file: FileId, text: String) -> Self {
+    pub(crate) fn new(
+        file: FileId,
+        text: String,
+        tokens: Vec<crate::parser::tokens::Token>,
+    ) -> Self {
         Self {
             file,
             text,
+            tokens,
             raw: Vec::new(),
         }
     }
 
-    fn field_name_pos(&self, ctx: &CompilerContext, selected: TreeId, name: &str) -> Option<i32> {
-        let start = ctx.tree(selected).pos.max(0) as usize;
-        // `pos` is a UTF-16 offset; text slicing is byte based.
-        let base = crate::analysis::positions::utf16_to_byte_snapped(&self.text, start);
-        let tail = self.text.get(base..)?;
-        let offset = tail.find(name)?;
-        Some(crate::analysis::positions::byte_to_utf16(&self.text, base + offset) as i32)
+    fn field_name_pos(&self, ctx: &CompilerContext, field: TreeId, name: &str) -> Option<i32> {
+        let start = ctx.tree(field).pos;
+        let start = self
+            .tokens
+            .iter()
+            .position(|token| token.pos >= start)?;
+        let dot = self.tokens[start..]
+            .iter()
+            .position(|token| token.kind == crate::parser::tokens::TokenKind::DOT)?
+            + start;
+        let token = self.tokens[dot + 1..].iter().find(|token| {
+            token.kind == crate::parser::tokens::TokenKind::IDENTIFIER
+                && token.name().to_java_string().to_string_lossy() == name
+        })?;
+        Some(token.pos)
     }
 
     fn record(&mut self, symbol: CompilerSymbolId, position: i32, role: OccurrenceRole) {
@@ -795,14 +810,23 @@ impl OccurrenceCollector {
         name: &str,
         is_new: bool,
     ) -> Option<i32> {
-        let start = ctx.tree(expr).pos.max(0) as usize;
-        let base = crate::analysis::positions::utf16_to_byte_snapped(&self.text, start);
-        let tail = self.text.get(base..)?;
-        let colons = tail.find("::")?;
-        let after = &tail[colons + 2..];
-        let target = if is_new { "new" } else { name };
-        let offset = after.find(target)?;
-        Some(crate::analysis::positions::byte_to_utf16(&self.text, base + colons + 2 + offset) as i32)
+        let expr_pos = ctx.tree(expr).pos;
+        let start = self.tokens.iter().position(|token| token.pos >= expr_pos)?;
+        let colon = self.tokens[start..]
+            .iter()
+            .position(|token| token.kind == crate::parser::tokens::TokenKind::COLCOL)?
+            + start;
+        let token = self.tokens[colon + 1..].iter().find(|token| {
+            token.kind == crate::parser::tokens::TokenKind::IDENTIFIER
+                || token.kind == crate::parser::tokens::TokenKind::NEW
+        })?;
+        if is_new != (token.kind == crate::parser::tokens::TokenKind::NEW) {
+            return None;
+        }
+        if !is_new && token.name().to_java_string().to_string_lossy() != name {
+            return None;
+        }
+        Some(token.pos)
     }
 
     /// The member a static import names, including inherited members.
@@ -929,7 +953,7 @@ impl TreeScannerVisitor for OccurrenceCollector {
                 ..
             } => {
                 let name = name.to_java_string().to_string_lossy().to_string();
-                let Some(position) = self.field_name_pos(&*ctx, *selected, &name) else {
+                let Some(position) = self.field_name_pos(&*ctx, qualid, &name) else {
                     return;
                 };
                 position
@@ -1025,7 +1049,7 @@ impl TreeScannerVisitor for OccurrenceCollector {
             _ => return,
         };
         if let (Some(selected), Some(sym)) = (selected, sym)
-            && let Some(position) = self.field_name_pos(ctx, selected, &name)
+            && let Some(position) = self.field_name_pos(ctx, tree, &name)
         {
             self.record(sym, position, OccurrenceRole::Reference);
         }

@@ -101,12 +101,6 @@ impl FileAnalysis {
             if pos < 0 {
                 continue;
             }
-            let Some(byte) = crate::analysis::positions::utf16_to_byte(&text, pos as usize) else {
-                continue;
-            };
-            if !text[byte..].starts_with(&call_name) {
-                continue;
-            }
             let from = methods
                 .iter()
                 .find(|(_, start, end)| pos >= *start && pos < *end)
@@ -170,12 +164,6 @@ impl FileAnalysis {
                 continue;
             }
             if pos < 0 {
-                continue;
-            }
-            let Some(byte) = crate::analysis::positions::utf16_to_byte(&text, pos as usize) else {
-                continue;
-            };
-            if !text[byte..].starts_with(&name) {
                 continue;
             }
             let Some(to_item) = self.method_item(&name) else {

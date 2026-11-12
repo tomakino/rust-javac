@@ -10,6 +10,9 @@ use super::super::{canonical, FileAnalysis};
 
 /// One overridden method shown in the hover.
 struct OverrideSection {
+    owner: String,
+    member: String,
+    signature: String,
     display: String,
     location: Option<Location>,
 }
@@ -49,7 +52,7 @@ impl FileAnalysis {
         let mut compiler_symbol = None;
         let symbol = match self
             .new_class_call_at(&text, position)
-            .filter(|call| !call.anonymous && preceded_by_new_keyword(&text, position))
+            .filter(|call| !call.anonymous && call.new_expression)
         {
             // `new T(...)`: the cursor is on the type name, but the useful
             // signature is the selected constructor.
@@ -113,6 +116,9 @@ impl FileAnalysis {
             if let Some(symbol) = compiler_symbol {
                 for entry in self.overridden_method_entries(symbol) {
                     overrides.push(OverrideSection {
+                        owner: entry.owner,
+                        member: entry.member,
+                        signature: entry.signature,
                         display: entry.display,
                         location: entry.location,
                     });
@@ -125,9 +131,9 @@ impl FileAnalysis {
                 );
                 for entry in idx_entries {
                     if let Some(existing) = overrides.iter_mut().find(|existing| {
-                        crate::analysis::features::navigation::same_override_display(
-                            &existing.display,
-                            &entry.display,
+                        crate::analysis::features::navigation::same_override_method(
+                            (&existing.owner, &existing.member, &existing.signature),
+                            (&entry.owner, &entry.member, &entry.signature),
                         )
                     }) {
                         // The index carries the fully qualified owner even when
@@ -137,6 +143,9 @@ impl FileAnalysis {
                         continue;
                     }
                     overrides.push(OverrideSection {
+                        owner: entry.owner,
+                        member: entry.member,
+                        signature: entry.signature,
                         display: entry.display,
                         location: entry.location,
                     });
@@ -246,23 +255,6 @@ fn location_uri(location: &Location) -> String {
     uri
 }
 
-/// Whether the cursor word is introduced by the `new` keyword. Enum
-/// constants also have a synthetic constructor call, but their position is
-/// not a `new` expression.
-fn preceded_by_new_keyword(text: &str, position: javac_analysis_api::Position) -> bool {
-    let line = position.line as usize + 1;
-    let column = position.column as usize + 1;
-    let offset = line_offset(text, line, column).min(text.len());
-    let before = text[..offset].trim_end();
-    let Some(prefix) = before.strip_suffix("new") else {
-        return false;
-    };
-    match prefix.chars().next_back() {
-        Some(c) => !(c.is_alphanumeric() || c == '_' || c == '$'),
-        None => true,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,6 +262,9 @@ mod tests {
     #[test]
     fn unavailable_override_is_plain_text_with_reason() {
         let line = override_markdown(&OverrideSection {
+            owner: "Base".to_string(),
+            member: "method".to_string(),
+            signature: String::new(),
             display: "Base#method()".to_string(),
             location: None,
         });

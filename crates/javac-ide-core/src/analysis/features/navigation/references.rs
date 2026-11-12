@@ -141,13 +141,18 @@ impl ReferenceCollector {
     fn field_name_pos(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        selected: crate::ids::TreeId,
+        field: crate::ids::TreeId,
         name: &str,
     ) -> Option<i32> {
-        let start = ctx.tree(selected).pos.max(0) as usize;
-        let tail = self.text.get(start..)?;
-        let offset = tail.find(name)?;
-        Some((start + offset) as i32)
+        let end_positions = ctx.trees.iter().find_map(|root| match &root.kind {
+            crate::tree::jc_tree::TreeKind::CompilationUnit { end_positions, .. } => {
+                end_positions.as_deref()
+            }
+            _ => None,
+        })?;
+        let end = crate::tree::tree_info::get_end_pos(ctx, Some(field), Some(end_positions));
+        let length = name.encode_utf16().count() as i32;
+        (end >= length).then_some(end - length)
     }
 
     fn record(&mut self, symbol: SymbolId, position: i32) {
@@ -212,7 +217,7 @@ impl TreeScannerVisitor for ReferenceCollector {
         };
         if let Some(sym) = sym {
             if let Some(selected) = selected {
-                if let Some(position) = self.field_name_pos(ctx, selected, &name) {
+                if let Some(position) = self.field_name_pos(ctx, tree, &name) {
                     self.record(sym, position);
                 }
             }

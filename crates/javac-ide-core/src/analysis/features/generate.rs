@@ -85,6 +85,7 @@ impl FileAnalysis {
             }
             body.push_str(&format!("{indent}}}{newline}"));
             actions.push(CodeAction {
+                kind: javac_analysis_api::CodeActionKind::Generate,
                 title: "Generate constructor".to_string(),
                 edits: vec![context.insert.edit(body)],
                 diagnostics: Vec::new(),
@@ -103,6 +104,7 @@ impl FileAnalysis {
             body.push_str(&format!("{indent}    '}}';{newline}"));
             body.push_str(&format!("{indent}}}{newline}"));
             actions.push(CodeAction {
+                kind: javac_analysis_api::CodeActionKind::Generate,
                 title: "Generate toString()".to_string(),
                 edits: vec![context.insert.edit(body)],
                 diagnostics: Vec::new(),
@@ -162,6 +164,7 @@ impl FileAnalysis {
             }
             edits.push(context.insert.edit(body));
             actions.push(CodeAction {
+                kind: javac_analysis_api::CodeActionKind::Generate,
                 title: "Generate equals() and hashCode()".to_string(),
                 edits,
                 diagnostics: Vec::new(),

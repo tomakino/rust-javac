@@ -1139,12 +1139,9 @@ fn render_tags(comment: &DCDocComment) -> String {
                 description,
                 ..
             } => {
-                let mut name_text = render_inline_node(name).trim().to_string();
-                if *is_type_parameter && !name_text.starts_with('<') {
-                    name_text = format!("<{name_text}>");
-                }
-                let name_text = if name_text.starts_with('<') && name_text.ends_with('>') {
-                    code_span(&name_text)
+                let name_text = render_inline_node(name).trim().to_string();
+                let name_text = if *is_type_parameter {
+                    code_span(&format!("<{name_text}>"))
                 } else {
                     name_text
                 };
@@ -1226,7 +1223,6 @@ fn render_tags(comment: &DCDocComment) -> String {
 }
 
 fn block_tag_label(name: &str) -> String {
-    let name = name.trim().trim_start_matches('@');
     match name {
         "apiNote" => return "API Note".to_string(),
         "implSpec" => return "Implementation Requirements".to_string(),

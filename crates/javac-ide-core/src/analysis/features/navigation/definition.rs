@@ -29,6 +29,8 @@ pub(crate) struct NewClassCall {
     /// `new T() { ... }`: the definition is the type, not the anonymous
     /// constructor generated for the class body.
     pub(crate) anonymous: bool,
+    /// Actual `new T(...)` syntax (not an enum constant's synthetic call).
+    pub(crate) new_expression: bool,
 }
 
 /// Finds the method declaration whose body contains `target`.
@@ -321,7 +323,8 @@ impl FileAnalysis {
         let cursor = line_offset(text, line, column);
         let start =
             byte_to_utf16(text, super::source::word_start_offset(text, cursor)) as i32;
-        for tree in self.compiler.ctx.trees.iter() {
+        for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {
+            let tree_id = TreeId::new(index as u32);
             let TreeKind::NewClass {
                 clazz: Some(clazz),
                 constructor: Some(constructor),
@@ -349,6 +352,8 @@ impl FileAnalysis {
                 class,
                 constructor: *constructor,
                 anonymous,
+                new_expression: self.compiler.ctx.tree(tree_id).pos
+                    < self.compiler.ctx.tree(*clazz).pos,
             });
         }
         None

@@ -192,20 +192,37 @@ pub struct TypeHierarchyItem {
     pub range: Range,
 }
 
+/// Structured code-action kind for LSP classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodeActionKind {
+    QuickFix,
+    Generate,
+    OrganizeImports,
+}
+
 /// A quick fix or refactoring action.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodeAction {
     pub title: String,
+    pub kind: CodeActionKind,
     pub edits: Vec<TextEdit>,
     /// Diagnostics this action fixes (LSP `CodeAction.diagnostics`).
     pub diagnostics: Vec<Diagnostic>,
+}
+
+/// One structured parameter of a callable signature.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParameterInformation {
+    pub type_name: String,
+    pub name: Option<String>,
+    pub varargs: bool,
 }
 
 /// One callable signature shown by signature help.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignatureInformation {
     pub label: String,
-    pub parameters: Vec<String>,
+    pub parameters: Vec<ParameterInformation>,
     /// Javadoc of the callable, rendered as Markdown.
     pub documentation: Option<String>,
 }

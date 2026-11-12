@@ -492,6 +492,7 @@ impl FileAnalysis {
         {
             let path = import_path_at(syntax, text, target.range.start.line).unwrap_or_default();
             return vec![CodeAction {
+                kind: javac_analysis_api::CodeActionKind::QuickFix,
                 title: format!("Remove unused import: {path}"),
                 edits: vec![delete_line_edit(target.range.start.line, &lines)],
                 diagnostics: vec![(*target).clone()],
@@ -505,6 +506,7 @@ impl FileAnalysis {
             edits.sort_by_key(|edit| edit.range.start.line);
             edits.reverse();
             return vec![CodeAction {
+                kind: javac_analysis_api::CodeActionKind::QuickFix,
                 title: "Remove all unused imports".to_string(),
                 edits,
                 diagnostics: unused.iter().map(|diagnostic| (*diagnostic).clone()).collect(),
@@ -513,6 +515,7 @@ impl FileAnalysis {
         let target = unused[0];
         let path = import_path_at(syntax, text, target.range.start.line).unwrap_or_default();
         vec![CodeAction {
+            kind: javac_analysis_api::CodeActionKind::QuickFix,
             title: format!("Remove unused import: {path}"),
             edits: vec![delete_line_edit(target.range.start.line, &lines)],
             diagnostics: vec![target.clone()],
@@ -552,6 +555,7 @@ impl FileAnalysis {
                     format!("import {};{newline}", candidate.flat)
                 };
                 CodeAction {
+                    kind: javac_analysis_api::CodeActionKind::QuickFix,
                     title: format!("Import '{}'", candidate.flat),
                     edits: vec![TextEdit {
                         range: Range::point(Position::new(line, 0)),

@@ -67,25 +67,23 @@ impl FileAnalysis {
                 vartype,
                 sym: Some(sym),
                 decl_pos,
+                declared_using_var,
                 ..
             } = &tree.kind
             else {
                 continue;
             };
-            if *decl_pos < 0 || !self.owner_in_traced(*sym, &traced) {
+            let uses_var = *declared_using_var
+                || vartype.is_some_and(|vartype| {
+                    ast_is_var_type(&self.compiler.ctx, vartype)
+                        || crate::tree::tree_info::get_start_pos(&self.compiler.ctx, vartype)
+                            == *decl_pos
+                });
+            if *decl_pos < 0 || !uses_var || !self.owner_in_traced(*sym, &traced) {
                 continue;
             }
             let name = name.to_java_string().to_string_lossy();
             if name.is_empty() {
-                continue;
-            }
-            let Some(start) = utf16_to_byte(text, *decl_pos as usize) else {
-                continue;
-            };
-            if !text[start..].starts_with(&name) {
-                continue;
-            }
-            if !preceded_by_var(text, start) {
                 continue;
             }
             // The current round owns this name even if its type cannot be
@@ -136,7 +134,7 @@ impl FileAnalysis {
             } else {
                 seen.clone()
             };
-            for hint in self.cached_inlay_hints(key, text, &skip_names) {
+            for hint in self.cached_inlay_hints(key, vars, text, &skip_names) {
                 merged
                     .entry((hint.position.line, hint.position.column))
                     .or_insert(hint);
@@ -161,8 +159,8 @@ impl FileAnalysis {
             return merged;
         }
         // The buffer may be temporarily unparsable. Reuse the last valid
-        // hints only when the var token still exists at that position.
-        if !text.contains("var") {
+        // hints only for AST `var` declarations that still exist.
+        if vars.is_empty() {
             self.inlay_hint_cache.remove(key);
             return Vec::new();
         }
@@ -171,7 +169,7 @@ impl FileAnalysis {
         } else {
             seen.clone()
         };
-        self.cached_inlay_hints(key, text, &skip_names)
+        self.cached_inlay_hints(key, vars, text, &skip_names)
     }
 
     fn parameter_hints(
@@ -181,6 +179,7 @@ impl FileAnalysis {
         index: Option<&ProjectIndex>,
         show_same_name: bool,
     ) -> Vec<InlayHint> {
+        let tokens = super::completion::token_stream::tokenize(&self.compiler, text);
         let mut hints: HashMap<(u32, u32), InlayHint> = HashMap::new();
         for call in calls {
             let tree = self.compiler.ctx.tree(*call);
@@ -280,17 +279,10 @@ impl FileAnalysis {
                 {
                     continue;
                 }
-                let pos = crate::tree::tree_info::get_start_pos(&self.compiler.ctx, argument);
-                if pos < 0 {
-                    continue;
-                }
-                let Some(byte) = utf16_to_byte(text, pos as usize) else {
+                let Some(pos) = argument_start(&self.compiler.ctx, argument, &tokens) else {
                     continue;
                 };
-                if !is_argument_start(text, byte) {
-                    continue;
-                }
-                let (line, column) = offset_to_line_col(text, pos as usize);
+                let (line, column) = offset_to_line_col(text, pos);
                 hints.entry((line, column)).or_insert(InlayHint {
                     position: Position::new(line, column),
                     label: format!("{name}:"),
@@ -353,6 +345,7 @@ impl FileAnalysis {
     fn cached_inlay_hints(
         &self,
         key: &Path,
+        vars: &[TreeId],
         text: &str,
         skip_names: &HashSet<String>,
     ) -> Vec<InlayHint> {
@@ -360,20 +353,45 @@ impl FileAnalysis {
             return Vec::new();
         };
         let mut hints: HashMap<(u32, u32), InlayHint> = HashMap::new();
-        for (hint, name) in cached {
-            if skip_names.contains(name) {
+        for var in vars {
+            let TreeKind::VariableDecl {
+                name,
+                decl_pos,
+                vartype,
+                declared_using_var,
+                ..
+            } = &self.compiler.ctx.tree(*var).kind
+            else {
+                continue;
+            };
+            if !*declared_using_var
+                && !vartype.is_some_and(|vartype| {
+                    ast_is_var_type(&self.compiler.ctx, vartype)
+                        || crate::tree::tree_info::get_start_pos(&self.compiler.ctx, vartype)
+                            == *decl_pos
+                })
+            {
                 continue;
             }
-            for end in var_name_ends(text, name) {
-                let (line, column) = offset_to_line_col(text, end);
-                hints.entry((line, column)).or_insert(InlayHint {
-                    position: Position::new(line, column),
-                    label: hint.label.clone(),
-                    kind: InlayHintKind::Type,
-                    padding_left: false,
-                    padding_right: false,
-                });
+            if *decl_pos < 0 {
+                continue;
             }
+            let name = name.to_java_string().to_string_lossy();
+            if skip_names.contains(&name) {
+                continue;
+            }
+            let Some((hint, _)) = cached.iter().find(|(_, cached_name)| *cached_name == name) else {
+                continue;
+            };
+            let end = *decl_pos as usize + name.encode_utf16().count();
+            let (line, column) = offset_to_line_col(text, end);
+            hints.entry((line, column)).or_insert(InlayHint {
+                position: Position::new(line, column),
+                label: hint.label.clone(),
+                kind: InlayHintKind::Type,
+                padding_left: false,
+                padding_right: false,
+            });
         }
         let mut hints: Vec<InlayHint> = hints.into_values().collect();
         hints.sort_by_key(|hint| (hint.position.line, hint.position.column));
@@ -402,10 +420,53 @@ fn is_jdk_owner(flat_name: &str) -> bool {
         .any(|prefix| flat_name.starts_with(prefix))
 }
 
+/// True when the declared type node is the reserved `var` identifier.
+fn ast_is_var_type(ctx: &CompilerContext, tree: TreeId) -> bool {
+    match &ctx.tree(tree).kind {
+        TreeKind::Ident { name, .. } | TreeKind::FieldAccess { name, .. } => {
+            name.to_java_string().to_string_lossy() == "var"
+        }
+        TreeKind::AnnotatedType {
+            underlying_type: Some(underlying),
+            ..
+        } => ast_is_var_type(ctx, *underlying),
+        _ => false,
+    }
+}
+
+/// Leftmost AST position of an argument expression, snapped to the first
+/// scanner token (comments are not tokens).
+fn argument_start(
+    ctx: &CompilerContext,
+    argument: TreeId,
+    tokens: &[crate::parser::tokens::Token],
+) -> Option<usize> {
+    let mut tree = argument;
+    loop {
+        match &ctx.tree(tree).kind {
+            TreeKind::Parens { expr: Some(expr) } => tree = *expr,
+            TreeKind::FieldAccess { selected: Some(selected), .. } => tree = *selected,
+            TreeKind::MethodInvocation { meth: Some(meth), .. } => tree = *meth,
+            _ => break,
+        }
+    }
+    let position = ctx.tree(tree).pos;
+    if position < 0 {
+        return None;
+    }
+    let token = tokens.iter().find(|token| token.pos >= position)?;
+    // A comment before the argument makes the token's recorded start point at
+    // the comment; do not place a hint inside trivia.
+    if token.comments.is_some() {
+        return None;
+    }
+    Some(token.pos as usize)
+}
+
 /// True when the argument's source text is exactly the parameter name.
 fn argument_is_same_name(
     ctx: &CompilerContext,
-    text: &str,
+    _text: &str,
     argument: TreeId,
     name: &str,
 ) -> bool {
@@ -419,14 +480,7 @@ fn argument_is_same_name(
     if argument_name.to_java_string().to_string_lossy() != name {
         return false;
     }
-    let start = crate::tree::tree_info::get_start_pos(ctx, argument);
-    if start < 0 {
-        return false;
-    }
-    let Some(start) = utf16_to_byte(text, start as usize) else {
-        return false;
-    };
-    text.get(start..).is_some_and(|arg| arg.starts_with(name))
+    true
 }
 
 #[derive(Default)]
@@ -509,74 +563,3 @@ fn is_synthetic_parameter(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// UTF-16 offsets just after every "var <name>" occurrence in the text.
-fn var_name_ends(text: &str, name: &str) -> Vec<usize> {
-    let mut ends = Vec::new();
-    for (index, _) in text.match_indices("var") {
-        let before = text[..index].chars().next_back();
-        if before.is_some_and(is_identifier_char) {
-            continue;
-        }
-        let rest = &text[index + 3..];
-        let trimmed = rest.trim_start();
-        if !trimmed.starts_with(name) {
-            continue;
-        }
-        let end_byte = index + 3 + (rest.len() - trimmed.len()) + name.len();
-        let after = text[end_byte..].chars().next();
-        if after.is_some_and(is_identifier_char) {
-            continue;
-        }
-        ends.push(text[..end_byte].encode_utf16().count());
-    }
-    ends
-}
-
-fn is_identifier_char(ch: char) -> bool {
-    ch.is_alphanumeric() || ch == '_' || ch == '$'
-}
-
-/// True when only whitespace and comments separate the identifier from the
-/// preceding `var` keyword.
-fn preceded_by_var(text: &str, start: usize) -> bool {
-    let mut end = start;
-    loop {
-        let trimmed = text[..end].trim_end();
-        if trimmed.is_empty() {
-            return false;
-        }
-        if trimmed.ends_with("*/") {
-            let Some(open) = trimmed[..trimmed.len() - 2].rfind("/*") else {
-                return false;
-            };
-            end = open;
-            continue;
-        }
-        if let Some(comment) = trimmed.rfind("//")
-            && !trimmed[comment..].contains('\n')
-        {
-            end = comment;
-            continue;
-        }
-        let Some(prefix) = trimmed.strip_suffix("var") else {
-            return false;
-        };
-        return prefix
-            .chars()
-            .next_back()
-            .map(|ch| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
-            .unwrap_or(true);
-    }
-}
-
-fn is_argument_start(text: &str, byte: usize) -> bool {
-    let before = &text[..byte];
-    let previous = before.chars().rev().find(|ch| !ch.is_whitespace());
-    if !matches!(previous, Some('(') | Some(',')) {
-        return false;
-    }
-    let Some(next) = text[byte..].chars().next() else {
-        return false;
-    };
-    !(next.is_whitespace() || matches!(next, ')' | ',' | ';'))
-}

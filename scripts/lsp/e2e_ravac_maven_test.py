@@ -617,7 +617,22 @@ def main():
             detail = f"count={len(locations)}"
             if locations:
                 detail += f" first={Path(rel_of(locations[0])).name}:{locations[0]['range']['start']['line']}"
-            return len(locations) >= 2 and valid, detail
+            call_items = lsp.request(
+                "textDocument/prepareCallHierarchy",
+                {
+                    "textDocument": {"uri": lsp.uri(GSON_PATH)},
+                    "position": {"line": to_json_typed[0], "character": to_json_typed[1]},
+                },
+            ) or []
+            incoming = 0
+            if call_items:
+                calls = lsp.request(
+                    "callHierarchy/incomingCalls",
+                    {"item": call_items[0]},
+                ) or []
+                incoming = len(calls)
+            detail += f" call-incoming={incoming}"
+            return len(locations) >= 2 and valid and call_items and incoming >= 1, detail
 
         safe(report, 5, "references", item_references)
 
@@ -790,8 +805,22 @@ class ProbeSignature {
             )
             signatures = (help or {}).get("signatures") or []
             labels = [signature.get("label") or "" for signature in signatures]
+            parameters = [
+                parameter.get("label") or ""
+                for signature in signatures
+                for parameter in (signature.get("parameters") or [])
+            ]
+            structured = parameters and all(" " in parameter for parameter in parameters)
+            signature_ok = (
+                len(signatures) >= 1
+                and all("toJson(" in label for label in labels)
+                and structured
+            )
             lsp.did_close(signature_path)
-            return len(signatures) >= 1 and all(labels), f"signatures={len(signatures)} {labels[:3]}"
+            return signature_ok, (
+                f"signatures={len(signatures)} active={((help or {}).get('activeSignature'))} "
+                f"params={parameters[:4]} {labels[:2]}"
+            )
 
         safe(report, 8, "signatureHelp", item_signature)
 
@@ -1088,6 +1117,10 @@ class ProbeGenerate {
                     "options": {"tabSize": 2, "insertSpaces": True},
                 },
             )
+            close_line = next(
+                index for index, line in enumerate(gson_text.splitlines())
+                if line.strip() == "}" and index > position[0]
+            )
             on_type = lsp.request(
                 "textDocument/onTypeFormatting",
                 {
@@ -1097,14 +1130,56 @@ class ProbeGenerate {
                     "options": {"tabSize": 2, "insertSpaces": True},
                 },
             )
+            on_type_close = lsp.request(
+                "textDocument/onTypeFormatting",
+                {
+                    "textDocument": {"uri": lsp.uri(GSON_PATH)},
+                    "position": {"line": close_line, "character": 0},
+                    "ch": "}",
+                    "options": {"tabSize": 2, "insertSpaces": True},
+                },
+            )
+            case_path = "src/main/java/com/google/gson/ProbeOnType.java"
+            case_text = (
+                "class ProbeOnType {\n"
+                "    void f(int x) {\n"
+                "        switch (x) {\n"
+                "            case 1:\n"
+                "\n"
+                "        }\n"
+                "    }\n"
+                "}\n"
+            )
+            lsp.did_open(case_path, case_text)
+            case_line = next(
+                index for index, line in enumerate(case_text.splitlines())
+                if line.strip() == "case 1:"
+            )
+            on_type_case = lsp.request(
+                "textDocument/onTypeFormatting",
+                {
+                    "textDocument": {"uri": lsp.uri(case_path)},
+                    "position": {"line": case_line + 1, "character": 0},
+                    "ch": "\n",
+                    "options": {"tabSize": 2, "insertSpaces": True},
+                },
+            )
+            lsp.did_close(case_path)
             lsp.did_close(GSON_PATH)
             format_ok = formatted is None or isinstance(formatted, list)
-            on_type_ok = on_type is None or isinstance(on_type, list)
+            semicolon_ok = isinstance(on_type, list)
+            close_ok = isinstance(on_type_close, list) and len(on_type_close) >= 1
+            case_ok = isinstance(on_type_case, list) and len(on_type_case) >= 1
             jar = ROOT_REPO / "target" / "tools" / "google-java-format.jar"
-            note = f"format={'list' if isinstance(formatted, list) else 'null'} onType={'list' if isinstance(on_type, list) else 'null'}"
+            note = (
+                f"format={'list' if isinstance(formatted, list) else 'null'} "
+                f"semicolon={'list' if isinstance(on_type, list) else 'null'} "
+                f"close={len(on_type_close) if isinstance(on_type_close, list) else 'null'} "
+                f"case={len(on_type_case) if isinstance(on_type_case, list) else 'null'}"
+            )
             if formatted is None:
                 note += f" format-jar={jar.exists()}"
-            return format_ok and on_type_ok, note
+            return format_ok and semicolon_ok and close_ok and case_ok, note
 
         safe(report, 20, "formatting", item_formatting)
 

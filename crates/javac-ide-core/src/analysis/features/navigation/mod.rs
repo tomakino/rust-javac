@@ -14,7 +14,7 @@ mod source;
 mod super_methods;
 mod symbols;
 
-pub(crate) use super_methods::same_override_display;
+pub(crate) use super_methods::same_override_method;
 
 use crate::compiler_context::CompilerContext;
 use crate::ids::SymbolId;

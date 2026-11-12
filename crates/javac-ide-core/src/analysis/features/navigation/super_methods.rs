@@ -92,6 +92,9 @@ impl FileAnalysis {
 /// A method overridden by the hovered symbol, with a navigable declaration.
 pub(crate) struct OverrideMethod {
     pub symbol: SymbolId,
+    pub owner: String,
+    pub member: String,
+    pub signature: String,
     pub display: String,
     pub location: Option<Location>,
 }
@@ -100,17 +103,13 @@ pub(crate) struct OverrideMethod {
 /// occasionally reports a source class without its package in `flatname`,
 /// while the index has the fully qualified owner; a plain `Type#method` label
 /// can therefore differ only by an owner-package prefix.
-pub(crate) fn same_override_display(left: &str, right: &str) -> bool {
-    let split = |text: &str| {
-        text.rsplit_once('#')
-            .map(|(owner, member)| (owner.to_string(), member.to_string()))
-    };
-    let (Some((left_owner, left_member)), Some((right_owner, right_member))) =
-        (split(left), split(right))
-    else {
-        return left == right;
-    };
-    if left_member != right_member {
+pub(crate) fn same_override_method(
+    left: (&str, &str, &str),
+    right: (&str, &str, &str),
+) -> bool {
+    let (left_owner, left_member, left_signature) = left;
+    let (right_owner, right_member, right_signature) = right;
+    if left_member != right_member || left_signature != right_signature {
         return false;
     }
     left_owner == right_owner
@@ -159,8 +158,17 @@ impl FileAnalysis {
             }
             let location = self.method_location(method);
             let display = self.override_entry_display(method, &signature);
+            let sym = self.compiler.ctx.sym(method);
+            let member = sym.name.to_java_string().to_string_lossy().to_string();
+            let owner = sym.owner.and_then(|owner| match &self.compiler.ctx.sym(owner).kind_data {
+                SymbolKind::ClassSymbol { flatname, .. } => Some(flatname.to_string().replace('$', ".")),
+                _ => None,
+            }).unwrap_or_default();
             result.push(OverrideMethod {
                 symbol: method,
+                owner,
+                member,
+                signature: format!("({})", signature.params.join(",")),
                 display,
                 location,
             });
