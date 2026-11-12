@@ -15,7 +15,7 @@ import sys
 sys.stdout.reconfigure(encoding="utf-8")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-DEFAULT_SRC = ROOT / "target/tmp/jdk-src/java.base"
+SRC_ROOT = ROOT / "internal/test/jdk-src"
 JAVAC = pathlib.Path(os.environ.get("JAVA_HOME", "")) / "bin/javac.exe"
 
 
@@ -28,10 +28,10 @@ def hash_dir(d):
     return out
 
 
-def run(tool, src_root, out_dir, files, argfile_dir=None):
+def run(tool, module, src_root, out_dir, files, argfile_dir=None):
     out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [str(tool), "-J-Duser.language=en", "-J-Duser.country=US",
-           "--patch-module", "java.base=" + str(src_root),
+           "--patch-module", module + "=" + str(src_root),
            "-d", str(out_dir)]
     if argfile_dir is not None and len(files) > 200:
         # Windows caps the command line at 32767 characters; javac accepts
@@ -49,7 +49,8 @@ def run(tool, src_root, out_dir, files, argfile_dir=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", default=str(DEFAULT_SRC))
+    ap.add_argument("--module", default="java.base")
+    ap.add_argument("--src", default="")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--filter", default="")
     ap.add_argument("--exclude", default="")
@@ -57,7 +58,8 @@ def main():
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
 
-    src_root = pathlib.Path(args.src)
+    module = args.module
+    src_root = pathlib.Path(args.src) if args.src else SRC_ROOT / module
     java_files = sorted(src_root.rglob("*.java"))
     if args.filter:
         java_files = [f for f in java_files if args.filter in f.as_posix()]
@@ -82,7 +84,7 @@ def main():
     # matching class from that single run.
     jout_all = work / "javac_all"
     print("[javac] compiling the module once...", flush=True)
-    jc_all, jerr_all = run(JAVAC, src_root, jout_all, java_files, argfile_dir=work)
+    jc_all, jerr_all = run(JAVAC, module, src_root, jout_all, java_files, argfile_dir=work)
     all_jclasses = hash_dir(jout_all)
     print(f"[javac] exit={jc_all} classes={len(all_jclasses)}", flush=True)
     # Compile the whole module with rust in one process, the same way javac was
@@ -92,7 +94,7 @@ def main():
     # failing source still produces a precise per-file report.
     print("[rust] compiling the module once...", flush=True)
     rout_all = work / "rust_all"
-    rc_all, rerr_all = run(exe, src_root, rout_all, java_files, argfile_dir=work / "rust")
+    rc_all, rerr_all = run(exe, module, src_root, rout_all, java_files, argfile_dir=work / "rust")
     parsed_all = hash_dir(rout_all)
     print(f"[rust] exit={rc_all} classes={len(parsed_all)}", flush=True)
     batch_ok = rc_all == 0
@@ -108,7 +110,7 @@ def main():
             rc, rerr = 0, ""
         else:
             rout = work / "rust" / rel.replace("/", "_")[:-5]
-            rc, rerr = run(exe, src_root, rout, [f])
+            rc, rerr = run(exe, module, src_root, rout, [f])
             rclasses = hash_dir(rout)
         # A package-info.java legitimately produces no class file.
         ok = (
@@ -140,7 +142,7 @@ def main():
             print(f"  javac: {[l for l in jerr.splitlines() if 'error' in l][:2]}")
         if rerr.strip():
             print(f"  rust: {[l for l in rerr.splitlines() if 'error' in l or 'panic' in l][:2]}")
-    print("java.base parity:", "OK" if not diffs else "FAIL")
+    print(f"{module} parity:", "OK" if not diffs else "FAIL")
     return 0 if not diffs else 1
 
 

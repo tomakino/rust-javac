@@ -76,6 +76,8 @@ COMMANDS: dict[str, list[list[str]]] = {
         [sys.executable, "scripts/check_commons_lang3.py"],
         [sys.executable, "scripts/check_junit5.py"],
         [sys.executable, "scripts/check_java_base.py"],
+        [sys.executable, "scripts/check_java_base.py", "--module", "java.sql"],
+        [sys.executable, "scripts/check_java_base.py", "--module", "java.xml"],
         # Whole-module byte-for-byte comparison against javac. The checker
         # excludes javax/swing/plaf/gtk and PangoFonts.java because src.zip
         # lacks the Unix platform classes those files need.
