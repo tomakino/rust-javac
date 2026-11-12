@@ -115,6 +115,14 @@ pub enum InsertTextFormat {
     Snippet,
 }
 
+/// Structured signature of a method/constructor completion item.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompletionSignature {
+    pub return_type: Option<String>,
+    pub name: String,
+    pub parameters: Vec<String>,
+}
+
 /// A completion candidate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompletionItem {
@@ -124,6 +132,8 @@ pub struct CompletionItem {
     pub documentation: Option<String>,
     /// Extra label detail rendered next to the label (e.g. "(int i)").
     pub label_detail: Option<String>,
+    /// Structured method/constructor signature, when this item is callable.
+    pub signature: Option<CompletionSignature>,
     /// Sort key sent to clients that reorder completions themselves.
     pub sort_text: Option<String>,
     /// Text actually inserted; `None` means the label is inserted.

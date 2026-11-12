@@ -65,33 +65,29 @@ fn context_kind_rank(context: RankContext, kind: SymbolKind) -> u8 {
     }
 }
 
-/// The part before the parenthesis (constructors keep their signature in the
-/// label, so this groups overloads).
+/// The structured method/constructor name, or the label for non-callables.
 fn name_of(item: &CompletionItem) -> String {
-    item.label
-        .split('(')
-        .next()
-        .unwrap_or(&item.label)
-        .to_ascii_lowercase()
+    item
+        .signature
+        .as_ref()
+        .map(|signature| signature.name.to_ascii_lowercase())
+        .unwrap_or_else(|| item.label.to_ascii_lowercase())
 }
 
-/// The parameter list: labelDetails when present, otherwise the label tail.
+/// The parameter list reconstructed from the structured signature.
 fn signature_of(item: &CompletionItem) -> String {
-    item.label_detail.clone().unwrap_or_else(|| {
-        item.label
-            .split_once('(')
-            .map(|(_, rest)| rest.to_string())
-            .unwrap_or_default()
-    })
+    item.signature
+        .as_ref()
+        .map(|signature| format!("({})", signature.parameters.join(", ")))
+        .or_else(|| item.label_detail.clone())
+        .unwrap_or_default()
 }
 
-fn arity(signature: &str) -> usize {
-    let inner = signature.trim_start_matches('(').trim_end_matches(')');
-    if inner.trim().is_empty() {
-        0
-    } else {
-        inner.matches(',').count() + 1
-    }
+fn arity(item: &CompletionItem) -> usize {
+    item.signature
+        .as_ref()
+        .map(|signature| signature.parameters.len())
+        .unwrap_or(0)
 }
 
 fn exact_rank(item: &CompletionItem, prefix: &str) -> u8 {
@@ -125,7 +121,7 @@ pub(crate) fn rank_items(
             exact_rank(left, prefix),
             context_kind_rank(context, left.kind),
             name_of(left),
-            arity(&left_signature),
+            arity(left),
             left_signature.len(),
             left_signature,
             left.label.clone(),
@@ -136,7 +132,7 @@ pub(crate) fn rank_items(
             exact_rank(right, prefix),
             context_kind_rank(context, right.kind),
             name_of(right),
-            arity(&right_signature),
+            arity(right),
             right_signature.len(),
             right_signature,
             right.label.clone(),
@@ -165,6 +161,7 @@ mod tests {
             detail: None,
             documentation: None,
             label_detail: None,
+            signature: None,
             sort_text: None,
             insert_text: None,
             insert_text_format: InsertTextFormat::PlainText,
@@ -236,10 +233,25 @@ mod tests {
     fn overloads_by_arity_then_signature_length() {
         let mut first = item("FileInputStream(File file)", SymbolKind::Class);
         first.label_detail = Some("(File file)".to_string());
+        first.signature = Some(javac_analysis_api::CompletionSignature {
+            return_type: None,
+            name: "FileInputStream".to_string(),
+            parameters: vec!["File file".to_string()],
+        });
         let mut second = item("FileInputStream(String name)", SymbolKind::Class);
         second.label_detail = Some("(String name)".to_string());
+        second.signature = Some(javac_analysis_api::CompletionSignature {
+            return_type: None,
+            name: "FileInputStream".to_string(),
+            parameters: vec!["String name".to_string()],
+        });
         let mut third = item("FileInputStream(FileDescriptor fdObj)", SymbolKind::Class);
         third.label_detail = Some("(FileDescriptor fdObj)".to_string());
+        third.signature = Some(javac_analysis_api::CompletionSignature {
+            return_type: None,
+            name: "FileInputStream".to_string(),
+            parameters: vec!["FileDescriptor fdObj".to_string()],
+        });
         let ranked = rank_items(vec![third, first, second], "Filein", RankContext::New);
         assert_eq!(
             labels(&ranked),

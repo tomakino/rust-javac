@@ -107,13 +107,18 @@ impl FileAnalysis {
                     if !is_ctor || !is_public {
                         continue;
                     }
-                    let signature = self.method_signature(member).unwrap_or_default();
+                    let structured = self.structured_signature(member);
+                    let signature = structured
+                        .as_ref()
+                        .map(|signature| format!("({})", signature.parameters.join(", ")))
+                        .unwrap_or_default();
                     let mut item = completion_item(
                         format!("{simple}{signature}"),
                         javac_analysis_api::SymbolKind::Class,
                         Some(package_flat.clone()),
                         None,
                     );
+                    item.signature = structured;
                     // Constructor arguments are placeholders for the editor, not
                     // parameter names: never insert p0/p1 into the source.
                     let snippet = insert::escape_snippet(&simple);

@@ -7,7 +7,7 @@ use super::super::super::positions::prefix_at;
 use super::super::super::type_names::type_name;
 use super::super::super::FileAnalysis;
 use super::super::map_kind;
-use super::common::{completion_item, expression_start_byte, index_kind_name, is_anonymous_class, is_internal_package, CallContext, KEYWORDS};
+use super::common::{completion_item, index_kind_name, is_anonymous_class, is_internal_package, CallContext, KEYWORDS};
 use super::imports::ImportContext;
 use super::{context, insert, rank, search, token_stream};
 
@@ -46,7 +46,7 @@ impl FileAnalysis {
             position.line as usize + 1,
             position.column as usize + 1,
         );
-        let _cursor_utf16 = text[..cursor_byte].encode_utf16().count();
+        let cursor_utf16 = text[..cursor_byte].encode_utf16().count();
         let tokens = token_stream::tokenize(&self.compiler, &text);
         let anchors = self.insertion_anchors(&tokens);
         // Classify at the start of the prefix: the last token before the word
@@ -65,9 +65,15 @@ impl FileAnalysis {
                 break;
             }
         }
-        let is_receiver = before > 0 && text[..before].ends_with('.');
+        let prefix_start_utf16 = text[..before].encode_utf16().count();
+        let is_receiver =
+            token_stream::last_before(&tokens, prefix_start_utf16)
+                == Some(crate::parser::tokens::TokenKind::DOT);
         let scan_byte = if is_receiver {
-            expression_start_byte(&text, before)
+            let cursor_utf16 = text[..before].encode_utf16().count();
+            token_stream::receiver_start_utf16(&tokens, cursor_utf16)
+                .and_then(|start| super::super::super::positions::utf16_to_byte(&text, start))
+                .unwrap_or(cursor_byte)
         } else {
             cursor_byte.saturating_sub(prefix.len())
         };
@@ -80,13 +86,104 @@ impl FileAnalysis {
             &self.annotation_ranges_impl(file),
             &self.context_type_ranges_impl(file),
         );
-        let import_context = ImportContext::new(
+        let import_syntax = self.import_syntax_impl(file);
+        let import_context = ImportContext::from_syntax(
             &text,
+            &import_syntax,
             self.traced_class_names(),
             insertion != context::InsertionContext::ImportPackage,
         );
-        // Receiver context: always return its result, including the empty one.
-        if let Some(mut items) = self.receiver_completion(file, &text, position, insertion) {
+        // Import declaration completion: package/type segments before the
+        // cursor, decoded from the token stream. The AST import ranges decide
+        // that this is an import line; no line text is parsed.
+        if insertion == context::InsertionContext::ImportPackage
+            && let Some((mut parts, static_import)) =
+                token_stream::import_qualifier(&tokens, cursor_utf16)
+        {
+            if !prefix.is_empty() && parts.last().is_some_and(|part| part == &prefix) {
+                parts.pop();
+            }
+            let base = parts.join(".");
+            let mut seen = std::collections::HashSet::new();
+            let mut items = Vec::new();
+            if static_import {
+                let class = self.compiler.syms.get_all_classes().into_iter().find(|symbol| {
+                    self.compiler.ctx.sym(*symbol).flat_name().to_string() == base
+                });
+                if let Some(class) = class {
+                    let call = CallContext {
+                        current_class: self.file_class_symbol(file),
+                        current_package: String::new(),
+                        insertion,
+                    };
+                    for mut item in self.members_of_type(class, &call, true, false) {
+                        if search::match_label(&prefix, &item.label).is_none() {
+                            continue;
+                        }
+                        item.detail = Some(base.clone());
+                        items.push(item);
+                    }
+                } else {
+                    for symbol in self.compiler.syms.get_all_classes() {
+                        let flat = self.compiler.ctx.sym(symbol).flat_name().to_string();
+                        let rest = if base.is_empty() {
+                            Some(flat.as_str())
+                        } else {
+                            flat.strip_prefix(&format!("{base}."))
+                        };
+                        let Some(rest) = rest else { continue };
+                        let segment = rest.split('.').next().unwrap_or(rest);
+                        if segment.is_empty() || !seen.insert(segment.to_string()) {
+                            continue;
+                        }
+                        if search::match_label(&prefix, segment).is_some() {
+                            items.push(completion_item(
+                                segment.to_string(),
+                                javac_analysis_api::SymbolKind::Class,
+                                Some(flat.clone()),
+                                None,
+                            ));
+                        }
+                    }
+                }
+            } else {
+                for symbol in self.compiler.syms.get_all_classes() {
+                    let flat = self.compiler.ctx.sym(symbol).flat_name().to_string();
+                    let rest = if base.is_empty() {
+                        Some(flat.as_str())
+                    } else {
+                        flat.strip_prefix(&format!("{base}."))
+                    };
+                    let Some(rest) = rest else { continue };
+                    let segment = rest.split('.').next().unwrap_or(rest);
+                    if segment.is_empty() {
+                        continue;
+                    }
+                    let package_entry = rest.contains('.');
+                    let key = format!("{base}.{segment}");
+                    if !seen.insert(key) {
+                        continue;
+                    }
+                    if search::match_label(&prefix, segment).is_some() {
+                        items.push(completion_item(
+                            segment.to_string(),
+                            javac_analysis_api::SymbolKind::Class,
+                            Some(if package_entry {
+                                format!("{base}.{segment}")
+                            } else {
+                                flat.clone()
+                            }),
+                            None,
+                        ));
+                    }
+                }
+            }
+            items = rank::rank_items(items, &prefix, rank::RankContext::Import);
+            items.truncate(100);
+            self.apply_prefix_replace(&mut items, prefix_utf16);
+            return items;
+        }
+        if let Some(mut items) = self.receiver_completion(file, &text, position, insertion, &tokens) {
             let filter_prefix = if self.receiver_prefix_consumed {
                 ""
             } else {
@@ -108,19 +205,10 @@ impl FileAnalysis {
         }
         // New-expression: constructor completion ("new Zip" -> ZipFile(...)).
         {
-            let before_prefix = &text[..cursor_byte - prefix.len()];
-            let trimmed_before = before_prefix.trim_end();
-            let new_context = trimmed_before
-                .strip_suffix("new")
-                .map(|head| {
-                    head.chars()
-                        .last()
-                        .map(|c| {
-                            !(c.is_alphanumeric() || c == '_' || c == '$' || c == '.')
-                        })
-                        .unwrap_or(true)
-                })
-                .unwrap_or(false);
+            let prefix_start = text[..cursor_byte - prefix.len()]
+                .encode_utf16()
+                .count();
+            let new_context = token_stream::after_new(&tokens, prefix_start);
             if new_context && !prefix.is_empty() {
                 let current_class = self.file_class_symbol(file);
                 let current_package = current_class
@@ -274,6 +362,7 @@ impl FileAnalysis {
             item.insert_text = Some(plan.text);
             item.insert_text_format = plan.format;
             item.label_detail = self.method_signature(symbol);
+            item.signature = self.structured_signature(symbol);
             item.detail = self.method_return_type(symbol);
             item.documentation =
                 self.member_documentation(&file_class_flat, &label, Some(argument_count));
@@ -367,31 +456,21 @@ impl FileAnalysis {
                 current_package: String::new(),
                 insertion,
             };
-            let static_paths: Vec<String> = text
-                .lines()
-                .filter_map(|line| {
-                    let trimmed = line.trim();
-                    let rest = trimmed.strip_prefix("import static ")?;
-                    Some(rest.split(';').next().unwrap_or(rest).trim().to_string())
-                })
-                .collect();
-            for path in static_paths {
-                let type_path = path.strip_suffix(".*").unwrap_or_else(|| {
-                    path.rsplit_once('.').map(|(ty, _)| ty).unwrap_or(&path)
-                });
-                let simple = type_path.rsplit('.').next().unwrap_or(type_path);
+            for import in &import_syntax.static_imports {
+                let path = import.type_path.clone();
+                let simple = path.rsplit('.').next().unwrap_or(&path);
                 let Some(class) = self.class_by_simple_name(simple) else {
                     continue;
                 };
                 let members = self.members_of_type(class, &call, true, false);
-                if path.ends_with(".*") {
+                if import.wildcard {
                     for mut item in members {
                         item.detail = Some(path.clone());
                         items.push(item);
                     }
-                } else if let Some((_, member)) = path.rsplit_once('.') {
+                } else if let Some(member) = &import.member {
                     for item in members {
-                        if item.label == member {
+                        if item.label == *member {
                             items.push(item);
                         }
                     }

@@ -661,11 +661,70 @@ class ProbeImport {
             import_items = imports if isinstance(imports, list) else (imports or {}).get("items") or []
             import_labels = [item.get("label") for item in import_items]
             import_ok = "JsonElement" in import_labels
+            import_line_path = "src/main/java/com/google/gson/internal/ProbeImportLine.java"
+            import_line_text = """package com.google.gson.internal;
+
+import java.
+class ProbeImportLine {}
+"""
+            lsp.did_open(import_line_path, import_line_text)
+            import_line_position = position_of(
+                import_line_text, "import java.", offset=len("import java.")
+            )
+            import_line = lsp.request(
+                "textDocument/completion",
+                {
+                    "textDocument": {"uri": lsp.uri(import_line_path)},
+                    "position": {
+                        "line": import_line_position[0],
+                        "character": import_line_position[1],
+                    },
+                    "context": {"triggerKind": 1},
+                },
+            )
+            import_line_items = (
+                import_line if isinstance(import_line, list) else (import_line or {}).get("items") or []
+            )
+            import_line_ok = any(item.get("label") == "util" for item in import_line_items)
+            lsp.did_close(import_line_path)
+            static_import_path = "src/main/java/com/google/gson/internal/ProbeStaticImportLine.java"
+            static_import_text = """package com.google.gson.internal;
+
+import static java.util.Collections.
+class ProbeStaticImportLine {}
+"""
+            lsp.did_open(static_import_path, static_import_text)
+            static_import_position = position_of(
+                static_import_text,
+                "import static java.util.Collections.",
+                offset=len("import static java.util.Collections."),
+            )
+            static_import = lsp.request(
+                "textDocument/completion",
+                {
+                    "textDocument": {"uri": lsp.uri(static_import_path)},
+                    "position": {
+                        "line": static_import_position[0],
+                        "character": static_import_position[1],
+                    },
+                    "context": {"triggerKind": 1},
+                },
+            )
+            static_import_items = (
+                static_import
+                if isinstance(static_import, list)
+                else (static_import or {}).get("items") or []
+            )
+            static_import_ok = any(
+                item.get("label") == "emptyList" for item in static_import_items
+            )
+            lsp.did_close(static_import_path)
             lsp.did_close(completion_path)
             lsp.did_close(import_probe_path)
-            return member_ok and import_ok, (
+            return member_ok and import_ok and import_line_ok and static_import_ok, (
                 f"members={len(labels)} has-toJson={member_ok} "
-                f"imports={len(import_labels)} has-JsonElement={import_ok}"
+                f"imports={len(import_labels)} has-JsonElement={import_ok} "
+                f"import-line={import_line_ok} static-import={static_import_ok}"
             )
 
         safe(report, 7, "completion", item_completion)

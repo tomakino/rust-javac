@@ -173,6 +173,7 @@ impl FileAnalysis {
                     item.insert_text = Some(plan.text);
                     item.insert_text_format = plan.format;
                     item.label_detail = self.method_signature(member);
+                    item.signature = self.structured_signature(member);
                     item.detail = self.method_return_type(member);
                     item.documentation =
                         self.member_documentation(&class_flat, &name, Some(argument_count));
@@ -424,6 +425,24 @@ impl FileAnalysis {
             }
         }
         anchors
+    }
+
+
+    /// Structured signature used by ranking; no label-text parsing.
+    pub(super) fn structured_signature(
+        &mut self,
+        symbol: crate::ids::SymbolId,
+    ) -> Option<javac_analysis_api::CompletionSignature> {
+        let parts = crate::analysis::signatures::signature_parts(
+            &self.compiler.ctx,
+            symbol,
+            crate::analysis::signatures::ParameterNames::Positional,
+        )?;
+        Some(javac_analysis_api::CompletionSignature {
+            return_type: parts.return_type,
+            name: parts.name,
+            parameters: parts.parameters,
+        })
     }
 
     /// Return type of a method (shown in the detail column).

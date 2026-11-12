@@ -7,6 +7,9 @@ use javac_analysis_api::Range;
 use super::super::super::positions::{
     byte_to_utf16, line_offset, offset_to_line_col, word_at,
 };
+use crate::analysis::features::import_syntax::{
+    ImportSyntax, StaticImportSyntax,
+};
 use super::super::super::{canonical, FileAnalysis};
 use super::references::ReferenceCollector;
 use crate::code::symbol::SymbolKind;
@@ -102,6 +105,95 @@ impl FileAnalysis {
             }
         }
         root
+    }
+
+    
+    /// Decode the package/import declarations from the AST.
+    pub(crate) fn import_syntax_impl(&self, file: &Path) -> ImportSyntax {
+        let mut syntax = ImportSyntax::default();
+        let Some(root) = self.latest_root_for(file) else {
+            return syntax;
+        };
+        let crate::tree::jc_tree::TreeKind::CompilationUnit {
+            defs,
+            end_positions,
+            ..
+        } = &self.compiler.ctx.tree(root).kind
+        else {
+            return syntax;
+        };
+        let end_positions = end_positions.as_deref();
+        let mut end = 0usize;
+        for definition in defs.iter() {
+            let node = self.compiler.ctx.tree(definition);
+            let node_end = crate::tree::tree_info::get_end_pos(
+                &self.compiler.ctx,
+                Some(definition),
+                end_positions,
+            );
+            match &node.kind {
+                crate::tree::jc_tree::TreeKind::PackageDecl { pid: Some(pid), .. } => {
+                    if node_end >= 0 {
+                        end = end.max(node_end as usize);
+                    }
+                    syntax.package = import_qualifier_parts(
+                        &self.compiler.ctx,
+                        *pid,
+                        end_positions,
+                    )
+                    .into_iter()
+                    .map(|(name, ..)| name)
+                    .collect::<Vec<_>>()
+                    .join(".");
+                }
+                crate::tree::jc_tree::TreeKind::Import {
+                    qualid: Some(qualid),
+                    static_import,
+                    ..
+                } => {
+                    if node_end >= 0 {
+                        end = end.max(node_end as usize);
+                    }
+                    let parts = import_qualifier_parts(
+                        &self.compiler.ctx,
+                        *qualid,
+                        end_positions,
+                    );
+                    if parts.is_empty() {
+                        continue;
+                    }
+                    let names: Vec<&str> =
+                        parts.iter().map(|(name, ..)| name.as_str()).collect();
+                    let wildcard = names.last() == Some(&"*");
+                    let names = if wildcard {
+                        &names[..names.len() - 1]
+                    } else {
+                        &names[..]
+                    };
+                    if *static_import {
+                        let (type_names, member) = if wildcard {
+                            (names, None)
+                        } else if names.len() > 1 {
+                            (&names[..names.len() - 1], Some(names[names.len() - 1].to_string()))
+                        } else {
+                            continue;
+                        };
+                        syntax.static_imports.push(StaticImportSyntax {
+                            type_path: type_names.join("."),
+                            member,
+                            wildcard,
+                        });
+                    } else if wildcard {
+                        syntax.wildcard.push(names.join("."));
+                    } else {
+                        syntax.imports.push(names.join("."));
+                    }
+                }
+                _ => {}
+            }
+        }
+        syntax.end = end;
+        syntax
     }
 
     /// AST spans of type positions that make the cursor a type context.

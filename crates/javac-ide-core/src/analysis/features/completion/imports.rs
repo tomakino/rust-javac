@@ -6,6 +6,8 @@
 
 use javac_analysis_api::{Position, Range, TextEdit};
 
+use crate::analysis::features::import_syntax::ImportSyntax;
+
 /// The import-relevant state of the file being completed.
 pub(crate) struct ImportContext {
     package: String,
@@ -24,48 +26,32 @@ pub(crate) struct ImportContext {
 }
 
 impl ImportContext {
-    pub(crate) fn new(text: &str, local_names: Vec<String>, enabled: bool) -> Self {
-        let mut package = String::new();
-        let mut imports = Vec::new();
-        let mut wildcard = Vec::new();
-        let mut insert_at = 0usize;
-        let mut offset = 0usize;
-        for line in text.split_inclusive('\n') {
-            let end = offset + line.len();
-            // Tolerate a trailing line comment on a package/import line.
-            let code = line
-                .split("//")
-                .next()
-                .unwrap_or(line)
-                .trim();
-            if let Some(rest) = code.strip_prefix("package ") {
-                if let Some(name) = rest.strip_suffix(';') {
-                    package = name.trim().to_string();
-                    insert_at = end;
-                }
-            } else if let Some(rest) = code.strip_prefix("import ") {
-                if let Some(name) = rest.strip_suffix(';') {
-                    let name = name.trim();
-                    if let Some(package_name) = name.strip_suffix(".*") {
-                        wildcard.push(package_name.to_string());
-                    } else if !name.starts_with("static ") {
-                        imports.push(name.to_string());
-                    }
-                    insert_at = end;
-                }
-            }
-            offset = end;
-        }
-        // `insert_at` is a byte offset; LSP positions use UTF-16 columns.
-        let insert_utf16 = crate::analysis::positions::byte_to_utf16(text, insert_at);
-        let (line, column) = crate::analysis::positions::offset_to_line_col(text, insert_utf16);
+    /// Build from `PackageDecl` / `Import` AST nodes.
+    ///
+    /// `syntax.end` is the UTF-16 end of the last package/import declaration;
+    /// the insertion point is that AST boundary, not a line scan.
+    pub(crate) fn from_syntax(
+        text: &str,
+        syntax: &ImportSyntax,
+        local_names: Vec<String>,
+        enabled: bool,
+    ) -> Self {
+        let insert_utf16 = syntax.end;
+        let (line, _) = crate::analysis::positions::offset_to_line_col(text, insert_utf16);
+        let insertion = if insert_utf16 == 0 {
+            Position::new(0, 0)
+        } else {
+            Position::new(line + 1, 0)
+        };
         Self {
-            package,
-            imports,
-            wildcard,
+            package: syntax.package.clone(),
+            imports: syntax.imports.clone(),
+            wildcard: syntax.wildcard.clone(),
             local_names,
-            insertion: Position::new(line, column),
-            needs_leading_newline: insert_at > 0 && !text[..insert_at].ends_with('\n'),
+            // The AST end is the semicolon; the edit is inserted on the next
+            // line, matching the package/import block boundary.
+            insertion,
+            needs_leading_newline: false,
             enabled,
         }
     }
@@ -119,10 +105,35 @@ impl ImportContext {
 mod tests {
     use super::*;
 
+    fn make_context(
+        text: &str,
+        package: &str,
+        imports: &[&str],
+        wildcard: &[&str],
+        end: usize,
+        enabled: bool,
+    ) -> ImportContext {
+        let syntax = ImportSyntax {
+            package: package.to_string(),
+            imports: imports.iter().map(|value| value.to_string()).collect(),
+            wildcard: wildcard.iter().map(|value| value.to_string()).collect(),
+            static_imports: Vec::new(),
+            end,
+        };
+        ImportContext::from_syntax(text, &syntax, Vec::new(), enabled)
+    }
+
     #[test]
     fn inserts_after_the_import_block() {
         let text = "package p;\nimport java.util.List;\nclass T {}\n";
-        let context = ImportContext::new(text, Vec::new(), true);
+        let context = make_context(
+            text,
+            "p",
+            &["java.util.List"],
+            &[],
+            "package p;\nimport java.util.List;".len(),
+            true,
+        );
         let edit = context
             .edit_for("java.util.ArrayList", true)
             .expect("import edit");
@@ -133,13 +144,13 @@ mod tests {
     #[test]
     fn skips_visible_types() {
         let text = "import java.util.*;\nclass T {}\n";
-        let context = ImportContext::new(text, Vec::new(), true);
+        let context = make_context(text, "", &[], &["java.util"], 0, true);
         assert!(context.edit_for("java.util.ArrayList", true).is_none());
         let text = "import java.util.ArrayList;\nclass T {}\n";
-        let context = ImportContext::new(text, Vec::new(), true);
+        let context = make_context(text, "", &["java.util.ArrayList"], &[], 0, true);
         assert!(context.edit_for("java.util.ArrayList", true).is_none());
         let text = "package p;\nclass T {}\n";
-        let context = ImportContext::new(text, Vec::new(), true);
+        let context = make_context(text, "p", &[], &[], 0, true);
         assert!(context.edit_for("java.lang.String", true).is_none());
         assert!(context.edit_for("p.ArrayList", true).is_none());
     }
@@ -147,17 +158,22 @@ mod tests {
     #[test]
     fn skips_conflicts_and_local_types() {
         let text = "import other.ArrayList;\nclass T {}\n";
-        let context = ImportContext::new(text, Vec::new(), true);
+        let context = make_context(text, "", &["other.ArrayList"], &[], 0, true);
         assert!(context.edit_for("java.util.ArrayList", true).is_none());
         let text = "class T {}\n";
-        let context = ImportContext::new(text, vec!["ArrayList".to_string()], true);
+        let context = ImportContext::from_syntax(
+            text,
+            &ImportSyntax::default(),
+            vec!["ArrayList".to_string()],
+            true,
+        );
         assert!(context.edit_for("java.util.ArrayList", true).is_none());
     }
 
     #[test]
     fn disabled_in_import_lines() {
         let text = "class T {}\n";
-        let context = ImportContext::new(text, Vec::new(), false);
+        let context = make_context(text, "", &[], &[], 0, false);
         assert!(context.edit_for("java.util.ArrayList", true).is_none());
     }
 }

@@ -1729,3 +1729,34 @@ fn t65_package_completion_keeps_nested_types() {
     assert!(has(&second, "Encoder"), "nested Encoder lost: {second:?}");
     assert!(has(&second, "getDecoder"), "static member lost: {second:?}");
 }
+
+#[test]
+fn import_completion_lists_package_segments() {
+    let mut s = session();
+    let labels = labels_with_cursor(&mut s, "IM1", "import java.|
+class IM1 {}
+");
+    assert!(has(&labels, "util"), "java.* packages: {:?}", labels);
+}
+
+#[test]
+fn import_completion_lists_classes_after_package() {
+    let mut s = session();
+    let labels = labels_with_cursor(&mut s, "IM2", "import java.util.|
+class IM2 {}
+");
+    assert!(has(&labels, "ArrayList"), "java.util types: {:?}", labels);
+}
+
+#[test]
+fn static_import_completion_lists_members() {
+    let mut s = session();
+    let labels = labels_with_cursor(
+        &mut s,
+        "IM3",
+        "import static java.util.Collections.|
+class IM3 {}
+",
+    );
+    assert!(has(&labels, "emptyList"), "static members: {:?}", labels);
+}

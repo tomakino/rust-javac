@@ -7,6 +7,7 @@ pub(crate) mod folding;
 pub(crate) mod format;
 pub(crate) mod hierarchy;
 pub(crate) mod hover;
+pub(crate) mod import_syntax;
 pub(crate) mod inlay_hints;
 pub(crate) mod navigation;
 pub(crate) mod on_type_formatting;

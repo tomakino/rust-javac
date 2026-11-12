@@ -1,43 +1,106 @@
-use super::super::super::positions::utf16_to_byte;
 use super::super::super::type_names::type_name;
 use super::super::super::FileAnalysis;
-use super::common::{argument_index, is_ident_char, last_keyword_before, last_open_paren_before, method_symbol, outer_constructor_name, previous_non_ws_byte, strip_type_arguments, ExpectedNew, OuterNewCall};
+use super::common::{method_symbol, ExpectedNew};
 use crate::code::type_::TypeKindData;
 use crate::code::type_tag::TypeTag;
 use crate::tree::jc_tree::TreeKind;
 use crate::util::list::List;
 
+#[derive(Clone)]
+enum CallSiteKind {
+    Method {
+        method: crate::ids::SymbolId,
+        typeargs: List<crate::ids::TreeId>,
+    },
+    New {
+        class_name: String,
+        actuals: Option<List<crate::ids::TypeId>>,
+    },
+}
+
+struct CallSite {
+    pos: usize,
+    args: Vec<crate::ids::TreeId>,
+    kind: CallSiteKind,
+}
+
+fn primitive_expected(tag: TypeTag) -> ExpectedNew {
+    let label = match tag {
+        TypeTag::BOOLEAN => "boolean",
+        TypeTag::BYTE => "byte",
+        TypeTag::CHAR => "char",
+        TypeTag::SHORT => "short",
+        TypeTag::INT => "int",
+        TypeTag::LONG => "long",
+        TypeTag::FLOAT => "float",
+        TypeTag::DOUBLE => "double",
+        _ => "?",
+    };
+    ExpectedNew {
+        label: label.to_string(),
+        array: false,
+        class: false,
+        array_labels: Vec::new(),
+    }
+}
+
 impl FileAnalysis {
-    /// Expected type of a nested `new` expression. Argument positions are
-    /// resolved from the enclosing call; casts, initializers/assignments and
-    /// returns are resolved from the surrounding source when the call form is
-    /// not present.
+    /// Expected type of a nested `new` expression, resolved from enclosing AST
+    /// nodes: call arguments, casts, assignments/initializers and returns.
     pub(super) fn new_expected_type(
         &mut self,
         text: &str,
         cursor_byte: usize,
         prefix_len: usize,
     ) -> Option<ExpectedNew> {
-        let before = text.get(..cursor_byte.saturating_sub(prefix_len))?;
-        let new_pos = before.rfind("new")?;
-        if new_pos > 0
-            && before[..new_pos]
-                .chars()
-                .next_back()
-                .is_some_and(is_ident_char)
-        {
-            return None;
+        let cursor = text[..cursor_byte.saturating_sub(prefix_len)]
+            .encode_utf16()
+            .count();
+        let current_new = self.innermost_new_pos(cursor);
+        if let Some(site) = self.enclosing_call(cursor, current_new) {
+            let argument = self.call_argument_index(&site.args, cursor);
+            match &site.kind {
+                CallSiteKind::Method { method, typeargs } => {
+                    if let Some(expected) = self.method_argument_expected(
+                        *method,
+                        typeargs.clone(),
+                        &site.args,
+                        argument,
+                    ) {
+                        return Some(expected);
+                    }
+                }
+                CallSiteKind::New {
+                    class_name,
+                    actuals,
+                } => {
+                    let argument_types: Vec<Option<crate::ids::TypeId>> = site
+                        .args
+                        .iter()
+                        .map(|arg| self.compiler.ctx.tree(*arg).ty)
+                        .collect();
+                    if let Some(expected) = self.constructor_expected(
+                        class_name,
+                        argument,
+                        site.args.len(),
+                        actuals.as_ref(),
+                        &argument_types,
+                    ) {
+                        return Some(expected);
+                    }
+                }
+            }
         }
-        if let Some(expected) = self.cast_expected_type(text, new_pos) {
+        if let Some(expected) = self.cast_expected_type(cursor) {
             return Some(expected);
         }
-        if let Some(expected) = self.call_argument_expected(text, cursor_byte, prefix_len) {
+        if let Some(expected) = self.assignment_expected_type(cursor) {
             return Some(expected);
         }
-        if let Some(expected) = self.assignment_expected_type(text, new_pos) {
+        if let Some(expected) = self.initializer_expected_type(cursor) {
             return Some(expected);
         }
-        self.return_expected_type(text, new_pos)
+        self.return_expected_type(cursor)
     }
 
     pub(super) fn expected_from_ty(&self, ty: crate::ids::TypeId) -> ExpectedNew {
@@ -51,161 +114,262 @@ impl FileAnalysis {
         }
     }
 
-    pub(super) fn expected_from_text(&mut self, text: &str) -> Option<ExpectedNew> {
-        let text = strip_type_arguments(text.trim());
-        let text = text.trim();
-        if text.is_empty() || text == "var" {
-            return None;
+    fn expected_from_type_tree(&self, tree: crate::ids::TreeId) -> Option<ExpectedNew> {
+        if let Some(ty) = self.compiler.ctx.tree(tree).ty {
+            return Some(self.expected_from_ty(ty));
         }
-        let array = text.ends_with("[]");
-        let base = if array {
-            text.trim_end_matches("[]").trim()
-        } else {
-            text
-        };
-        let base = base.split_whitespace().last().unwrap_or(base).trim();
-        if base.is_empty() || base.contains('(') || base.contains(')') {
-            return None;
-        }
-        if array {
-            let label = format!("{base}[]");
-            return Some(ExpectedNew {
-                label: label.clone(),
-                array: true,
-                class: false,
-                array_labels: vec![label],
-            });
-        }
-        if let Some(class) = self.class_by_simple_name(base.rsplit('.').next()?) {
-            if let Some(ty) = self.compiler.ctx.sym(class).ty {
-                return Some(self.expected_from_ty(ty));
+        match &self.compiler.ctx.tree(tree).kind {
+            TreeKind::PrimitiveTypeTree { typetag } => Some(primitive_expected(*typetag)),
+            TreeKind::ArrayTypeTree { elemtype: Some(elemtype) } => {
+                let elem = self.expected_from_type_tree(*elemtype)?;
+                let label = format!("{}[]", elem.label);
+                Some(ExpectedNew {
+                    label: label.clone(),
+                    array: true,
+                    class: false,
+                    array_labels: vec![label],
+                })
             }
-        }
-        matches!(
-            base,
-            "byte" | "short" | "char" | "int" | "long" | "float" | "double" | "boolean"
-        )
-        .then(|| ExpectedNew {
-            label: base.to_string(),
-            array: false,
-            class: false,
-            array_labels: Vec::new(),
-        })
-    }
-
-    pub(super) fn cast_expected_type(&mut self, text: &str, new_pos: usize) -> Option<ExpectedNew> {
-        let close = previous_non_ws_byte(text, new_pos)?;
-        if text.as_bytes().get(close) != Some(&b')') {
-            return None;
-        }
-        let mut depth = 0i32;
-        let mut open = None;
-        for (index, ch) in text[..=close].char_indices().rev() {
-            match ch {
-                ')' => depth += 1,
-                '(' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        open = Some(index);
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let open = open?;
-        let inner = text[open + 1..close].trim();
-        if inner.is_empty() || inner.contains('=') || inner.contains(',') || inner.contains(';') {
-            return None;
-        }
-        self.expected_from_text(inner)
-    }
-
-    pub(super) fn assignment_expected_type(&mut self, text: &str, new_pos: usize) -> Option<ExpectedNew> {
-        let start = text[..new_pos]
-            .rfind([';', '{', '}'])
-            .map(|index| index + 1)
-            .unwrap_or(0);
-        let segment = &text[start..new_pos];
-        let equals = segment.rfind('=')?;
-        let before_eq = segment[..equals].chars().next_back();
-        let after_eq = segment[equals + 1..].chars().next();
-        if before_eq.is_some_and(|ch| matches!(ch, '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^'))
-            || after_eq == Some('=')
-        {
-            return None;
-        }
-        let lhs = segment[..equals].trim();
-        if lhs.is_empty() || lhs.contains(';') || lhs.contains('(') || lhs.contains(')') {
-            return None;
-        }
-        let name_start = lhs
-            .rfind(char::is_whitespace)
-            .map(|index| index + 1)
-            .unwrap_or(0);
-        let name = lhs[name_start..].trim();
-        if name.is_empty() || name.contains('.') || name.starts_with('@') {
-            return None;
-        }
-        let type_text = strip_type_arguments(lhs[..name_start].trim());
-        let type_text = type_text.split_whitespace().last().unwrap_or("").trim();
-        if type_text.is_empty() {
-            return self.find_local_var_type(name, new_pos);
-        }
-        if type_text == "var" {
-            return self.find_local_var_type(name, new_pos);
-        }
-        self.expected_from_text(type_text)
-    }
-
-    pub(super) fn find_local_var_type(&self, name: &str, before: usize) -> Option<ExpectedNew> {
-        let mut best: Option<(i32, ExpectedNew)> = None;
-        for tree in self.compiler.ctx.trees.iter() {
-            let TreeKind::VariableDecl {
-                name: decl_name,
-                sym: Some(sym),
-                decl_pos,
+            TreeKind::AnnotatedType {
+                underlying_type: Some(underlying_type),
                 ..
+            } => self.expected_from_type_tree(*underlying_type),
+            _ => None,
+        }
+    }
+
+    fn tree_end_utf16(&self, tree: crate::ids::TreeId) -> Option<usize> {
+        for root in self.compiler.ctx.trees.iter() {
+            if let TreeKind::CompilationUnit { end_positions, .. } = &root.kind {
+                let end = crate::tree::tree_info::get_end_pos(
+                    &self.compiler.ctx,
+                    Some(tree),
+                    end_positions.as_deref(),
+                );
+                if end >= 0 {
+                    return Some(end as usize);
+                }
+            }
+        }
+        None
+    }
+
+    fn node_range(&self, tree: crate::ids::TreeId) -> Option<(usize, usize)> {
+        let start = self.compiler.ctx.tree(tree).pos;
+        if start < 0 {
+            return None;
+        }
+        let end = self.tree_end_utf16(tree)?;
+        (end >= start as usize).then_some((start as usize, end))
+    }
+
+    fn innermost_new_pos(&self, cursor: usize) -> Option<usize> {
+        self.compiler
+            .ctx
+            .trees
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tree)| {
+                if !matches!(tree.kind, TreeKind::NewClass { .. }) || tree.pos < 0 {
+                    return None;
+                }
+                let tree = crate::ids::TreeId::new(index as u32);
+                let (start, end) = self.node_range(tree)?;
+                (start <= cursor && cursor <= end).then_some(start)
+            })
+            .max()
+    }
+
+    fn enclosing_call(
+        &self,
+        cursor: usize,
+        before: Option<usize>,
+    ) -> Option<CallSite> {
+        let mut best: Option<CallSite> = None;
+        for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {
+            let tree_id = crate::ids::TreeId::new(index as u32);
+            let (kind, args) = match &tree.kind {
+                TreeKind::MethodInvocation {
+                    meth, typeargs, args, ..
+                } => {
+                    let Some(meth) = meth else { continue };
+                    let Some(method) = method_symbol(&self.compiler.ctx, *meth) else {
+                        continue;
+                    };
+                    (
+                        CallSiteKind::Method {
+                            method,
+                            typeargs: typeargs.clone(),
+                        },
+                        args.clone(),
+                    )
+                }
+                TreeKind::NewClass { clazz, args, .. } => {
+                    let Some(clazz) = clazz else { continue };
+                    let Some(class_name) = self.simple_type_name(*clazz) else {
+                        continue;
+                    };
+                    let actuals = tree.ty.and_then(|ty| {
+                        match &self.compiler.ctx.typ(ty).kind {
+                            TypeKindData::ClassType {
+                                typarams_field: Some(params),
+                                ..
+                            } => Some(params.clone()),
+                            _ => None,
+                        }
+                    });
+                    (
+                        CallSiteKind::New {
+                            class_name,
+                            actuals,
+                        },
+                        args.clone(),
+                    )
+                }
+                _ => continue,
+            };
+            let Some((start, end)) = self.node_range(tree_id) else {
+                continue;
+            };
+            if start > cursor || end < cursor {
+                continue;
+            }
+            if before.is_some_and(|limit| start >= limit) {
+                continue;
+            }
+            let site = CallSite {
+                pos: start,
+                args: args.iter().collect(),
+                kind,
+            };
+            if best.as_ref().is_none_or(|current| site.pos > current.pos) {
+                best = Some(site);
+            }
+        }
+        best
+    }
+
+    fn simple_type_name(&self, tree: crate::ids::TreeId) -> Option<String> {
+        let ty = self.compiler.ctx.tree(tree).ty?;
+        let sym = self.compiler.ctx.typ(ty).tsym?;
+        Some(self.compiler.ctx.sym(sym).name.to_java_string().to_string_lossy().to_string())
+    }
+
+    fn call_argument_index(&self, args: &[crate::ids::TreeId], cursor: usize) -> usize {
+        args.iter()
+            .filter(|arg| {
+                self.compiler.ctx.tree(**arg).pos >= 0
+                    && self
+                        .tree_end_utf16(**arg)
+                        .is_some_and(|end| end <= cursor)
+            })
+            .count()
+    }
+
+    fn cast_expected_type(&mut self, cursor: usize) -> Option<ExpectedNew> {
+        let mut best: Option<(usize, ExpectedNew)> = None;
+        for (index, tree) in self.compiler.ctx.trees.iter().enumerate() {
+            let TreeKind::TypeCast {
+                clazz: Some(clazz), ..
             } = &tree.kind
             else {
                 continue;
             };
-            if decl_name.to_java_string().to_string_lossy() != name
-                || *decl_pos < 0
-                || *decl_pos as usize >= before
-            {
-                continue;
-            }
-            let Some(ty) = self.compiler.ctx.sym(*sym).ty else {
+            let tree_id = crate::ids::TreeId::new(index as u32);
+            let Some((start, end)) = self.node_range(tree_id) else {
                 continue;
             };
-            let expected = self.expected_from_ty(ty);
-            if best.as_ref().is_none_or(|(pos, _)| *decl_pos > *pos) {
-                best = Some((*decl_pos, expected));
+            if !(start <= cursor && cursor <= end) {
+                continue;
+            }
+            let Some(clazz_end) = self.tree_end_utf16(*clazz) else {
+                continue;
+            };
+            if clazz_end > cursor {
+                continue;
+            }
+            if let Some(expected) = self.expected_from_type_tree(*clazz) {
+                if best.as_ref().is_none_or(|(pos, _)| start > *pos) {
+                    best = Some((start, expected));
+                }
             }
         }
         best.map(|(_, expected)| expected)
     }
 
-    pub(super) fn return_expected_type(&mut self, text: &str, new_pos: usize) -> Option<ExpectedNew> {
-        let ret = last_keyword_before(text, new_pos, "return")?;
-        if text[ret + "return".len()..new_pos].contains(';') {
+    fn assignment_expected_type(&mut self, cursor: usize) -> Option<ExpectedNew> {
+        self.compiler
+            .ctx
+            .trees
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tree)| {
+                let TreeKind::Assign { lhs: Some(lhs), .. } = &tree.kind else {
+                    return None;
+                };
+                let tree = crate::ids::TreeId::new(index as u32);
+                let (start, end) = self.node_range(tree)?;
+                if !(start <= cursor && cursor <= end) {
+                    return None;
+                }
+                let ty = self.compiler.ctx.tree(*lhs).ty?;
+                Some((start, self.expected_from_ty(ty)))
+            })
+            .max_by_key(|(pos, _)| *pos)
+            .map(|(_, expected)| expected)
+    }
+
+    fn initializer_expected_type(&mut self, cursor: usize) -> Option<ExpectedNew> {
+        self.compiler
+            .ctx
+            .trees
+            .iter()
+            .find_map(|tree| {
+                let TreeKind::VariableDecl {
+                    vartype: Some(vartype),
+                    init: Some(init),
+                    ..
+                } = &tree.kind
+                else {
+                    return None;
+                };
+                let (start, end) = self.node_range(*init)?;
+                (start <= cursor && cursor <= end)
+                    .then(|| self.expected_from_type_tree(*vartype))
+                    .flatten()
+            })
+    }
+
+    fn return_expected_type(&mut self, cursor: usize) -> Option<ExpectedNew> {
+        let in_return = self
+            .compiler
+            .ctx
+            .trees
+            .iter()
+            .enumerate()
+            .any(|(index, tree)| {
+                matches!(tree.kind, TreeKind::Return { .. })
+                    && self
+                        .node_range(crate::ids::TreeId::new(index as u32))
+                        .is_some_and(|(start, end)| start <= cursor && cursor <= end)
+            });
+        if !in_return {
             return None;
         }
-        let mut best: Option<(i32, crate::ids::SymbolId)> = None;
-        for tree in self.compiler.ctx.trees.iter() {
-            let TreeKind::MethodDecl { sym: Some(sym), .. } = &tree.kind else {
-                continue;
-            };
-            if tree.pos >= 0
-                && tree.pos as usize <= new_pos
-                && best.as_ref().is_none_or(|(pos, _)| tree.pos > *pos)
-            {
-                best = Some((tree.pos, *sym));
-            }
-        }
-        let (_, method) = best?;
-        let ty = self.compiler.ctx.sym(method).ty?;
+        let method = self
+            .compiler
+            .ctx
+            .trees
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tree)| {
+                let TreeKind::MethodDecl { sym: Some(sym), .. } = &tree.kind else {
+                    return None;
+                };
+                (tree.pos >= 0 && tree.pos as usize <= cursor).then_some((tree.pos, *sym, index))
+            })
+            .max_by_key(|(pos, ..)| *pos)?;
+        let ty = self.compiler.ctx.sym(method.1).ty?;
         let restype = match &self.compiler.ctx.typ(ty).kind {
             TypeKindData::MethodType { restype, .. }
             | TypeKindData::PartiallyInferredMethodType { restype, .. } => *restype,
@@ -214,44 +378,6 @@ impl FileAnalysis {
         Some(self.expected_from_ty(restype))
     }
 
-    /// Expected type of a nested `new` expression at an enclosing call
-    /// argument. The enclosing constructor is found lexically, so it still
-    /// works while the inner expression is incomplete.
-    pub(super) fn call_argument_expected(
-        &mut self,
-        text: &str,
-        cursor_byte: usize,
-        prefix_len: usize,
-    ) -> Option<ExpectedNew> {
-        let before = text.get(..cursor_byte.saturating_sub(prefix_len))?;
-        let new_pos = before.rfind("new")?;
-        if new_pos > 0
-            && before[..new_pos]
-                .chars()
-                .next_back()
-                .is_some_and(is_ident_char)
-        {
-            return None;
-        }
-        let open = last_open_paren_before(text, new_pos)?;
-        let argument = argument_index(text, open, new_pos);
-        let outer_new = self.outer_new_call(text, open);
-        let actuals = outer_new.as_ref().and_then(|call| call.typeargs.as_ref());
-        let argument_types: &[Option<crate::ids::TypeId>] = outer_new
-            .as_ref()
-            .map_or(&[], |call| call.argument_types.as_slice());
-        let arguments = outer_new.as_ref().map_or(0, |call| call.arguments);
-        if let Some(class_name) = outer_constructor_name(text, open) {
-            return self.constructor_expected(
-                &class_name,
-                argument,
-                arguments,
-                actuals,
-                argument_types,
-            );
-        }
-        self.method_argument_expected(text, open, argument)
-    }
 
     pub(super) fn class_type_formals(&mut self, class: crate::ids::SymbolId) -> Option<List<crate::ids::TypeId>> {
         let _ = self
@@ -298,41 +424,6 @@ impl FileAnalysis {
             }
         }
         (!formals.is_empty()).then(|| List::from_iterable(formals))
-    }
-
-    pub(super) fn outer_new_call(&self, text: &str, open: usize) -> Option<OuterNewCall> {
-        for tree in self.compiler.ctx.trees.iter() {
-            let TreeKind::NewClass { args, .. } = &tree.kind else {
-                continue;
-            };
-            let Some(start) = utf16_to_byte(text, tree.pos.max(0) as usize) else {
-                continue;
-            };
-            let Some(call_open) = text[start..].find('(').map(|offset| start + offset) else {
-                continue;
-            };
-            if call_open != open {
-                continue;
-            }
-            let typeargs = tree
-                .ty
-                .and_then(|ty| match &self.compiler.ctx.typ(ty).kind {
-                    TypeKindData::ClassType {
-                        typarams_field: Some(params),
-                        ..
-                    } => Some(params.clone()),
-                    _ => None,
-                });
-            return Some(OuterNewCall {
-                typeargs,
-                argument_types: args
-                    .iter()
-                    .map(|arg| self.compiler.ctx.tree(arg).ty)
-                    .collect(),
-                arguments: args.size() as usize,
-            });
-        }
-        None
     }
 
     pub(super) fn constructor_expected(
@@ -440,48 +531,19 @@ impl FileAnalysis {
 
     pub(super) fn method_argument_expected(
         &mut self,
-        text: &str,
-        open: usize,
+        method: crate::ids::SymbolId,
+        typeargs: List<crate::ids::TreeId>,
+        args: &[crate::ids::TreeId],
         argument: usize,
     ) -> Option<ExpectedNew> {
-        // Find the outer call and copy everything needed before mutating the
-        // compiler context for generic substitution.
-        let mut outer = None;
-        for tree in self.compiler.ctx.trees.iter() {
-            let TreeKind::MethodInvocation {
-                meth: Some(meth),
-                typeargs,
-                args,
-                ..
-            } = &tree.kind
-            else {
-                continue;
-            };
-            let Some(start) = utf16_to_byte(text, tree.pos.max(0) as usize) else {
-                continue;
-            };
-            let Some(call_open) = text[start..].find('(').map(|offset| start + offset) else {
-                continue;
-            };
-            if call_open != open {
-                continue;
-            }
-            let Some(method) = method_symbol(&self.compiler.ctx, *meth) else {
-                continue;
-            };
-            let argument_types: Vec<Option<crate::ids::TypeId>> = args
-                .iter()
-                .map(|arg| self.compiler.ctx.tree(arg).ty)
-                .collect();
-            outer = Some((
-                method,
-                typeargs.clone(),
-                args.size() as usize,
-                argument_types,
-            ));
-            break;
+        let argument_types: Vec<Option<crate::ids::TypeId>> = args
+            .iter()
+            .map(|arg| self.compiler.ctx.tree(*arg).ty)
+            .collect();
+        let arguments = args.len();
+        if argument >= arguments {
+            return None;
         }
-        let (method, typeargs, arguments, argument_types) = outer?;
         if argument >= arguments {
             return None;
         }
