@@ -3552,7 +3552,8 @@ fn var_sym(ctx: &CompilerContext, var_decl: TreeId) -> Option<SymbolId> {
 /// Java: VarSymbol.adr
 fn var_symbol_adr(ctx: &CompilerContext, sym: SymbolId) -> i32 {
     match &ctx.sym(sym).kind_data {
-        crate::code::symbol::SymbolKind::VarSymbol { adr, .. } => *adr,
+        crate::code::symbol::SymbolKind::VarSymbol { adr, .. }
+        | crate::code::symbol::SymbolKind::BindingSymbol { adr, .. } => *adr,
         _ => 0,
     }
 }
@@ -3673,6 +3674,16 @@ impl<'a> AssignAnalyzer<'a> {
                     Some(Kind::MTH)
                 );
         }
+        // A binding-pattern variable is synthesised during attribution and can carry
+        // position 0, which would fail the `pos >= start_pos` test below. It is still a
+        // tracked local of the enclosing method: without an address of its own it would
+        // keep the default 0 and collide with the first field.
+        if matches!(
+            ctx.sym(sym).kind_data,
+            crate::code::symbol::SymbolKind::BindingSymbol { .. }
+        ) {
+            return true;
+        }
         let sym_pos = match &ctx.sym(sym).kind_data {
             crate::code::symbol::SymbolKind::VarSymbol { pos, .. } => *pos,
             _ => 0,
@@ -3722,11 +3733,9 @@ impl<'a> AssignAnalyzer<'a> {
         if self.vardecls.len() <= adr as usize {
             self.vardecls.resize(adr as usize + 1, None);
         }
-        if let crate::code::symbol::SymbolKind::VarSymbol { adr: slot, .. } =
-            &mut ctx.sym_mut(sym).kind_data
-        {
-            *slot = adr;
-        }
+        // BindingSymbol carries the address in its own variant; the shared setter
+        // covers both, so a pattern variable does not keep the default 0.
+        ctx.sym_mut(sym).set_local_adr(adr);
         self.vardecls[adr as usize] = Some(var_decl);
         self.inits.excl(adr);
         self.uninits.incl(adr);

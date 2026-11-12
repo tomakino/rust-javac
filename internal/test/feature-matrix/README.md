@@ -34,6 +34,7 @@ pwsh ./scripts/feature-matrix.ps1 -EnablePreview   # include --enable-preview un
 | 16 | record + pattern combination | `java16/records-patterns` |
 | 17 | sealed types / permits | `java17/sealed`, `java17/sealed-advanced` |
 | 17 | switch expressions (`yield`, arrow) | `java17/switch-expression` |
+| 17 | conditional expression typing (JLS 15.25) | `java17/conditional-types` |
 | 17 | type annotations | `java17/type-annotations` |
 | 17 | nestmates | `java17/nestmates` |
 | 17 | generics / signatures | `java17/generics` |
@@ -56,11 +57,12 @@ pwsh ./scripts/feature-matrix.ps1 -EnablePreview   # include --enable-preview un
 | 17 | extreme: inner / local / anonymous classes | `java17/edge-inner` |
 | 17 | extreme: initialization order | `java17/edge-init` |
 | 17 | extreme: text block escapes | `java17/edge-textblocks` |
+| 17 | blank final under pattern / nested branches | `java17/blank-final-pattern` |
 
 Preview features (17 pattern switch, 15/16 preview syntax) are intentionally
 not included by default; `-EnablePreview` is reserved for those units.
 
 ## Known gaps
 
-None: all 34 units currently compile to byte-identical classes, with identical
+None: all 45 units currently compile to byte-identical classes, with identical
 diagnostics and exit codes.

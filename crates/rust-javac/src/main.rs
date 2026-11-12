@@ -1431,6 +1431,9 @@ fn compile(args: &[String]) -> Result<i32, String> {
             ));
         }
     }
+    if let Err(error) = &result {
+        eprintln!("{error}");
+    }
     if errors > 0 || result.is_err() {
         return Ok(ERROR);
     }
