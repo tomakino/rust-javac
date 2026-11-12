@@ -427,6 +427,37 @@ fn same_file_constructor_parameter_names_are_available() {
 }
 
 #[test]
+fn jdk_interface_parameter_names_come_from_src_zip() {
+    let mut session = Session::new("jdk-interface");
+    let source = "package com.example.app;\n\nimport java.util.List;\nimport java.util.Map;\n\npublic class App {\n    void f(List<Long> list, Map<String, Integer> map) {\n        Long value = 1L;\n        String key = \"k\";\n        list.add(value);\n        map.put(key, 2);\n    }\n}\n";
+    let hints = session.inlays(source);
+    assert!(
+        hints.iter().any(|(label, kind)| *kind == 2 && label == "e:"),
+        "List.add parameter hint missing: {hints:?}"
+    );
+    assert!(
+        hints.iter().any(|(label, kind)| *kind == 2 && label == "key:"),
+        "Map.put key hint missing: {hints:?}"
+    );
+    assert!(
+        hints.iter().any(|(label, kind)| *kind == 2 && label == "value:"),
+        "Map.put value hint missing: {hints:?}"
+    );
+
+    let overloaded = session.inlays(
+        "package com.example.app;\n\nimport java.util.List;\n\npublic class App {\n    void f(List<Long> list) {\n        Long value = 1L;\n        list.remove(0);\n        list.remove(value);\n    }\n}\n",
+    );
+    assert!(
+        overloaded.iter().any(|(label, kind)| *kind == 2 && label == "index:"),
+        "int overload parameter hint missing: {overloaded:?}"
+    );
+    assert!(
+        overloaded.iter().any(|(label, kind)| *kind == 2 && label == "o:"),
+        "Object overload parameter hint missing: {overloaded:?}"
+    );
+}
+
+#[test]
 fn jdk_constructor_parameter_names_are_available() {
     let mut session = Session::new("jdk-constructor");
     let hints = session.inlays(

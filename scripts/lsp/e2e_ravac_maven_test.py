@@ -773,7 +773,7 @@ class ProbeSignature {
                 for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
                 if " var " in line
             )
-            required = {"out:", "lenient:", "serializeNulls:", "htmlSafe:", "str:"}
+            required = {"out:", "e:", "lenient:", "serializeNulls:", "htmlSafe:", "str:"}
             missing = sorted(required - labels)
             lines = gson_text.splitlines()
             method_line = next(
@@ -794,6 +794,10 @@ class ProbeSignature {
                     if marker in lines[index]
                 )
                 expected_lines.append((line + 1, label))
+            list_add_line = next(
+                index for index, line in enumerate(lines) if "list.add(value)" in line
+            )
+            expected_lines.append((list_add_line + 1, "e:"))
             missing_lines = [
                 f"{line}:{label}"
                 for line, label in expected_lines

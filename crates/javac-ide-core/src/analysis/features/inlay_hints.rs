@@ -11,6 +11,7 @@ use javac_analysis_api::{InlayHint, InlayHintKind, Position};
 
 use crate::analysis::positions::{offset_to_line_col, utf16_to_byte};
 use crate::analysis::type_names::type_name;
+use crate::analysis::jdk_sources;
 use crate::code::symbol::SymbolKind;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{SymbolId, TreeId};
@@ -208,9 +209,16 @@ impl FileAnalysis {
                 .name
                 .to_java_string()
                 .to_string_lossy();
+            let owner_flat_name = self.compiler.ctx.sym(callee).owner.and_then(|owner| {
+                match &self.compiler.ctx.sym(owner).kind_data {
+                    SymbolKind::ClassSymbol { flatname, .. } => Some(flatname.to_string()),
+                    _ => None,
+                }
+            });
+            let parameter_types = self.parameter_type_names(callee);
             // The resolved symbol can belong to a previous analysis round
-            // (empty params); fall back to the local declaration, then to the
-            // AST-extracted parameter names stored in the project index.
+            // (empty/synthetic params); fall back to the local declaration,
+            // then the project index.
             let mut params: Vec<String> = match &self.compiler.ctx.sym(callee).kind_data {
                 SymbolKind::MethodSymbol { params, .. }
                     if !params.is_empty() && params.size() == args.size() =>
@@ -229,27 +237,36 @@ impl FileAnalysis {
                 }
                 _ => self.local_parameter_names(&method_name, args.size() as usize),
             };
-            let needs_index = params.len() != args.size() as usize
+            let needs_fallback = params.len() != args.size() as usize
                 || params.iter().any(|name| {
                     name.is_empty() || name.starts_with('<') || is_synthetic_parameter(name)
                 });
-            if needs_index
+            if needs_fallback
                 && let Some(index) = index
-            {
-                let owner_flat_name = self.compiler.ctx.sym(callee).owner.and_then(|owner| {
-                    match &self.compiler.ctx.sym(owner).kind_data {
-                        SymbolKind::ClassSymbol { flatname, .. } => Some(flatname.to_string()),
-                        _ => None,
-                    }
-                });
-                if let Some(names) = query::parameter_names(
+                && let Some(names) = query::parameter_names(
                     index,
                     &method_name,
                     args.size() as usize,
                     owner_flat_name.as_deref(),
-                ) {
-                    params = names;
-                }
+                )
+            {
+                params = names;
+            }
+            let needs_jdk_fallback = params.len() != args.size() as usize
+                || params.iter().any(|name| {
+                    name.is_empty() || name.starts_with('<') || is_synthetic_parameter(name)
+                });
+            if needs_jdk_fallback
+                && let Some(owner_flat_name) = owner_flat_name.as_deref()
+                && is_jdk_owner(owner_flat_name)
+                && let Some(names) = jdk_sources::jdk_method_parameter_names(
+                    owner_flat_name,
+                    &method_name,
+                    args.size() as usize,
+                    &parameter_types,
+                )
+            {
+                params = names;
             }
             if params.len() != args.size() as usize {
                 continue;
@@ -285,6 +302,24 @@ impl FileAnalysis {
         let mut hints: Vec<InlayHint> = hints.into_values().collect();
         hints.sort_by_key(|hint| (hint.position.line, hint.position.column));
         hints
+    }
+
+    /// Declared parameter type names of a resolved method/constructor. Used as
+    /// the descriptor component of the JDK-source cache key and overload
+    /// selection; call-site substitutions do not matter for source matching.
+    fn parameter_type_names(&self, callee: SymbolId) -> Vec<String> {
+        let Some(ty) = self.compiler.ctx.sym(callee).ty else {
+            return Vec::new();
+        };
+        let crate::code::type_::TypeKindData::MethodType { argtypes, .. } =
+            &self.compiler.ctx.typ(ty).kind
+        else {
+            return Vec::new();
+        };
+        argtypes
+            .iter()
+            .map(|argtype| type_name(&self.compiler.ctx, argtype))
+            .collect()
     }
 
     /// Parameter names of the local declaration of `name` with `count` params.
@@ -357,6 +392,13 @@ impl FileAnalysis {
         }
         false
     }
+}
+
+/// True when the owner is a JDK class whose declaration can come from src.zip.
+fn is_jdk_owner(flat_name: &str) -> bool {
+    ["java.", "javax.", "jdk.", "sun.", "com.sun."]
+        .iter()
+        .any(|prefix| flat_name.starts_with(prefix))
 }
 
 /// True when the argument's source text is exactly the parameter name.
