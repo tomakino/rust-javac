@@ -30,11 +30,27 @@
 
 只完成被要求的动作，不扩大范围。长任务、全量测试、发布操作必须有明确指令。
 
+## 8. 日常开发与快速验证
+
+日常改动按成本递增验证，默认做到 L1 就停；全量 L3 与交叉构建只在明确要求或合并前执行。
+
+```powershell
+cargo check -p javac-core              # 类型检查，最快
+cargo build -p rust-javac              # 产出 target\debug\ravac.exe（build.rs 需要 JAVA_HOME）
+cargo test -p javac-core --lib         # L0：单元测试
+py scripts/gate.py --run               # 按改动路径自动选级别并执行
+py scripts/gate.py --files a.rs b.rs   # 只看指定文件
+py scripts/gate.py --level L2 --run    # 强制级别
+```
+
+冒烟：`target\debug\ravac.exe -d out Hello.java`；或跑单个语料检查器，如 `py scripts/check_gson.py --build`（退出码 0 一致、1 有差异、2 环境缺失）。
+
+级别：L0 单测；L1 = L0 + repro + Gson（约 15s）；L2 = L1 + jdk.compiler + Guava + OkHttp（约 50s）；L3 = 全部测试、全部语料与模块检查。改 parser/CLI 用 L1，改 attr/flow/lower/codegen 用 L2，纯文档改动无需测试。gate 接受已登记的已知失败，出现新的失败名即视为失败。
+
 ## 项目规则
 
 - 只声明已验证的目标平台：`windows-amd64`、`linux-amd64`、`linux-arm64`、`android-arm64`。
 - Linux 静态链接（musl），使用 Rust 自带的 `rust-lld`，不用 zig。
 - 只有一种运行时布局：`modules` 与 `ct.sym` 放在可执行文件旁（`RAVAC_PLATFORM_DIR` 可覆盖）。
 - 测试数据在 `internal/test` 下；禁止手改 `expected/` 基线。
-- 快速验证：`cargo build -p rust-javac` 加单文件编译冒烟。全量与交叉构建需明确要求。
 - 提交前运行 `git status`，确认没有意外文件；禁止提交 `dist/`、`target/`。
