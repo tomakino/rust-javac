@@ -16,7 +16,7 @@ use super::model::*;
 use super::build::hash_text;
 
 pub const MAGIC: &[u8; 4] = b"RAVI";
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 /// Directory that holds persisted indexes.
 ///
@@ -192,6 +192,10 @@ fn write_index(index: &ProjectIndex, out: &mut Vec<u8>) {
             None => out.push(0),
         }
         write_opt_string(out, symbol.javadoc.as_deref());
+        write_u32(out, symbol.parameter_names.len() as u32);
+        for name in &symbol.parameter_names {
+            write_string(out, name);
+        }
     }
 
     // Occurrences grouped by symbol, matching `ProjectIndex::occurrences`.
@@ -318,6 +322,11 @@ fn read_index(bytes: &[u8]) -> Option<ProjectIndex> {
             None
         };
         let javadoc = reader.opt_string()?;
+        let parameter_count = reader.u32()? as usize;
+        let mut parameter_names = Vec::with_capacity(parameter_count);
+        for _ in 0..parameter_count {
+            parameter_names.push(reader.string()?);
+        }
         let key = SymbolKey {
             owner,
             name,
@@ -334,6 +343,7 @@ fn read_index(bytes: &[u8]) -> Option<ProjectIndex> {
             flat_name,
             supertypes,
             return_type,
+            parameter_names,
             javadoc,
         };
         by_key.insert(key, id);

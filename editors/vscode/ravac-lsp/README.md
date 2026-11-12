@@ -20,9 +20,12 @@
 
     "ravacLsp.serverPath": "${workspaceFolder}/target/debug/ravac-lsp.exe",
     "ravacLsp.classPath": "${workspaceFolder}/target/tmp/perf/javac",
-    "ravacLsp.sourceLevel": "17"
+    "ravacLsp.sourceLevel": "17",
+    "ravacLsp.inlayHintsSameName": true
 
 如果使用 Maven 项目，设置 ravacLsp.projectPath 为项目根目录，服务器会追加依赖。
+
+`ravacLsp.inlayHintsSameName` 对应服务器启动参数 `--inlay-hints-same-name <true|false>`，默认 true：即使实参文本与参数名完全同名（如 `setLenient(lenient)`）也显示 `lenient:`；设为 false 后只跳过这类同名实参，其他参数提示不受影响。
 
 ## 与 redhat.java 共存
 

@@ -10,6 +10,9 @@ use std::path::{Path, PathBuf};
 use javac_analysis_api::{Position, WorkspaceService};
 
 use javac_ide_core::analysis::AnalysisConfig;
+use javac_ide_core::project::{
+    BuildFingerprint, BuildSourceSet, BuildSystemId, Module, ProjectModel, SourceSetKind,
+};
 use javac_ide_core::workspace::Workspace;
 
 const BASE_TYPE: &str = r#"package com.example.app;
@@ -89,6 +92,61 @@ impl Session {
 
     fn main(&self) -> PathBuf {
         self.root.join("src/main/java/com/example/app/App.java")
+    }
+
+    /// LSP project mode: `source_path` empty, dependencies resolved from
+    /// class files. The index still scans the project sources, which is where
+    /// parameter names come from when the class file has no MethodParameters.
+    fn project(name: &str) -> Option<Self> {
+        platform_dir();
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("target")
+            .join("tmp")
+            .join("d4-project-spec")
+            .join(format!("{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let source_root = root.join("src/main/java");
+        let package_dir = source_root.join("com/example/app");
+        std::fs::create_dir_all(&package_dir).unwrap();
+        std::fs::write(package_dir.join("BaseType.java"), BASE_TYPE).unwrap();
+        std::fs::write(package_dir.join("App.java"), APP).unwrap();
+        let classes = root.join("classes");
+        std::fs::create_dir_all(&classes).unwrap();
+        let javac = std::env::var_os("JAVA_HOME").map(PathBuf::from).map(|home| {
+            home.join("bin")
+                .join(if cfg!(windows) { "javac.exe" } else { "javac" })
+        })?;
+        let status = std::process::Command::new(javac)
+            .arg("-d")
+            .arg(&classes)
+            .arg(package_dir.join("BaseType.java"))
+            .status()
+            .ok()?;
+        if !status.success() {
+            return None;
+        }
+        let model = ProjectModel {
+            root: root.clone(),
+            provider: BuildSystemId::NONE,
+            modules: vec![Module {
+                root: root.clone(),
+                name: "d4".to_string(),
+                source_sets: vec![BuildSourceSet::new(
+                    SourceSetKind::Main,
+                    vec![source_root],
+                    Vec::new(),
+                    Some(classes),
+                )],
+                jdk_home: None,
+                source_level: Some("17".to_string()),
+            }],
+            fingerprint: BuildFingerprint::default(),
+        };
+        let mut workspace = Workspace::new_from_project(&model, root.join("out"), None);
+        workspace.wait_for_index();
+        Some(Self { workspace, root })
     }
 
     fn load(&mut self, source: &str) -> (String, u32, u32) {
@@ -303,6 +361,79 @@ fn cross_file_parameter_names_resolve_with_project_sources() {
     );
     assert!(
         hints.iter().any(|(label, kind)| *kind == 2 && label == "a:"),
+        "{hints:?}"
+    );
+}
+
+#[test]
+fn cross_file_parameter_names_resolve_from_index_without_class_file_parameters() {
+    // Mirrors the LSP project mode: source_path is empty and BaseType is
+    // resolved from a class file compiled without -parameters.
+    let Some(mut session) = Session::project("parameter-index") else {
+        return;
+    };
+    let hints = session.inlays(
+        "package com.example.app;\n\npublic class App {\n    void f() {\n        new BaseType(7);\n        new BaseType().single(1, \"x\");\n    }\n}\n",
+    );
+    assert!(
+        hints.iter().any(|(label, kind)| *kind == 2 && label == "value:"),
+        "constructor parameter hint missing: {hints:?}"
+    );
+    assert!(
+        hints.iter().any(|(label, kind)| *kind == 2 && label == "a:"),
+        "method parameter hint missing: {hints:?}"
+    );
+    assert!(
+        hints.iter().any(|(label, kind)| *kind == 2 && label == "b:"),
+        "method parameter hint missing: {hints:?}"
+    );
+}
+
+#[test]
+fn same_name_parameter_hints_follow_the_toggle() {
+    let source = "package com.example.app;\n\npublic class App {\n    void singleValue(int value) {\n    }\n    void f() {\n        int value = 1;\n        singleValue(value);\n    }\n}\n";
+    let mut session = Session::new("same-name");
+    let hints = session.inlays(source);
+    assert!(
+        hints.iter().any(|(label, kind)| *kind == 2 && label == "value:"),
+        "same-name hint should be visible by default: {hints:?}"
+    );
+
+    WorkspaceService::set_inlay_hints_same_name(&mut session.workspace, false);
+    let hints = session.inlays(source);
+    assert!(
+        !hints.iter().any(|(label, kind)| *kind == 2 && label == "value:"),
+        "same-name hint should be suppressed: {hints:?}"
+    );
+
+    let different = "package com.example.app;\n\npublic class App {\n    void singleValue(int value) {\n    }\n    void f() {\n        singleValue(1);\n    }\n}\n";
+    let hints = session.inlays(different);
+    assert!(
+        hints.iter().any(|(label, kind)| *kind == 2 && label == "value:"),
+        "different argument must keep its hint: {hints:?}"
+    );
+}
+
+#[test]
+fn same_file_constructor_parameter_names_are_available() {
+    let mut session = Session::new("same-file-constructor");
+    let hints = session.inlays(
+        "package com.example.app;\n\npublic class App {\n    App(int count) {\n    }\n    void f() {\n        new App(1);\n    }\n}\n",
+    );
+    assert!(
+        hints.iter().any(|(label, kind)| *kind == 2 && label == "count:"),
+        "{hints:?}"
+    );
+}
+
+#[test]
+fn jdk_constructor_parameter_names_are_available() {
+    let mut session = Session::new("jdk-constructor");
+    let hints = session.inlays(
+        "package com.example.app;\n\npublic class App {\n    void f() {\n        String path = \"x\";\n        new java.io.File(path);\n    }\n}\n",
+    );
+    assert!(
+        hints.iter().any(|(label, kind)| *kind == 2 && label == "pathname:"),
         "{hints:?}"
     );
 }

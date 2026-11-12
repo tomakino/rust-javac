@@ -35,6 +35,9 @@ pub struct Workspace {
     /// rereading the content.
     stamps: HashMap<PathBuf, (std::time::SystemTime, u64)>,
     completion_show_constructors: bool,
+    /// Whether inlay hints label arguments whose text equals the parameter
+    /// name (for example `setLenient(lenient)`). Defaults to true.
+    pub(crate) inlay_hints_same_name: bool,
     /// Stable analysis slots for files that are not (yet) in the index.
     temporary_ids: HashMap<PathBuf, FileId>,
     incremental_updates: u64,
@@ -137,6 +140,7 @@ impl Workspace {
             dirty: false,
             stamps: HashMap::new(),
             completion_show_constructors: false,
+            inlay_hints_same_name: true,
             temporary_ids: HashMap::new(),
             incremental_updates: 0,
             full_rebuilds: 0,
@@ -195,6 +199,12 @@ impl Workspace {
     pub fn set_completion_show_constructors(&mut self, enabled: bool) {
         self.completion_show_constructors = enabled;
         self.analyses.entries.clear();
+    }
+
+    /// Toggle parameter-name hints where the argument text is exactly the
+    /// parameter name. Other parameter hints are unaffected.
+    pub fn set_inlay_hints_same_name(&mut self, enabled: bool) {
+        self.inlay_hints_same_name = enabled;
     }
 
     pub fn is_building(&self) -> bool {

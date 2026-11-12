@@ -84,6 +84,11 @@ pub struct SymbolRecord {
     pub flat_name: String,
     pub supertypes: Vec<TypeRef>,
     pub return_type: Option<TypeRef>,
+    /// Parameter names for methods/constructors, extracted from the AST at
+    /// index time. Empty for other symbol kinds and for declarations whose
+    /// parameter list is unavailable. This is the source used by inlay hints
+    /// when a class-file method has no `MethodParameters` attribute.
+    pub parameter_names: Vec<String>,
     /// Rendered Javadoc of the declaration, when present.
     pub javadoc: Option<String>,
 }

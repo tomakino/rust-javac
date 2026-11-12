@@ -753,12 +753,19 @@ class ProbeSignature {
         def item_inlay_hints():
             details = []
             total = 0
+            labels = set()
+            line_labels = {}
             for relative in (GSON_PATH, JSON_ELEMENT_PATH, GSON_BUILDER_PATH):
                 hints = lsp.request(
                     "textDocument/inlayHint",
                     {"textDocument": {"uri": lsp.uri(relative)}, "range": {"start": {"line": 0, "character": 0}, "end": {"line": 4000, "character": 0}}},
                 ) or []
                 total += len(hints)
+                for hint in hints:
+                    label = hint.get("label")
+                    labels.add(label)
+                    line = int((hint.get("position") or {}).get("line", -1))
+                    line_labels.setdefault(line, set()).add(label)
                 details.append(f"{Path(relative).name}:{len(hints)}")
             var_tokens = sum(
                 1
@@ -766,7 +773,37 @@ class ProbeSignature {
                 for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
                 if " var " in line
             )
-            return total > 0, f"{' '.join(details)} var-lines={var_tokens}"
+            required = {"out:", "lenient:", "serializeNulls:", "htmlSafe:", "str:"}
+            missing = sorted(required - labels)
+            lines = gson_text.splitlines()
+            method_line = next(
+                index
+                for index, line in enumerate(lines)
+                if "public JsonWriter newJsonWriter(Writer writer)" in line
+            )
+            expected_lines = []
+            for marker, label in (
+                ("new JsonWriter(writer)", "out:"),
+                ("setHtmlSafe(htmlSafe)", "htmlSafe:"),
+                ("setLenient(lenient)", "lenient:"),
+                ("setSerializeNulls(serializeNulls)", "serializeNulls:"),
+            ):
+                line = next(
+                    index
+                    for index in range(method_line, min(method_line + 20, len(lines)))
+                    if marker in lines[index]
+                )
+                expected_lines.append((line + 1, label))
+            missing_lines = [
+                f"{line}:{label}"
+                for line, label in expected_lines
+                if label not in line_labels.get(line - 1, set())
+            ]
+            return total > 0 and not missing and not missing_lines, (
+                f"{' '.join(details)} var-lines={var_tokens} "
+                f"missing={','.join(missing) or 'none'} "
+                f"missing-lines={','.join(missing_lines) or 'none'}"
+            )
 
         safe(report, 11, "inlayHints", item_inlay_hints)
 

@@ -564,6 +564,7 @@ impl IndexBuilder {
             flat_name: flat_name.clone(),
             supertypes: Vec::new(),
             return_type,
+            parameter_names: super::extract::parameter_names(ctx, symbol, kind),
             javadoc: self.javadocs.get(&symbol).cloned(),
         });
         self.by_key.insert(key, id);

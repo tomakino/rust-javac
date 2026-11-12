@@ -357,7 +357,11 @@ fn overlay_text_is_indexed() {
 #[test]
 fn disk_roundtrip_and_hash_mismatch_fallback() {
     let root = fixture("dump");
-    std::fs::write(root.join("A.java"), "/** A doc. */\nclass A { int value; }").unwrap();
+    std::fs::write(
+        root.join("A.java"),
+        "/** A doc. */\nclass A { int value; void m(int x) {} }",
+    )
+    .unwrap();
     std::fs::write(root.join("B.java"), "class B { A a; }").unwrap();
     let output = root.join("out");
     // Isolate the cache directory so the test never touches the real one.
@@ -384,6 +388,12 @@ fn disk_roundtrip_and_hash_mismatch_fallback() {
                 loaded_a.javadoc.as_deref().unwrap_or("").contains("A doc"),
                 "javadoc lost on roundtrip: {:?}",
                 loaded_a.javadoc
+            );
+            let method = loaded.symbols_named("m").into_iter().next().expect("m");
+            assert_eq!(
+                method.parameter_names,
+                vec!["x".to_string()],
+                "parameter names lost on roundtrip"
             );
 
             // Change a file without rebuilding: the recorded hash no longer matches.

@@ -123,6 +123,10 @@ async function startClient() {
   if (sourceLevel) args.push('--source', sourceLevel);
   const projectPath = expandVariables(settings.get('projectPath', ''), folder).trim();
   if (projectPath) args.push('--project', projectPath);
+  args.push(
+    '--inlay-hints-same-name',
+    String(settings.get('inlayHintsSameName', true))
+  );
 
   const launchPath = prepareServer(serverPath);
   log('starting: ' + launchPath + ' ' + args.join(' '));

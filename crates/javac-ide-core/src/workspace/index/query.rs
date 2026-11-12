@@ -13,6 +13,37 @@ use super::key::{FileId, IndexSymbolKind, SymbolId};
 use super::model::{ProjectIndex, SymbolRecord};
 use super::symbols::api_symbol_kind;
 
+/// AST parameter names for a project method/constructor.
+///
+/// The caller passes the compiler symbol's method name (constructors are
+/// `<init>`), arity and declaring owner's fully qualified name. This is used
+/// only when the class-file symbol has no parameter names; it never scans
+/// source text.
+pub fn parameter_names(
+    index: &ProjectIndex,
+    method_name: &str,
+    parameter_count: usize,
+    owner_flat_name: Option<&str>,
+) -> Option<Vec<String>> {
+    index.symbols_named(method_name).into_iter().find_map(|record| {
+        if !matches!(
+            record.kind,
+            IndexSymbolKind::Method | IndexSymbolKind::Constructor
+        ) || record.parameter_names.len() != parameter_count
+            || record.parameter_names.is_empty()
+        {
+            return None;
+        }
+        if let Some(owner_flat_name) = owner_flat_name {
+            let owner = record.key.owner.and_then(|owner| index.symbol(owner))?;
+            if owner.flat_name != owner_flat_name {
+                return None;
+            }
+        }
+        Some(record.parameter_names.clone())
+    })
+}
+
 /// UTF-16 (Java char) offset of an LSP position.
 ///
 /// [`super::model::ByteRange`] stores Java char offsets, so position lookups

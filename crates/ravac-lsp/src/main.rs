@@ -20,6 +20,7 @@ fn main() {
         .unwrap_or_else(|| std::env::temp_dir().join("ravac-lsp"));
     let mut source_level: Option<String> = None;
     let mut project_dir: Option<PathBuf> = None;
+    let mut inlay_hints_same_name = true;
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut index = 0;
     while index < args.len() {
@@ -39,6 +40,15 @@ fn main() {
             "--project" if index + 1 < args.len() => {
                 project_dir = Some(PathBuf::from(&args[index + 1]));
                 index += 2;
+            }
+            "--inlay-hints-same-name" if index + 1 < args.len() => {
+                inlay_hints_same_name = parse_bool_flag(&args[index + 1]);
+                index += 2;
+            }
+            arg if arg.starts_with("--inlay-hints-same-name=") => {
+                inlay_hints_same_name =
+                    parse_bool_flag(arg.trim_start_matches("--inlay-hints-same-name="));
+                index += 1;
             }
             _ => index += 1,
         }
@@ -66,8 +76,35 @@ fn main() {
             source_path: Vec::new(),
         })),
     };
+    workspace.set_inlay_hints_same_name(inlay_hints_same_name);
     let stdin = BufReader::new(io::stdin());
     let stdout = io::stdout();
     ravac_lsp::run(&mut workspace, stdin, stdout);
     let _ = output_dir;
+}
+
+fn parse_bool_flag(value: &str) -> bool {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "false" | "0" | "no" | "off" => false,
+        _ => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_bool_flag;
+
+    #[test]
+    fn inlay_hints_same_name_flag_parses_false_values() {
+        assert!(!parse_bool_flag("false"));
+        assert!(!parse_bool_flag("0"));
+        assert!(!parse_bool_flag("off"));
+    }
+
+    #[test]
+    fn inlay_hints_same_name_flag_defaults_to_true() {
+        assert!(parse_bool_flag("true"));
+        assert!(parse_bool_flag("1"));
+        assert!(parse_bool_flag("anything-else"));
+    }
 }

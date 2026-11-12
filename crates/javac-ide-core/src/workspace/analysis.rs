@@ -362,7 +362,7 @@ impl FileAnalysis {
     }
 
     pub fn inlay_hints(&mut self, file: &Path) -> Vec<javac_analysis_api::InlayHint> {
-        self.inlay_hints_impl(file)
+        self.inlay_hints_impl(file, None, true)
     }
 
     pub fn code_actions(

@@ -96,6 +96,22 @@ fn signature_change_rebuilds_dependents_incrementally() {
 
     // B's occurrence still points at the original (int) method identity.
     let snapshot = workspace.index_snapshot();
+    let parameter_sets: Vec<Vec<String>> = snapshot
+        .symbols
+        .iter()
+        .filter(|record| record.flat_name == "A.m")
+        .map(|record| record.parameter_names.clone())
+        .collect();
+    assert!(
+        parameter_sets.iter().any(|names| names == &["x".to_string()]),
+        "incremental update lost the one-parameter names: {parameter_sets:?}"
+    );
+    assert!(
+        parameter_sets
+            .iter()
+            .any(|names| names == &["x".to_string(), "y".to_string()]),
+        "incremental update lost the overload names: {parameter_sets:?}"
+    );
     let b = snapshot.file_id_for_path(&b_path).expect("B file");
     let methods: Vec<String> = snapshot
         .by_file

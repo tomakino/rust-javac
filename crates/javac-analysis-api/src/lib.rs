@@ -508,6 +508,15 @@ pub trait WorkspaceService {
     /// Drop the unsaved buffer for `file` (the client closed the document).
     fn remove_overlay(&mut self, _file: &Path) {}
 
+    /// Toggle parameter-name hints where the argument source text is exactly
+    /// the parameter name. Other parameter hints are unaffected.
+    fn set_inlay_hints_same_name(&mut self, _enabled: bool) {}
+
+    /// Current same-name parameter-hint setting.
+    fn inlay_hints_same_name(&self) -> bool {
+        true
+    }
+
     /// Current workspace configuration.
     fn configuration(&self) -> WorkspaceConfiguration;
 

@@ -45,6 +45,11 @@
           "default": "17",
           "description": "传给 --source 的 Java 源级别。"
         },
+        "ravacLsp.inlayHintsSameName": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否显示参数名与实参文本相同的参数提示（如 setLenient(lenient)）。关闭后仍显示不同名实参。"
+        },
         "ravacLsp.copyServer": {
           "type": "boolean",
           "default": true,

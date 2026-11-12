@@ -61,8 +61,11 @@ impl WorkspaceService for Workspace {
     }
 
     fn inlay_hints(&mut self, file: &Path) -> Vec<InlayHint> {
-        self.with_analysis(file, None, |analysis, _| analysis.inlay_hints_impl(file))
-            .unwrap_or_default()
+        let show_same_name = self.inlay_hints_same_name;
+        self.with_analysis(file, None, |analysis, index| {
+            analysis.inlay_hints_impl(file, index, show_same_name)
+        })
+        .unwrap_or_default()
     }
 
     fn document_highlight(&mut self, file: &Path, position: Position) -> Vec<DocumentHighlight> {
@@ -669,6 +672,14 @@ impl WorkspaceService for Workspace {
 
     fn remove_overlay(&mut self, file: &Path) {
         Workspace::remove_overlay(self, file);
+    }
+
+    fn set_inlay_hints_same_name(&mut self, enabled: bool) {
+        self.inlay_hints_same_name = enabled;
+    }
+
+    fn inlay_hints_same_name(&self) -> bool {
+        self.inlay_hints_same_name
     }
 
     fn configuration(&self) -> WorkspaceConfiguration {

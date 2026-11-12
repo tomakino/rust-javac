@@ -278,6 +278,7 @@ fn apply_update(
             flat_name: declaration.identity.flat_name.clone(),
             supertypes: Vec::new(),
             return_type: declaration.return_type.clone(),
+            parameter_names: declaration.parameter_names.clone(),
             javadoc: declaration.javadoc.clone(),
         });
         next.by_key.insert(symbol_key, id);
@@ -511,6 +512,7 @@ fn update_record(next: &mut ProjectIndex, id: SymbolId, declaration: &ExtractedD
         record.range = declaration.range;
         record.detail = declaration.detail.clone();
         record.modifiers = declaration.modifiers;
+        record.parameter_names = declaration.parameter_names.clone();
         record.javadoc = declaration.javadoc.clone();
     }
 }

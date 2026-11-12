@@ -61,6 +61,8 @@ pub struct ExtractedDeclaration {
     pub deprecated: bool,
     pub supertypes: Vec<String>,
     pub return_type: Option<TypeRef>,
+    /// AST parameter names for methods/constructors; empty otherwise.
+    pub parameter_names: Vec<String>,
     pub javadoc: Option<String>,
 }
 
@@ -463,6 +465,36 @@ pub(crate) fn declaration_detail(
 /// methods), then `VariableDecl.decl_pos` (fields/locals/parameters/enum
 /// constants), then the declaring tree position (constructors/type parameters).
 
+/// AST parameter names for a method/constructor declaration.
+///
+/// The index stores these so inlay hints can recover names for class-file
+/// symbols whose `MethodParameters` attribute is absent (Maven's default).
+pub(crate) fn parameter_names(
+    ctx: &crate::compiler_context::CompilerContext,
+    symbol: CompilerSymbolId,
+    kind: IndexSymbolKind,
+) -> Vec<String> {
+    if !matches!(
+        kind,
+        IndexSymbolKind::Method | IndexSymbolKind::Constructor
+    ) {
+        return Vec::new();
+    }
+    let SymbolKind::MethodSymbol { params, .. } = &ctx.sym(symbol).kind_data else {
+        return Vec::new();
+    };
+    params
+        .iter()
+        .map(|param| {
+            ctx.sym(param)
+                .name
+                .to_java_string()
+                .to_string_lossy()
+                .to_string()
+        })
+        .collect()
+}
+
 fn declaration_of(
     ctx: &mut CompilerContext,
     symbol: CompilerSymbolId,
@@ -518,6 +550,7 @@ fn declaration_of(
     } else {
         Vec::new()
     };
+    let parameter_names = parameter_names(ctx, symbol, kind);
     Some(ExtractedDeclaration {
         identity: SymbolIdentity {
             flat_name,
@@ -536,6 +569,7 @@ fn declaration_of(
             .unwrap_or(false),
         supertypes,
         return_type,
+        parameter_names,
         javadoc: javadocs.get(&symbol).cloned(),
     })
 }

@@ -54,9 +54,11 @@ pub fn run(
         match method {
             "initialize" => {
                 // Resolve the build system through the project layer and
-                // rebuild the workspace. Initialization has no state to keep.
+                // rebuild the workspace. Process-level options that are not
+                // part of the project model must survive this swap.
                 if let Some(root) = initialize_root(&message) {
                     let output_dir = host.configuration().output_dir;
+                    let inlay_hints_same_name = host.inlay_hints_same_name();
                     let model = javac_ide_core::project::load_with(
                         &project_registry(),
                         &root,
@@ -68,6 +70,7 @@ pub fn run(
                             output_dir,
                             None,
                         );
+                    workspace.set_inlay_hints_same_name(inlay_hints_same_name);
                     // Build the index before answering initialize. Clients send
                     // their first navigation request right after startup; a
                     // query that waits for the background build can outlive the

@@ -16,12 +16,18 @@ use crate::compiler_context::CompilerContext;
 use crate::ids::{SymbolId, TreeId};
 use crate::tree::jc_tree::TreeKind;
 use crate::tree::tree_scanner::{TreeScannerVisitor, tree_scanner_visitor_delegate};
+use crate::workspace::index::{query, ProjectIndex};
 
 use super::super::{canonical, FileAnalysis};
 
 impl FileAnalysis {
     /// Inlay hints for the current file.
-    pub(crate) fn inlay_hints_impl(&mut self, file: &Path) -> Vec<InlayHint> {
+    pub(crate) fn inlay_hints_impl(
+        &mut self,
+        file: &Path,
+        index: Option<&ProjectIndex>,
+        show_same_name: bool,
+    ) -> Vec<InlayHint> {
         let key = PathBuf::from(canonical(file));
         let text = self
             .texts
@@ -41,7 +47,7 @@ impl FileAnalysis {
         let mut collector = HintCollector::default();
         collector.scan(&mut self.compiler.ctx, Some(root));
         let mut hints = self.var_hints(&key, &text, &collector.vars);
-        hints.extend(self.parameter_hints(&text, &collector.calls));
+        hints.extend(self.parameter_hints(&text, &collector.calls, index, show_same_name));
         hints.sort_by_key(|hint| (hint.position.line, hint.position.column));
         hints.dedup_by(|left, right| {
             left.position == right.position && left.kind == right.kind && left.label == right.label
@@ -167,7 +173,13 @@ impl FileAnalysis {
         self.cached_inlay_hints(key, text, &skip_names)
     }
 
-    fn parameter_hints(&self, text: &str, calls: &[TreeId]) -> Vec<InlayHint> {
+    fn parameter_hints(
+        &self,
+        text: &str,
+        calls: &[TreeId],
+        index: Option<&ProjectIndex>,
+        show_same_name: bool,
+    ) -> Vec<InlayHint> {
         let mut hints: HashMap<(u32, u32), InlayHint> = HashMap::new();
         for call in calls {
             let tree = self.compiler.ctx.tree(*call);
@@ -197,8 +209,9 @@ impl FileAnalysis {
                 .to_java_string()
                 .to_string_lossy();
             // The resolved symbol can belong to a previous analysis round
-            // (empty params); fall back to the local declaration.
-            let params: Vec<String> = match &self.compiler.ctx.sym(callee).kind_data {
+            // (empty params); fall back to the local declaration, then to the
+            // AST-extracted parameter names stored in the project index.
+            let mut params: Vec<String> = match &self.compiler.ctx.sym(callee).kind_data {
                 SymbolKind::MethodSymbol { params, .. }
                     if !params.is_empty() && params.size() == args.size() =>
                 {
@@ -216,11 +229,37 @@ impl FileAnalysis {
                 }
                 _ => self.local_parameter_names(&method_name, args.size() as usize),
             };
+            let needs_index = params.len() != args.size() as usize
+                || params.iter().any(|name| {
+                    name.is_empty() || name.starts_with('<') || is_synthetic_parameter(name)
+                });
+            if needs_index
+                && let Some(index) = index
+            {
+                let owner_flat_name = self.compiler.ctx.sym(callee).owner.and_then(|owner| {
+                    match &self.compiler.ctx.sym(owner).kind_data {
+                        SymbolKind::ClassSymbol { flatname, .. } => Some(flatname.to_string()),
+                        _ => None,
+                    }
+                });
+                if let Some(names) = query::parameter_names(
+                    index,
+                    &method_name,
+                    args.size() as usize,
+                    owner_flat_name.as_deref(),
+                ) {
+                    params = names;
+                }
+            }
             if params.len() != args.size() as usize {
                 continue;
             }
             for (name, argument) in params.iter().zip(args.iter()) {
                 if name.is_empty() || name.starts_with('<') || is_synthetic_parameter(name) {
+                    continue;
+                }
+                if !show_same_name && argument_is_same_name(&self.compiler.ctx, text, argument, name)
+                {
                     continue;
                 }
                 let pos = crate::tree::tree_info::get_start_pos(&self.compiler.ctx, argument);
@@ -318,6 +357,33 @@ impl FileAnalysis {
         }
         false
     }
+}
+
+/// True when the argument's source text is exactly the parameter name.
+fn argument_is_same_name(
+    ctx: &CompilerContext,
+    text: &str,
+    argument: TreeId,
+    name: &str,
+) -> bool {
+    let TreeKind::Ident {
+        name: argument_name,
+        ..
+    } = &ctx.tree(argument).kind
+    else {
+        return false;
+    };
+    if argument_name.to_java_string().to_string_lossy() != name {
+        return false;
+    }
+    let start = crate::tree::tree_info::get_start_pos(ctx, argument);
+    if start < 0 {
+        return false;
+    }
+    let Some(start) = utf16_to_byte(text, start as usize) else {
+        return false;
+    };
+    text.get(start..).is_some_and(|arg| arg.starts_with(name))
 }
 
 #[derive(Default)]
