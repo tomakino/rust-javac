@@ -1,52 +1,40 @@
-# AGENTS.md — Collaboration rules
+# AGENTS.md — 协作规则
 
-Guidance for AI agents and contributors working in this repository. The rules are general and
-apply to any task.
+适用于本仓库的所有 AI agent 与贡献者。
 
-## 1. Define the goal first
+## 1. 先定义目标
 
-One-sentence goal plus three non-negotiable constraints (safety, minimality, consistency).
-If the goal is unclear, ask before acting.
+用一句话写清目标，并列出三条不可妥协的约束：安全、最小改动、一致性。目标不清楚先问，不要动手。
 
-## 2. Map the whole surface
+## 2. 摸清全部落点
 
-For any decision or concept, find every place it lives: code, config, scripts, docs, tests,
-examples. Use grep to produce the list before editing, then verify each item. Never change only
-the spot that was named.
+任何改动前，用 grep 找出这个概念在代码、配置、脚本、文档、测试、示例中的所有位置，列成清单逐项处理。禁止只改被点名的一处。
 
-## 3. One standard (SSOT)
+## 3. 单一标准（SSOT）
 
-A concept has exactly one source of truth. If a second form appears (compatibility layer, alias,
-dual layout, dual command), ask whether the two can be unified first. A fallback is allowed only
-when unification is impossible, with the reason written down.
+一个概念只能有一个事实来源。出现第二种形式（兼容层、别名、双份布局、双命令）时，先问能否合并；确实无法合并才允许回退，并写明原因。
 
-## 4. Evidence threshold
+## 4. 证据门槛
 
-"Supported" and "done" must be verified. Unverified work is marked "unverified" or removed.
-Verify in increasing cost: compile → smoke test → targeted tests → full run. Skipping levels
-requires explicit approval.
+「支持」和「完成」必须有验证。未验证的工作标注「未验证」或删除。按成本递增验证：编译 → 冒烟 → 定向测试 → 全量；跳级需明确批准。
 
-## 5. Root cause and siblings
+## 5. 根因与同类
 
-Reproduce before fixing; fix the cause, not the symptom. When touching one site, check the
-equivalent sites and fix them in the same pass.
+先复现再修，修根因不修症状。改一处时，检查同类位置并在同一批修复。
 
-## 6. Impact report
+## 6. 影响报告
 
-Every delivery ends with three lines: what changed, what may be affected, what was not verified.
+每次交付附三行：改了什么、可能影响什么、哪些没验证。
 
-## 7. Stop at the boundary
+## 7. 守住边界
 
-Finish exactly the action that was asked for; do not expand the scope. Long runs, full suites and
-release or publish operations only when explicitly requested.
+只完成被要求的动作，不扩大范围。长任务、全量测试、发布操作必须有明确指令。
 
-## Project-specific rules
+## 项目规则
 
-- Declare only verified targets: `windows-amd64`, `linux-amd64`, `linux-arm64`, `android-arm64`.
-- Linux is statically linked (musl) and uses Rust's bundled `rust-lld`; no zig.
-- One runtime platform layout: `modules` plus `ct.sym` next to the executable (`RAVAC_PLATFORM_DIR` overrides).
-- Test data is vendored under `internal/test`; never edit `expected/` baselines by hand.
-- Fast verification: `cargo build -p rust-javac` plus a single-file compile smoke test.
-  Full and cross builds require an explicit request.
-- Before committing, run `git status` and confirm there are no unexpected files; never commit
-  `dist/` or `target/`.
+- 只声明已验证的目标平台：`windows-amd64`、`linux-amd64`、`linux-arm64`、`android-arm64`。
+- Linux 静态链接（musl），使用 Rust 自带的 `rust-lld`，不用 zig。
+- 只有一种运行时布局：`modules` 与 `ct.sym` 放在可执行文件旁（`RAVAC_PLATFORM_DIR` 可覆盖）。
+- 测试数据在 `internal/test` 下；禁止手改 `expected/` 基线。
+- 快速验证：`cargo build -p rust-javac` 加单文件编译冒烟。全量与交叉构建需明确要求。
+- 提交前运行 `git status`，确认没有意外文件；禁止提交 `dist/`、`target/`。
