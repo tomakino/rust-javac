@@ -1,41 +1,33 @@
 #![allow(clippy::result_large_err)]
-//
-// Attr A (structure + type/identifier/expression entry points).
-//
-// Registration (A):
-// Ported in this file: the Attr structure/instance equivalent (new with the
-// ported dependencies), the allow* feature switches, ResultInfo (the checked
-// subset), attribTree (the visitor dispatch frame), attribExpr (both
-// overloads), attribType (both overloads), attribType(node, TypeSymbol),
-// attribTypeVariables, attribAnnotationTypes, attribIdent (both overloads) and
-// attribIdentAsEnumType, plus the visitor methods for the type trees
-// (visitTypeIdent/visitTypeArray/visitTypeApply/visitWildcard/
-// visitTypeParameter) and the basic expression leaves (visitLiteral/visitIdent/
-// visitParens), with the exact upstream control flow.
-//
-// NOT PORTED IN THIS (registered; dependency batches not ported yet, no
-// substitute in this file):
-// - the CheckContext/CheckMode/checkType pipeline: ported in the dependency
-// (Check::check_type/CheckContext/CheckMode/NestedCheckContext/
-// BasicCheckContext; the compatible/report/checkWarner leaves that need
-// Types.isAssignable/convertWarner are registered);
-// - Infer.InferenceContext: the context structure/free/asInstType/
-// addFreeTypeListener/notifyChange are ported (comp/infer.rs); the free-type
-// listener recursion inside check() remains registered (Infer);
-// - DeferredAttr.DeferredAttrContext/AttrMode (DeferredAttr): the
-// attribTree deferred-mode/breakTree/matchBindings parts are registered;
-// - Resolve (Resolve): attribIdent/visitIdent/visitSelect resolution is
-// registered;
-// - Annotate/TypeAnnotations (Annotate): annotateTypeParameterSecondStage/
-// annotateTypeSecondStage are registered;
-// - Analyzer/AttrRecover/ArgumentAttr/MatchBindingsComputer (their batches):
-// attribStat/attribTree glue registered;
-// - Types: isAssignable/checkClassType call sites are registered until the
-// Check/Types batches provide them (Types.isConvertible/setBounds/erasure are
-// ported and used where upstream uses them);
-// - visitApply/visitSelect/visitExec/... the remaining Attr visitors: registered
-// for Attr B/C (the default visitTree keeps the upstream behavior:
-// the tree is not attributed by A yet -> explicit unimplemented).
+//! Attribution: resolves names and assigns types to attributed trees.
+//!
+//! Attribution is the stage between `Enter`, which builds the symbols, and `Flow`,
+//! which checks definite assignment. The visitor resolves every identifier and member
+//! selection to a symbol, computes the type of every expression, and reports type
+//! errors.
+//!
+//! `Attr` stores neither trees nor types: both live in the [`CompilerContext`] and are
+//! addressed by [`TreeId`] and [`TypeId`].
+//!
+//! # Entry points
+//!
+//! [`Attr::attrib`] attributes a whole compilation unit. The `attrib_*` methods
+//! attribute a single node: [`Attr::attrib_tree`] is the general form, and
+//! [`Attr::attrib_stat`], [`Attr::attrib_expr`] and [`Attr::attrib_type`] select the
+//! expected kind of the node.
+//!
+//! # Wiring
+//!
+//! `Resolve`, `Analyzer`, `Flow` and the other services refer to `Attr`, and `Attr`
+//! refers back to them. [`wire_attr_services`] constructs them in dependency order and
+//! installs them in the cells on `Attr`; nothing in this module constructs one of
+//! those services itself.
+//!
+//! # State
+//!
+//! `Attr` is a per-compilation service, not a per-tree value. The `env` and
+//! `result_info` fields carry the current frame; [`Attr::attrib_tree`] restores them
+//! after each nested call.
 use std::cell::{OnceCell, RefCell};
 use std::rc::Rc;
 
@@ -85,121 +77,158 @@ pub struct SymtabFacts {
     pub void_type: TypeId,
 }
 
-/// Java: public class Attr extends JCTree.Visitor (the visitor is expressed as
-/// the visit_* methods + the TreeKind dispatch in visit()).
+/// The attribution service: one instance per compilation.
+///
+/// It holds the injected services, the current attribution frame (`env`,
+/// `result_info`), and the source-level flags that decide which language features are
+/// attributed.
 pub struct Attr {
+    /// The name table. Injected at construction; never replaced.
     pub names: Rc<Names>,
+    /// The compiler log. Attribution reports diagnostics here.
     pub log: Rc<Log>,
+    /// The type checker, called for the checks that belong to `Check` rather than
+    /// `Attr`.
     pub chk: Rc<Check>,
+    /// The member-enter stage, used to re-enter the members of a local class.
     pub member_enter: Rc<MemberEnter>,
+    /// The type-enter stage. In a cell because [`wire_attr_services`] installs its
+    /// `annotate` handle after construction.
     pub type_enter: Rc<RefCell<TypeEnter>>,
+    /// The tree factory, used to synthesize trees such as default constructors and
+    /// error classes.
     pub make: Rc<crate::tree::tree_maker::TreeMaker>,
+    /// The enter stage, used to obtain the top-level environment.
     pub enter: Rc<Enter>,
+    /// The type operations.
     pub types: Rc<Types>,
+    /// The diagnostic factory, used to build fragments before reporting them.
     pub diags: Rc<Factory>,
+    /// The lint handler that defers position-dependent lint until the tree has a
+    /// position.
     pub deferred_lint_handler: Rc<DeferredLintHandler>,
+    /// The type-environment table, keyed by class symbol.
     pub type_envs: Rc<TypeEnvs>,
+    /// The dependency tracker.
     pub dependencies: Rc<dyn Dependencies>,
-    /// Java: final Preview preview (Attr.java:113).
+    /// The preview-feature state, read to decide `allow_pattern_switch`.
     pub preview: Rc<crate::code::preview::Preview>,
-    /// Java: boolean allowPoly
+    /// Whether target-typing inference (poly expressions) is enabled at the source
+    /// level. Fixed at construction.
     pub allow_poly: bool,
-    /// Java: boolean allowTypeAnnos
+    /// Whether type annotations are enabled at the source level. Fixed at
+    /// construction.
     pub allow_type_annos: bool,
-    /// Java: boolean allowLambda
+    /// Whether lambda expressions are enabled at the source level. Fixed at
+    /// construction.
     pub allow_lambda: bool,
-    /// Java: boolean allowDefaultMethods
+    /// Whether default methods are enabled at the source level. Fixed at construction.
     pub allow_default_methods: bool,
-    /// Java: boolean allowStaticInterfaceMethods
+    /// Whether static interface methods are enabled at the source level. Fixed at
+    /// construction.
     pub allow_static_interface_methods: bool,
-    /// Java: boolean allowReifiableTypesInInstanceof
+    /// Whether reifiable types are allowed in `instanceof` at the source level. Fixed
+    /// at construction.
     pub allow_reifiable_types_in_instanceof: bool,
-    /// Java: private final boolean allowRecords
+    /// Whether records are enabled at the source level. Fixed at construction.
     pub allow_records: bool,
-    /// Java: private final boolean allowPatternSwitch
+    /// Whether patterns in `switch` are enabled at the source level. Fixed at
+    /// construction; requires either an enabled preview or a final feature.
     pub allow_pattern_switch: bool,
-    /// Java: boolean useBeforeDeclarationWarning
+    /// Whether `-XDuseBeforeDeclarationWarning` is set. Fixed at construction.
     pub use_before_declaration_warning: bool,
-    /// Java: String sourceName
+    /// The source level name (`"11"`, `"17"`), used in diagnostics.
     pub source_name: String,
-    /// Java: Env<AttrContext> env (the current environment)
+    /// The environment of the tree currently being attributed; `None` outside an
+    /// attribution call.
     pub env: Option<Rc<Env<AttrContext>>>,
-    /// Java: Modules modules = Modules.instance(context) (Modules.java:140 is
-    /// a dependency of the module-def attribution path; the local Attr uses it
-    /// through Attr.visitModuleDef; installed by the bootstrap to break the
-    /// Attr/Modules cycle; registered adapter).
+    /// The module system. Installed by the compiler bootstrap, not by
+    /// [`wire_attr_services`]; `None` until then.
     pub modules: Rc<RefCell<Option<Rc<crate::comp::modules::Modules>>>>,
-    /// Java: ResultInfo resultInfo (the current result info)
+    /// The expected type and check context of the tree currently being attributed;
+    /// `None` outside an attribution call.
     pub result_info: Option<ResultInfo>,
-    /// Java: CheckContext basicHandler (chk.basicHandler; injected explicitly
-    /// like the other Check/Attr services, ADR 0001).
+    /// The check context that reports errors without an enclosing context.
     pub basic_handler: Rc<dyn crate::comp::check::CheckContext>,
-    /// Java: Type result
+    /// The type the current attribution step assigned to the tree; `None` before the
+    /// step completes.
     pub result: Option<TypeId>,
-    /// Java: private JCTree breakTree = null (Attr.java:448)
+    /// The tree at which the caller asked attribution to stop; set by
+    /// `attrib_expr_to_tree`.
     pub break_tree: Option<TreeId>,
-    /// Adapter: the environment carried by the BreakAttr control exception
-    /// (the Rust panic payload is zero-sized; the env is stored here).
+    /// The environment captured when a break is raised. Kept on the service because the
+    /// panic payload ([`BreakAttr`]) is zero-sized.
     pub break_attr_env: Option<Rc<Env<AttrContext>>>,
-    /// Java: the predefined result infos (statInfo/unknownExprInfo/...)
+    /// Result info for a statement: nothing is expected, and checks select no kind.
     pub stat_info: ResultInfo,
+    /// Result info for the left-hand side of an assignment: a variable is expected.
     pub var_assignment_info: ResultInfo,
+    /// Result info for an expression of unknown kind: a value is expected.
     pub unknown_expr_info: ResultInfo,
+    /// Result info for a type of unknown kind: a type is expected.
     pub unknown_type_info: ResultInfo,
+    /// Result info for a tree that may be a value or a type.
     pub unknown_type_expr_info: ResultInfo,
-    /// Java: final ResultInfo methodAttrInfo (Attr.java:629)
+    /// Result info for a method invocation. The `MethodAttr` flavor makes
+    /// `ResultInfo::check` apply the invocation's void/value rules.
     pub method_attr_info: ResultInfo,
-    /// Java: final ResultInfo recoveryInfo (Attr.java:633)
+    /// Result info used while recovering from an error: every check is wrapped in
+    /// `checkNonVoid`, so a failing initializer still yields a value.
     pub recovery_info: ResultInfo,
-    /// Java: private Map<ClassSymbol, MethodSymbol> clinits (Attr.java:3484)
+    /// The synthetic static initializer of each class, by class symbol. Written when a
+    /// class needs a `<clinit>`; consumed by [`Attr::remove_clinit`].
     pub clinits: RefCell<std::collections::HashMap<SymbolId, SymbolId>>,
-    /// Java: final AttrRecover attrRecover (Attr.java:629 area) — installed
-    /// lazily through a cell to break the Attr/AttrRecover cycle (adapter).
+    /// The recovery driver. Installed by [`wire_attr_services`]; `None` until then.
     pub attr_recover: Rc<RefCell<Option<Rc<RefCell<crate::comp::attr_recover::AttrRecover>>>>>,
 
-    /// Java: final Symtab syms (injected service, ADR 0001)
+    /// The symbol table.
     pub syms: Rc<Symtab>,
-    /// Java: final Infer infer (injected service, ADR 0001)
+    /// The inference engine.
     pub infer: Rc<crate::comp::infer::Infer>,
-    /// Java: final Resolve rs (cell: Resolve and Attr are mutually recursive
-    /// services, adapter; installed by the wiring).
+    /// The resolver. Filled exactly once by [`wire_attr_services`]; a second write
+    /// panics.
     pub rs: OnceCell<Rc<crate::comp::resolve::Resolve>>,
-    /// Java: final ArgumentAttr argumentAttr (adapter cell, installed by the wiring).
+    /// The argument-attribution service. Filled exactly once by
+    /// [`wire_attr_services`]; a second write panics.
     pub argument_attr: OnceCell<Rc<RefCell<crate::comp::argument_attr::ArgumentAttr>>>,
-    /// Java: final DeferredAttr deferredAttr (adapter cell, installed by the wiring).
+    /// The deferred-attribution service. Filled exactly once by
+    /// [`wire_attr_services`]; a second write panics.
     pub deferred_attr: OnceCell<Rc<RefCell<crate::comp::deferred_attr::DeferredAttrService>>>,
-    /// Java: MatchBindings matchBindings (Attr.java:451) — the current flow
-    /// bindings, rewritten by the pattern-matching visitors.
+    /// The flow bindings established by the pattern-matching tree currently being
+    /// attributed.
     pub match_bindings: crate::comp::match_bindings::MatchBindings,
-    /// Java: final MatchBindingsComputer matchBindingsComputer (Attr.java:632).
+    /// Builds `match_bindings` for a pattern-matching tree.
     pub match_bindings_computer: crate::comp::match_bindings::MatchBindingsComputer,
-    /// Java: final Operators operators (adapter cell: Operators is built after Attr; the
-    /// wiring installs it).
+    /// The operator table. Installed by [`wire_attr_services`]; `None` until then.
     pub operators: Rc<RefCell<Option<Rc<crate::comp::operators::Operators>>>>,
-    /// Java: final ConstFold cfolder (Attr.java:634).
+    /// The constant folder.
     pub cfolder: Rc<crate::comp::const_fold::ConstFold>,
-    /// Java: final Analyzer analyzer (service cell: Analyzer and Attr are
-    /// mutually recursive; the wiring installs it).
+    /// The analyzer. Installed by [`wire_attr_services`]; `None` until then.
     pub analyzer: Rc<RefCell<Option<Rc<RefCell<crate::comp::analyzer::Analyzer>>>>>,
-    /// Java: final Flow flow (service cell: installed by the wiring).
+    /// The flow analysis service. Installed by [`wire_attr_services`]; `None` until
+    /// then.
     pub flow: Rc<RefCell<Option<Rc<crate::comp::flow::Flow>>>>,
-    /// Java: final Annotate annotate (service cell: installed by the wiring).
+    /// The annotation attribution service. Installed by [`wire_attr_services`]; `None`
+    /// until then.
     pub annotate: Rc<RefCell<Option<Rc<crate::comp::annotate::Annotate>>>>,
-    /// Java: final TypeAnnotations typeAnnotations (service cell: installed by
-    /// the wiring).
+    /// The type-annotation service. Installed by [`wire_attr_services`]; `None` until
+    /// then.
     pub type_annotations: Rc<RefCell<Option<Rc<crate::code::type_annotations::TypeAnnotations>>>>,
-    /// Adapter: the Symtab values cached at the entry points (see SymtabFacts).
+    /// The `Symtab` values cached for attribution, refreshed at every entry point by
+    /// `cache_symtab_facts`; see [`SymtabFacts`].
     pub symtab_facts: std::cell::Cell<SymtabFacts>,
 }
 
 impl Attr {
-    /// Java: public MethodSymbol removeClinit(ClassSymbol csym) (Attr.java:3499-3503).
+    /// Removes and returns the synthetic static initializer recorded for `csym`.
     ///
     /// # Arguments
-    ///   - csym: the class symbol.
+    ///
+    /// * `csym` - the class whose initializer is taken.
     ///
     /// # Returns
-    ///   - the removed synthetic clinit method, if any.
+    ///
+    /// The recorded initializer method, or `None` when the class has none.
     pub fn remove_clinit(&self, csym: SymbolId) -> Option<SymbolId> {
         self.clinits.borrow_mut().remove(&csym)
     }
@@ -221,7 +250,33 @@ impl Attr {
         self.symtab_facts.get()
     }
 
-    /// Java: protected Attr(Context context) — injected dependencies.
+    /// Creates the service from its already-constructed dependencies.
+    ///
+    /// # Arguments
+    ///
+    /// * `names` - the name table.
+    /// * `log` - the compiler log.
+    /// * `chk` - the type checker.
+    /// * `member_enter` - the member-enter stage.
+    /// * `type_enter` - the type-enter stage.
+    /// * `make` - the tree factory.
+    /// * `enter` - the enter stage.
+    /// * `types` - the type operations.
+    /// * `diags` - the diagnostic factory.
+    /// * `deferred_lint_handler` - the deferred lint handler.
+    /// * `type_envs` - the type-environment table.
+    /// * `dependencies` - the dependency tracker.
+    /// * `basic_handler` - the check context that reports errors directly.
+    /// * `syms` - the symbol table.
+    /// * `infer` - the inference engine.
+    /// * `source` - the source level, used to derive the `allow_*` flags.
+    /// * `options` - the compiler options.
+    /// * `preview` - the preview-feature state.
+    ///
+    /// # Returns
+    ///
+    /// The service, with the cyclic service cells left empty for
+    /// [`wire_attr_services`] to fill.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         names: Rc<Names>,
@@ -346,26 +401,26 @@ impl Attr {
     }
 
     // ------------------------------------------------------------------
-    // Java: Attr.ResultInfo / the check pipeline (registered: Check).
     // ------------------------------------------------------------------
 
-    /// Java: Type check(final JCTree tree, final Type found, final KindSelector
-    /// ownkind, final ResultInfo resultInfo) (Attr.java:240-272).
+    /// Checks the found type against `result_info` and returns the type to install.
+    ///
+    /// When the found type still contains inference variables the check is deferred: the
+    /// tree keeps `found` and a [`CheckAfterInferenceListener`] repeats the check once
+    /// the variables are solved.
     ///
     /// # Arguments
-    ///   - ctx/syms: explicit services;
-    ///   - tree: the attributed tree;
-    ///   - found: the found type;
-    ///   - ownkind: the found kind selector;
-    ///   - result_info: the expected result.
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the tree whose type is checked.
+    /// * `found` - the type computed for the tree.
+    /// * `ownkind` - the kind the tree was attributed as.
+    /// * `result_info` - the expected type and check context.
     ///
     /// # Returns
-    ///   - the checked type.
     ///
-    /// # Panics
-    ///   - none.
-    ///
-    /// Upstream: Attr.java:240-272.
+    /// The checked type, possibly the error type when the check failed.
     fn check(
         &mut self,
         ctx: &mut CompilerContext,
@@ -391,11 +446,26 @@ impl Attr {
     }
 
     // ------------------------------------------------------------------
-    // Java: attribTree + the derived entry points (Attrs.java:660-850).
     // ------------------------------------------------------------------
 
-    /// Java: Type attribTree(JCTree tree, Env<AttrContext> env, ResultInfo
-    /// resultInfo)
+    /// Attributes `tree` against `result_info` and returns the type it was given.
+    ///
+    /// On return `env` and `result_info` hold the values they had before the call, so a
+    /// visitor may attribute a child without saving them. A completion failure is
+    /// reported and replaced by the error type; it is not propagated to the caller.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context that owns the tree arena.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the tree to attribute.
+    /// * `env` - the environment in which `tree` is attributed.
+    /// * `result_info` - the expected type and the check context.
+    ///
+    /// # Returns
+    ///
+    /// The type assigned to `tree`, or the error type when a completion failure
+    /// occurred.
     pub fn attrib_tree(
         &mut self,
         ctx: &mut CompilerContext,
@@ -427,7 +497,6 @@ impl Attr {
         self.env = Some(Rc::clone(env));
         self.result_info = Some(result_info.clone());
         // Attr.attribTree restores the previous env/resultInfo in a finally
-        // block (Attr.java:689-692); the catch reproduces that for the paths
         // where BreakAttr (or any other exception) unwinds the visitor.
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             // Port adapter: a symbol completion performed by a nested type
@@ -436,7 +505,6 @@ impl Attr {
             // boundary reports it and yields the error type.
             let result = crate::code::symbol::catch_completion_failure(|| {
                 if needs_argument_attr {
-                    // Java: result = argumentAttr.attribArg(tree, env); (Attr.java:674-676)
                     let argument_attr = self
                         .argument_attr
                         .get()
@@ -461,15 +529,11 @@ impl Attr {
                 }
             });
             if matches!(&result, Ok(Ok(_))) {
-                // Java: matchBindings = matchBindingsComputer.finishBindings(tree,
-                // matchBindings); (Attr.java:679-680)
                 let finished = self
                     .match_bindings_computer
                     .finish_bindings(ctx.tree(tree).tag, &self.match_bindings);
                 self.match_bindings = finished;
-                // Java: if (tree == breakTree && resultInfo.checkContext
                 // .deferredAttrContext().mode == AttrMode.CHECK)
-                //     breakTreeFound(copyEnv(env)); (Attr.java:681-684)
                 if Some(tree) == self.break_tree
                     && result_info.check_context.deferred_attr_context().mode
                         == crate::comp::deferred_attr::AttrMode::CHECK
@@ -501,7 +565,21 @@ impl Attr {
         Ok(value)
     }
 
-    /// Java: Env<AttrContext> copyEnv(Env<AttrContext> env) (Attr.java:699-708)
+    /// Returns a copy of `env` whose scope chain is duplicated at every level.
+    ///
+    /// Bindings added through the copy are invisible to the original, so callers use it
+    /// where attribution must not disturb the enclosing scopes.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `types` - the type operations.
+    /// * `env` - the environment to copy.
+    ///
+    /// # Returns
+    ///
+    /// A copy with duplicated scopes.
     pub fn copy_env(
         &mut self,
         ctx: &mut CompilerContext,
@@ -522,7 +600,18 @@ impl Attr {
         env.dup_with_outer(tree, new_info, new_outer)
     }
 
-    /// Java: WriteableScope copyScope(WriteableScope sc) (Attr.java:710-718)
+    /// Returns a copy of `scope` containing the same symbols in the same order.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `types` - the type operations.
+    /// * `scope` - the scope to copy, or `None` for an empty scope.
+    ///
+    /// # Returns
+    ///
+    /// The new scope, or `None` when `scope` was `None`.
     fn copy_scope(
         &mut self,
         ctx: &mut CompilerContext,
@@ -557,9 +646,10 @@ impl Attr {
         Some(new_scope_id)
     }
 
-    /// Java: the tree.accept(this) dispatch (JCTree.Visitor -> TreeKind match;
-    /// registered adapter). The visitor methods not ported in A are
-    /// explicit unimplemented registrations (Attr batches B/C).
+    /// Dispatches `tree` to its visitor method.
+    ///
+    /// The dispatch is a `match` on the tree kind. A kind with no visitor falls back to
+    /// `visit_tree`, which panics: an unported kind is reported, not skipped.
     fn visit(
         &mut self,
         ctx: &mut CompilerContext,
@@ -595,7 +685,6 @@ impl Attr {
                 ctx.tree(tree).tag
             );
         }
-        // Java: the operator visitors are dispatched by JCTree.accept on the
         // concrete JCUnary/JCBinary/JCAssignOp classes; the port dispatches on
         // the TreeKind variant first (the operator tag is the node's tag).
         match &ctx.tree(tree).kind {
@@ -661,7 +750,20 @@ impl Attr {
         }
     }
 
-    /// Java: public void visitLiteral(JCLiteral tree) (4894-4898)
+    /// Attributes a literal and returns its type.
+    ///
+    /// The type carries the constant value when the literal has one. The null literal is
+    /// the bot type with no value, so it gets no constant type.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the literal tree.
+    ///
+    /// # Returns
+    ///
+    /// The checked literal type.
     fn visit_literal(
         &mut self,
         ctx: &mut CompilerContext,
@@ -685,8 +787,19 @@ impl Attr {
         Ok(self.check(ctx, syms, tree, constant, KindSelector::VAL, &result_info))
     }
 
-    /// Java: Type litType(TypeTag tag) —
-    /// (tag == CLASS) ? syms.stringType : syms.typeOfTag[tag.ordinal()]
+    /// Returns the type of a literal tag.
+    ///
+    /// A class literal (`String`) has no predefined tag type, so it uses `string_type`;
+    /// every other tag is looked up in `Symtab::type_of_tag`.
+    ///
+    /// # Arguments
+    ///
+    /// * `syms` - the symbol table.
+    /// * `tag` - the literal tag.
+    ///
+    /// # Returns
+    ///
+    /// The predefined type for `tag`.
     fn lit_type(&self, syms: &Symtab, tag: TypeTag) -> TypeId {
         if tag == TypeTag::CLASS {
             return syms.string_type;
@@ -694,7 +807,17 @@ impl Attr {
         syms.type_of_tag[tag as usize].expect("predefined literal type")
     }
 
-    /// Java: public void visitTypeIdent(JCPrimitiveTypeTree tree) (4899-4901)
+    /// Attributes a primitive type tree and returns the predefined type for its tag.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the primitive type tree.
+    ///
+    /// # Returns
+    ///
+    /// The checked predefined type.
     fn visit_type_ident(
         &mut self,
         ctx: &mut CompilerContext,
@@ -710,8 +833,21 @@ impl Attr {
         Ok(self.check(ctx, syms, tree, predefined, KindSelector::TYP, &result_info))
     }
 
-    /// Java: public void visitAnnotatedType(JCAnnotatedType tree)
-    /// (Attr.java:5114-5124).
+    /// Attributes an annotated type and returns the annotated type.
+    ///
+    /// The annotations are attributed first, then the underlying type. The result is a
+    /// placeholder whose entry is filled in by the second annotation stage, so a
+    /// reference to it can be shared before the annotations are complete.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the annotated type tree.
+    ///
+    /// # Returns
+    ///
+    /// The annotated type.
     fn visit_annotated_type(
         &mut self,
         ctx: &mut CompilerContext,
@@ -731,7 +867,6 @@ impl Attr {
         let env = self.env.clone().expect("env");
         self.attrib_annotation_types(ctx, syms, annotations.clone(), &env);
         let underlying_ty = self.attrib_type_use(ctx, syms, underlying, &env);
-        // Java: underlyingType.annotatedType(Annotations.TO_BE_SET) (Attr.java:5117).
         // The placeholder entry is filled in place by annotateTypeSecondStage
         // below; the clone keeps a baseType() link to underlyingType so
         // equalsIgnoreMetadata still treats the pair as the same type.
@@ -748,7 +883,20 @@ impl Attr {
         Ok(annotated_ty)
     }
 
-    /// Java: public void visitTypeArray(JCArrayTypeTree tree) (4903-4908)
+    /// Attributes an array type and returns the array type it denotes.
+    ///
+    /// The element type is attributed first; the array type is built from it and the
+    /// predefined array class.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the array type tree.
+    ///
+    /// # Returns
+    ///
+    /// The checked array type.
     fn visit_type_array(
         &mut self,
         ctx: &mut CompilerContext,
@@ -767,7 +915,22 @@ impl Attr {
         Ok(self.check(ctx, syms, tree, array_type, KindSelector::TYP, &result_info))
     }
 
-    /// Java: public void visitTypeApply(JCTypeApply tree) (Attr.java:4913-4960)
+    /// Attributes a parameterized type and returns the class type with its arguments.
+    ///
+    /// The functor must attribute to a class type; a non-class functor is reported and
+    /// the error type is returned. With no type arguments the type is a diamond and the
+    /// class's own parameters are used; otherwise the argument count must match the
+    /// parameter count, and each argument replaces the matching type variable.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the parameterized type tree.
+    ///
+    /// # Returns
+    ///
+    /// The checked class type.
     fn visit_type_apply(
         &mut self,
         ctx: &mut CompilerContext,
@@ -918,8 +1081,21 @@ impl Attr {
         Ok(self.check(ctx, syms, tree, owntype, KindSelector::TYP, &result_info))
     }
 
-    /// Java: List<Type> attribTypes(List<JCExpression> trees, Env<AttrContext>
-    /// env) (Attr.java:800-810)
+    /// Attributes each tree in `trees` as a type and returns the types in order.
+    ///
+    /// The result is passed through `Check::check_ref_types`, which rejects references to
+    /// types that cannot be used here.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `trees` - the type trees to attribute.
+    /// * `env` - the attribution environment.
+    ///
+    /// # Returns
+    ///
+    /// The checked types, in the same order.
     fn attrib_types(
         &mut self,
         ctx: &mut CompilerContext,
@@ -933,13 +1109,26 @@ impl Attr {
             let ty = self.attrib_type_use(ctx, syms, tree, env);
             result = result.append(ty);
         }
-        // Java: return chk.checkRefTypes(trees, types); (Attr.java:800-810)
         let chk_rc = Rc::clone(&self.chk);
         let chk = Rc::clone(&chk_rc);
         chk.check_ref_types(ctx, syms, trees, result)
     }
 
-    /// Java: public void visitTypeUnion(JCTypeUnion tree) (Attr.java:4968-5010).
+    /// Attributes a union type (a multi-catch alternative list) and returns its type.
+    ///
+    /// Each alternative must be a class type that is a subtype of `Throwable`, and no two
+    /// alternatives may be subtypes of each other. The result is the least upper bound of
+    /// the alternatives, wrapped as a union type when it is a class type.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the union type tree.
+    ///
+    /// # Returns
+    ///
+    /// The checked union type.
     fn visit_type_union(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1026,7 +1215,17 @@ impl Attr {
         self.result = Some(t);
         Ok(t)
     }
-    /// Java: public void visitWildcard(JCWildcard tree) (5099-5109)
+    /// Attributes a wildcard type and returns the wildcard type it denotes.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the wildcard tree.
+    ///
+    /// # Returns
+    ///
+    /// The wildcard type.
     fn visit_wildcard(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1048,8 +1247,6 @@ impl Attr {
             let env = self.env.clone().expect("env");
             self.attrib_type_use(ctx, syms, inner, &env)
         };
-        // Java: new WildcardType(chk.checkRefType(tree.pos(), type),
-        //     tree.kind.kind, syms.boundClass) (Attr.java:5104-5106).
         let chk = Rc::clone(&self.chk);
         let ty = chk.check_ref_type(ctx, syms, ctx.tree(tree).pos, ty);
         let wildcard = ctx.alloc_type(Type::new_wildcard_type(
@@ -1062,23 +1259,20 @@ impl Attr {
         Ok(self.check(ctx, syms, tree, wildcard, KindSelector::TYP, &result_info))
     }
 
-    /// Java: public void visitTypeParameter(JCTypeParameter tree) (Attr.java:5017-5029)
-    /// -- the type-parameter bound fixup after attribTypeVariables (the type
-    /// variable and its preliminary bounds were created there).
+    /// Attributes an intersection type and returns the intersection type it denotes.
+    ///
+    /// The bounds are attributed first (for their annotations), then checked by
+    /// `check_intersection`, which rejects illegal bound combinations.
     ///
     /// # Arguments
-    ///   - ctx/syms: the compiler context and symbol table;
-    ///   - tree: the type parameter tree.
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the intersection type tree.
     ///
     /// # Returns
-    ///   - the type-variable type of the parameter.
     ///
-    /// # Panics
-    ///   - the preliminary type is missing (attribTypeVariables must run first).
-    ///
-    /// Upstream: Attr.java:5017-5029.
-    /// Java: public void visitTypeIntersection(JCTypeIntersection tree)
-    /// (Attr.java:5012-5015).
+    /// The checked intersection type.
     fn visit_type_intersection(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1096,6 +1290,26 @@ impl Attr {
         Ok(checked)
     }
 
+    /// Attributes a type parameter and returns its type variable.
+    ///
+    /// The type variable and its preliminary bounds were created by
+    /// `attrib_type_variables`; this method installs the second-stage annotations and
+    /// replaces the preliminary upper bound with the checked intersection of the bounds.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the type parameter tree.
+    ///
+    /// # Returns
+    ///
+    /// The type variable of the parameter.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the preliminary type is missing, which means `attrib_type_variables`
+    /// did not run first.
     fn visit_type_parameter(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1135,23 +1349,27 @@ impl Attr {
         Ok(type_var)
     }
 
-    /// Java: Type checkIntersection(JCTree tree, List<JCExpression> bounds)
-    /// (Attr.java:5030-5097): checks the bounds of a type parameter, reports
-    /// the illegal combinations, and builds the intersection class for multiple
-    /// bounds.
+    /// Checks the bounds of a type parameter (or the alternatives of an intersection
+    /// type) and returns the resulting upper bound.
+    ///
+    /// A single bound is returned as is. Multiple bounds must be classes or interfaces in
+    /// the order the language requires; the intersection class is built from them and the
+    /// illegal combinations are reported.
     ///
     /// # Arguments
-    ///   - ctx/syms: the compiler context and symbol table;
-    ///   - tree: the type parameter (or intersection) tree;
-    ///   - bounds: the bound expressions.
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the type parameter or intersection tree.
+    /// * `bounds` - the bound expressions, already attributed.
     ///
     /// # Returns
-    ///   - the checked upper bound type.
+    ///
+    /// The checked upper bound type.
     ///
     /// # Panics
-    ///   - a bound expression has no attributed type.
     ///
-    /// Upstream: Attr.java:5030-5097.
+    /// Panics when a bound expression has no attributed type.
     fn check_intersection(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1227,9 +1445,6 @@ impl Attr {
             .tsym
             .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0)
             .unwrap_or(false);
-        // Java: Types.makeIntersectionType(bounds) uses
-        // bounds.head.tsym.isInterface() as allInterfaces (Types.java:2476-2477);
-        // with allInterfaces=true Object is prepended (Types.java:2489-2494).
         let owntype = self.types.make_intersection_type(
             ctx,
             syms,
@@ -1289,7 +1504,22 @@ impl Attr {
         owntype
     }
 
-    /// Java: public void visitIdent(JCIdent tree) (Attr.java:4182-4260)
+    /// Attributes an identifier and returns the type of the symbol it resolves to.
+    ///
+    /// The symbol is resolved in the current environment, then checked according to its
+    /// kind: a variable gets the variable's type, a type gets the type it denotes, and a
+    /// method gets a method type. An unresolvable name is reported and yields the error
+    /// type.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the identifier tree.
+    ///
+    /// # Returns
+    ///
+    /// The type of the resolved symbol.
     fn visit_ident(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1340,7 +1570,6 @@ impl Attr {
             })
             .unwrap_or(false)
         {
-            // Java: env.info.pendingResolutionPhase = null;
             // sym = rs.resolveMethod(tree.pos(), env, tree.name,
             // pt().getParameterTypes(), pt().getTypeArguments());
             env.info.borrow_mut().pending_resolution_phase = None;
@@ -1385,7 +1614,6 @@ impl Attr {
             {
                 sym = tree_sym;
             } else {
-                // Java: sym = rs.resolveIdent(tree.pos(), env, tree.name, pkind());
                 let rs_rc = self
                     .rs
                     .get()
@@ -1397,7 +1625,6 @@ impl Attr {
                     rs.resolve_ident(ctx, syms, pos, &env, name.clone(), self.pkind(), Some(self));
             }
         } else {
-            // Java: sym = rs.resolveIdent(tree.pos(), env, tree.name, pkind());
             let rs_rc = self
                 .rs
                 .get()
@@ -1441,9 +1668,7 @@ impl Attr {
             }
         }
         if sym_kind == Kind::VAR {
-            // Java: checkInit(tree, env, v, false);
             self.check_init(ctx, syms, tree, &env, sym, false);
-            // Java: if (KindSelector.ASG.subset(pkind())) checkAssignable(tree.pos(), v, null, env);
             if KindSelector::ASG.subset(self.pkind()) {
                 self.check_assignable(ctx, &env, ctx.tree(tree).pos, sym, None);
             }
@@ -1456,7 +1681,6 @@ impl Attr {
             && sym_owner_is_typ
             && !sym_is_static
         {
-            // Java: chk.earlyRefError(tree.pos(), sym.kind == VAR ? sym :
             // thisSym(tree.pos(), env));
             let err_sym = if sym_kind == Kind::VAR {
                 sym
@@ -1510,8 +1734,24 @@ impl Attr {
         }
         Ok(self.check_id(ctx, syms, tree, site, sym, &env, &result_info))
     }
-    /// Java: Type checkId(JCTree tree, Type site, Symbol sym,
-    /// Env<AttrContext> env, ResultInfo resultInfo) (Attr.java:4490-4496)
+    /// Dispatches an identifier's type check on the expected type.
+    ///
+    /// When the expected type is a method type (a generic method or a method invocation),
+    /// `check_method_id_internal` runs; otherwise `check_id_internal` runs.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the identifier tree.
+    /// * `site` - the type of the identifier's qualifier.
+    /// * `sym` - the resolved symbol.
+    /// * `env` - the attribution environment.
+    /// * `result_info` - the expected type and check context.
+    ///
+    /// # Returns
+    ///
+    /// The checked type of the identifier.
     #[allow(clippy::too_many_arguments)]
     fn check_id(
         &mut self,
@@ -1536,7 +1776,29 @@ impl Attr {
         self.check_id_internal(ctx, syms, tree, site, sym, pt, env, result_info)
     }
 
-    /// Java: Type checkMethodIdInternal(...) (Attr.java:4498-4518)
+    /// Checks an identifier that denotes a method.
+    ///
+    /// A polymorphic result kind (an invocation whose type arguments are inferred) goes
+    /// through `AttrRecover::recover_method_invocation`; otherwise the identifier is
+    /// checked like a value of the method's type.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the identifier tree.
+    /// * `site` - the type of the identifier's qualifier.
+    /// * `sym` - the resolved method symbol.
+    /// * `env` - the attribution environment.
+    /// * `result_info` - the expected type and check context.
+    ///
+    /// # Returns
+    ///
+    /// The checked type of the invocation.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the recovery driver is not installed.
     #[allow(clippy::too_many_arguments)]
     fn check_method_id_internal(
         &mut self,
@@ -1548,7 +1810,6 @@ impl Attr {
         env: &Rc<Env<AttrContext>>,
         result_info: &ResultInfo,
     ) -> TypeId {
-        // Java: if (resultInfo.pkind.contains(KindSelector.POLY))
         // return attrRecover.recoverMethodInvocation(tree, site, sym, env, resultInfo);
         // else return checkIdInternal(tree, site, sym, resultInfo.pt, env, resultInfo);
         if result_info
@@ -1579,8 +1840,7 @@ impl Attr {
         self.check_id_internal(ctx, syms, tree, site, sym, result_info.pt, env, result_info)
     }
 
-    /// Java: Type checkIdInternal(JCTree tree, Type site, Symbol sym, Type pt,
-    /// Env<AttrContext> env, ResultInfo resultInfo) (Attr.java:4520-4620)
+    /// Checks an identifier's type against the expected type.
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::needless_late_init)]
     #[allow(clippy::collapsible_if)]
@@ -1609,8 +1869,6 @@ impl Attr {
                 }
                 let mut own = ctx.sym(sym).ty.expect("type symbol type");
                 if ctx.typ(own).has_tag(TypeTag::CLASS) {
-                    // Java: chk.checkForBadAuxiliaryClassAccess(tree.pos(), env,
-                    // (ClassSymbol)sym); (Attr.java:4540-4541)
                     let pos = ctx.tree(tree).pos;
                     if ctx.tree(tree).pos == 127 {
                         // eprintln!("[CII] before-bad-aux");
@@ -1622,8 +1880,6 @@ impl Attr {
                     }
                     let own_outer = ctx.typ(own).get_enclosing_type();
                     let sym_type = ctx.sym(sym).ty.expect("symbol type");
-                    // Java: owntype.tsym.type.getTypeArguments() lazily completes
-                    // the class symbol (Type.java:1068-1080); the raw
                     // typarams_field is null until then, so the non-completing
                     // accessor would miss the erasure below.
                     let sym_type_args =
@@ -1637,8 +1893,6 @@ impl Attr {
                         ctx.typ(*own_outer).has_tag(TypeTag::CLASS) && site != *own_outer
                     }) {
                         {
-                            // Java: normOuter = types.asEnclosingSuper(site,
-                            // ownOuter.tsym); (Attr.java:4555-4565)
                             let mut norm_outer = site;
                             if ctx.typ(norm_outer).has_tag(TypeTag::CLASS) {
                                 let own_outer_tsym =
@@ -1680,7 +1934,6 @@ impl Attr {
                 owntype = own;
             }
             Kind::VAR => {
-                // Java: VarSymbol v = (VarSymbol)sym; (Attr.java:4560-4600)
                 let sym_ty = ctx.sym(sym).ty.expect("symbol type");
                 let encl_var = env.info.borrow().encl_var;
                 if encl_var.is_some() && ctx.typ(sym_ty).has_tag(TypeTag::NONE) {
@@ -1757,7 +2010,6 @@ impl Attr {
                 } else {
                     ctx.sym(sym).ty.expect("symbol type")
                 };
-                // Java: if (v.getConstValue() != null &&
                 //     isStaticReference(tree)) owntype = owntype.constType(v.getConstValue());
                 let const_value = ctx.symbol_get_const_value(syms, sym, self);
                 if let Some(const_value) = const_value {
@@ -1771,11 +2023,9 @@ impl Attr {
                 owntype = own;
             }
             Kind::MTH => {
-                // Java: owntype = checkMethod(site, sym, new ResultInfo(
                 // resultInfo.pkind, resultInfo.pt.getReturnType(),
                 // resultInfo.checkContext, resultInfo.checkMode),
                 // env, TreeInfo.args(env.tree), resultInfo.pt.getParameterTypes(),
-                // resultInfo.pt.getTypeArguments()); (Attr.java:4630-4640)
                 let pt = result_info.pt.expect("method result type");
                 let restype = self.types.get_return_type_public(ctx, pt);
                 let argtypes = self.types.get_parameter_types_public(ctx, pt);
@@ -1812,7 +2062,6 @@ impl Attr {
                 owntype = value;
             }
             Kind::PCK | Kind::ERR => {
-                // Java: owntype = sym.type; (may be null for packages; the port
                 // maps the Java null type to Type.noType).
                 owntype = ctx.sym(sym).ty.unwrap_or_else(|| self.no_type(ctx));
             }
@@ -1821,8 +2070,6 @@ impl Attr {
         if ctx.tree(tree).pos == 127 {
             // eprintln!("[CII] after-kind");
         }
-        // Java: emit the deprecation/sun-api/profile/preview warnings for the
-        // referenced symbol (Attr.java:4630-4639).
         if ctx.sym(sym).name != self.names.init || ctx.tree(tree).has_tag(Tag::REFERENCE) {
             let scope = env.info.borrow().scope;
             let scope_owner = scope
@@ -1850,7 +2097,21 @@ impl Attr {
         }
         out
     }
-    /// Java: public void visitParens(JCParens tree) (Attr.java:3922-3928)
+    /// Attributes a parenthesized expression and returns the type of its operand.
+    ///
+    /// The operand is attributed against the same result info, then the result is checked
+    /// as the parentheses' own type. A parenthesized name that denotes a type or package
+    /// is reported as an illegal parenthesized expression.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the parenthesized expression.
+    ///
+    /// # Returns
+    ///
+    /// The checked type of the operand.
     fn visit_parens(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1882,7 +2143,19 @@ impl Attr {
         Ok(owntype)
     }
 
-    /// Java: public void visitErroneous(JCErroneous tree) (5123-5131)
+    /// Attributes an erroneous tree produced during error recovery.
+    ///
+    /// Each erratum is attributed for its side effects, and the result is the error type.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the erroneous tree.
+    ///
+    /// # Returns
+    ///
+    /// The error type.
     fn visit_erroneous(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1906,13 +2179,11 @@ impl Attr {
 
     // ------------------------------------------------------------------
     // Attr B (first group): statement visitors + the entry points that
-    // do not need the Analyzer/Flow machinery (Attr.java:1420-1600, 1871-2470,
     // 3922-4182). Methods whose upstream body needs a not-yet-ported service are
     // registered with a not-yet-ported marker + REGISTERED at the exact call site.
     // ------------------------------------------------------------------
 
-    /// Java: log.error(DiagnosticPosition, JCDiagnostic.Error) helper — the
-    /// ported DiagnosticArg mapping and report call (ADR 0002 P4 placeholders).
+    /// Reports a diagnostic at a position, with the ported argument mapping.
     fn attr_error(&self, pos: i32, info: crate::resources::diagnostic_contract::ErrorInfo) {
         use crate::util::jc_diagnostic::DiagnosticType;
         let args: Vec<crate::util::jc_diagnostic::DiagnosticArg> = info
@@ -1947,8 +2218,22 @@ impl Attr {
         )
     }
 
-    /// Java: public Type attribStat(JCTree tree, Env<AttrContext> env)
-    /// (Attr.java:749-756)
+    /// Attributes one statement and returns the type it was given.
+    ///
+    /// Unless attribution is speculative, the analyzer runs for the statement before
+    /// and after it is attributed; speculative attribution skips that step because the
+    /// analyzer's cells may already be borrowed.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the statement to attribute.
+    /// * `env` - the attribution environment.
+    ///
+    /// # Returns
+    ///
+    /// The type assigned to the statement.
     pub fn attrib_stat(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1956,7 +2241,6 @@ impl Attr {
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) -> TypeId {
-        // Java: Env<AttrContext> analyzeEnv = analyzer.copyEnvIfNeeded(tree, env);
         let analyze_env = if env.info.borrow().attribution_mode.is_speculative() {
             // Java copyEnvIfNeeded returns null for speculative attribution;
             // avoid touching the analyzer cell while Analyzer.flush holds it.
@@ -1973,7 +2257,6 @@ impl Attr {
         };
         let stat_info = self.stat_info.clone();
         let result = self.attrib_tree_use(ctx, syms, tree, env, stat_info);
-        // Java: analyzer.analyzeIfNeeded(tree, analyzeEnv); the live Attr is
         // passed through because the caller already borrowed it mutably.
         let analyzer_service = self.analyzer.borrow().clone();
         if analyze_env.is_some()
@@ -1982,12 +2265,11 @@ impl Attr {
             let mut analyzer = analyzer_rc.borrow_mut();
             analyzer.analyze_if_needed_with_attr(ctx, syms, tree, analyze_env.as_ref(), self);
         }
-        // Java: attrRecover.doRecovery();
         self.do_recovery(ctx, syms);
         result
     }
 
-    /// Java: attrRecover.doRecovery() — the ported recovery loop entry.
+    /// Runs the deferred attribution recovery loop.
     fn do_recovery(&mut self, ctx: &mut CompilerContext, syms: &Symtab) {
         let Some(recover_rc) = self.attr_recover.borrow().clone() else {
             return;
@@ -2010,8 +2292,17 @@ impl Attr {
         recover.do_recovery(ctx, syms, self, &rs, &infer_rc, &chk, &diags);
     }
 
-    /// Java: <T extends JCTree> void attribStats(List<T> trees,
-    /// Env<AttrContext> env) (Attr.java:770-774)
+    /// Attributes each statement in `trees` in list order.
+    ///
+    /// Order matters: attribution can add symbols to the current scope, so a later
+    /// statement sees declarations made by an earlier one.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `trees` - the statements to attribute.
+    /// * `env` - the attribution environment.
     pub fn attrib_stats(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2025,8 +2316,20 @@ impl Attr {
         }
     }
 
-    /// Java: List<Type> attribExprs(List<JCExpression> trees,
-    /// Env<AttrContext> env, Type pt) (Attr.java:759-768)
+    /// Attributes each expression in `trees` against `pt` and returns the types in the
+    /// same order.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `trees` - the expressions to attribute.
+    /// * `env` - the attribution environment.
+    /// * `pt` - the target type shared by all expressions, or `None`.
+    ///
+    /// # Returns
+    ///
+    /// The types of the expressions, in the same order.
     pub fn attrib_exprs(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2043,8 +2346,19 @@ impl Attr {
         result
     }
 
-    /// Java: List<Type> attribAnyTypes(List<JCExpression> trees,
-    /// Env<AttrContext> env) (Attr.java:790-798)
+    /// Attributes each tree in `trees` as a type and returns the types in the same
+    /// order.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `trees` - the trees to attribute as types.
+    /// * `env` - the attribution environment.
+    ///
+    /// # Returns
+    ///
+    /// The attributed types, in the same order.
     pub fn attrib_any_types(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2060,20 +2374,44 @@ impl Attr {
         result
     }
 
-    /// Java: public void visitSkip(JCSkip tree) (Attr.java:1420-1422)
+    /// Attributes the empty statement.
+    ///
+    /// A skip has no value type; `no_type` is returned so the caller can tell the
+    /// statement produced nothing.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the skip statement.
+    ///
+    /// # Returns
+    ///
+    /// `no_type`.
     fn visit_skip(
         &mut self,
         ctx: &mut CompilerContext,
         _syms: &Symtab,
         _tree: TreeId,
     ) -> Result<TypeId, CompletionFailure> {
-        // Java: result = null; the ported visitor returns Type.noType for the
         // null statement result (adapter adapter, registered).
         Ok(self.no_type(ctx))
     }
 
-    /// Java: public void visitExec(JCExpressionStatement tree)
-    /// (Attr.java:2282-2288)
+    /// Attributes an expression statement.
+    ///
+    /// The expression is attributed in a duplicated environment that shares the info; the
+    /// statement itself has no value type.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the expression statement.
+    ///
+    /// # Returns
+    ///
+    /// `no_type`.
     fn visit_exec(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2085,13 +2423,25 @@ impl Attr {
             _ => panic!("ClassCastException: JCExpressionStatement expected"),
         };
         let env = self.env.clone().expect("env");
-        // Java: Env<AttrContext> localEnv = env.dup(tree); (shares env.info)
         let local_env = Env::dup_shared(&env, Some(tree));
         self.attrib_expr(ctx, syms, expr, &local_env);
         Ok(self.no_type(ctx))
     }
 
-    /// Java: public void visitBreak(JCBreak tree) (Attr.java:2290-2294)
+    /// Attributes a `break` statement and resolves its jump target.
+    ///
+    /// The target is found from the current environment and stored on the tree; the
+    /// statement has no value type.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the `break` statement.
+    ///
+    /// # Returns
+    ///
+    /// `no_type`.
     fn visit_break(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2111,7 +2461,20 @@ impl Attr {
         Ok(self.no_type(ctx))
     }
 
-    /// Java: public void visitContinue(JCContinue tree) (Attr.java:2308-2312)
+    /// Attributes a `continue` statement and resolves its jump target.
+    ///
+    /// The target is found from the current environment and stored on the tree; the
+    /// statement has no value type.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the `continue` statement.
+    ///
+    /// # Returns
+    ///
+    /// `no_type`.
     fn visit_continue(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2131,7 +2494,21 @@ impl Attr {
         Ok(self.no_type(ctx))
     }
 
-    /// Java: public void visitYield(JCYield tree) (Attr.java:2295-2307)
+    /// Attributes a `yield` statement.
+    ///
+    /// Inside a switch expression the value is attributed against the switch's yield result
+    /// info. Outside one, the statement is an error. Either way the jump target is resolved
+    /// and stored on the tree.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the `yield` statement.
+    ///
+    /// # Returns
+    ///
+    /// `no_type`.
     fn visit_yield(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2177,8 +2554,8 @@ impl Attr {
         Ok(self.no_type(ctx))
     }
 
-    /// Java: public void visitLabelled(JCLabeledStatement tree)
-    /// (Attr.java:1581-1597)
+    /// Attributes a labelled statement.
+    ///
     fn visit_labeled(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2223,7 +2600,21 @@ impl Attr {
         Ok(self.no_type(ctx))
     }
 
-    /// Java: public void visitReturn(JCReturn tree) (Attr.java:2414-2443)
+    /// Attributes a `return` statement.
+    ///
+    /// The expression is attributed against the enclosing method's return result info. A
+    /// `return` outside a method, inside a switch expression, or inside a compact record
+    /// constructor is reported as an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the `return` statement.
+    ///
+    /// # Returns
+    ///
+    /// `no_type`.
     #[allow(clippy::unnecessary_unwrap, clippy::collapsible_if)]
     fn visit_return(
         &mut self,
@@ -2255,13 +2646,11 @@ impl Attr {
                 .map(|encl_method| crate::tree::tree_info::is_compact_constructor(ctx, encl_method))
                 .unwrap_or(false)
         {
-            // Java: log.error(env.enclMethod,
             // Errors.InvalidCanonicalConstructorInRecord(Fragments.Compact,
             // env.enclMethod.sym.name,
             // Fragments.CanonicalCantHaveReturnStatement));
             // Registered with the Records (Fragments.Compact/Canonical
             // fragment helpers need the argument plumbing).
-            // Java: log.error(env.enclMethod,
             //     Errors.InvalidCanonicalConstructorInRecord(Fragments.Compact,
             //     env.enclMethod.sym.name, Fragments.CanonicalCantHaveReturnStatement));
             let encl_method = env.encl_method.expect("enclosing method");
@@ -2323,7 +2712,20 @@ impl Attr {
         Ok(self.no_type(ctx))
     }
 
-    /// Java: public void visitThrow(JCThrow tree) (Attr.java:2445-2451)
+    /// Attributes a `throw` statement.
+    ///
+    /// The thrown expression is attributed against `Throwable` when poly expressions are
+    /// not allowed, and checked against `Throwable` after attribution when they are.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the `throw` statement.
+    ///
+    /// # Returns
+    ///
+    /// `no_type`.
     fn visit_throw(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2356,8 +2758,21 @@ impl Attr {
         Ok(self.no_type(ctx))
     }
 
-    /// Java: public void visitIndexed(JCArrayAccess tree)
-    /// (Attr.java:4169-4180)
+    /// Attributes an array access and returns the element type.
+    ///
+    /// The indexed expression must attribute to an array type; the index is attributed
+    /// against `int`. A non-array operand is reported and the error type is returned. The
+    /// element type is captured unless the expression is used as a value.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the array access.
+    ///
+    /// # Returns
+    ///
+    /// The checked element type.
     fn visit_indexed(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2405,7 +2820,20 @@ impl Attr {
         ))
     }
 
-    /// Java: public void visitAssign(JCAssign tree) (Attr.java:3930-3936)
+    /// Attributes an assignment and returns the assigned type.
+    ///
+    /// The left-hand side is attributed as a variable, and the right-hand side against its
+    /// captured type. The assignment itself has the left-hand side's type.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the assignment.
+    ///
+    /// # Returns
+    ///
+    /// The checked type of the assignment.
     fn visit_assign(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2435,9 +2863,21 @@ impl Attr {
         ))
     }
 
-    /// Java: private JCTree findJumpTarget(DiagnosticPosition pos,
-    /// JCTree.Tag tag, Name label, Env<AttrContext> env)
-    /// (Attr.java:2317-2328)
+    /// Finds the tree a `break`, `continue` or `yield` jumps to and reports the error, if
+    /// any.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `pos` - the position the jump error is reported at.
+    /// * `tag` - the jump kind (`BREAK`, `CONTINUE`, `YIELD`).
+    /// * `label` - the jump label, if any.
+    /// * `env` - the environment the search starts from.
+    ///
+    /// # Returns
+    ///
+    /// The target tree, or `None` when the jump is not inside a matching construct.
     fn find_jump_target(
         &self,
         ctx: &mut CompilerContext,
@@ -2454,9 +2894,23 @@ impl Attr {
         target
     }
 
-    /// Java: private Pair<JCTree, JCDiagnostic.Error>
-    /// findJumpTargetNoError(Tag tag, Name label, Env<AttrContext> env)
-    /// (Attr.java:2339-2408)
+    /// Finds the tree a jump targets without reporting anything.
+    ///
+    /// The search walks the enclosing environments. A labelled jump returns the labelled
+    /// statement (or, for `continue`, the statement's body); an unlabelled `break` returns
+    /// the innermost loop or switch, and an unlabelled `continue` the innermost loop.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tag` - the jump kind (`BREAK`, `CONTINUE`, `YIELD`).
+    /// * `label` - the jump label, if any.
+    /// * `env` - the environment the search starts from.
+    ///
+    /// # Returns
+    ///
+    /// The target and the error to report at the caller's position, if any.
     fn find_jump_target_no_error(
         &self,
         ctx: &CompilerContext,
@@ -2543,7 +2997,19 @@ impl Attr {
         }
     }
 
-    /// Java: public void visitTree(JCTree tree) (default: assert error)
+    /// The fallback visitor for a tree kind with no dedicated method.
+    ///
+    /// It panics: a kind that reaches this method has not been ported, and silently
+    /// skipping it would hide an incomplete attribution.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `tree` - the unhandled tree.
+    ///
+    /// # Panics
+    ///
+    /// Always.
     fn visit_tree(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2557,10 +3023,23 @@ impl Attr {
     }
 
     // ------------------------------------------------------------------
-    // Derived entry points (Attr.java:722-850).
     // ------------------------------------------------------------------
 
-    /// Java: public Type attribExpr(JCTree tree, Env<AttrContext> env)
+    /// Attributes `tree` as a value of unknown kind.
+    ///
+    /// No target type is imposed; use [`Attr::attrib_expr_with_type`] when the enclosing
+    /// context has one.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the expression to attribute.
+    /// * `env` - the attribution environment.
+    ///
+    /// # Returns
+    ///
+    /// The type of `tree`.
     pub fn attrib_expr(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2572,23 +3051,21 @@ impl Attr {
         self.attrib_tree_use(ctx, syms, tree, env, info)
     }
 
-    /// Java: private void doQueueScanTreeAndTypeAnnotateForVarInit(
-    /// JCVariableDecl tree, Env<AttrContext> env) (Attr.java:1335-1344).
+    /// Queues a field initializer for type-annotation scanning before it is attributed.
     ///
-    /// Field initializer expressions need to be queued for type-annotation
-    /// scanning before they are attributed; the queued flag prevents duplicates.
+    /// The queued flag on the declaration prevents a second queueing. Only field
+    /// initializers are queued: a declaration owned by a method or a variable is skipped.
     ///
     /// # Arguments
-    ///   - ctx: the compiler context;
-    ///   - syms: the symbol table used by the annotation flush;
-    ///   - tree: the variable declaration;
-    ///   - env: the attribute environment.
     ///
-    /// # Returns
-    ///   - ().
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table used by the annotation flush.
+    /// * `tree` - the variable declaration.
+    /// * `env` - the attribution environment.
     ///
     /// # Panics
-    ///   - when the injected Annotate service is missing.
+    ///
+    /// Panics when the annotation service is not installed.
     fn do_queue_scan_tree_and_type_annotate_for_var_init(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2637,26 +3114,30 @@ impl Attr {
             .expect("annotation flush");
     }
 
-    /// Java: public Object attribLazyConstantValue(Env<AttrContext> env,
-    /// Env<AttrContext> enclosingEnv, JCVariableDecl variable, Type type)
-    /// (Attr.java:853-874).
+    /// Attributes the lazy initializer of a constant variable and returns the coerced
+    /// constant value.
     ///
-    /// Attributes the lazy initializer of a constant variable and returns the
-    /// coerced constant value (None when the initializer is not a constant).
+    /// A variable whose initializer is not a compile-time constant has no constant value,
+    /// so `None` is returned after the initializer has been attributed for its side
+    /// effects.
     ///
     /// # Arguments
-    ///   - ctx: the compiler context;
-    ///   - syms: the symbol table;
-    ///   - env: the initializer environment (MemberEnter.initEnv result);
-    ///   - enclosing_env: the environment enclosing the initializer;
-    ///   - variable: the variable declaration tree;
-    ///   - ty: the declared variable type.
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `env` - the initializer environment produced by `MemberEnter::init_env`.
+    /// * `enclosing_env` - the environment enclosing the initializer.
+    /// * `variable` - the variable declaration.
+    /// * `ty` - the declared variable type.
     ///
     /// # Returns
-    ///   - the constant value of the initializer after coercion, or None.
+    ///
+    /// The constant value after coercion, or `None` when the initializer is not a
+    /// constant.
     ///
     /// # Panics
-    ///   - when an injected service is missing.
+    ///
+    /// Panics when a service the attribution needs is not installed.
     pub fn attrib_lazy_constant_value(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2722,7 +3203,23 @@ impl Attr {
         result
     }
 
-    /// Java: public Type attribExpr(JCTree tree, Env<AttrContext> env, Type pt)
+    /// Attributes `tree` as a value against `pt`.
+    ///
+    /// An error type in `pt` is treated as no target type, so an expression whose
+    /// context already failed does not produce a second error against a type that does
+    /// not exist.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the expression to attribute.
+    /// * `env` - the attribution environment.
+    /// * `pt` - the target type, or `None`.
+    ///
+    /// # Returns
+    ///
+    /// The type of `tree`.
     pub fn attrib_expr_with_type(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2734,7 +3231,6 @@ impl Attr {
         let pt = match pt {
             Some(pt) if !ctx.typ(pt).has_tag(TypeTag::ERROR) => pt,
             _ => {
-                // Java: Type.noType
                 self.no_type(ctx)
             }
         };
@@ -2742,7 +3238,18 @@ impl Attr {
         self.attrib_tree_use(ctx, syms, tree, env, info)
     }
 
-    /// Java: public Type attribType(JCTree tree, Env<AttrContext> env)
+    /// Attributes `tree` as a type with no expected target.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the type tree to attribute.
+    /// * `env` - the attribution environment.
+    ///
+    /// # Returns
+    ///
+    /// The attributed type.
     pub fn attrib_type(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2754,7 +3261,22 @@ impl Attr {
         self.attrib_tree_use(ctx, syms, tree, env, info)
     }
 
-    /// Java: Type attribType(JCTree tree, Env<AttrContext> env, Type pt)
+    /// Attributes `tree` as a type, using `pt` as the expected type.
+    ///
+    /// Unlike [`Attr::attrib_type`], the expected type is known, so the result is
+    /// checked against it instead of being accepted as any type.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the type tree to attribute.
+    /// * `env` - the attribution environment.
+    /// * `pt` - the expected type, or `None`.
+    ///
+    /// # Returns
+    ///
+    /// The attributed type.
     pub fn attrib_type_with(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2767,7 +3289,23 @@ impl Attr {
         self.attrib_tree_use(ctx, syms, tree, env, info)
     }
 
-    /// Java: public Type attribType(JCTree node, TypeSymbol sym)
+    /// Attributes `node` in the type environment recorded for `sym`.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `node` - the type tree to attribute.
+    /// * `sym` - the class whose recorded environment is used.
+    ///
+    /// # Returns
+    ///
+    /// The attributed type.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `sym` has no recorded environment, which means the class was never
+    /// entered.
     pub fn attrib_type_symbol(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2776,7 +3314,6 @@ impl Attr {
         sym: SymbolId,
     ) -> TypeId {
         let env = self.type_envs.get(sym).expect("typeEnvs entry");
-        // Java: Env<AttrContext> localEnv = env.dup(node, env.info.dup());
         // The local AttrContext is a copy: modifications inside the local env
         // must not leak into the class env (dup_shared would share info).
         let info_copy = {
@@ -2788,8 +3325,21 @@ impl Attr {
         self.attrib_tree_use(ctx, syms, node, &local_env, info)
     }
 
-    /// Java: public Type attribImportQualifier(JCImport tree, Env<AttrContext>
-    /// env)
+    /// Attributes the qualifier of `tree` and returns its type.
+    ///
+    /// The qualifier is the selected part of the import's qualified identifier. A
+    /// static import resolves it as a type; a non-static import also accepts a package.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the import declaration.
+    /// * `env` - the attribution environment.
+    ///
+    /// # Returns
+    ///
+    /// The type of the qualifier: a package, a type, or the error type.
     pub fn attrib_import_qualifier(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2816,8 +3366,16 @@ impl Attr {
         self.attrib_tree_use(ctx, syms, selected, env, info)
     }
 
-    /// Java: void attribAnnotationTypes(List<JCAnnotation> annotations,
-    /// Env<AttrContext> env) (838-844)
+    /// Attributes the type of every annotation in `annotations`.
+    ///
+    /// The annotation's elements are not touched here.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `annotations` - the annotations whose types are attributed.
+    /// * `env` - the attribution environment.
     pub fn attrib_annotation_types(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2837,8 +3395,18 @@ impl Attr {
         }
     }
 
-    /// Java: void attribTypeVariables(List<JCTypeParameter> typarams,
-    /// Env<AttrContext> env, boolean checkCyclic) (811-836)
+    /// Attributes the bounds of every type parameter in `typarams`.
+    ///
+    /// When `check_cyclic` is set, a bound that refers to its own type variable is
+    /// reported.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `typarams` - the type parameter trees.
+    /// * `env` - the attribution environment.
+    /// * `check_cyclic` - whether to report self-referential bounds.
     pub fn attrib_type_variables(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2867,7 +3435,6 @@ impl Attr {
                         result = result.prepend(bound_type);
                         bounds_current = bounds_current.tail();
                     }
-                    // Java: types.setBounds(a, bounds.reverse())
                     let reversed = list_reverse(result);
                     self.types
                         .set_bounds(ctx, syms, &self.names, type_var, reversed, false);
@@ -2889,8 +3456,6 @@ impl Attr {
         if check_cyclic {
             let current = typarams;
             for tvar in &current {
-                // Java: chk.checkNonCyclic(tvar.pos(), (TypeVar)tvar.type)
-                // (Attr.java:828-832).
                 let tvar_type = ctx.tree(tvar).ty.expect("type parameter tree.type");
                 let tvar_pos = ctx.tree(tvar).pos;
                 let chk = Rc::clone(&self.chk);
@@ -2899,8 +3464,22 @@ impl Attr {
         }
     }
 
-    /// Java: public Symbol attribIdent(JCTree tree, JCCompilationUnit topLevel)
-    /// (357-366)
+    /// Resolves `tree` as an identifier from the top-level environment of `top_level`.
+    ///
+    /// The environment gets a synthetic erroneous class as its enclosing class, so the
+    /// lookup runs as if the identifier were inside a class body; without it, members
+    /// would not be visible.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the identifier to resolve.
+    /// * `top_level` - the compilation unit that provides the environment.
+    ///
+    /// # Returns
+    ///
+    /// The symbol named by `tree`.
     pub fn attrib_ident_toplevel(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2909,7 +3488,6 @@ impl Attr {
         top_level: TreeId,
     ) -> SymbolId {
         let local_env = self.enter.get_top_level_env(ctx, top_level);
-        // Java: localEnv.enclClass = make.ClassDef(make.Modifiers(0),
         // syms.errSymbol.name, null, null, null, null);
         // localEnv.enclClass.sym = syms.errSymbol;
         let err_symbol = syms.err_symbol;
@@ -2944,8 +3522,18 @@ impl Attr {
         self.attrib_ident(ctx, syms, tree, &env)
     }
 
-    /// Java: public Symbol attribIdent(JCTree tree, Env<AttrContext> env)
-    /// (370-375)
+    /// Resolves `tree` as an identifier in `env` and returns the symbol it names.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the identifier to resolve.
+    /// * `env` - the attribution environment.
+    ///
+    /// # Returns
+    ///
+    /// The symbol named by `tree`.
     pub fn attrib_ident(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2953,8 +3541,6 @@ impl Attr {
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) -> SymbolId {
-        // Java: return tree.accept(identAttributer, env); (Attr.java:370-375)
-        // IdentAttributer (Attr.java:377-410):
         use crate::code::kinds::Kind;
         match ctx.tree(tree).tag {
             Tag::SELECT => {
@@ -2972,7 +3558,6 @@ impl Attr {
                     return site;
                 }
                 if site_kind == Kind::PCK {
-                    // Java: env.toplevel.packge = (PackageSymbol)site;
                     let toplevel = env.toplevel.expect("env.toplevel");
                     if let TreeKind::CompilationUnit { packge, .. } =
                         &mut ctx.tree_mut(toplevel).kind
@@ -2996,7 +3581,6 @@ impl Attr {
                         Some(self),
                     );
                 }
-                // Java: env.enclClass.sym = (ClassSymbol)site;
                 // return rs.findMemberType(env, site.asType(), name,
                 // (TypeSymbol)site);
                 let encl_class = env.encl_class.expect("env.enclClass");
@@ -3034,7 +3618,26 @@ impl Attr {
         }
     }
 
-    /// Java: Type attribIdentAsEnumType(Env<AttrContext> env, JCIdent id) (941-947)
+    /// Resolves `id` as the enum type of the enclosing class.
+    ///
+    /// Used for the implicit name of an enum constant's class inside an enum
+    /// declaration, where the enclosing class is the enum itself.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `env` - the environment whose scope owner is the enum.
+    /// * `id` - the identifier to type.
+    ///
+    /// # Returns
+    ///
+    /// The type of the enclosing class.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the environment has no scope owner or the owner has no enclosing
+    /// class.
     pub fn attrib_ident_as_enum_type(
         &mut self,
         ctx: &mut CompilerContext,
@@ -3042,10 +3645,8 @@ impl Attr {
         env: &Rc<Env<AttrContext>>,
         id: TreeId,
     ) -> TypeId {
-        // Java: Assert.check((env.enclClass.sym.flags() & ENUM) != 0);
         // id.type = env.info.scope.owner.enclClass().type;
         // id.sym = env.info.scope.owner.enclClass();
-        // return id.type; (Attr.java:941-947)
         let scope_owner = env
             .info
             .borrow()
@@ -3077,9 +3678,7 @@ impl Attr {
         match self.attrib_tree(ctx, syms, tree, env, result_info) {
             Ok(value) => value,
             Err(failure) => {
-                // Java: catch (CompletionFailure ex) { tree.type = syms.errType;
                 // return chk.completionError(tree.pos(), ex); }
-                // (Attr.java:688-695)
                 ctx.tree_mut(tree).ty = Some(syms.err_type);
                 let chk_rc = Rc::clone(&self.chk);
                 let chk = Rc::clone(&chk_rc);
@@ -3119,7 +3718,6 @@ impl Attr {
     }
 
     fn no_type(&mut self, ctx: &mut CompilerContext) -> TypeId {
-        // Java: Type.noType — the existing ported helper (symtab::no_type_id)
         // builds the TypeTag::NONE instance with the same shape as the other
         // call sites (registered adapter).
         crate::code::symtab::no_type_id(ctx)
@@ -3181,13 +3779,33 @@ fn literal_value_to_constant(
     }
 }
 
-/// Java: Feature::allowed_in_source helper is the ported Source feature check
-/// (code::source::Feature); this function documents the dependency for Registration.
+/// Returns whether `feature` is allowed at the given source level.
+///
+/// # Arguments
+///
+/// * `feature` - the language feature.
+/// * `source` - the source level.
+///
+/// # Returns
+///
+/// Whether the feature may be used.
 fn _feature_allowed(feature: Feature, source: crate::code::source::Source) -> bool {
     feature.allowed_in_source(source)
 }
 
-/// Java: Symbol.isMemberOf(TypeSymbol clazz, Types types) (Symbol.java:552-558).
+/// Returns whether `sym` is a member of `clazz`, inherited members included.
+///
+/// # Arguments
+///
+/// * `ctx` - the compiler context.
+/// * `syms` - the symbol table.
+/// * `types` - the type operations.
+/// * `sym` - the symbol to test.
+/// * `clazz` - the class to test membership in.
+///
+/// # Returns
+///
+/// Whether `sym` is a member of `clazz`.
 fn symbol_is_member_of(
     ctx: &mut CompilerContext,
     syms: &Symtab,
@@ -3198,7 +3816,20 @@ fn symbol_is_member_of(
     crate::code::symbol::is_member_of(ctx, syms, types, sym, clazz)
 }
 
-/// Java: JCIdent.name
+/// Returns the name of an identifier tree.
+///
+/// # Arguments
+///
+/// * `ctx` - the compiler context.
+/// * `tree` - the identifier tree.
+///
+/// # Returns
+///
+/// The identifier's name.
+///
+/// # Panics
+///
+/// Panics when `tree` is not an identifier.
 fn ident_name(ctx: &CompilerContext, tree: TreeId) -> Name {
     match &ctx.tree(tree).kind {
         TreeKind::Ident { name, .. } => name.clone(),
@@ -3206,7 +3837,17 @@ fn ident_name(ctx: &CompilerContext, tree: TreeId) -> Name {
     }
 }
 
-/// Java: JCIdent.sym
+/// Returns the symbol an identifier resolves to, if any.
+///
+/// # Arguments
+///
+/// * `ctx` - the compiler context.
+/// * `tree` - the identifier tree.
+///
+/// # Returns
+///
+/// The resolved symbol, or `None` when the identifier is unresolved or `tree` is not an
+/// identifier.
 fn ident_symbol(ctx: &CompilerContext, tree: TreeId) -> Option<SymbolId> {
     match &ctx.tree(tree).kind {
         TreeKind::Ident { sym, .. } => *sym,
@@ -3214,13 +3855,28 @@ fn ident_symbol(ctx: &CompilerContext, tree: TreeId) -> Option<SymbolId> {
     }
 }
 
-/// Java: tree.sym = sym
+/// Records `sym` as the symbol an identifier resolves to.
+///
+/// # Arguments
+///
+/// * `ctx` - the compiler context.
+/// * `tree` - the identifier tree.
+/// * `sym` - the symbol to record.
 fn set_ident_symbol(ctx: &mut CompilerContext, tree: TreeId, sym: SymbolId) {
     if let TreeKind::Ident { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
         *slot = Some(sym);
     }
 }
-/// Java: JCTypeApply.clazz
+/// Returns the functor of a parameterized type.
+///
+/// # Arguments
+///
+/// * `ctx` - the compiler context.
+/// * `tree` - the parameterized type tree.
+///
+/// # Returns
+///
+/// The functor tree, or `None` when `tree` is not a parameterized type.
 fn type_apply_clazz(ctx: &CompilerContext, tree: TreeId) -> Option<TreeId> {
     match &ctx.tree(tree).kind {
         TreeKind::TypeApply { clazz, .. } => *clazz,
@@ -3228,7 +3884,16 @@ fn type_apply_clazz(ctx: &CompilerContext, tree: TreeId) -> Option<TreeId> {
     }
 }
 
-/// Java: JCTypeApply.arguments
+/// Returns the type arguments of a parameterized type.
+///
+/// # Arguments
+///
+/// * `ctx` - the compiler context.
+/// * `tree` - the parameterized type tree.
+///
+/// # Returns
+///
+/// The argument trees; empty when `tree` is not a parameterized type.
 fn type_apply_arguments(ctx: &CompilerContext, tree: TreeId) -> List<TreeId> {
     match &ctx.tree(tree).kind {
         TreeKind::TypeApply { arguments, .. } => arguments.clone(),
@@ -3236,8 +3901,18 @@ fn type_apply_arguments(ctx: &CompilerContext, tree: TreeId) -> List<TreeId> {
     }
 }
 
-/// Java: Type.getTypeArguments() for a class type (the ported ClassType stores
-/// Option<List<TypeId>>; Union/Intersection inherit the field).
+/// Returns the type arguments of a class, union or intersection type.
+///
+/// A type without recorded arguments returns an empty list.
+///
+/// # Arguments
+///
+/// * `ctx` - the compiler context.
+/// * `t` - the type.
+///
+/// # Returns
+///
+/// The type arguments, or an empty list.
 pub(crate) fn type_arguments(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
     match &ctx.typ(t).kind {
         TypeKindData::ClassType { typarams_field, .. }
@@ -3249,6 +3924,16 @@ pub(crate) fn type_arguments(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
     }
 }
 
+/// Returns the symbol recorded on a class declaration.
+///
+/// # Arguments
+///
+/// * `ctx` - the compiler context.
+/// * `tree` - the tree.
+///
+/// # Returns
+///
+/// The class symbol, or `None` when `tree` is not a class declaration.
 fn class_tree_symbol(ctx: &CompilerContext, tree: TreeId) -> Option<SymbolId> {
     match &ctx.tree(tree).kind {
         TreeKind::ClassDecl { sym, .. } => *sym,
@@ -3256,7 +3941,6 @@ fn class_tree_symbol(ctx: &CompilerContext, tree: TreeId) -> Option<SymbolId> {
     }
 }
 // ---------------------------------------------------------------------------
-// Attr API subset used by ArgumentAttr/DeferredAttr (Attr.java:
 // conditionalContext 2092-2106, diamondContext 3007-3016, FunctionalReturn
 // context 3380-3435, lambdaBodyResult 3438-3453, checkLambdaCompatible
 // 3455-3480). adapter registered adapters: the anonymous Java CheckContext
@@ -3270,18 +3954,19 @@ pub use crate::comp::attr_contexts::{
 };
 
 impl Attr {
-    /// Java: CheckContext conditionalContext(CheckContext checkContext)
-    /// (Attr.java:2092-2106)
+    /// Returns the check context for the branches of a conditional expression.
+    ///
+    /// The context passes compatibility checks through to `enclosing`, but rewrites the
+    /// diagnostic it reports: a branch error becomes "incompatible types in a
+    /// conditional", with the original message as its detail.
+    ///
     /// # Arguments
     ///
+    /// * `enclosing` - the context of the conditional expression itself.
+    ///
     /// # Returns
-    ///   - the upstream result (see the summary).
     ///
-    /// # Panics
-    ///   - none beyond the registered unimplemented dependencies.
-    ///
-    /// Upstream: Attr.java:3335-3350 (conditionalContext).
-    ///
+    /// The context to use for the second and third operands.
     pub fn conditional_context(
         &self,
         enclosing: Rc<dyn crate::comp::check::CheckContext>,
@@ -3292,20 +3977,22 @@ impl Attr {
         })
     }
 
-    /// Java: CheckContext diamondContext(JCNewClass clazz, TypeSymbol tsym,
-    /// CheckContext checkContext) (Attr.java:3007-3016)
+    /// Returns the check context for the arguments of a diamond `new` expression.
+    ///
+    /// A mismatch here means the inferred constructor type arguments do not fit the
+    /// arguments, so it is reported as "cannot apply diamond to `<type>`". While the
+    /// context is speculative -- a deferred overload candidate being tried -- the
+    /// diagnostic is discarded instead of reported.
+    ///
     /// # Arguments
-    ///   - clazz: the diamond new-class tree
-    ///   - tsym: the site class symbol
+    ///
+    /// * `clazz` - the `new` expression.
+    /// * `tsym` - the class symbol the diamond is applied to.
+    /// * `enclosing` - the context of the enclosing check.
     ///
     /// # Returns
-    ///   - the upstream result (see the summary).
     ///
-    /// # Panics
-    ///   - none beyond the registered unimplemented dependencies.
-    ///
-    /// Upstream: Attr.java:3360-3380 (diamondContext).
-    ///
+    /// The context to use for the constructor arguments.
     pub fn diamond_context(
         &self,
         clazz: TreeId,
@@ -3321,22 +4008,26 @@ impl Attr {
         })
     }
 
-    /// Java: ResultInfo lambdaBodyResult(JCLambda that, Type descriptor,
-    /// ResultInfo resultInfo) (Attr.java:3438-3453)
+    /// Returns the result info used to attribute a lambda body against `descriptor`.
+    ///
+    /// An expression body is attributed as the lambda's returned value; a statement body
+    /// is attributed with `return` checks. When the descriptor's return type is the
+    /// recovery type, the recovery result info is returned unchanged.
+    ///
     /// # Arguments
-    ///   - ctx: compiler context
-    ///   - that: the lambda tree
-    ///   - descriptor: the functional descriptor
-    ///   - result_info: the target result
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `that` - the lambda tree.
+    /// * `descriptor` - the functional interface descriptor.
+    /// * `result_info` - the result info of the enclosing context.
     ///
     /// # Returns
-    ///   - the upstream result (see the summary).
+    ///
+    /// The result info to attribute the body with.
     ///
     /// # Panics
-    ///   - none beyond the registered unimplemented dependencies.
     ///
-    /// Upstream: Attr.java:3438-3453 (lambdaBodyResult).
-    ///
+    /// Panics when `that` is not a lambda or has no body.
     pub fn lambda_body_result(
         &self,
         ctx: &mut CompilerContext,
@@ -3347,7 +4038,6 @@ impl Attr {
         let (body, body_is_expression) = match &ctx.tree(that).kind {
             TreeKind::Lambda { body, .. } => {
                 let body = body.expect("lambda body");
-                // Java: that.getBodyKind() == EXPRESSION (JCLambda.getBodyKind
                 // returns STATEMENT iff body.hasTag(BLOCK)).
                 (body, ctx.tree(body).tag != Tag::BLOCK)
             }
@@ -3372,29 +4062,29 @@ impl Attr {
         };
         let return_type = self.types.get_return_type_public(ctx, descriptor);
         if Some(return_type) == Some(self.symtab_facts().recovery_type) {
-            // Java: descriptor.getReturnType() == Type.recoveryType ? recoveryInfo:...
             self.recovery_info.clone()
         } else {
             ResultInfo::new(KindSelector::VAL, Some(return_type), func_context)
         }
     }
 
-    /// Java: void checkLambdaCompatible(JCLambda tree, Type descriptor,
-    /// CheckContext checkContext) (Attr.java:3455-3480)
-    /// # Arguments
-    ///   - ctx/syms: explicit services
-    ///   - tree: the lambda tree
-    ///   - descriptor: the functional descriptor
-    ///   - check_context: the compatibility context
+    /// Checks a lambda body against its functional descriptor.
     ///
-    /// # Returns
-    ///   - the upstream result (see the summary).
+    /// Parameter and return types must be compatible with the descriptor, and a
+    /// statement body that can complete normally must not have a non-void descriptor
+    /// return type. Reports through `check_context`.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the lambda tree.
+    /// * `descriptor` - the functional interface descriptor.
+    /// * `check_context` - the context the mismatch is reported through.
     ///
     /// # Panics
-    ///   - none beyond the registered unimplemented dependencies.
     ///
-    /// Upstream: Attr.java:3460-3490 (checkLambdaCompatible).
-    ///
+    /// Panics when `tree` is not a lambda.
     pub fn check_lambda_compatible(
         &self,
         ctx: &mut CompilerContext,
@@ -3453,7 +4143,6 @@ impl Attr {
                     ));
             let int_pos = ctx.tree(tree).pos;
             let source = self.log.current_source();
-            // Java: the details diagnostic carries the lambda position (used by
             // the final incompatible-types report).
             let outer = self.diags.create(
                 crate::util::jc_diagnostic::DiagnosticType::FRAGMENT,
@@ -3484,7 +4173,6 @@ impl Attr {
             while a.non_empty() {
                 let at = *a.head();
                 let bt = *b.head();
-                // Java: types.isSameTypes(argTypes, TreeInfo.types(tree.params)),
                 // i.e. type equivalence, not TypeId identity.
                 let same_type = match bt {
                     Some(bt) => self.types.is_same_type(ctx, syms, at, bt),
@@ -3510,31 +4198,37 @@ impl Attr {
     }
 }
 
-/// Java: Attr.TargetInfo (Attr.java:3230-3238)
+/// The target type and functional descriptor resolved for a poly expression.
+///
+/// `target` is the type the expression is attributed against; `descriptor` is the
+/// function type of that target after the enclosing type arguments are applied.
 pub struct TargetInfo {
+    /// The target type.
     pub target: TypeId,
+    /// The functional interface descriptor of the target.
     pub descriptor: TypeId,
 }
 
 impl Attr {
-    /// Java: TargetInfo getTargetInfo(JCPolyExpression that, ResultInfo
-    /// resultInfo, List<Type> explicitParamTypes) (Attr.java:3240-3295) —
-    /// adapter: explicit ctx/syms parameters; the upstream unchecked
-    /// FunctionDescriptorLookupError is returned as Err.
+    /// Resolves the target type and functional descriptor of a poly expression.
+    ///
+    /// An intersection target has each bound instantiated against the explicit parameter
+    /// types and is rebuilt before its descriptor is looked up. When the requested target
+    /// is the recovery type, a fallback descriptor is used instead. A lambda whose
+    /// descriptor is generic is reported as an invalid target and gets an error type.
+    ///
     /// # Arguments
-    ///   - ctx/syms: explicit services
-    ///   - that: the functional expression
-    ///   - result_info: the target result
-    ///   - explicit_param_types: the explicit parameter types (if any)
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `that` - the functional expression.
+    /// * `result_info` - the expected type and check context.
+    /// * `explicit_param_types` - the explicit parameter types, if any.
     ///
     /// # Returns
-    ///   - the upstream result (see the summary).
     ///
-    /// # Panics
-    ///   - none beyond the registered unimplemented dependencies.
-    ///
-    /// Upstream: Attr.java:3390-3435 (getTargetInfo).
-    ///
+    /// The target type and its functional descriptor, or the lookup error when no
+    /// descriptor can be found.
     pub fn get_target_info(
         &mut self,
         ctx: &mut CompilerContext,
@@ -3582,7 +4276,6 @@ impl Attr {
                 for bound in explicit_components.iter() {
                     let mut bound = bound;
                     if let Some(explicit) = &explicit_param_types {
-                        // Java: try { bound = infer.instantiateFunctionalInterface(that,
                         // bound, explicitParamTypes, resultInfo.checkContext); }
                         // catch (FunctionDescriptorLookupError t) { /* do nothing */ }
                         let chk = Rc::clone(&self.chk);
@@ -3606,7 +4299,6 @@ impl Attr {
                 current_target =
                     self.types
                         .make_intersection_type(ctx, syms, &self.names, components, false);
-                // Java: currentTarget.tsym.flags_field |= INTERFACE;
                 let tsym = ctx
                     .typ(current_target)
                     .tsym
@@ -3659,10 +4351,22 @@ impl Attr {
         })
     }
 
-    /// Java: Types.MapVisitor<DiagnosticPosition> targetChecker (Attr.java:
-    /// 3315-3348): visitClassType => intersection ? visitIntersectionClassType
-    /// : t; visitIntersectionClassType validates the notional interface through
-    /// findDescriptorSymbol and returns the intersection unchanged.
+    /// Validates an intersection target and returns it unchanged.
+    ///
+    /// A non-intersection target is returned as is. For an intersection, the notional
+    /// interface is built from its bounds and its descriptor is looked up, which reports an
+    /// error when the bounds do not form a functional interface.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `t` - the target type.
+    /// * `pos` - the position the lookup error is reported at.
+    ///
+    /// # Returns
+    ///
+    /// `t`, unchanged.
     fn target_checker(
         &mut self,
         ctx: &mut CompilerContext,
@@ -3680,8 +4384,25 @@ impl Attr {
         Ok(t)
     }
 
-    /// Java: private TypeSymbol makeNotionalInterface(IntersectionClassType ict,
-    /// DiagnosticPosition pos) (Attr.java:3322-3338)
+    /// Builds the notional interface of an intersection type.
+    ///
+    /// The interface collects the type arguments of the parameterized bounds and the bounds
+    /// themselves, and is marked as an interface so a SAM can be found on it.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `ict` - the intersection type.
+    /// * `pos` - the diagnostic position.
+    ///
+    /// # Returns
+    ///
+    /// The symbol of the notional interface.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `ict` is not an intersection type.
     fn make_notional_interface(
         &mut self,
         ctx: &mut CompilerContext,
@@ -3713,8 +4434,6 @@ impl Attr {
             let i_tsym_type = ctx.sym(i_tsym).ty.expect("interface tsym type");
             supertypes = supertypes.append(i_tsym_type);
         }
-        // Java: types.makeIntersectionType(supertypes) infers allInterfaces
-        // from the first bound (Types.java:2476-2477); every supertype here is
         // an interface, so Object is prepended and none is lost.
         let notional = self
             .types
@@ -3730,8 +4449,21 @@ impl Attr {
         notional_tsym
     }
 
-    /// Java: private Type fallbackDescriptorType(JCExpression tree)
-    /// (Attr.java:3350-3372)
+    /// Builds the descriptor used when the target is the recovery type.
+    ///
+    /// A lambda gets a method type from its declared parameter types, with the recovery type
+    /// as the return type. Every other expression gets a method type taking no arguments and
+    /// returning the recovery type.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the poly expression.
+    ///
+    /// # Returns
+    ///
+    /// The fallback descriptor type.
     fn fallback_descriptor_type(
         &mut self,
         ctx: &mut CompilerContext,
@@ -3784,7 +4516,6 @@ impl Attr {
 }
 
 // ---------------------------------------------------------------------------
-// prerequisite: Attr.PostAttrAnalyzer (Attr.java:5824-5930) + postAttr.
 // adapter registered: Java TreeScanner subclassing -> TreeScannerVisitor impl; the
 // "tree instanceof JCExpression" test is ports::tree_info::is_expression (tag
 // based class-hierarchy test); symbols are created through the arena with the
@@ -3796,7 +4527,17 @@ pub use crate::comp::post_attr_analyzer::PostAttrAnalyzer;
 tree_scanner_visitor_delegate!(PostAttrAnalyzer<'a>, 'a);
 
 impl Attr {
-    /// Java: public void postAttr(JCTree tree) (Attr.java:5821-5823)
+    /// Runs the post-attribution analysis over `tree`.
+    ///
+    /// The analysis is a `PostAttrAnalyzer` scan with no stuck type, so unresolved
+    /// subtrees keep the type attribution gave them. `pre_flow` runs the same analyzer
+    /// with a stuck type over a lambda body.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the tree to analyze.
     pub fn post_attr(&mut self, ctx: &mut CompilerContext, syms: &Symtab, tree: TreeId) {
         let mut analyzer = PostAttrAnalyzer {
             syms,
@@ -3808,33 +4549,38 @@ impl Attr {
 }
 
 // ---------------------------------------------------------------------------
-// prerequisite: Attr.checkMethod (Attr.java:4774-4895).
 // adapter adapters: explicit ctx/syms/rs/infer parameters (ADR 0001);
 // Sym.erasure(types) -> types.erasure(sym.type); the anonymous
 // InapplicableSymbolError subclass -> the ported ResolveErrorData::Inapplicable
 // symbol + resolve_error_diagnostic.
 // ---------------------------------------------------------------------------
 impl Attr {
-    /// Java: public Type checkMethod(Type site, final Symbol sym, ResultInfo
-    /// resultInfo, Env<AttrContext> env, final List<JCExpression> argtrees,
-    /// List<Type> argtypes, List<Type> typeargtypes) (Attr.java:4774-4895)
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::drop_non_drop)] // the drops release borrows early (Attr/Check)
+    /// Checks a method invocation against a resolved method symbol and returns the
+    /// invocation's type.
+    ///
+    /// Applies the type arguments, checks the actual arguments against the formal
+    /// parameters (including varargs and deferred argument attribution), and reports an
+    /// inapplicable-method error when no parameter type applies.
+    ///
     /// # Arguments
-    ///   - ctx/syms: explicit services
-    ///   - rs/infer: the resolve and inference services
-    ///   - site/sym: the method and its site
-    ///   - result_info/env: the attribution target and environment
-    ///   - argtrees/argtypes/typeargtypes: the actual arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `rs` - the resolver, used for the inapplicable-method diagnostic.
+    /// * `infer` - the inference engine.
+    /// * `site` - the type of the invocation's qualifier.
+    /// * `sym` - the resolved method symbol.
+    /// * `result_info` - the expected type and the check context.
+    /// * `env` - the attribution environment.
+    /// * `argtrees` - the argument trees, or `None` when the invocation has none.
+    /// * `argtypes` - the argument types; extended with inferred types.
+    /// * `typeargtypes` - the explicit type arguments, if any.
     ///
     /// # Returns
-    ///   - the upstream result (see the summary).
     ///
-    /// # Panics
-    ///   - none beyond the registered unimplemented dependencies.
-    ///
-    /// Upstream: Attr.java:4774-4895 (checkMethod).
-    ///
+    /// The type of the invocation.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::drop_non_drop)] // the drops release borrows early (Attr/Check)
     pub fn check_method(
         &mut self,
         ctx: &mut CompilerContext,
@@ -3892,7 +4638,6 @@ impl Attr {
                 }
             }
         }
-        // Java: if (env.info.defaultSuperCallSite != null) {... }
         let default_super_call_site = env.info.borrow().default_super_call_site;
         if let Some(default_super) = default_super_call_site {
             let encl_tree = env.encl_class.expect("enclClass");
@@ -3942,7 +4687,6 @@ impl Attr {
             }
             env.info.borrow_mut().default_super_call_site = None;
         }
-        // Java: if (sym.isStatic() && site.isInterface() && env.tree.hasTag(APPLY))...
         let env_tag = ctx.tree(env_tree).tag;
         let site_is_interface = ctx
             .typ(site)
@@ -3979,7 +4723,6 @@ impl Attr {
         // The inference exception is thrown by the resolution machinery (the
         // upstream checked exception) and converted to the resolution error
         // value here, where the upstream checkMethod catches it.
-        // Java: Attr.java:4823-4884 wraps Resolve.checkMethod in a single try
         // with two catches: InferenceException (4866) and
         // InapplicableMethodException (4871). Both can propagate from
         // Resolve.checkMethod (the latter is not caught by Resolve itself).
@@ -4035,7 +4778,6 @@ impl Attr {
                         details: diag,
                     },
                 );
-                // Java: argtypes2 = argtypes.map(new ResolveDeferredRecoveryMap(...));
                 let phase = env
                     .info
                     .borrow()
@@ -4074,7 +4816,6 @@ impl Attr {
                     Some(argtypes2),
                     typeargtypes.clone(),
                 );
-                // Java: the deferred structural check already reported the
                 // compressed incompatible-types diagnostic for this call, so the
                 // full cant.apply.symbol must not be emitted a second time.
                 if let Some(err_diag) = err_diag
@@ -4085,7 +4826,6 @@ impl Attr {
                 return types.create_error_type_original(ctx, Some(site), syms);
             }
         };
-        // Java: DeferredTypeMap checkDeferredMap =...; argtypes = argtypes.map(checkDeferredMap);
         let phase = env
             .info
             .borrow()
@@ -4115,7 +4855,6 @@ impl Attr {
             let method_name = ctx.sym(sym).name.clone();
             let location = ctx.sym(sym).owner.expect("location");
             let location_kind = crate::code::kinds::kind_name(ctx.sym(location), ctx);
-            // Java: Resolve.methodArguments keeps the Type objects in the
             // diagnostic argument list (so the formatter can collect their
             // where clauses) instead of a pre-rendered string.
             let required_args = if sym_params.is_empty() {
@@ -4189,7 +4928,6 @@ impl Attr {
         } else {
             owntype
         };
-        // Java: PolyKind pkind =...; TreeInfo.setPolyKind(env.tree, pkind);
         let sym_type = ctx.sym(sym).ty.expect("method type");
         let sym_ret = types.get_return_type_public(ctx, sym_type);
         let pkind = if ctx.typ(sym_type).has_tag(TypeTag::FORALL) {
@@ -4210,12 +4948,9 @@ impl Attr {
             return owntype;
         }
         let mut last_varargs = env.info.borrow().last_resolve_varargs();
-        // Java: the varargs round of method resolution sets useVarargs. A
         // call to a varargs method with fewer explicit arguments than formal
         // parameters can only be a varargs call, even when the recorded
         // resolution round is missing (speculative/deferred attribution).
-        // Java: argtrees is null when type-checking a method reference
-        // (Check.checkMethod comment at Check.java:1021); only a real call
         // with fewer arguments than formals forces the varargs round.
         if let Some(argtrees) = argtrees
             && !last_varargs
@@ -4241,27 +4976,28 @@ impl Attr {
 }
 
 // ---------------------------------------------------------------------------
-// Attr.lambdaEnv (Attr.java:3484-3560) + Attr.preFlow
-// (Attr.java:3296-3315). adapter: the anonymous PostAttrAnalyzer subclass of
 // preFlow is the PostAttrAnalyzer pre_flow flag; explicit ctx/syms parameters
 // per ADR 0001.
 // ---------------------------------------------------------------------------
 impl Attr {
-    /// Java: ResultInfo memberReferenceQualifierResult(JCMemberReference tree)
-    /// (Attr.java:3755-3761)
+    /// Returns the result info for the qualifier of a method reference.
+    ///
+    /// An invoke reference (`expr::method`) accepts a value or a type as its qualifier;
+    /// every other reference accepts a type only.
+    ///
     /// # Arguments
-    ///   - ctx: compiler context
-    ///   - env: the attribution environment
-    ///   - tree: the member reference
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `env` - the attribution environment.
+    /// * `tree` - the member reference.
     ///
     /// # Returns
-    ///   - the upstream result (see the summary).
+    ///
+    /// The result info to attribute the qualifier with.
     ///
     /// # Panics
-    ///   - none beyond the registered unimplemented dependencies.
     ///
-    /// Upstream: Attr.java:3755-3761 (memberReferenceQualifierResult).
-    ///
+    /// Panics when `tree` is not a member reference.
     pub fn member_reference_qualifier_result(
         &self,
         ctx: &CompilerContext,
@@ -4282,21 +5018,21 @@ impl Attr {
         ResultInfo::new(pkind, None, Rc::clone(&self.basic_handler))
     }
 
-    /// Java: public Env<AttrContext> lambdaEnv(JCLambda that,
-    /// Env<AttrContext> env) (Attr.java:3484-3560)
+    /// Creates the attribution environment for a lambda body.
+    ///
+    /// The environment duplicates the enclosing one with its own scope, and is marked as
+    /// a lambda so `return` and `yield` inside the body target the lambda.
+    ///
     /// # Arguments
-    ///   - ctx/syms: explicit services
-    ///   - that: the lambda tree
-    ///   - env: the enclosing attribution environment
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `that` - the lambda tree.
+    /// * `env` - the enclosing attribution environment.
     ///
     /// # Returns
-    ///   - the upstream result (see the summary).
     ///
-    /// # Panics
-    ///   - none beyond the registered unimplemented dependencies.
-    ///
-    /// Upstream: Attr.java:3484-3560 (lambdaEnv).
-    ///
+    /// The environment to attribute the lambda body in.
     pub fn lambda_env(
         &mut self,
         ctx: &mut CompilerContext,
@@ -4375,7 +5111,6 @@ impl Attr {
             let info = env.info.borrow().dup(Some(new_scope));
             env.dup(Some(that), info)
         } else {
-            // Java: env.dup(that, env.info.dup(env.info.scope.dup()))
             let scope = ctx.scope_dup(env.info.borrow().scope.expect("env scope"), None);
             let info = env.info.borrow().dup(Some(scope));
             env.dup(Some(that), info)
@@ -4388,22 +5123,25 @@ impl Attr {
         lambda_env
     }
 
-    /// Java: void preFlow(JCLambda tree) (Attr.java:3296-3315)
-    #[allow(clippy::too_many_arguments)]
+    /// Runs the pre-flow step over a lambda body.
+    ///
+    /// Performs any pending attribution recovery, then scans the body with a
+    /// `PostAttrAnalyzer` that leaves stuck expressions, class declarations and nested
+    /// lambdas untouched, so the flow analysis that follows sees the tree exactly as
+    /// attribution left it.
+    ///
     /// # Arguments
-    ///   - ctx/syms: explicit services
-    ///   - attr_recover/rs/infer/chk/diags: explicit services
-    ///   - env: the attribution environment
-    ///   - tree: the lambda tree
     ///
-    /// # Returns
-    ///   - the upstream result (see the summary).
-    ///
-    /// # Panics
-    ///   - none beyond the registered unimplemented dependencies.
-    ///
-    /// Upstream: Attr.java:3296-3315 (preFlow).
-    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `attr_recover` - the recovery driver.
+    /// * `rs` - the resolver.
+    /// * `infer` - the inference engine.
+    /// * `chk` - the type checker.
+    /// * `diags` - the diagnostic factory.
+    /// * `env` - the attribution environment.
+    /// * `tree` - the lambda tree.
+    #[allow(clippy::too_many_arguments)]
     pub fn pre_flow(
         &mut self,
         ctx: &mut CompilerContext,
@@ -4434,21 +5172,24 @@ impl Attr {
 
 impl Attr {
     #[allow(dead_code)]
-    /// Java: boolean isAssignableAsBlankFinal(VarSymbol v, Env<AttrContext> env)
-    /// (Attr.java:276-300).
+    /// Returns whether the blank final `v` may be assigned in `env`.
+    ///
+    /// A blank final can be assigned in a constructor or initializer of its own class, and
+    /// nowhere else. A compact record constructor never allows it.
     ///
     /// # Arguments
-    ///   - ctx: the compiler context;
-    ///   - env: the attribution environment;
-    ///   - v: the blank final variable.
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `env` - the attribution environment.
+    /// * `v` - the blank final variable.
     ///
     /// # Returns
-    ///   - true when the blank final can be assigned in env.
+    ///
+    /// Whether the assignment is allowed.
     ///
     /// # Panics
-    ///   - the environment scope must have an owner.
     ///
-    /// Upstream: Attr.java:276-300.
+    /// Panics when the environment's scope has no owner.
     fn is_assignable_as_blank_final(
         &self,
         ctx: &CompilerContext,
@@ -4480,8 +5221,20 @@ impl Attr {
     }
 
     #[allow(dead_code)]
-    /// adapter helper: Resolve.isStatic(env) without a Resolve instance (the
-    /// upstream Attr calls its own static Resolve.isStatic).
+    /// Returns whether `env` introduces a new static level.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `env` - the environment to test.
+    ///
+    /// # Returns
+    ///
+    /// Whether the environment is one static level deeper than its enclosing one.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `env` has no enclosing environment.
     fn resolve_is_static(
         &self,
         _ctx: &CompilerContext,
@@ -4491,19 +5244,18 @@ impl Attr {
         env.info.borrow().static_level > outer.info.borrow().static_level
     }
 
-    /// Java: boolean isStaticReference(JCTree tree) (Attr.java:322-333).
+    /// Returns whether `tree` is a static reference.
+    ///
+    /// A select is static when its qualifier is not a type; an identifier is always static.
     ///
     /// # Arguments
-    ///   - ctx: the compiler context;
-    ///   - tree: the SELECT/IDENT tree.
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `tree` - the select or identifier.
     ///
     /// # Returns
-    ///   - true when the tree is a static reference (a non-type select or an ident).
     ///
-    /// # Panics
-    ///   - none.
-    ///
-    /// Upstream: Attr.java:322-333.
+    /// Whether the tree denotes a static member.
     fn is_static_reference(
         &self,
         ctx: &CompilerContext,
@@ -4525,22 +5277,19 @@ impl Attr {
     }
 
     #[allow(dead_code)]
-    /// Java: void checkAssignable(DiagnosticPosition pos, VarSymbol v,
-    /// JCTree base, Env<AttrContext> env) (Attr.java:308-330).
+    /// Checks that `v` may be assigned at `pos` and reports an error otherwise.
+    ///
+    /// Assigning to `this`, or to a final variable that is already initialized or is not a
+    /// blank final assignable here, is reported. A resource variable gets the
+    /// resource-specific message.
     ///
     /// # Arguments
-    ///   - ctx: the compiler context;
-    ///   - env: the attribution environment;
-    ///   - pos: the diagnostic position;
-    ///   - v: the assigned variable;
-    ///   - base: the select base (null when not a select).
     ///
-    /// # Returns
-    ///   - none (errors are reported).
-    ///
-    /// # Panics
-    ///   - none.
-    ///
+    /// * `ctx` - the compiler context.
+    /// * `env` - the attribution environment.
+    /// * `pos` - the diagnostic position.
+    /// * `v` - the assigned variable.
+    /// * `base` - the select base, or `None` for a plain identifier.
     fn check_assignable(
         &mut self,
         ctx: &CompilerContext,
@@ -4601,19 +5350,19 @@ fn list_len_type(list: &List<TypeId>) -> usize {
     n
 }
 impl Attr {
-    /// Java: Env<AttrContext> enclosingInitEnv(Env<AttrContext> env)
-    /// (Attr.java:4692-4718).
+    /// Returns the environment of the field or initializer that encloses `env`.
+    ///
+    /// The search walks the environment chain outwards until it finds an initializer that
+    /// belongs to a field, or leaves the chain.
     ///
     /// # Arguments
-    ///   - env: the current attribution environment.
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `env` - the current environment.
     ///
     /// # Returns
-    ///   - the enclosing field/initializer environment, or None.
     ///
-    /// # Panics
-    ///   - the enclosing environment chain is asserted non-null (upstream Assert).
-    ///
-    /// Upstream: Attr.java:4692-4718.
+    /// The enclosing initializer environment, or `None`.
     #[allow(dead_code)]
     fn enclosing_init_env(
         &self,
@@ -4662,7 +5411,8 @@ impl Attr {
         }
     }
 
-    /// Java: private boolean isStaticEnumField(VarSymbol v) (Attr.java:4764-4770).
+    /// Returns whether `v` is a static field of an enum, excluding enum constants and
+    /// `$class`.
     ///
     /// # Arguments
     ///   - ctx: the compiler context;
@@ -4674,7 +5424,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:4764-4770.
     #[allow(dead_code)]
     fn is_static_enum_field(
         &self,
@@ -4694,8 +5443,9 @@ impl Attr {
             && ctx.sym(v).name != self.names._class
     }
 
-    /// Java: private void checkEnumInitializer(JCTree tree, Env<AttrContext> env,
-    /// VarSymbol v) (Attr.java:4728-4762).
+    /// Reports a reference to an enum's static field from an enum constant initializer.
+    ///
+    /// Such a reference is illegal because the field may not be initialized yet.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -4709,7 +5459,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:4728-4762.
     #[allow(dead_code)]
     fn check_enum_initializer(
         &mut self,
@@ -4775,8 +5524,10 @@ impl Attr {
                 && (owner_flags & (crate::code::flags::STATIC as i64)) == 0)
     }
 
-    /// Java: private void checkInit(JCTree tree, Env<AttrContext> env,
-    /// VarSymbol v, boolean onlyWarning) (Attr.java:4653-4690).
+    /// Reports a reference to a variable before it is initialized.
+    ///
+    /// A static final field with a compile-time constant value is exempt: it may be
+    /// referenced before its declaration.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -4790,7 +5541,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:4653-4690.
     #[allow(dead_code)]
     fn check_init(
         &mut self,
@@ -4837,7 +5587,6 @@ impl Attr {
             } else {
                 true
             };
-            // Java: Attr.checkInit guards the diagnostic with !allowConstant(tree);
             // a static final field with a compile-time constant value may be
             // referenced before its declaration (TimeUnit.NANOSECONDS(nanoScale)
             // reads the NANO_SCALE constant declared below the enum constants).
@@ -4865,7 +5614,6 @@ impl Attr {
                         crate::util::jc_diagnostic::Error::from(info),
                     );
                 } else if self.use_before_declaration_warning {
-                    // Java: log.warning(tree.pos(), Warnings.SelfRef(v)/ForwardRef(v));
                     let warning = if is_self_ref {
                         crate::resources::compiler_properties::warnings::self_ref(
                             crate::resources::diagnostic_contract::SymbolArg::placeholder(
@@ -4887,21 +5635,19 @@ impl Attr {
                             ),
                         )
                     };
-                    // Java: log.warning(tree.pos(), Warnings.SelfRef/ForwardRef)
                     // — no lint category is attached.
                     self.log
                         .warning_at(tree_pos, crate::util::jc_diagnostic::Warning::from(warning));
                 }
             }
         }
-        // Java: v.getConstValue(); // ensure initializer is evaluated
         let _ = ctx.symbol_get_const_value(syms, v, self);
         self.check_enum_initializer(ctx, syms, env, tree, v);
     }
 }
 
 impl Attr {
-    /// Java: KindSelector pkind() — the current result-info kind selector.
+    /// Returns the kind selector of the current result info.
     ///
     /// # Arguments
     ///   - (none).
@@ -4912,7 +5658,6 @@ impl Attr {
     /// # Panics
     ///   - resultInfo must be installed (upstream field access).
     ///
-    /// Upstream: Attr.java:4130-4135 (ResultInfo.pkind accessor use).
     fn pkind(&self) -> KindSelector {
         self.result_info
             .as_ref()
@@ -4920,8 +5665,7 @@ impl Attr {
             .pkind
     }
 
-    /// Java: Symbol thisSym(DiagnosticPosition pos, Env<AttrContext> env)
-    /// (Attr.java:349-352).
+    /// Resolves the symbol of `this` for the enclosing class.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -4934,7 +5678,6 @@ impl Attr {
     /// # Panics
     ///   - the enclosing class must be present (upstream cast).
     ///
-    /// Upstream: Attr.java:349-352.
     fn this_sym(
         &mut self,
         ctx: &mut CompilerContext,
@@ -4973,8 +5716,7 @@ fn simple_diag_pos(
 }
 
 impl Attr {
-    /// Java: KindSelector attribArgs(KindSelector initialKind, List<JCExpression> trees,
-    /// Env<AttrContext> env, ListBuffer<Type> argtypes) (Attr.java:772-787).
+    /// Attributes the argument trees and collects their types.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -4988,7 +5730,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:772-787.
     fn attrib_args(
         &mut self,
         ctx: &mut CompilerContext,
@@ -5028,8 +5769,7 @@ impl Attr {
         (kind, argtypes)
     }
 
-    /// Java: Type newMethodTemplate(Type restype, List<Type> argtypes,
-    /// List<Type> typeargtypes) (Attr.java:2621-2625).
+    /// Builds a method type from the return type, parameter types and type arguments.
     ///
     /// # Arguments
     ///   - ctx: the compiler context;
@@ -5044,7 +5784,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:2621-2625.
     fn new_method_template(
         &self,
         ctx: &mut CompilerContext,
@@ -5068,8 +5807,7 @@ impl Attr {
         }
     }
 
-    /// Java: Type adjustMethodReturnType(Symbol msym, Type qualifierType,
-    /// Name methodName, List<Type> argtypes, Type restype) (Attr.java:2627-2649).
+    /// Adjusts the declared return type of a method invocation.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -5085,7 +5823,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:2627-2649.
     #[allow(clippy::too_many_arguments)]
     fn adjust_method_return_type(
         &self,
@@ -5137,8 +5874,7 @@ impl Attr {
         restype
     }
 
-    /// Java: boolean checkFirstConstructorStat(JCMethodInvocation tree,
-    /// JCMethodDecl enclMethod, boolean error) (Attr.java:2653-2671).
+    /// Checks that the first statement of a constructor is a `super` or `this` call.
     ///
     /// # Arguments
     ///   - ctx: the compiler context;
@@ -5152,7 +5888,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:2653-2671.
     #[allow(clippy::collapsible_if)]
     fn check_first_constructor_stat(
         &mut self,
@@ -5204,7 +5939,7 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: public void visitApply(JCMethodInvocation tree) (Attr.java:2465-2601).
+    /// Attributes a method invocation.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -5216,7 +5951,6 @@ impl Attr {
     /// # Panics
     ///   - the resolved method type is asserted non-wildcard (upstream AssertionError).
     ///
-    /// Upstream: Attr.java:2465-2601.
     #[allow(unused_assignments, clippy::collapsible_if)]
     fn visit_apply(
         &mut self,
@@ -5224,7 +5958,6 @@ impl Attr {
         syms: &Symtab,
         tree: TreeId,
     ) -> Result<TypeId, CompletionFailure> {
-        // Java: Env<AttrContext> localEnv = env.dup(tree, env.info.dup());
         let env = self.env.clone().expect("env");
         let info_copy = {
             let info = env.info.borrow();
@@ -5256,7 +5989,6 @@ impl Attr {
             let (kind, attributed) =
                 self.attrib_args(ctx, syms, KindSelector::MTH, args.clone(), &local_env);
             argtypes = attributed;
-            // Java: typeargtypes = attribAnyTypes(tree.typeargs, localEnv).
             typeargtypes = Some(self.attrib_any_types(ctx, syms, typeargs.clone(), &local_env));
             // Variable `site` points to the class in which the called constructor is defined.
             let encl_class = env.encl_class.expect("env.enclClass");
@@ -5433,7 +6165,6 @@ impl Attr {
                         .collect::<Vec<_>>(),
                 );
             }
-            // Java: typeargtypes = attribAnyTypes(tree.typeargs, localEnv);
             // (attribAnyTypes returns null for an empty list).
             typeargtypes = if typeargs.is_empty() {
                 None
@@ -5511,7 +6242,6 @@ impl Attr {
             self.result =
                 Some(self.check(ctx, syms, tree, captured, KindSelector::VAL, &result_info2));
         }
-        // Java: chk.validate(tree.typeargs, localEnv);
         {
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
@@ -5522,7 +6252,7 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: public void visitSelect(JCFieldAccess tree) (Attr.java:4262-4400).
+    /// Attributes a field access.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -5534,7 +6264,6 @@ impl Attr {
     /// # Panics
     ///   - none (the upstream AssertionError cases are registered).
     ///
-    /// Upstream: Attr.java:4262-4400.
     fn visit_select(
         &mut self,
         ctx: &mut CompilerContext,
@@ -5611,7 +6340,6 @@ impl Attr {
         // are accessible.
         let sitesym = crate::tree::tree_info::symbol(ctx, selected);
         let select_super_prev = env.info.borrow().select_super;
-        // Java: both "super.m()" (an ident qualifier) and "I.super.m()" (a
         // super-qualified field access) select through super.
         let selected_is_super_tree = match &ctx.tree(selected).kind {
             TreeKind::FieldAccess { name, .. } => *name == self.names._super,
@@ -5622,7 +6350,6 @@ impl Attr {
                 .map(|sitesym| ctx.sym(sitesym).name == self.names._super)
                 .unwrap_or(false);
         env.info.borrow_mut().select_super = is_super_qualifier;
-        // Java: when the qualifier is an invisible package, the package
         // diagnostic was already reported by the qualifier resolution; the
         // selection must not be diagnosed again. The package is invisible for
         // the unnamed module too when it belongs to a module outside the graph
@@ -5674,7 +6401,6 @@ impl Attr {
             sym = syms.err_symbol;
         }
         let sym_exists = crate::code::symbol::symbol_exists(ctx, sym);
-        // Java: Attr.checkAccess on the selected symbol: a symbol in a package
         // that is invisible from the current module is reported with its
         // module-access reason (Resolve.symbolPackageVisible).
         if sym_exists {
@@ -5695,7 +6421,6 @@ impl Attr {
         }
         let var_args = env.info.borrow().last_resolve_varargs();
         let _ = var_args;
-        // Java: tree.sym = sym;
         if let TreeKind::FieldAccess { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = Some(sym);
         }
@@ -5724,7 +6449,6 @@ impl Attr {
                 self.check_assignable(ctx, &env, ctx.tree(tree).pos, sym, Some(selected));
             }
         }
-        // Java: try-with-resources explicit close lint (Attr.java:4342-4346).
         if let Some(sitesym) = sitesym {
             let is_resource = match &ctx.sym(sitesym).kind_data {
                 crate::code::symbol::SymbolKind::VarSymbol { data_kind, .. } => {
@@ -5812,7 +6536,6 @@ impl Attr {
                 let sym_flags = ctx.sym(sym).flags_field;
                 if (sym_flags & (flags::STATIC as i64)) == 0
                     && ctx.sym(sym).name != self.names._super
-                    // Java: a super-qualified selection is never a static
                     // reference (I.super.m()).
                     && !env.info.borrow().select_super
                     && (ctx.sym(sym).kind == Kind::VAR
@@ -5849,7 +6572,6 @@ impl Attr {
                     );
                 }
             }
-            // Java: if (!allowStaticInterfaceMethods && sitesym.isInterface() &&
             // sym.isStatic() && sym.kind == MTH) log.error(DiagnosticFlag.SOURCE_LEVEL,
             // tree.pos(), Feature.STATIC_INTERFACE_METHODS_INVOKE.error(sourceName));
             if let Some(sitesym) = sitesym
@@ -5917,7 +6639,6 @@ impl Attr {
                 .check_access_from_serializable_element(ctx, syms, tree, is_lambda);
         }
         env.info.borrow_mut().select_super = select_super_prev;
-        // Java: the type of a super-qualified selection (I.super) is the
         // qualifier type itself; the ported selectSym may return an error
         // symbol for a redundant supertype, which would make the following
         // selection (I.super.m()) unresolved.
@@ -5942,7 +6663,6 @@ impl Attr {
             );
         }
         let result = if select_is_super {
-            // Java: visitSelect ends with tree.type = result (Attr.java), so a
             // super-qualified selection must record its type on the tree. The
             // lowering phase reads ((JCFieldAccess) tree).selected.type.tsym
             // for "I.super.m()" and would otherwise see no type at all.
@@ -5957,9 +6677,8 @@ impl Attr {
         Ok(result)
     }
 
-    /// Java: private Symbol selectSym(JCFieldAccess tree, Symbol location,
-    /// Type site, Env<AttrContext> env, ResultInfo resultInfo)
-    /// (Attr.java:4420-4478).
+    /// Resolves the symbol selected by a field access.
+    ///.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -5974,7 +6693,6 @@ impl Attr {
     /// # Panics
     ///   - wildcard qualifiers assert as in the upstream code.
     ///
-    /// Upstream: Attr.java:4420-4478.
     #[allow(clippy::too_many_arguments)]
     fn select_sym(
         &mut self,
@@ -6003,8 +6721,6 @@ impl Attr {
                 }
             }
         }
-        // Java: DiagnosticPosition pos = tree.pos(); (Attr.java:4417). JCTree
-        // is its own DiagnosticPosition (JCTree.java:88, 486-510).
         let pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> = Some(Rc::new(
             crate::util::jc_diagnostic::TreeDiagnosticPosition::new(ctx, tree),
         ));
@@ -6061,9 +6777,7 @@ impl Attr {
                     let chk_rc = Rc::clone(&self.chk);
                     let chk = Rc::clone(&chk_rc);
                     let infer_rc = Rc::clone(&self.infer);
-                    // Java: Attr.selectSym calls
                     // resolveQualifiedMethod(pos, env, site, name, ...), whose
-                    // overload uses site.tsym as the location (Resolve.java:
                     // 2729-2745).  A qualifier expression with no symbol (for
                     // example Stream.of(1).bogus()) passes a null location, so
                     // the site type symbol is the location of the diagnostic.
@@ -6161,7 +6875,6 @@ impl Attr {
                     return syms.err_symbol;
                 };
                 if ctx.sym(sym).flags_field & (crate::code::flags::PRIVATE as i64) != 0 {
-                    // Java: sym2 = rs.new AccessError(env, site, sym);
                     let env_snapshot = crate::comp::resolve::resolve_env_snapshot(ctx, env);
                     let access_error = {
                         let rs_rc = self
@@ -6241,7 +6954,7 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: public void visitNewArray(JCNewArray tree) (Attr.java:3034-3075).
+    /// Attributes an array creation.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -6253,7 +6966,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:3034-3075.
     fn visit_new_array(
         &mut self,
         ctx: &mut CompilerContext,
@@ -6277,7 +6989,6 @@ impl Attr {
         let elemtype: TypeId;
         if let Some(elemtype_tree) = elemtype_tree {
             elemtype = self.attrib_type_use(ctx, syms, elemtype_tree, &local_env);
-            // Java: chk.validate(tree.elemtype, localEnv);
             {
                 let chk_rc = Rc::clone(&self.chk);
                 let chk = Rc::clone(&chk_rc);
@@ -6341,7 +7052,7 @@ impl Attr {
         Ok(result)
     }
 
-    /// Java: public void visitAssert(JCAssert tree) (Attr.java:2453-2459).
+    /// Attributes an `assert` statement.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -6353,7 +7064,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:2453-2459.
     fn visit_assert(
         &mut self,
         ctx: &mut CompilerContext,
@@ -6379,7 +7089,7 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: public void visitConditional(JCConditional tree) (Attr.java:1985-2053).
+    /// Attributes a conditional expression.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -6391,7 +7101,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:1985-2053.
     fn visit_conditional(
         &mut self,
         ctx: &mut CompilerContext,
@@ -6475,7 +7184,6 @@ impl Attr {
         } else {
             pt
         };
-        // Java: constant folding (condtype/truetype/falsetype const values)
         let cond_tree_type = ctx.tree(cond).ty;
         let cond_tree_type = cond_tree_type.unwrap_or_else(|| self.no_type(ctx));
         let cond_const = ctx.typ(cond_tree_type).const_value().cloned();
@@ -6546,8 +7254,7 @@ impl Attr {
         Ok(result)
     }
 
-    /// Java: private boolean isBooleanOrNumeric(Env<AttrContext> env,
-    /// JCExpression tree) (Attr.java:2055-2091).
+    /// Returns whether the expression has a boolean or numeric type.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -6560,7 +7267,6 @@ impl Attr {
     ///   - speculative attribution failures propagate as panics (upstream
     ///     unchecked CompletionFailure).
     ///
-    /// Upstream: Attr.java:2055-2091.
     fn is_boolean_or_numeric(
         &mut self,
         ctx: &mut CompilerContext,
@@ -6693,7 +7399,7 @@ impl Attr {
             .expect("speculative attribution result")
     }
 
-    /// Java: boolean primitiveOrBoxed(Type t) (Attr.java:2082-2084).
+    /// Returns whether `t` is a primitive type or its boxed form.
     fn primitive_or_boxed(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> bool {
         !ctx.typ(t).has_tag(TypeTag::TYPEVAR) && !ctx.typ(t).has_tag(TypeTag::ERROR) && {
             let unboxed = self.types.unboxed_type_or_type(ctx, syms, t);
@@ -6701,8 +7407,7 @@ impl Attr {
         }
     }
 
-    /// Java: Env<AttrContext> bindingEnv(Env, List<BindingSymbol>)
-    /// (Attr.java:2190-2199).
+    /// Returns an environment that binds the given pattern bindings.
     fn binding_env(
         &self,
         ctx: &mut CompilerContext,
@@ -6721,8 +7426,7 @@ impl Attr {
         env1
     }
 
-    /// Java: Type condType(List<DiagnosticPosition> positions,
-    /// List<Type> condTypes) (Attr.java:2100-2170).
+    /// Computes the type of a conditional expression from its branch types.
     fn cond_type(
         &mut self,
         ctx: &mut CompilerContext,
@@ -6742,7 +7446,6 @@ impl Attr {
             }
         }
         if all_same {
-            // Java: condType returns first.baseType() — the constant value of
             // the first arm must not become the type of the conditional.
             return self.types.base_type(ctx, first);
         }
@@ -6835,7 +7538,7 @@ impl Attr {
     }
 }
 
-/// adapter helper: TreeTranslator removeClassParams (Attr.java:2090-2095):
+/// adapter helper: TreeTranslator removeClassParams:
 /// translate a type-apply to its clazz.
 fn remove_class_params(ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
     if ctx.tree(tree).tag == Tag::TYPEAPPLY {
@@ -6849,7 +7552,7 @@ fn remove_class_params(ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
 }
 
 impl Attr {
-    /// Java: public void visitAssignop(JCAssignOp tree) (Attr.java:3937-3952).
+    /// Attributes a compound assignment.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -6861,7 +7564,6 @@ impl Attr {
     /// # Panics
     ///   - the operators service must be installed (wiring).
     ///
-    /// Upstream: Attr.java:3937-3952.
     #[allow(clippy::collapsible_if)]
     fn visit_assignop(
         &mut self,
@@ -6924,7 +7626,7 @@ impl Attr {
         Ok(result)
     }
 
-    /// Java: public void visitUnary(JCUnary tree) (Attr.java:3954-3980).
+    /// Attributes a unary expression.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -6936,7 +7638,6 @@ impl Attr {
     /// # Panics
     ///   - the operators service must be installed (wiring).
     ///
-    /// Upstream: Attr.java:3954-3980.
     #[allow(clippy::collapsible_if)]
     fn visit_unary(
         &mut self,
@@ -7004,7 +7705,7 @@ impl Attr {
         Ok(result)
     }
 
-    /// Java: public void visitBinary(JCBinary tree) (Attr.java:3982-4042).
+    /// Attributes a binary expression.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -7016,7 +7717,6 @@ impl Attr {
     /// # Panics
     ///   - the operators service must be installed (wiring).
     ///
-    /// Upstream: Attr.java:3982-4042.
     #[allow(clippy::collapsible_if)]
     fn visit_binary(
         &mut self,
@@ -7123,7 +7823,7 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: public void visitTypeCast(final JCTypeCast tree) (Attr.java:4044-4075).
+    /// Attributes a cast expression.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -7135,7 +7835,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:4044-4075.
     fn visit_type_cast(
         &mut self,
         ctx: &mut CompilerContext,
@@ -7150,7 +7849,6 @@ impl Attr {
         };
         let env = self.env.clone().expect("env");
         let clazztype = self.attrib_type_use(ctx, syms, clazz, &env);
-        // Java: chk.validate(tree.clazz, env, false);
         {
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
@@ -7192,7 +7890,6 @@ impl Attr {
         let result = self.check(ctx, syms, tree, captured, KindSelector::VAL, &result_info);
         self.result = Some(result);
         if !is_poly {
-            // Java: Attr.java:4073 chk.checkRedundantCast(localEnv, tree);
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
             chk.check_redundant_cast(ctx, syms, &local_env, tree);
@@ -7201,10 +7898,18 @@ impl Attr {
     }
 }
 
-/// Java: Attr.LocalInitScanner (Attr.java:1360-1425) — the TreeScanner
-/// variant that detects initializers needing an explicit target type.
+/// A scanner over a variable initializer that records whether the initializer can be
+/// typed without an explicit target.
+///
+/// `needs_target` is cleared on subtrees that supply their own target (a method call, a
+/// `new` expression, a cast) and restored afterwards. When an array creation without an
+/// element type, a lambda, or a method reference is reached while `needs_target` is
+/// still set, the matching diagnostic fragment is recorded in `bad_inference_msg`.
 pub struct LocalInitScanner {
+    /// The diagnostic fragment for the first construct that cannot be inferred without
+    /// a target type.
     pub bad_inference_msg: Option<crate::resources::diagnostic_contract::FragmentInfo>,
+    /// Whether the current subtree still requires an explicit target type.
     pub needs_target: bool,
 }
 
@@ -7215,6 +7920,7 @@ impl Default for LocalInitScanner {
 }
 
 impl LocalInitScanner {
+    /// Creates a scanner with no recorded diagnostic and a target required.
     pub fn new() -> LocalInitScanner {
         LocalInitScanner {
             bad_inference_msg: None,
@@ -7231,7 +7937,7 @@ impl LocalInitScanner {
 }
 
 impl TreeScannerVisitor for LocalInitScanner {
-    /// Java: public void visitApply(JCMethodInvocation tree)
+    /// Clears the target requirement for the method call's subtree.
     fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let prev = self.needs_target;
         self.needs_target = false;
@@ -7239,7 +7945,7 @@ impl TreeScannerVisitor for LocalInitScanner {
         self.needs_target = prev;
     }
 
-    /// Java: public void visitNewClass(JCNewClass tree)
+    /// Clears the target requirement for the `new` expression's subtree.
     fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let prev = self.needs_target;
         self.needs_target = false;
@@ -7247,7 +7953,7 @@ impl TreeScannerVisitor for LocalInitScanner {
         self.needs_target = prev;
     }
 
-    /// Java: public void visitNewArray(JCNewArray tree)
+    /// Records a missing target for an array creation without an element type.
     fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let elemtype = match &ctx.tree(tree).kind {
             TreeKind::NewArray { elemtype, .. } => *elemtype,
@@ -7260,7 +7966,7 @@ impl TreeScannerVisitor for LocalInitScanner {
         }
     }
 
-    /// Java: public void visitLambda(JCLambda tree)
+    /// Records a missing target for a lambda.
     fn visit_lambda(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
         if self.needs_target {
             self.bad_inference_msg = Some(
@@ -7269,7 +7975,7 @@ impl TreeScannerVisitor for LocalInitScanner {
         }
     }
 
-    /// Java: public void visitTypeCast(JCTypeCast tree)
+    /// Clears the target requirement for the cast's subtree.
     fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let prev = self.needs_target;
         self.needs_target = false;
@@ -7277,7 +7983,7 @@ impl TreeScannerVisitor for LocalInitScanner {
         self.needs_target = prev;
     }
 
-    /// Java: public void visitReference(JCMemberReference tree)
+    /// Records a missing target for a method reference.
     fn visit_reference(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
         if self.needs_target {
             self.bad_inference_msg =
@@ -7289,20 +7995,21 @@ impl TreeScannerVisitor for LocalInitScanner {
 tree_scanner_visitor_delegate!(LocalInitScanner);
 
 impl Attr {
-    /// Java: Fragment canInferLocalVarType(JCVariableDecl tree)
-    /// (Attr.java:1355-1358).
+    /// Returns why the type of a local variable declaration cannot be inferred, or
+    /// `None` when it can.
+    ///
+    /// The initializer is scanned with [`LocalInitScanner`]; the first construct that
+    /// needs a target type (an array creation without an element type, a lambda, or a
+    /// method reference) determines the returned fragment.
     ///
     /// # Arguments
-    ///   - ctx: the compiler context;
-    ///   - tree: the variable declaration.
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `tree` - the variable declaration.
     ///
     /// # Returns
-    ///   - the bad-inference fragment (None when inferable).
     ///
-    /// # Panics
-    ///   - none.
-    ///
-    /// Upstream: Attr.java:1355-1358.
+    /// The diagnostic fragment to report, or `None` when the type is inferable.
     pub fn can_infer_local_var_type(
         &self,
         ctx: &mut CompilerContext,
@@ -7321,7 +8028,7 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: void preFlow(JCTree tree) (the statement variant, Attr.java:2250-2280).
+    /// Runs the pre-flow step over a statement tree.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -7333,7 +8040,6 @@ impl Attr {
     /// # Panics
     ///   - the attrRecover service must be installed when queued.
     ///
-    /// Upstream: Attr.java:2250-2280.
     fn statement_pre_flow(&mut self, ctx: &mut CompilerContext, syms: &Symtab, tree: TreeId) {
         self.do_recovery(ctx, syms);
         let stuck_type = syms.stuck_type;
@@ -7345,7 +8051,7 @@ impl Attr {
         TreeScannerVisitor::scan(&mut analyzer, ctx, Some(tree));
     }
 
-    /// Java: private boolean breaksOutOf(JCTree loop, JCTree body) (Attr.java:1521-1524).
+    /// Returns whether `body` contains a `break` that leaves `loop`.
     fn breaks_out_of(
         &mut self,
         ctx: &mut CompilerContext,
@@ -7364,8 +8070,7 @@ impl Attr {
         flow_rc.breaks_out_of(ctx, syms, &env, loop_tree, body, &make)
     }
 
-    /// Java: void enterScope(Env<AttrContext> env) — the bindingEnvironment
-    /// without bindings. §9 helper over the ported scope dups.
+    /// Enters a new scope in the environment.
     fn dup_env_with_scope(
         &self,
         ctx: &mut CompilerContext,
@@ -7382,7 +8087,7 @@ impl Attr {
         env.dup(tree, info)
     }
 
-    /// Java: public void visitIf(JCIf tree) (Attr.java:2197-2244).
+    /// Attributes an `if` statement.
     ///
     /// # Arguments
     ///   - ctx: the compiler context;
@@ -7465,7 +8170,7 @@ impl Attr {
         Ok(self.no_type(ctx))
     }
 
-    /// Java: public void visitBlock(JCBlock tree) (Attr.java:1424-1464).
+    /// Attributes a block.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -7477,7 +8182,6 @@ impl Attr {
     /// # Panics
     ///   - the annotate/flow services must be installed for initializer blocks.
     ///
-    /// Upstream: Attr.java:1424-1464.
     fn visit_block(
         &mut self,
         ctx: &mut CompilerContext,
@@ -7524,7 +8228,6 @@ impl Attr {
             if (block_flags & (crate::code::flags::STATIC as i64)) != 0 {
                 local_env.info.borrow_mut().static_level += 1;
             }
-            // Java: annotate.queueScanTreeAndTypeAnnotate(tree, localEnv,
             //     localEnv.info.scope.owner, null); annotate.flush();
             {
                 let annotate_rc = self
@@ -7560,7 +8263,7 @@ impl Attr {
         Ok(self.no_type(ctx))
     }
 
-    /// Java: public void visitDoLoop(JCDoWhileLoop tree) (Attr.java:1466-1476).
+    /// Attributes a `do`-`while` loop.
     fn visit_do_loop(
         &mut self,
         ctx: &mut CompilerContext,
@@ -7591,7 +8294,7 @@ impl Attr {
         Ok(self.no_type(ctx))
     }
 
-    /// Java: public void visitWhileLoop(JCWhileLoop tree) (Attr.java:1478-1492).
+    /// Attributes a `while` loop.
     fn visit_while_loop(
         &mut self,
         ctx: &mut CompilerContext,
@@ -7626,7 +8329,7 @@ impl Attr {
         Ok(self.no_type(ctx))
     }
 
-    /// Java: public void visitForLoop(JCForLoop tree) (Attr.java:1501-1530).
+    /// Attributes a `for` loop.
     #[allow(clippy::too_many_arguments)]
     fn visit_for_loop(
         &mut self,
@@ -7657,7 +8360,6 @@ impl Attr {
             &loop_env,
             cond_bindings.bindings_when_true.clone(),
         );
-        // Java: bodyEnv.tree = tree; (before, we were not in loop!)
         let body_env = Rc::new(Env {
             next: body_env.next.clone(),
             outer: body_env.outer.clone(),
@@ -7687,7 +8389,7 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: public void visitSynchronized(JCSynchronized tree) (Attr.java:1871-1883).
+    /// Attributes a `synchronized` block.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -7699,7 +8401,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:1871-1883.
     fn visit_synchronized(
         &mut self,
         ctx: &mut CompilerContext,
@@ -7719,7 +8420,6 @@ impl Attr {
         let chk = Rc::clone(&chk_rc);
         chk.check_ref_type(ctx, syms, ctx.tree(lock).pos, lock_type);
         drop(chk);
-        // Java: if (env.info.lint.isEnabled(LintCategory.SYNCHRONIZATION) &&
         //     isValueBased(tree.lock.type)) log.warning(...);
         let sync_enabled = env
             .info
@@ -7749,7 +8449,7 @@ impl Attr {
         Ok(self.no_type(ctx))
     }
 
-    /// Java: public void visitTry(JCTry tree) (Attr.java:1885-1965).
+    /// Attributes a `try` statement.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -7761,7 +8461,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:1885-1965.
     #[allow(clippy::collapsible_if)]
     fn visit_try(
         &mut self,
@@ -7912,8 +8611,7 @@ impl Attr {
         Ok(self.no_type(ctx))
     }
 
-    /// Java: void checkAutoCloseable(DiagnosticPosition pos, Env<AttrContext> env,
-    /// Type resource) (Attr.java:1966-1985).
+    /// Checks that a resource type is auto-closeable.
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::collapsible_if)]
     fn check_auto_closeable(
@@ -7941,12 +8639,10 @@ impl Attr {
         {
             return;
         }
-        // Java: resolve the close method with a discarding diagnostic handler.
         self.log
             .install_diagnostic_handler(crate::util::log::DiagnosticHandler::Discard {
                 prev: None,
             });
-        // Java: types.skipTypeVars(resource, false)
         let skipped = {
             let mut current = resource;
             while ctx.typ(current).has_tag(TypeTag::TYPEVAR) {
@@ -8041,8 +8737,7 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: private void setSyntheticVariableType(JCVariableDecl tree, Type type)
-    /// (Attr.java:5577-5583).
+    /// Sets the type of a synthetic variable declaration.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -8055,7 +8750,6 @@ impl Attr {
     /// # Panics
     ///   - the variable declaration kind is asserted.
     ///
-    /// Upstream: Attr.java:5577-5583.
     fn set_synthetic_variable_type(
         &mut self,
         ctx: &mut CompilerContext,
@@ -8077,8 +8771,8 @@ impl Attr {
         }
     }
 
-    /// Java: public void visitForeachLoop(JCEnhancedForLoop tree)
-    /// (Attr.java:1532-1580).
+    /// Attributes an enhanced `for` loop.
+    ///.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -8090,7 +8784,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:1532-1580.
     #[allow(clippy::collapsible_if, clippy::too_many_lines)]
     fn visit_foreach_loop(
         &mut self,
@@ -8120,7 +8813,6 @@ impl Attr {
         let elemtype: TypeId = if ctx.typ(expr_type).has_tag(TypeTag::ARRAY) {
             self.types.elemtype(ctx, syms, expr_type)
         } else if ctx.typ(expr_type).has_tag(TypeTag::ERROR) {
-            // Java: Types.elemtype returns the operand itself for an ERROR type
             // (Types.java elemtype, case ERROR: return t), so the Iterable branch
             // below -- including its resolveInternalMethod(iterator) probe -- is
             // skipped. Without this an erroneous for-each expression (for example
@@ -8227,7 +8919,6 @@ impl Attr {
                 }
             }
         };
-        // Java: if (tree.var.isImplicitlyTyped()) { ... }
         let var_implicitly_typed = match &ctx.tree(var).kind {
             TreeKind::VariableDecl {
                 vartype: Some(vartype),
@@ -8237,8 +8928,6 @@ impl Attr {
             _ => false,
         };
         if var_implicitly_typed {
-            // Java: tree.var.vartype = make.at(tree.var.pos).Type(itype);
-            //       tree.var.vartype.type = itype; (Attr.java:1552-1554).
             // The synthesized type tree is positioned at the variable so the
             // declaration is no longer considered implicitly typed.
             let make = &*self.make;
@@ -8261,7 +8950,6 @@ impl Attr {
             }
         }
         self.attrib_stat(ctx, syms, var, &loop_env);
-        // Java: chk.checkType(tree.expr.pos(), elemtype, tree.var.sym.type);
         let var_sym_ty = match &ctx.tree(var).kind {
             TreeKind::VariableDecl { sym: Some(sym), .. } => ctx.sym(*sym).ty,
             _ => None,
@@ -8278,7 +8966,6 @@ impl Attr {
                 Rc::clone(&self.basic_handler),
             );
         }
-        // Java: loopEnv.tree = tree; (before, we were not in loop!)
         let loop_env = Rc::new(Env {
             next: loop_env.next.clone(),
             outer: loop_env.outer.clone(),
@@ -8297,8 +8984,8 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: public void visitBindingPattern(JCBindingPattern tree)
-    /// (Attr.java:4132-4148).
+    /// Attributes a binding pattern.
+    ///.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -8310,8 +8997,7 @@ impl Attr {
     /// # Panics
     ///   - the annotate service must be installed.
     ///
-    /// Upstream: Attr.java:4132-4148.
-    /// Java: public void visitTypeTest(JCInstanceOf tree) (Attr.java:4076-4113).
+    /// Attributes an `instanceof` test.
     ///
     /// # Arguments
     ///   - ctx/syms: the compiler services;
@@ -8323,7 +9009,6 @@ impl Attr {
     /// # Panics
     ///   - the tree is not an instanceof or the pattern tree is malformed.
     ///
-    /// Upstream: Attr.java:4076-4113.
     fn visit_type_test(
         &mut self,
         ctx: &mut CompilerContext,
@@ -8482,16 +9167,12 @@ impl Attr {
         };
         let scope = env.info.borrow().scope.expect("env scope");
         let owner = ctx.scope(scope).owner.expect("scope owner");
-        // Java: new BindingSymbol(tree.var.mods.flags, tree.var.name,
-        // tree.var.vartype.type, env.info.scope.owner) (Attr.java:4135; the
-        // constructor adds HASINIT | MATCH_BINDING, Symbol.java:1874-1876).
         let binding = ctx.alloc_symbol(crate::code::symbol::new_binding_symbol(
             flags_value,
             name,
             Some(ty),
             Some(owner),
         ));
-        // Java: v.pos = tree.pos (Attr.java:4136); the variable tree's position
         // is the binding name (the pattern starts at its type).
         let binding_pos = ctx.tree(var).pos;
         ctx.sym_mut(binding).set_var_pos(binding_pos);
@@ -8508,7 +9189,6 @@ impl Attr {
             let chk = Rc::clone(&chk_rc);
             chk.check_transparent_var(ctx, ctx.tree(var).pos, binding, scope);
         }
-        // Java: annotate.annotateLater(tree.var.mods.annotations, env, v,
         //     tree.pos()); annotate.queueScanTreeAndTypeAnnotate(tree.var.vartype,
         //     env, v, tree.var.pos()); annotate.flush();
         {
@@ -8541,7 +9221,6 @@ impl Attr {
             );
             let _ = annotate_rc.flush_with_attr(ctx, syms, self);
         }
-        // Java: chk.validate(tree.var.vartype, env, true);
         {
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
@@ -8554,8 +9233,8 @@ impl Attr {
         Ok(ty)
     }
 
-    /// Java: public void visitParenthesizedPattern(JCParenthesizedPattern tree)
-    /// (Attr.java:4150-4154).
+    /// Attributes a parenthesized pattern.
+    ///.
     fn visit_parenthesized_pattern(
         &mut self,
         ctx: &mut CompilerContext,
@@ -8576,8 +9255,8 @@ impl Attr {
         Ok(ty)
     }
 
-    /// Java: public void visitGuardPattern(JCGuardPattern tree)
-    /// (Attr.java:4156-4168).
+    /// Attributes a guarded pattern.
+    ///.
     fn visit_guard_pattern(
         &mut self,
         ctx: &mut CompilerContext,
@@ -8612,24 +9291,27 @@ impl Attr {
     }
 }
 
-/// Java: the TreeScanner in visitSwitchExpression collecting yield
-/// expression types (Attr.java:1630-1650).
+/// Collects the `yield` values that belong to one switch expression.
+///
+/// Attribution scans the switch body before the result type is known, so each `yield`
+/// is recorded with its position and type; the switch expression then combines them. A
+/// `yield` without a value contributes `err_type`.
 pub struct YieldCollector {
-    /// the switch expression being attributed
+    /// The switch expression whose `yield` statements are collected.
     pub target: TreeId,
-    /// the collected positions
+    /// The source position of each collected `yield` value.
     pub positions: Vec<i32>,
-    /// the collected types
+    /// The type of each collected `yield` value, in the same order as `positions`.
     pub types: Vec<TypeId>,
-    /// the error type for a yield without a value
+    /// The type recorded for a `yield` without a value.
     pub err_type: TypeId,
 }
 
 impl TreeScannerVisitor for YieldCollector {
-    /// Java: public void visitClassDef(JCClassDecl tree) — do nothing.
+    /// Does nothing: the scanner does not descend into class declarations.
     fn visit_class_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
-    /// Java: public void visitYield(JCYield brk)
+    /// Collects the yielded value and its position.
     fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (value, target) = match &ctx.tree(tree).kind {
             TreeKind::Yield { value, target } => (*value, *target),
@@ -8649,16 +9331,15 @@ impl TreeScannerVisitor for YieldCollector {
             TreeScannerVisitor::scan(self, ctx, Some(value));
         }
     }
-    /// Java: public void visitLambda(JCLambda tree) — do nothing.
+    /// Does nothing: the scanner does not descend into nested lambdas.
     fn visit_lambda(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 }
 
 tree_scanner_visitor_delegate!(YieldCollector);
 
 impl Attr {
-    /// Java: void handleSwitch(JCTree switchTree, JCExpression selector,
-    /// List<JCCase> cases, BiConsumer<JCCase, Env<AttrContext>> attribCase)
-    /// (Attr.java:1666-1904).
+    /// Attributes the cases of a switch.
+    ///.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -8674,7 +9355,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:1666-1904.
     #[allow(
         clippy::too_many_arguments,
         clippy::collapsible_if,
@@ -8706,8 +9386,6 @@ impl Attr {
         let is_int_switch = self.types.is_assignable(ctx, syms, seltype, syms.int_type);
         let pattern_switch =
             if !enum_switch && !string_switch && !error_enum_switch && !is_int_switch {
-                // Java: preview.checkSourceLevel(selector.pos(), Feature.PATTERN_SWITCH);
-                // (Attr.java:1682). The upstream tree-as-DiagnosticPosition argument
                 // uses the port-wide SimpleDiagnosticPosition(tree.pos) adapter.
                 self.preview.check_source_level(
                     &crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
@@ -8775,8 +9453,6 @@ impl Attr {
                     !ctx.tree(pat).has_tag(Tag::DEFAULTCASELABEL) && !is_pattern_label(ctx, pat);
                 if is_expr_label {
                     if crate::tree::tree_info::is_null(ctx, pat) {
-                        // Java: preview.checkSourceLevel(expr.pos(), Feature.CASE_NULL);
-                        // (Attr.java:1715). Position translation as for PATTERN_SWITCH.
                         self.preview.check_source_level(
                             &crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
                                 ctx.tree(pat).pos,
@@ -8833,7 +9509,6 @@ impl Attr {
                             }
                         }
                     } else if error_enum_switch {
-                        // Java: error recovery: the selector is erroneous, and all the
                         // case labels are identifiers. This could be an enum switch -
                         // don't report resolve error for the case label:
                         //     var prevResolveHelper = rs.basicLogResolveHelper;
@@ -8843,8 +9518,6 @@ impl Attr {
                         //     } finally {
                         //         rs.basicLogResolveHelper = prevResolveHelper;
                         //     }
-                        // (Attr.java:1733-1743). The Java mutable field is the ported
-                        // Resolve.basic_log_resolve_helper Cell (Resolve.java:2610).
                         let rs_rc = self
                             .rs
                             .get()
@@ -9033,8 +9706,6 @@ impl Attr {
                 yield_positions.extend(collector.positions);
                 yield_types.extend(collector.types);
             }
-            // Java: finally { caseEnv.info.scope.leave(); } addVars(c.stats,
-            // switchEnv.info.scope); (Attr.java:1804-1814): the case scope is
             // left before the case variables are entered into the switch scope.
             let case_scope = case_env.info.borrow().scope.expect("case env scope");
             ctx.scope_leave(case_scope);
@@ -9105,7 +9776,7 @@ impl Attr {
         }
     }
 
-    /// Java: public void visitSwitch(JCSwitch tree) (Attr.java:1598-1603).
+    /// Attributes a `switch` statement.
     fn visit_switch(
         &mut self,
         ctx: &mut CompilerContext,
@@ -9122,8 +9793,7 @@ impl Attr {
         Ok(self.no_type(ctx))
     }
 
-    /// Java: public void visitSwitchExpression(JCSwitchExpression tree)
-    /// (Attr.java:1605-1664).
+    /// Attributes a `switch` expression.
     fn visit_switch_expression(
         &mut self,
         ctx: &mut CompilerContext,
@@ -9200,8 +9870,7 @@ impl Attr {
         Ok(result)
     }
 
-    /// Java: Env<AttrContext> bindingEnv(Env, JCTree newTree, List<BindingSymbol>)
-    /// (Attr.java:2190-2199).
+    /// Returns an environment that binds the given pattern bindings.
     fn binding_env_with_tree(
         &self,
         ctx: &mut CompilerContext,
@@ -9222,7 +9891,7 @@ impl Attr {
         env1
     }
 
-    /// Java: Symbol enumConstant(JCTree tree, Type enumType) (Attr.java:1895-1912).
+    /// Attributes an enum constant declaration.
     fn enum_constant(
         &mut self,
         ctx: &mut CompilerContext,
@@ -9255,7 +9924,6 @@ impl Attr {
                 if ctx.sym(symbol).flags_field & (crate::code::flags::ENUM as i64) == 0 {
                     return None;
                 }
-                // Java: ((VarSymbol)s).getConstValue(); // ensure initializer is evaluated
                 let _ = ctx.symbol_get_const_value(syms, symbol, self);
                 return Some(symbol);
             }
@@ -9263,8 +9931,7 @@ impl Attr {
         None
     }
 
-    /// Java: static void addVars(List<JCStatement> stats, WriteableScope
-    /// switchScope) (Attr.java:1876-1882).
+    /// Adds the variables declared by `stats` to `switchScope`.
     #[allow(clippy::collapsible_if)]
     fn add_vars(&self, ctx: &mut CompilerContext, stats: List<TreeId>, scope: crate::ids::ScopeId) {
         let current = stats;
@@ -9277,8 +9944,7 @@ impl Attr {
         }
     }
 
-    /// Java: void checkCaseLabelDominated(DiagnosticPosition pos,
-    /// List<Type> coveredTypes, Type patternType) (Attr.java:1884-1892).
+    /// Reports a case label dominated by an earlier one.
     fn check_case_label_dominated(
         &mut self,
         ctx: &mut CompilerContext,
@@ -9298,8 +9964,7 @@ impl Attr {
         }
     }
 
-    /// Java: boolean checkCastablePattern(DiagnosticPosition pos, Type
-    /// exprType, Type pattType) (Attr.java:4130-4145 area).
+    /// Returns whether a pattern can be cast to the expression type.
     #[allow(clippy::collapsible_if)]
     fn check_castable_pattern(
         &mut self,
@@ -9325,8 +9990,6 @@ impl Attr {
             self.basic_handler.report(ctx, pos, &fragment);
             false
         } else if warn.has_lint(crate::code::lint::LintCategory::UNCHECKED) {
-            // Java: log.error(pos, Errors.InstanceofReifiableNotSafe(exprType,
-            // pattType)); return false; (Attr.java:4123-4126)
             let info = crate::resources::compiler_properties::errors::instanceof_reifiable_not_safe(
                 crate::resources::diagnostic_contract::TypeArg::placeholder(
                     type_display_of(ctx, expr_type),
@@ -9347,31 +10010,44 @@ impl Attr {
     }
 }
 
-/// Java: JCCaseLabel.isPattern() (helper).
+/// Returns whether a case label is a pattern.
 fn is_pattern_label(ctx: &CompilerContext, tree: TreeId) -> bool {
     ctx.tree(tree).has_tag(Tag::BINDINGPATTERN)
         || ctx.tree(tree).has_tag(Tag::PARENTHESIZEDPATTERN)
         || ctx.tree(tree).has_tag(Tag::GUARDPATTERN)
 }
 
-/// Java: the FreeTypeListener registered by Attr.setFunctionalInfo
-/// (Attr.java:3889-3900): re-applies the functional info once the
-/// descriptor has been instantiated.
+/// Re-applies a functional expression's target information after inference
+/// instantiates its descriptor.
+///
+/// Inference may leave the descriptor as an inference variable. This listener runs once
+/// the variable is solved and repeats the functional-info step with the instantiated
+/// descriptor, so the expression is checked against the real function type.
 pub struct SetFunctionalInfoListener {
+    /// The attribution environment of the expression.
     pub env: Rc<Env<AttrContext>>,
+    /// The functional expression being attributed.
     pub f_expr: TreeId,
+    /// The target type requested by the enclosing context.
     pub pt: TypeId,
+    /// The functional interface descriptor, possibly still an inference variable.
     pub descriptor: TypeId,
+    /// The primary target type of the functional expression.
     pub primary_target: TypeId,
+    /// The context used for compatibility checks.
     pub check_context: Rc<dyn crate::comp::check::CheckContext>,
+    /// The type operations.
     pub types: Rc<Types>,
+    /// The type checker.
     pub chk: Rc<Check>,
+    /// The diagnostic factory.
     pub diags: Rc<Factory>,
+    /// The name table.
     pub names: Rc<Names>,
 }
 
 impl crate::comp::infer::FreeTypeListener for SetFunctionalInfoListener {
-    /// Java: the listener lambda in setFunctionalInfo (Attr.java:3889-3900).
+    /// Repeats the functional-info step with the instantiated descriptor.
     fn types_inferred(
         &self,
         ctx: &mut CompilerContext,
@@ -9399,17 +10075,24 @@ impl crate::comp::infer::FreeTypeListener for SetFunctionalInfoListener {
     }
 }
 
-/// Java: the FreeTypeListener registered by Attr.checkAccessibleTypes
-/// (Attr.java:3371-3382).
+/// Checks, once inference has instantiated a type list, that each type is accessible
+/// from the attribution position.
+///
+/// A type inferred from a target can mention classes the source cannot name, so the
+/// access check is deferred until the inference variables are solved.
 pub struct AccessibleTypesListener {
+    /// The attribution environment.
     pub env: Rc<Env<AttrContext>>,
+    /// The source position the access is checked from.
     pub pos: i32,
+    /// The resolver used for the access check.
     pub rs: Option<Rc<crate::comp::resolve::Resolve>>,
+    /// The inferred types to check.
     pub ts: List<TypeId>,
 }
 
 impl crate::comp::infer::FreeTypeListener for AccessibleTypesListener {
-    /// Java: the listener lambda in checkAccessibleTypes (Attr.java:3371-3382).
+    /// Checks that the instantiated types are accessible.
     fn types_inferred(
         &self,
         ctx: &mut CompilerContext,
@@ -9433,7 +10116,7 @@ impl crate::comp::infer::FreeTypeListener for AccessibleTypesListener {
     }
 }
 
-/// Java: Attr.setFunctionalInfo listener step (Attr.java:3881-3915).
+/// Applies the functional information with the instantiated descriptor.
 #[allow(clippy::too_many_arguments)]
 fn set_functional_info_step(
     ctx: &mut CompilerContext,
@@ -9523,7 +10206,7 @@ fn set_functional_info_step(
     }
 }
 
-/// Java: Type checked exception classification helper used by checkExConstraints.
+/// Classifies a type for the checked-exception constraints.
 #[allow(clippy::collapsible_if)]
 fn undetvar_set_throw(ctx: &mut CompilerContext, t: TypeId) {
     if let TypeKindData::UndetVar { kind, .. } = &mut ctx.typ_mut(t).kind {
@@ -9534,13 +10217,12 @@ fn undetvar_set_throw(ctx: &mut CompilerContext, t: TypeId) {
 }
 
 impl Attr {
-    /// Java: boolean isSerializable(Type t) (Attr.java:5521-5530).
+    /// Returns whether `t` is serializable.
     fn is_serializable(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> bool {
         self.types.is_subtype(ctx, syms, t, syms.serializable_type)
     }
 
-    /// Java: private void setFunctionalInfo(Env, JCFunctionalExpression, Type,
-    /// Type, Type, CheckContext) (Attr.java:3881-3915).
+    /// Re-applies the functional information of a functional expression.
     #[allow(clippy::too_many_arguments)]
     fn set_functional_info(
         &mut self,
@@ -9569,8 +10251,7 @@ impl Attr {
         );
     }
 
-    /// Java: private void checkAccessibleTypes(DiagnosticPosition, Env,
-    /// InferenceContext, List<Type>) (Attr.java:3371-3382).
+    /// Reports types that are not accessible from the current position.
     fn check_accessible_types(
         &mut self,
         ctx: &mut CompilerContext,
@@ -9599,8 +10280,7 @@ impl Attr {
         }
     }
 
-    /// Java: boolean checkExConstraints(List<Type> thrownByFuncExpr,
-    /// List<Type> thrownAtFuncType, InferenceContext) (Attr.java:3816-3878).
+    /// Checks the thrown-type constraints of a functional expression.
     #[allow(clippy::too_many_arguments)]
     fn check_ex_constraints(
         &self,
@@ -9682,21 +10362,37 @@ impl Attr {
     }
 }
 
-/// Java: Attr.BreakAttr (Attr.java:450-458): the attributed-to-tree control
-/// exception. The carried environment is stored on the Attr service (the Rust
-/// panic payload must be Send); the marker stays zero-sized.
+/// The control payload used to stop attribution at a target tree.
+///
+/// Attribution of an expression can stop when it reaches a tree the caller cares about
+/// (`attrib_expr_to_tree`). The environment is stored on the `Attr` service because a
+/// Rust panic payload must be `Send`; the payload itself carries nothing.
 pub struct BreakAttr;
 
 impl Attr {
-    /// Java: protected void breakTreeFound(Env<AttrContext> env)
-    /// (Attr.java:695-697).
+    /// Stops attribution by raising [`BreakAttr`] with `env` captured.
     fn break_tree_found(&mut self, env: Rc<Env<AttrContext>>) -> ! {
         self.break_attr_env = Some(env);
         std::panic::panic_any(BreakAttr)
     }
 
-    /// Java: public Env<AttrContext> attribExprToTree(JCTree expr,
-    /// Env<AttrContext> env, JCTree tree) (Attr.java:410-414).
+    /// Attributes `expr` until it reaches `tree` and returns the environment at that
+    /// point.
+    ///
+    /// Attribution stops by raising [`BreakAttr`]; the returned environment is the one
+    /// captured when the break was raised.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `expr` - the expression to attribute.
+    /// * `env` - the environment in which `expr` is attributed.
+    /// * `tree` - the tree at which attribution stops.
+    ///
+    /// # Returns
+    ///
+    /// The environment captured at `tree`.
     pub fn attrib_expr_to_tree(
         &mut self,
         ctx: &mut CompilerContext,
@@ -9709,8 +10405,23 @@ impl Attr {
         self.attrib_to_tree(ctx, syms, expr, env, tree, result_info)
     }
 
-    /// Java: public Env<AttrContext> attribStatToTree(JCTree stmt,
-    /// Env<AttrContext> env, JCTree tree) (Attr.java:416-420).
+    /// Attributes `stmt` until it reaches `tree` and returns the environment at that
+    /// point.
+    ///
+    /// Same stop protocol as [`Attr::attrib_expr_to_tree`], with the statement result
+    /// info.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `stmt` - the statement to attribute.
+    /// * `env` - the environment in which `stmt` is attributed.
+    /// * `tree` - the tree at which attribution stops.
+    ///
+    /// # Returns
+    ///
+    /// The environment captured at `tree`.
     pub fn attrib_stat_to_tree(
         &mut self,
         ctx: &mut CompilerContext,
@@ -9723,8 +10434,7 @@ impl Attr {
         self.attrib_to_tree(ctx, syms, stmt, env, tree, result_info)
     }
 
-    /// Java: private Env<AttrContext> attribToTree(JCTree root, Env<AttrContext>
-    /// env, JCTree tree, ResultInfo resultInfo) (Attr.java:422-446).
+    /// Attributes `root` until it reaches `tree` and returns the environment there.
     fn attrib_to_tree(
         &mut self,
         ctx: &mut CompilerContext,
@@ -9744,7 +10454,6 @@ impl Attr {
             AbstractLog::use_source(&*self.log, sourcefile)
         };
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            // Java: deferredAttr.attribSpeculative(root, env, resultInfo, null,
             // AttributionMode.ATTRIB_TO_TREE, argumentAttr.withLocalCacheContext());
             let deferred_rc = self
                 .deferred_attr
@@ -9768,7 +10477,6 @@ impl Attr {
                 crate::comp::deferred_attr::AttributionMode::ATTRIB_TO_TREE,
                 local_cache,
             );
-            // Java: attrRecover.doRecovery();
             self.do_recovery(ctx, syms);
         }));
         self.break_tree = None;
@@ -9789,7 +10497,7 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: public void visitLambda(final JCLambda that) (Attr.java:3076-3310).
+    /// Attributes a lambda expression.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -9801,7 +10509,6 @@ impl Attr {
     /// # Panics
     ///   - the registered service dependencies must be installed.
     ///
-    /// Upstream: Attr.java:3076-3310.
     #[allow(clippy::too_many_lines, clippy::collapsible_if)]
     fn visit_lambda(
         &mut self,
@@ -10004,7 +10711,6 @@ impl Attr {
         );
         let is_speculative_round = result_info.check_context.deferred_attr_context().mode
             == crate::comp::deferred_attr::AttrMode::SPECULATIVE;
-        // Java: preFlow(that); flow.analyzeLambda(env, that, make, isSpeculativeRound);
         {
             let rs_rc = self.rs.get().cloned();
             let recover_rc = self.attr_recover.borrow().clone();
@@ -10111,15 +10817,20 @@ impl Attr {
     }
 }
 
-/// Java: the FreeTypeListener registered by checkReferenceCompatible to
-/// install the instantiated referent type (Attr.java:3800-3810).
+/// Installs the instantiated referent type on a method reference.
+///
+/// `checkReferenceCompatible` records the referent while the descriptor may still
+/// contain inference variables; this listener writes the solved type back into the
+/// `MemberReference` node.
 pub struct ReferentTypeListener {
+    /// The member reference tree to update.
     pub tree: TreeId,
+    /// The referent type, possibly still an inference variable.
     pub referent: TypeId,
 }
 
 impl crate::comp::infer::FreeTypeListener for ReferentTypeListener {
-    /// Java: the listener lambda setting tree.referentType.
+    /// Installs the instantiated referent type on the reference.
     fn types_inferred(
         &self,
         ctx: &mut CompilerContext,
@@ -10136,9 +10847,8 @@ impl crate::comp::infer::FreeTypeListener for ReferentTypeListener {
 }
 
 impl Attr {
-    /// Java: void checkReferenceCompatible(JCMemberReference tree, Type
-    /// descriptor, Type refType, CheckContext checkContext, boolean speculativeAttr)
-    /// (Attr.java:3780-3815).
+    /// Checks a method reference against its functional descriptor.
+    ///.
     #[allow(clippy::too_many_arguments)]
     fn check_reference_compatible(
         &mut self,
@@ -10282,8 +10992,8 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: public void visitReference(final JCMemberReference that)
-    /// (Attr.java:3541-3760).
+    /// Attributes a method reference.
+    ///.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -10295,7 +11005,6 @@ impl Attr {
     /// # Panics
     ///   - the registered service dependencies must be installed.
     ///
-    /// Upstream: Attr.java:3541-3760.
     #[allow(
         clippy::too_many_lines,
         clippy::collapsible_if,
@@ -10348,7 +11057,6 @@ impl Attr {
             _ => panic!("ClassCastException: JCMemberReference expected"),
         };
         let typeargs = typeargs_opt.unwrap_or_else(List::nil);
-        // Java: Kinds.kindName(that.getMode()) — method references name a
         // method, constructor references name a constructor.
         let invalid_mref_kind = crate::code::kinds::kind_name_for_reference_mode(mode);
         let local_env = Env::dup_shared(&env, Some(that));
@@ -10431,7 +11139,6 @@ impl Attr {
         let is_static_selector =
             crate::tree::tree_info::is_static_selector(ctx, Some(expr), &self.names);
         if is_static_selector {
-            // Java: chk.validate(that.expr, env, false);
             {
                 let chk_rc = Rc::clone(&self.chk);
                 let chk = Rc::clone(&chk_rc);
@@ -10865,22 +11572,37 @@ fn rs_error_diagnostic(
     )
 }
 
-/// Java: the FreeTypeListener registered by Attr.check when the found type
-/// still contains inference variables (Attr.java:252-258).
+/// Repeats the attribution check once the found type is no longer an inference
+/// variable.
+///
+/// `Attr::check` returns early when the found type is still undetermined; this listener
+/// runs after inference solves it and performs the same check against the instantiated
+/// type. Constant types are replaced by their base type first: a constant type installed
+/// on a tree would make code generation emit the constant instead of evaluating the
+/// expression.
 pub struct CheckAfterInferenceListener {
+    /// The expression being checked.
     pub tree: TreeId,
+    /// The found type, possibly still an inference variable.
     pub found: TypeId,
+    /// The kind of the expression (variable, type, ...).
     pub ownkind: KindSelector,
+    /// The result info the check runs against.
     pub result_info: ResultInfo,
+    /// The type operations.
     pub types: Rc<Types>,
+    /// The diagnostic log.
     pub log: Rc<Log>,
+    /// The diagnostic factory.
     pub diags: Rc<Factory>,
+    /// The type checker.
     pub chk: Rc<Check>,
+    /// Whether polymorphic expressions are allowed at the current source level.
     pub allow_poly: bool,
 }
 
 impl crate::comp::infer::FreeTypeListener for CheckAfterInferenceListener {
-    /// Java: the listener lambda in Attr.check (Attr.java:252-258).
+    /// Repeats the check with the instantiated found type.
     fn types_inferred(
         &self,
         ctx: &mut CompilerContext,
@@ -10923,7 +11645,7 @@ impl crate::comp::infer::FreeTypeListener for CheckAfterInferenceListener {
     }
 }
 
-/// Java: Attr.check (Attr.java:240-272) — the listener-capable free form.
+/// Checks a type; this free form supports the inference listener.
 #[allow(clippy::too_many_arguments)]
 fn check_after_inference(
     ctx: &mut CompilerContext,
@@ -11032,28 +11754,30 @@ impl Attr {
         }
     }
 }
-/// Adapter: the service wiring for Attr (the Java Context-lazy construction of
-/// Resolve/Operators/AttrRecover/ArgumentAttr/DeferredAttr/Flow/Analyzer/Annotate,
-/// ADR 0001 explicit services). The caller owns the Rc-wrapped Attr and the
-/// compilation options/source; all mutually recursive cells are installed on
-/// the Attr handle.
+/// Builds the services that `Attr` and its dependencies need, and installs them in the
+/// cells on `attr`.
+///
+/// `Resolve`, `Operators`, `AttrRecover`, `ArgumentAttr`, `DeferredAttr`, `Flow`,
+/// `Analyzer` and `Annotate` all refer to `Attr`, and `Attr` refers back to them. This
+/// function constructs them in dependency order and stores each one in the slot reserved
+/// for it; it is the only place that breaks the cycle. Call it once, before attribution
+/// starts, with an `attr` whose base services are already set.
+///
+/// The caller keeps ownership of `Rc<RefCell<Attr>>`; the constructed services hold their
+/// own handles to it.
 ///
 /// # Arguments
-///   - ctx: the compiler context;
-///   - attr: the shared Attr handle;
-///   - options: the compilation options;
-///   - source: the source level;
-///   - finder: the class finder (optional).
 ///
-/// # Returns
-///   - none.
+/// * `ctx` - the compiler context.
+/// * `attr` - the shared `Attr` handle.
+/// * `options` - the compilation options.
+/// * `source` - the source level.
+/// * `finder` - the class finder, if any.
+/// * `file_manager` - the file manager, if any.
 ///
 /// # Panics
-///   - none.
 ///
-/// Upstream: the Context-based instances wired by Attr.java:600-700 /
-/// Resolve.java:120-200 / DeferredAttr.java:112-230 / ArgumentAttr.java:112-130 /
-/// Flow.java:120-160 / Analyzer.java:120-140 / Annotate.java:100-130.
+/// Panics when `attr` was already wired.
 pub fn wire_attr_services(
     ctx: &mut CompilerContext,
     attr: Rc<RefCell<Attr>>,
@@ -11105,7 +11829,6 @@ pub fn wire_attr_services(
             Rc::clone(&a.annotate),
         )
     };
-    // 1. Resolve (Resolve.java:120-200)
     let rs = Rc::new(crate::comp::resolve::Resolve::new(
         ctx,
         Rc::clone(&names),
@@ -11116,7 +11839,6 @@ pub fn wire_attr_services(
         Rc::clone(&options),
         finder.clone(),
     ));
-    // Java: Resolve.moduleFinder = ModuleFinder.instance(context) (Resolve.java:137);
     // the port wires it after Resolve construction (registered adapter).
     if let (Some(finder), Some(file_manager)) = (finder.as_ref(), file_manager) {
         let module_finder = crate::code::module_finder::ModuleFinder::new(
@@ -11129,7 +11851,6 @@ pub fn wire_attr_services(
         *rs.module_finder.borrow_mut() = Some(Rc::new(module_finder));
     }
 
-    // 2. Operators (Operators.java:100-140)
     let operators = Rc::new(crate::comp::operators::Operators::new(
         ctx,
         &*syms,
@@ -11137,14 +11858,12 @@ pub fn wire_attr_services(
         Rc::clone(&log),
         Rc::clone(&diags),
     ));
-    // 3. AttrRecover (AttrRecover.java:80-120)
     let recover = Rc::new(RefCell::new(crate::comp::attr_recover::AttrRecover::new(
         Rc::clone(&names),
         Rc::clone(&make),
         Rc::clone(&syms),
         Rc::clone(&types),
     )));
-    // 4. Flow (Flow.java:120-160)
     let flow = Rc::new(crate::comp::flow::Flow::new(
         ctx,
         Rc::clone(&names),
@@ -11157,7 +11876,6 @@ pub fn wire_attr_services(
         lint.clone(),
         source,
     ));
-    // 5. Analyzer (Analyzer.java:120-140) — the Attr self-cell mirrors
     // Context.get(Attr.class).
     let attr_self_cell: Rc<RefCell<Option<Rc<RefCell<Attr>>>>> =
         Rc::new(RefCell::new(Some(Rc::clone(&attr))));
@@ -11172,7 +11890,6 @@ pub fn wire_attr_services(
     )));
     let deferred_cell = Rc::clone(&analyzer.borrow().deferred_attr);
     let argument_cell = Rc::clone(&analyzer.borrow().argument_attr);
-    // 6. Annotate (Annotate.java:100-130)
     let annotate = Rc::new(crate::comp::annotate::Annotate::new(
         ctx,
         Rc::clone(&names),
@@ -11191,7 +11908,6 @@ pub fn wire_attr_services(
         Rc::clone(&diags),
         source,
     ));
-    // 7. DeferredAttr (DeferredAttr.java:112-230)
     let deferred = crate::comp::deferred_attr::DeferredAttrService::new(
         ctx,
         Rc::clone(&annotate_cell),
@@ -11205,10 +11921,8 @@ pub fn wire_attr_services(
         Rc::clone(&names),
         crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler::instance(),
     );
-    // 8. ArgumentAttr (ArgumentAttr.java:112-130)
     let argument =
         crate::comp::argument_attr::ArgumentAttr::new(Rc::clone(&deferred_cell), Rc::clone(&diags));
-    // 9. TypeAnnotations (TypeAnnotations.java:105-118) — needs the Attr/Check
     // handles after the Annotate service exists.
     let type_annotations = Rc::new(crate::code::type_annotations::TypeAnnotations::new(
         Rc::clone(&names),
@@ -11255,8 +11969,7 @@ pub fn wire_attr_services(
 }
 
 impl Attr {
-    /// Java: getDiagnosticPosition(JCClassDecl tree, Type t) (Attr.java:5455-5470):
-    /// the position of the matching annotation, if present.
+    /// Returns the position of the annotation matching `tree` and `t`, if present.
     ///
     /// # Arguments
     ///   - ctx: the compiler context;
@@ -11269,7 +11982,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:5455-5470.
     #[allow(dead_code, clippy::collapsible_if)]
     fn get_diagnostic_position(
         &self,
@@ -11305,8 +12017,7 @@ impl Attr {
         None
     }
 
-    /// Java: checkSerialVersionUID(JCClassDecl tree, ClassSymbol c, Env<AttrContext>
-    /// env) (Attr.java:5495-5545).
+    /// Checks the `serialVersionUID` declaration of a serializable class.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -11320,7 +12031,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:5495-5545.
     #[allow(dead_code)]
     fn check_serial_version_uid(
         &mut self,
@@ -11378,7 +12088,6 @@ impl Attr {
                 return;
             }
         };
-        // Java: Lint lint = env.info.lint.augment(svuid);
         let lint = env.info.borrow().lint.clone();
         if let Some(lint) = lint {
             let augmented = lint.augment(ctx, syms, ctx.sym(svuid));
@@ -11440,8 +12149,7 @@ impl Attr {
     }
 }
 impl Attr {
-    /// Java: public void validateTypeAnnotations(JCTree tree, boolean sigOnly)
-    /// (Attr.java:5585-5587) and class TypeAnnotationsValidator (Attr.java:5589-5870).
+    /// Validates the type annotations of `tree`.
     ///
     /// # Arguments
     ///   - ctx: the compiler context;
@@ -11454,7 +12162,6 @@ impl Attr {
     /// # Panics
     ///   - the registered services must be installed.
     ///
-    /// Upstream: Attr.java:5585-5870.
     pub fn validate_type_annotations(
         &mut self,
         ctx: &mut CompilerContext,
@@ -11470,7 +12177,7 @@ impl Attr {
         tree_scanner_visitor_delegate!(TypeAnnotationsValidator<'a>, 'a);
         #[allow(clippy::collapsible_if, clippy::too_many_lines)]
         impl<'a> TreeScannerVisitor for TypeAnnotationsValidator<'a> {
-            /// Java: public void visitClassDef(JCClassDecl tree) (Attr.java:5687-5703).
+            /// Validates the type annotations of a class declaration.
             fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
                 let (mods, typarams, extending, implementing, defs) = match &ctx.tree(tree).kind {
                     TreeKind::ClassDecl {
@@ -11504,7 +12211,7 @@ impl Attr {
                 }
             }
 
-            /// Java: public void visitMethodDef(JCMethodDecl tree) (Attr.java:5614-5637).
+            /// Validates the type annotations of a method declaration.
             fn visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
                 let (mods, restype, typarams, recvparam, params, thrown, body, default_value) =
                     match &ctx.tree(tree).kind {
@@ -11568,7 +12275,7 @@ impl Attr {
                 }
             }
 
-            /// Java: public void visitVarDef(JCVariableDecl tree) (Attr.java:5638-5648).
+            /// Validates the type annotations of a variable declaration.
             fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
                 let (mods, vartype, init, sym) = match &ctx.tree(tree).kind {
                     TreeKind::VariableDecl {
@@ -11596,7 +12303,7 @@ impl Attr {
                 }
             }
 
-            /// Java: public void visitBlock(JCBlock tree) (Attr.java:5704-5708).
+            /// Validates the type annotations of a block.
             fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
                 if !self.sig_only {
                     let stats = match &ctx.tree(tree).kind {
@@ -11607,7 +12314,7 @@ impl Attr {
                 }
             }
 
-            /// Java: public void visitNewClass(JCNewClass tree) (Attr.java:5661-5676).
+            /// Validates the type annotations of a class instance creation.
             fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
                 let (clazz, def) = match &ctx.tree(tree).kind {
                     TreeKind::NewClass { clazz, def, .. } => (*clazz, *def),
@@ -11645,7 +12352,6 @@ impl Attr {
                         self.validate_annotated_type(ctx, clazz, clazz_ty);
                     }
                 }
-                // Java: super.visitNewClass(tree);
                 let (encl, typeargs, clazz, args, def) = match &ctx.tree(tree).kind {
                     TreeKind::NewClass {
                         encl,
@@ -11664,7 +12370,7 @@ impl Attr {
                 self.scan(ctx, def);
             }
 
-            /// Java: public void visitNewArray(JCNewArray tree) (Attr.java:5677-5686).
+            /// Validates the type annotations of an array creation.
             fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
                 let elemtype = match &ctx.tree(tree).kind {
                     TreeKind::NewArray { elemtype, .. } => *elemtype,
@@ -11688,7 +12394,6 @@ impl Attr {
                         self.validate_annotated_type(ctx, elemtype, elem_ty);
                     }
                 }
-                // Java: super.visitNewArray(tree);
                 let (elemtype, dims, annotations, dim_annotations, elems) =
                     match &ctx.tree(tree).kind {
                         TreeKind::NewArray {
@@ -11718,7 +12423,7 @@ impl Attr {
                 }
             }
 
-            /// Java: public void visitTypeCast(JCTypeCast tree) (Attr.java:5650-5654).
+            /// Validates the type annotations of a cast.
             fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
                 let clazz = match &ctx.tree(tree).kind {
                     TreeKind::TypeCast { clazz, .. } => *clazz,
@@ -11729,7 +12434,6 @@ impl Attr {
                         self.validate_annotated_type(ctx, clazz, clazz_ty);
                     }
                 }
-                // Java: super.visitTypeCast(tree);
                 let (cast_clazz, cast_expr) = match &ctx.tree(tree).kind {
                     TreeKind::TypeCast { clazz, expr } => (*clazz, *expr),
                     _ => (None, None),
@@ -11738,7 +12442,7 @@ impl Attr {
                 self.scan(ctx, cast_expr);
             }
 
-            /// Java: public void visitTypeTest(JCInstanceOf tree) (Attr.java:5655-5660).
+            /// Validates the type annotations of an `instanceof` test.
             fn visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
                 let pattern = match &ctx.tree(tree).kind {
                     TreeKind::InstanceOf { pattern, .. } => *pattern,
@@ -11752,7 +12456,6 @@ impl Attr {
                         }
                     }
                 }
-                // Java: super.visitTypeTest(tree);
                 let (test_expr, test_pattern) = match &ctx.tree(tree).kind {
                     TreeKind::InstanceOf { expr, pattern } => (*expr, *pattern),
                     _ => (None, None),
@@ -11761,7 +12464,7 @@ impl Attr {
                 self.scan(ctx, test_pattern);
             }
 
-            /// Java: public void visitTypeParameter(JCTypeParameter tree) (Attr.java:5605-5613).
+            /// Validates the type annotations of a type parameter.
             fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
                 let (annotations, bounds) = match &ctx.tree(tree).kind {
                     TreeKind::TypeParameter {
@@ -11785,7 +12488,7 @@ impl Attr {
                 self.scan_list(ctx, &bounds);
             }
 
-            /// Java: public void visitAnnotation(JCAnnotation tree) (Attr.java:5596-5599).
+            /// Validates the type annotations of an annotation.
             fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
                 {
                     let chk_rc = Rc::clone(&self.attr.chk);
@@ -11798,7 +12501,6 @@ impl Attr {
                         Some(&mut *self.attr),
                     );
                 }
-                // Java: super.visitAnnotation(tree);
                 let (annotation_type, args) = match &ctx.tree(tree).kind {
                     TreeKind::Annotation {
                         annotation_type,
@@ -11811,7 +12513,7 @@ impl Attr {
                 self.scan_list(ctx, &args);
             }
 
-            /// Java: public void visitAnnotatedType(JCAnnotatedType tree) (Attr.java:5600-5604).
+            /// Validates a type-annotated type.
             fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
                 let underlying = match &ctx.tree(tree).kind {
                     TreeKind::AnnotatedType {
@@ -11824,7 +12526,6 @@ impl Attr {
                     .map(|ty| ctx.typ(ty).has_tag(TypeTag::ERROR))
                     .unwrap_or(false);
                 if !has_error {
-                    // Java: super.visitAnnotatedType(tree);
                     let (annotations, underlying) = match &ctx.tree(tree).kind {
                         TreeKind::AnnotatedType {
                             annotations,
@@ -11840,8 +12541,7 @@ impl Attr {
 
         #[allow(clippy::collapsible_if, clippy::too_many_lines)]
         impl<'a> TypeAnnotationsValidator<'a> {
-            /// Java: private void checkForDeclarationAnnotations(List<? extends
-            /// JCAnnotation> annotations, Symbol sym) (Attr.java:5795-5806).
+            /// Reports type annotations that are not allowed on a declaration.
             fn check_for_declaration_annotations(
                 &mut self,
                 ctx: &mut CompilerContext,
@@ -11888,8 +12588,7 @@ impl Attr {
                 }
             }
 
-            /// Java: private void validateAnnotatedType(JCTree errtree, Type type)
-            /// (Attr.java:5710-5794).
+            /// Validates the annotations on a type.
             #[allow(clippy::too_many_lines)]
             fn validate_annotated_type(
                 &self,
@@ -12081,36 +12780,21 @@ impl Attr {
     }
 }
 impl Attr {
-    /// Java: public void attribClass(DiagnosticPosition pos, ClassSymbol c)
-    /// (Attr.java:5191-5200).
+    /// Attributes a package declaration.
+    ///
+    /// Flushes pending annotations first. A completion failure during the flush is
+    /// reported and leaves the package unattributed.
     ///
     /// # Arguments
-    ///   - ctx/syms: explicit services;
-    ///   - pos: the diagnostic position (file position);
-    ///   - c: the class symbol.
     ///
-    /// # Returns
-    ///   - none.
-    ///
-    /// # Panics
-    ///   - the annotate service must be installed.
-    ///
-    /// Upstream: Attr.java:5191-5200.
-    /// Java: public void attribPackage(DiagnosticPosition pos, PackageSymbol p)
-    /// (Attr.java:5156-5163).
-    ///
-    /// # Arguments
-    ///   - ctx/syms: explicit services;
-    ///   - pos: the diagnostic position;
-    ///   - p: the package symbol.
-    ///
-    /// # Returns
-    ///   - none.
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `pos` - the diagnostic position.
+    /// * `p` - the package symbol.
     ///
     /// # Panics
-    ///   - the annotate service and the package type environment must be installed.
     ///
-    /// Upstream: Attr.java:5156-5163.
+    /// Panics when the annotate service is not installed.
     pub fn attrib_package_with_pos(
         &mut self,
         ctx: &mut CompilerContext,
@@ -12132,7 +12816,7 @@ impl Attr {
         self.attrib_package(ctx, syms, p);
     }
 
-    /// Java: void attribPackage(PackageSymbol p) (Attr.java:5165-5168).
+    /// Attributes the package declaration of `p`.
     fn attrib_package(&mut self, ctx: &mut CompilerContext, syms: &Symtab, p: SymbolId) {
         let env = self.type_envs.get(p).expect("type environment for package");
         let tree = env.tree.expect("package tree");
@@ -12147,21 +12831,21 @@ impl Attr {
         chk.check_deprecated_annotation(ctx, syms, pid_pos, p);
     }
 
-    /// Java: public void attribModule(DiagnosticPosition pos, ModuleSymbol m)
-    /// (Attr.java:5170-5177).
+    /// Attributes a module declaration.
+    ///
+    /// Flushes pending annotations first. A completion failure during the flush is
+    /// reported and leaves the module unattributed.
     ///
     /// # Arguments
-    ///   - ctx/syms: explicit services;
-    ///   - pos: the diagnostic position;
-    ///   - m: the module symbol.
     ///
-    /// # Returns
-    ///   - none.
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `pos` - the diagnostic position.
+    /// * `m` - the module symbol.
     ///
     /// # Panics
-    ///   - the annotate service and the module type environment must be installed.
     ///
-    /// Upstream: Attr.java:5170-5177.
+    /// Panics when the annotate service is not installed.
     pub fn attrib_module_with_pos(
         &mut self,
         ctx: &mut CompilerContext,
@@ -12183,13 +12867,28 @@ impl Attr {
         self.attrib_module(ctx, syms, m);
     }
 
-    /// Java: void attribModule(ModuleSymbol m) (Attr.java:5179-5183).
+    /// Attributes the module declaration of `m`.
     fn attrib_module(&mut self, ctx: &mut CompilerContext, syms: &Symtab, m: SymbolId) {
         let env = self.type_envs.get(m).expect("type environment for module");
         let tree = env.tree.expect("module tree");
         self.attrib_stat(ctx, syms, tree, &env);
     }
 
+    /// Attributes a class declaration.
+    ///
+    /// Flushes pending annotations first. A completion failure during the flush is
+    /// reported and leaves the class unattributed.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `pos` - the diagnostic position.
+    /// * `c` - the class symbol.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the annotate service is not installed.
     pub fn attrib_class_with_pos(
         &mut self,
         ctx: &mut CompilerContext,
@@ -12211,20 +12910,21 @@ impl Attr {
         self.attrib_class(ctx, syms, c);
     }
 
-    /// Java: public void attrib(Env<AttrContext> env) (Attr.java:5143-5155).
+    /// Attributes the compilation unit described by `env`.
+    ///
+    /// Drains pending imports first, then dispatches on the unit's root: a module
+    /// declaration, a package declaration, or a class declaration.
     ///
     /// # Arguments
-    ///   - ctx/syms: explicit services;
-    ///   - env: the environment to attribute.
     ///
-    /// # Returns
-    ///   - none.
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `env` - the environment of the compilation unit.
     ///
     /// # Panics
-    ///   - the module/package declaration branches need the injected Modules
-    ///     service (installed by the bootstrap).
     ///
-    /// Upstream: Attr.java:5143-5155.
+    /// Panics when `env` has no tree, or when a module or package declaration is
+    /// attributed before the `Modules` service is installed.
     pub fn attrib(&mut self, ctx: &mut CompilerContext, syms: &Symtab, env: &Rc<Env<AttrContext>>) {
         {
             let type_enter = Rc::clone(&self.type_enter);
@@ -12233,7 +12933,6 @@ impl Attr {
         let tree = env.tree.expect("env tree");
         match ctx.tree(tree).tag {
             Tag::MODULEDEF => {
-                // Java: attribModule(env.tree.pos(), ((JCModuleDecl) env.tree).sym)
                 let pos = ctx.tree(tree).pos;
                 let m = match &ctx.tree(tree).kind {
                     TreeKind::ModuleDecl { sym: Some(sym), .. } => *sym,
@@ -12242,7 +12941,6 @@ impl Attr {
                 self.attrib_module_with_pos(ctx, syms, pos, m);
             }
             Tag::PACKAGEDEF => {
-                // Java: attribPackage(env.tree.pos(), ((JCPackageDecl) env.tree).packge)
                 let pos = ctx.tree(tree).pos;
                 let p = match &ctx.tree(tree).kind {
                     TreeKind::PackageDecl {
@@ -12267,8 +12965,7 @@ impl Attr {
         }
     }
 
-    /// Java: void attribClass(ClassSymbol c) throws CompletionFailure
-    /// (Attr.java:5202-5398).
+    /// Attributes a class declaration and its members.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -12280,7 +12977,6 @@ impl Attr {
     /// # Panics
     ///   - the env for the class must exist in the type environments.
     ///
-    /// Upstream: Attr.java:5202-5398.
     #[allow(clippy::too_many_lines, clippy::collapsible_if)]
     fn attrib_class(&mut self, ctx: &mut CompilerContext, syms: &Symtab, c: SymbolId) {
         self.cache_symtab_facts(syms);
@@ -12341,7 +13037,6 @@ impl Attr {
                 None => return,
             };
             let env_tree = { env.tree.expect("class env tree") };
-            // sealed-class checks (Attr.java:5230-5305)
             let permitted = crate::code::symbol::Symbol::permitted_subs(ctx, c);
             let is_permitted_explicit = crate::code::symbol::Symbol::is_permitted_explicit(ctx, c);
             if ctx.sym(c).is_sealed()
@@ -12367,7 +13062,6 @@ impl Attr {
                 let sealed_in_unnamed =
                     c_module == Some(unnamed_module) || c_module == Some(no_module);
                 let permitted_current = permitted.clone();
-                // Java: the invalid-permits diagnostics point at the entry in
                 // the permits clause (not at the sealed class or the permitted
                 // class declaration).
                 let permit_positions: Vec<i32> = match &ctx.tree(env_tree).kind {
@@ -12444,7 +13138,6 @@ impl Attr {
                         );
                     }
                     if permitted_types.contains(&sub_type_sym) {
-                        // Java: report the duplicated permits clause (position from the
                         // permitting list); the ported surface uses the member position.
                         // sub_pos is the permits-clause entry for this iteration.
                         let sub_display = ctx
@@ -12579,7 +13272,6 @@ impl Attr {
                     }
                 }
             }
-            // sealed supertypes checks (Attr.java:5307-5345)
             let direct = self.types.direct_supertypes(ctx, syms, c_ty);
             let mut sealed_supers: Vec<SymbolId> = Vec::new();
             let direct_current = direct.clone();
@@ -12776,7 +13468,6 @@ impl Attr {
                 chk.check_leaks_not_accessible(ctx, syms, &env, env_tree);
             }
             // finally
-            // Java: deferredLintHandler.flush(tree.pos()) in the Attr.visitClassDef
             // finally block (after attribClassBody).
             {
                 let deferred = Rc::clone(&self.deferred_lint_handler);
@@ -12795,8 +13486,7 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: private void attribClassBody(Env<AttrContext> env, ClassSymbol c)
-    /// (Attr.java:5398-5600).
+    /// Attributes the body of a class declaration.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -12809,7 +13499,6 @@ impl Attr {
     /// # Panics
     ///   - the registered services must be installed.
     ///
-    /// Upstream: Attr.java:5398-5600.
     #[allow(clippy::too_many_lines, clippy::collapsible_if)]
     fn attrib_class_body(
         &mut self,
@@ -13053,7 +13742,7 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: public void visitNewClass(final JCNewClass tree) (Attr.java:2651-2879).
+    /// Attributes a class instance creation.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -13065,7 +13754,6 @@ impl Attr {
     /// # Panics
     ///   - the registered services must be installed.
     ///
-    /// Upstream: Attr.java:2651-2879.
     #[allow(
         clippy::too_many_lines,
         clippy::collapsible_if,
@@ -13110,7 +13798,6 @@ impl Attr {
         };
         let mut clazzid: TreeId;
         let mut annoclazzid: Option<TreeId> = None;
-        // Java: unpack TYPEAPPLY/ANNOTATED_TYPE to find the class identifier.
         if ctx.tree(clazz).tag == Tag::TYPEAPPLY {
             if let TreeKind::TypeApply {
                 clazz: Some(inner), ..
@@ -13303,7 +13990,6 @@ impl Attr {
         // Attribute constructor arguments.
         let (pkind, mut argtypes) =
             self.attrib_args(ctx, syms, KindSelector::VAL, args.clone(), &local_env);
-        // Java: typeargtypes = attribAnyTypes(tree.typeargs, localEnv).
         let typeargtypes = self.attrib_any_types(ctx, syms, typeargs.clone(), &local_env);
         if ctx.typ(clazztype).has_tag(TypeTag::CLASS) || ctx.typ(clazztype).has_tag(TypeTag::ERROR)
         {
@@ -13385,7 +14071,6 @@ impl Attr {
                         crate::util::jc_diagnostic::Error::from(info),
                     );
                 }
-                // Java: Attr.java:2795-2798 — error recovery: pretend no
                 // arguments were supplied, so the anonymous class constructor
                 // lookup (visitAnonymousClassDefinition) uses the no-arg
                 // superclass constructor.
@@ -13398,7 +14083,6 @@ impl Attr {
                     .typ(clazztype)
                     .has_tag(TypeTag::ERROR)
             {
-                // Java: Attr.java:2800 — checkDiamond already reported the
                 // diamond error and returned an error type; the ported
                 // resolveDiamond would report a second (redundant) diamond
                 // error for that error type, so skip the inference here.
@@ -13464,7 +14148,6 @@ impl Attr {
                 {
                     *slot = Some(constructor_base);
                 }
-                // Java: Attr.java:2821 — newMethodTemplate(resultInfo.pt,
                 // argtypes, typeargtypes). The target type is passed through
                 // even when it is an enclosing inference variable; the
                 // constructor check then constrains it.
@@ -13572,7 +14255,6 @@ impl Attr {
                     .typ(clazztype)
                     .has_tag(TypeTag::ERROR)
             {
-                // Java: Attr.java:2749 — a diamond/constructor error turns the
                 // class type into an error type, and the constructor lookup is
                 // skipped (the error type has no constructor to resolve).
                 let rs_env_config = local_env.dup(Some(tree), local_env.info.borrow().dup_ctx());
@@ -13729,11 +14411,14 @@ impl Attr {
     }
 }
 
-/// Java: the FreeTypeListener replacing inference vars in the constructor type.
+/// Writes the instantiated constructor type back into a `new` expression.
+///
+/// The constructor type may contain inference variables while the class body is
+/// attributed; this listener runs once they are solved.
 pub struct ConstructorTypeListener {
-    /// Java: the new class tree.
+    /// The `new` expression to update.
     pub tree: TreeId,
-    /// Java: the constructor type to instantiate.
+    /// The constructor type, possibly still an inference variable.
     pub constructor_type: TypeId,
 }
 
@@ -13762,33 +14447,32 @@ fn tree_pos(ctx: &CompilerContext, tree: TreeId) -> i32 {
 }
 
 impl Attr {
-    /// Java: private void visitAnonymousClassDefinition(JCNewClass tree,
-    /// JCExpression clazz, Type clazztype, JCClassDecl cdef, Env<AttrContext>
-    /// localEnv, List<Type> argtypes, List<Type> typeargtypes, KindSelector pkind)
-    /// (Attr.java:2881-3010).
+    /// Attributes the body of an anonymous class definition.
+    ///
+    /// This is the non-listener path shared by normal attribution and the inference
+    /// listener replay: the caller has already allocated the class expression and
+    /// attributed the constructor arguments.
     ///
     /// # Arguments
-    ///   - ctx/syms: explicit services;
-    ///   - tree: the new class tree;
-    ///   - clazz: the allocated class expression;
-    ///   - clazztype: the allocated class type;
-    ///   - cdef: the anonymous class declaration;
-    ///   - local_env: the local environment;
-    ///   - argtypes/typeargtypes: the attributed constructor arguments;
-    ///   - pkind: the argument kind selector.
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the `new` expression.
+    /// * `clazz` - the class expression of the `new`.
+    /// * `clazztype` - the class type of the `new`.
+    /// * `cdef` - the anonymous class declaration.
+    /// * `local_env` - the local attribution environment.
+    /// * `argtypes` - the constructor argument types.
+    /// * `typeargtypes` - the explicit constructor type arguments.
+    /// * `pkind` - the kind selector of the arguments.
     ///
     /// # Returns
-    ///   - the attributed type.
+    ///
+    /// The attributed type.
     ///
     /// # Panics
-    ///   - the registered services must be installed.
     ///
-    /// Upstream: Attr.java:2881-3010.
-    /// Java: private void visitAnonymousClassDefinition(JCNewClass tree, JCExpression
-    /// clazz, Type clazztype, JCClassDecl cdef, Env<AttrContext> localEnv,
-    /// List<Type> argtypes, List<Type> typeargtypes, KindSelector pkind)
-    /// (Attr.java:2881-3010) — the non-listener body shared by the normal path
-    /// and the inference listener replay (Approach A: state snapshot).
+    /// Panics when a service the attribution needs is not installed.
     #[allow(
         clippy::too_many_lines,
         clippy::collapsible_if,
@@ -13818,7 +14502,6 @@ impl Attr {
             };
             if !ctx.typ(clazztype).has_tag(TypeTag::ERROR) && !invalid.is_empty() {
                 let clazztype_tsym = ctx.typ(clazztype).tsym.expect("diamond class symbol");
-                // Java: Fragments.Diamond(tsym) — the symbol (simple class
                 // name), not the parameterized site type.
                 let diamond_fragment =
                     self.diags
@@ -13832,7 +14515,6 @@ impl Attr {
                                 ),
                             ),
                         ));
-                // Java: the diagnostic arguments are the inferred types; the
                 // rich formatter renders captured types as CAP#N and adds the
                 // fresh-type-variable where clauses.
                 let invalid_args: Vec<crate::resources::diagnostic_contract::TypeArg> = invalid
@@ -14053,8 +14735,7 @@ impl Attr {
         Ok(result)
     }
 
-    /// Java: the diamond deferred copier (DeferredAttr.treeCopier specialization of
-    /// Attr.deferredCopier): copies DEFERRED types, leaving other types unchanged.
+    /// Copies a tree, replacing deferred types with their resolved types.
     fn deferred_copier(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
         use crate::code::type_::TypeKindData;
         if ctx.typ(t).has_tag(TypeTag::DEFERRED) {
@@ -14095,11 +14776,11 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: private void visitAnonymousClassDefinition(JCNewClass tree, JCExpression
-    /// clazz, Type clazztype, JCClassDecl cdef, Env<AttrContext> localEnv,
-    /// List<Type> argtypes, List<Type> typeargtypes, KindSelector pkind)
-    /// (Attr.java:2881-3010): the inference-listener registration branch plus the
-    /// normal (non-listener) path (Approach A state-snapshot design).
+    /// Attributes an anonymous class definition.
+    ///
+    /// When the diamond's types still contain inference variables, a listener is
+    /// registered and the body is replayed once they are solved; otherwise the body is
+    /// attributed directly.
     #[allow(clippy::too_many_arguments)]
     fn visit_anonymous_class_definition(
         &mut self,
@@ -14179,7 +14860,7 @@ impl Attr {
     }
 
     /// Approach A adapter: the state snapshot captured when the anonymous-class
-    /// diamond inference listener is registered (Attr.java:2898-2920). The
+    /// diamond inference listener is registered. The
     /// snapshot shares every service handle (Rc) and clones the mutable
     /// attribution state; see the batch report for the per-field table.
     fn snapshot_for_anonymous_class(&self) -> Attr {
@@ -14262,31 +14943,33 @@ impl Attr {
     }
 }
 
-/// Java: the inference listener registered by visitAnonymousClassDefinition
-/// (Attr.java:2898-2920) — the callback replays the non-listener body with an
-/// Attr state snapshot (services shared, mutable state cloned).
+/// Replays the class-definition attribution of a diamond `new` expression once the
+/// constructor type arguments are inferred.
+///
+/// The listener cannot take `&mut Attr` from a `&self` callback, so it captures the
+/// mutable attribution state (`env`, `result_info`, ...) while sharing the services. The
+/// `RefCell` guarantees the replay runs once.
 pub struct AnonymousClassDiamondListener {
-    /// The Attr state snapshot (taken by RefCell so the &self callback can
-    /// execute the body exactly once).
+    /// The captured `Attr` state; taken on the first callback.
     pub attr: RefCell<Option<Attr>>,
-    /// Java: JCNewClass tree.
+    /// The `new` expression.
     pub tree: TreeId,
-    /// Java: JCExpression clazz.
+    /// The class expression of the `new`.
     pub clazz: TreeId,
-    /// Java: the saved resultInfoForClassDefinition.
+    /// The result info saved for the class definition.
     pub result_info: ResultInfo,
-    /// Java: Env<AttrContext> localEnv.
+    /// The local attribution environment.
     pub local_env: Rc<Env<AttrContext>>,
-    /// Java: List<Type> argtypes.
+    /// The argument types.
     pub argtypes: List<TypeId>,
-    /// Java: List<Type> typeargtypes.
+    /// The explicit type arguments, if any.
     pub typeargtypes: List<TypeId>,
-    /// Java: KindSelector pkind.
+    /// The kind selector of the expression.
     pub pkind: KindSelector,
 }
 
 impl crate::comp::infer::FreeTypeListener for AnonymousClassDiamondListener {
-    /// Java: the listener body (Attr.java:2898-2920).
+    /// Replays the class-definition attribution with the captured state.
     fn types_inferred(
         &self,
         ctx: &mut CompilerContext,
@@ -14299,7 +14982,6 @@ impl crate::comp::infer::FreeTypeListener for AnonymousClassDiamondListener {
             .borrow_mut()
             .take()
             .expect("listener executed once");
-        // Java: tree.constructorType = instantiatedContext.asInstType(tree.constructorType);
         let constructor_type = match &ctx.tree(self.tree).kind {
             TreeKind::NewClass {
                 constructor_type, ..
@@ -14316,7 +14998,6 @@ impl crate::comp::infer::FreeTypeListener for AnonymousClassDiamondListener {
         {
             *slot = inst_constructor_type;
         }
-        // Java: tree.clazz.type = clazz.type = instantiatedContext.asInstType(clazz.type);
         let clazz_ty = ctx.tree(self.clazz).ty;
         let inst_clazz_ty =
             clazz_ty.map(|clazz_ty| inference_context.as_inst_type(ctx, syms, types, clazz_ty));
@@ -14353,8 +15034,21 @@ impl crate::comp::infer::FreeTypeListener for AnonymousClassDiamondListener {
 }
 
 impl Attr {
-    /// Adapter: public wrapper of the private attribType(tree, env) pipeline
-    /// (MemberEnter.java:120 routes through Attr.attribType).
+    /// Attributes `tree` as a type.
+    ///
+    /// This is the entry point `MemberEnter` uses when it needs a type attributed
+    /// outside the normal visitor dispatch.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the type tree to attribute.
+    /// * `env` - the attribution environment.
+    ///
+    /// # Returns
+    ///
+    /// The attributed type.
     pub fn attrib_type_public(
         &mut self,
         ctx: &mut CompilerContext,
@@ -14365,8 +15059,22 @@ impl Attr {
         self.attrib_type_use(ctx, syms, tree, env)
     }
 
-    /// Adapter: public wrapper of the private attribTree(tree, env, resultInfo)
-    /// pipeline (MemberEnter.java:610 routes through Attr.attribExpr).
+    /// Attributes `tree` against `result_info`.
+    ///
+    /// This is the entry point `MemberEnter` uses when it needs a tree attributed
+    /// outside the normal visitor dispatch.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the tree to attribute.
+    /// * `env` - the attribution environment.
+    /// * `result_info` - the expected type and the check context.
+    ///
+    /// # Returns
+    ///
+    /// The type assigned to `tree`.
     pub fn attrib_tree_public(
         &mut self,
         ctx: &mut CompilerContext,
@@ -14379,7 +15087,7 @@ impl Attr {
     }
 }
 impl Attr {
-    /// Java: public void visitClassDef(JCClassDecl tree) (Attr.java:948-990).
+    /// Attributes a class declaration.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -14391,7 +15099,6 @@ impl Attr {
     /// # Panics
     ///   - the registered services must be installed.
     ///
-    /// Upstream: Attr.java:948-990.
     #[allow(clippy::too_many_lines)]
     fn visit_class_def(
         &mut self,
@@ -14399,7 +15106,6 @@ impl Attr {
         syms: &Symtab,
         tree: TreeId,
     ) -> Result<TypeId, CompletionFailure> {
-        // Java: Optional<ArgumentAttr.LocalCacheContext> localCacheContext =
         // Optional.ofNullable(env.info.attributionMode.isSpeculative ?
         //     argumentAttr.withLocalCacheContext() : null);
         let local_cache_context = self
@@ -14411,7 +15117,6 @@ impl Attr {
                 argument_attr.map(|argument_attr| argument_attr.borrow().with_local_cache_context())
             });
         let result = self.visit_class_def_body(ctx, syms, tree);
-        // Java: finally localCacheContext.ifPresent(LocalCacheContext::leave);
         if let Some(mut local_cache_context) = local_cache_context {
             let argument_attr = self.argument_attr.get().cloned();
             if let Some(argument_attr) = argument_attr {
@@ -14461,7 +15166,7 @@ impl Attr {
         }
     }
 
-    /// The body of Attr.visitClassDef (Attr.java:952-987), split out for the
+    /// The body of Attr.visitClassDef, split out for the
     /// try/finally leave above.
     fn visit_class_def_body(
         &mut self,
@@ -14517,7 +15222,6 @@ impl Attr {
         let class_symbol = match &ctx.tree(tree).kind {
             TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
             _ => {
-                // Java: exit in case something drastic went wrong during enter.
                 self.result = None;
                 return Ok(self.no_type(ctx));
             }
@@ -14549,18 +15253,20 @@ impl Attr {
 }
 
 impl Attr {
-    /// Build a null-check expression around an argument, skipping checks that
-    /// are statically known to be unnecessary.
+    /// Builds a null-check expression around `arg`.
+    ///
+    /// Skips the check when `arg` cannot be null: a `new` expression, or `this` /
+    /// `super`.
     ///
     /// # Arguments
-    ///   - ctx: the compiler context;
-    ///   - arg: the expression to null-check.
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `arg` - the expression to check.
     ///
     /// # Returns
-    ///   - the (possibly optimized) null-check expression.
     ///
-    /// # Panics
-    ///   - none.
+    /// The null-check expression, or `arg` itself when the check is unnecessary.
     pub fn make_null_check(
         &mut self,
         ctx: &mut CompilerContext,
@@ -14606,17 +15312,22 @@ fn enum_sym_value(syms: &Symtab) -> SymbolId {
 }
 
 impl Attr {
-    /// Attribute a method declaration (the class-body visitor).
+    /// Attributes a method declaration and returns its method type.
     ///
     /// # Arguments
-    ///   - ctx/syms: explicit services;
-    ///   - tree: the method declaration tree.
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the method declaration.
     ///
     /// # Returns
-    ///   - the method type.
+    ///
+    /// The method's type.
     ///
     /// # Panics
-    ///   - a method invariant is violated.
+    ///
+    /// Panics when a method invariant is violated, such as a declaration without a
+    /// symbol.
     pub fn visit_method_def_result(
         &mut self,
         ctx: &mut CompilerContext,
@@ -14709,7 +15420,6 @@ impl Attr {
         if is_default_method {
             let overrides_object = self.types.overrides_object_method(ctx, syms, origin, m);
             if overrides_object {
-                // Java: Errors.DefaultOverridesObjectMember(m.name,
                 // Kinds.kindName(m.location()), m.location()).
                 let owner = ctx.sym(m).owner.expect("method owner");
                 let kind_name = crate::code::kinds::kind_name(ctx.sym(owner), ctx);
@@ -14953,7 +15663,6 @@ impl Attr {
             chk.set_lint(prev_lint);
             chk.set_method(prev_method);
         }
-        // Java: result = tree.type = m.type; (Attr.java:1245).
         let method_type = ctx.sym(m).ty.expect("method type");
         ctx.tree_mut(tree).ty = Some(method_type);
         Ok(method_type)
@@ -15327,18 +16036,22 @@ fn env_of(attr: &Attr) -> &Rc<Env<AttrContext>> {
 }
 
 impl Attr {
-    /// Attribute a variable declaration in a class body (the class-body
-    /// visitor).
+    /// Attributes a variable declaration in a class body and returns its type.
     ///
     /// # Arguments
-    ///   - ctx/syms: explicit services;
-    ///   - tree: the variable declaration tree.
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the variable declaration.
     ///
     /// # Returns
-    ///   - the variable type.
+    ///
+    /// The variable's type.
     ///
     /// # Panics
-    ///   - a variable declaration invariant is violated.
+    ///
+    /// Panics when a declaration invariant is violated, such as a declaration without a
+    /// symbol.
     pub fn visit_var_def_result(
         &mut self,
         ctx: &mut CompilerContext,
@@ -15441,7 +16154,6 @@ impl Attr {
                 {
                     let member_enter = Rc::clone(&self.member_enter);
                     member_enter.member_enter(ctx, syms, tree, &env, self);
-                    // Java: memberEnter stores the new VarSymbol in tree.sym;
                     // the port keeps the tree slot as the shared location.
                     sym_opt = match &ctx.tree(tree).kind {
                         TreeKind::VariableDecl { sym, .. } => *sym,
@@ -15501,7 +16213,6 @@ impl Attr {
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
             let syms_borrow: &Symtab = syms;
-            // Java: JCVariableDecl.pos() is the identifier token; `pos` stays at
             // the modifiers for generation, so use the recorded declaration
             // position here.
             let decl_pos = match &ctx.tree(tree).kind {
@@ -15563,7 +16274,6 @@ impl Attr {
                 crate::util::jc_diagnostic::Error::from(info),
             );
         }
-        // Java: result = tree.type = v.type; (Attr.java:1323).
         let var_type = ctx.sym(v).ty.expect("var type");
         ctx.tree_mut(tree).ty = Some(var_type);
         Ok(var_type)
@@ -15601,21 +16311,21 @@ impl Attr {
 }
 
 impl Attr {
-    /// Attribute a base clause (superclass/interface) type.
+    /// Attributes a base clause (superclass or superinterface) of a class.
     ///
     /// # Arguments
-    ///   - ctx/syms: explicit services;
-    ///   - tree: the base clause tree;
-    ///   - env: the attribution environment;
-    ///   - class_expected: whether a class type is expected;
-    ///   - interface_expected: whether an interface type is expected;
-    ///   - check_extensible: whether the final/extensibility checks run.
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `tree` - the base clause tree.
+    /// * `env` - the attribution environment.
+    /// * `class_expected` - whether the base must be a class.
+    /// * `interface_expected` - whether the base must be an interface.
+    /// * `check_extensible` - whether the final/extensibility checks run.
     ///
     /// # Returns
-    ///   - the attributed base type.
     ///
-    /// # Panics
-    ///   - a base clause invariant is violated.
+    /// The attributed base type.
     pub fn attrib_base(
         &mut self,
         ctx: &mut CompilerContext,
@@ -15641,38 +16351,23 @@ impl Attr {
         )
     }
 
-    /// Check an attributed base type (see attrib_base).
+    /// Maps the argument types of a failed method resolution through the deferred
+    /// attribution of the accessed symbol.
+    ///
+    /// Each argument type is passed through a `DeferredTypeMap` in speculative mode, so
+    /// a deferred type is replaced by the type it resolves to at this resolution phase.
     ///
     /// # Arguments
-    ///   - ctx/syms: explicit services;
-    ///   - t: the attributed base type;
-    ///   - tree: the base clause tree;
-    ///   - class_expected: whether a class type is expected;
-    ///   - interface_expected: whether an interface type is expected;
-    ///   - check_extensible: whether the final/extensibility checks run.
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `argtypes` - the argument types of the failed resolution.
+    /// * `msym` - the accessed symbol, if any.
+    /// * `step` - the resolution phase.
     ///
     /// # Returns
-    ///   - the checked base type (or an error type).
     ///
-    /// # Panics
-    ///   - a base clause invariant is violated.
-    /// Java: the methodLogResolveHelper.getArgumentTypes deferred mapping
-    /// (Resolve.java:2634-2636): each argument type is mapped through a
-    /// ResolveDeferredRecoveryMap(SPECULATIVE, accessedSymbol, step).
-    ///
-    /// # Arguments
-    ///   - ctx/syms: the compiler context and symbol table;
-    ///   - argtypes: the argument types of the failed method resolution;
-    ///   - msym: the accessed symbol;
-    ///   - step: the method resolution phase.
-    ///
-    /// # Returns
-    ///   - the mapped argument types.
-    ///
-    /// # Panics
-    ///   - none.
-    ///
-    /// Upstream: Resolve.java:2615/2634-2636, DeferredAttr.DeferredTypeMap.typeOf.
+    /// The mapped argument types, in the same order.
     pub fn map_resolve_deferred_argtypes(
         &mut self,
         ctx: &mut CompilerContext,
@@ -15706,6 +16401,23 @@ impl Attr {
         }
         result
     }
+
+    /// Checks an attributed base type against the expected kind and reports an error
+    /// when it does not match.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - the compiler context.
+    /// * `syms` - the symbol table.
+    /// * `t` - the attributed base type.
+    /// * `tree` - the base clause tree, used for diagnostics.
+    /// * `class_expected` - whether the base must be a class.
+    /// * `interface_expected` - whether the base must be an interface.
+    /// * `check_extensible` - whether the final/extensibility checks run.
+    ///
+    /// # Returns
+    ///
+    /// `t`, or the error type when the check failed.
     pub fn check_base(
         &mut self,
         ctx: &mut CompilerContext,
@@ -15788,21 +16500,17 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: public void setPackageSymbols(JCExpression pid, Symbol pkg)
-    /// (Attr.java:5971-5986): each Ident/FieldAccess of the package name is
-    /// bound to the matching package symbol, walking the select chain to the
-    /// owner package.
+    /// Binds every identifier of the package name `pid` to the matching package
+    /// symbol.
+    ///
+    /// The select chain is walked towards the root package, so `a.b.c` gets a symbol
+    /// for `a.b.c`, then `a.b`, then `a`.
     ///
     /// # Arguments
-    ///   - ctx: the compiler context;
-    ///   - pid: the package name tree;
-    ///   - pkg: the package symbol.
     ///
-    /// # Returns
-    ///   - none.
-    ///
-    /// # Panics
-    ///   - none.
+    /// * `ctx` - the compiler context.
+    /// * `pid` - the package name tree.
+    /// * `pkg` - the package symbol.
     pub fn set_package_symbols(&mut self, ctx: &mut CompilerContext, pid: TreeId, pkg: SymbolId) {
         enum Kind {
             Ident,
@@ -15838,22 +16546,19 @@ impl Attr {
 }
 
 impl Attr {
-    /// Installs the Modules service (delayed to break the Attr/Modules
-    /// construction cycle; registered adapter of Modules.instance(context)).
+    /// Installs the module system.
+    ///
+    /// Called by the bootstrap after both `Attr` and `Modules` exist, which is what
+    /// breaks their construction cycle.
     ///
     /// # Arguments
-    ///   - modules: the module system.
     ///
-    /// # Returns
-    ///   - none.
-    ///
-    /// # Panics
-    ///   - none.
+    /// * `modules` - the module system.
     pub fn set_modules(&mut self, modules: Rc<crate::comp::modules::Modules>) {
         *self.modules.borrow_mut() = Some(modules);
     }
 
-    /// Java: public void visitModuleDef(JCModuleDecl tree) (Attr.java:5382-5395).
+    /// Attributes a module declaration.
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -15876,14 +16581,12 @@ impl Attr {
             TreeKind::ModuleDecl { sym: Some(sym), .. } => *sym,
             _ => panic!("ClassCastException: JCModuleDecl expected"),
         };
-        // Java: tree.sym.completeUsesProvides();
         let modules = self
             .modules
             .borrow()
             .clone()
             .expect("AssertionError: Modules service must be installed");
         modules.complete_uses_provides_from_attr(ctx, syms, msym, self)?;
-        // Java: Lint lint = env.outer.info.lint = env.outer.info.lint.augment(msym);
         let env = self.env.clone().expect("AssertionError: attr env");
         let outer = env.outer.clone().expect("AssertionError: module env outer");
         let lint = {
@@ -15897,13 +16600,10 @@ impl Attr {
         };
         let lint_rc = Rc::new(lint);
         outer.info.borrow_mut().lint = Some(Rc::clone(&lint_rc));
-        // Java: Lint prevLint = chk.setLint(lint);
         let prev_lint = self.chk.set_lint(Rc::clone(&lint_rc));
-        // Java: chk.checkModuleName(tree); chk.checkDeprecatedAnnotation(tree, msym);
         self.chk.check_module_name(ctx, tree);
         self.chk
             .check_deprecated_annotation(ctx, syms, ctx.tree(tree).pos, msym);
-        // Java: try { deferredLintHandler.flush(tree.pos()); }
         //       finally { chk.setLint(prevLint); }
         let pos: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> = Rc::new(
             crate::util::jc_diagnostic::TreeDiagnosticPosition::new(ctx, tree),
@@ -15914,9 +16614,7 @@ impl Attr {
     }
 }
 
-/// Java: the try/finally around deferredLintHandler.setPos(tree.pos()) in
-/// Attr.visitMethodDef/visitVarDef: the declaration tree is the queue key and
-/// the queue is flushed when the declaration has been attributed.
+/// Flushes the deferred lint queue when a declaration has been attributed.
 struct DeferredDeclarationGuard {
     handler: Rc<DeferredLintHandler>,
     prev: crate::code::deferred_lint_handler::CurrentPos,
@@ -16027,7 +16725,6 @@ mod tests {
 
     #[test]
     fn result_info_to_string_matches_the_upstream_semantics() {
-        // Java: public String toString() { return pt != null ? pt.toString() : ""; }
         let no_pt = ResultInfo::new(KindSelector::TYP, None, test_check_context());
         assert_eq!(no_pt.to_string(&CompilerContext::new()), "");
     }
@@ -16356,7 +17053,6 @@ mod tests {
         if let TreeKind::Ident { sym, .. } = &mut ctx.tree_mut(clazzid).kind {
             *sym = Some(object_tsym);
         }
-        // Java: new <Object><>() {} — a diamond class creation is a TYPEAPPLY
         // with an empty argument list (TreeInfo.isDiamond).
         let clazz = {
             let m = &*make;
@@ -16665,7 +17361,6 @@ mod tests {
         make.root_package = Some(syms.root_package);
         let make = Rc::new(make);
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
-        // Java: the Check constructor obtains rs/fileManager/profile/preview
         // from the Context; the harness installs the same services explicitly
         // (the ported service-injection adapter).
         chk.set_profile(Rc::new(crate::jvm::profile::Profile::DEFAULT));
@@ -16816,10 +17511,10 @@ mod tests {
         result
     }
 
-    /// Pre-sets the java.lang/java.util symbols of the identifier type trees:
-    /// Resolve is not ported yet (registered: Attr.visitIdent identifier
-    /// resolution is the Resolve); the tree.sym fast path itself is the
-    /// upstream Attr.java:4190-4192 branch.
+    /// Pre-sets the `java.lang` and `java.util` symbols on identifier type trees.
+    ///
+    /// Resolve is not ported yet; this fast path covers the common type identifiers without
+    /// going through it.
     fn preset_type_idents(ctx: &mut CompilerContext, syms: &Symtab, names: &Names, tree: TreeId) {
         match ctx.tree(tree).tag {
             Tag::TYPEARRAY => {
@@ -17229,12 +17924,10 @@ class Sample {
             _ => panic!("expected break tree"),
         };
         // Upstream findJumpTargetNoError returns the labelled statement itself
-        // for a labelled break (Attr.java:2352-2362).
         assert_eq!(target, Some(labelled));
     }
 
-    /// Java: Attr.visitTypeParameter (Attr.java:5017-5029): the preliminary
-    /// bound from attribTypeVariables is replaced by checkIntersection.
+    /// Replaces the preliminary bound of a type parameter with the checked intersection.
     #[test]
     fn visit_type_parameter_fixups_a_single_bound() {
         use crate::code::type_::Type;
@@ -17301,9 +17994,7 @@ class Sample {
         assert_eq!(ctx.typ(type_var).get_upper_bound(), Some(bound_type));
     }
 
-    /// Java: Attr.checkIntersection (Attr.java:5030-5097): multiple bounds build
-    /// the intersection class and attribute it (the bound class tree is
-    /// synthesized and attributed through attribClass).
+    /// Builds and attributes the intersection class of multiple bounds.
     #[test]
     fn visit_type_parameter_builds_an_intersection_for_multiple_bounds() {
         use crate::code::type_::Type;
@@ -17428,8 +18119,7 @@ class Sample {
         assert_eq!(*components.tail().tail().head(), second_type);
     }
 
-    /// Java: methodLogResolveHelper.getArgumentTypes (Resolve.java:2634-2636):
-    /// the deferred recovery map is the identity on non-deferred argument types.
+    /// Maps non-deferred argument types to themselves during recovery.
     #[test]
     fn map_resolve_deferred_argtypes_keeps_non_deferred_types() {
         use crate::code::source::Source;
