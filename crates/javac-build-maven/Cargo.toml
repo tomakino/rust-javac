@@ -1,9 +1,0 @@
-[package]
-name = "javac-build-maven"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-
-[dependencies]
-javac-project-api = { path = "../javac-project-api" }
-quick-xml = "0.42.0"
