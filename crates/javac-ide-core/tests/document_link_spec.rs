@@ -189,6 +189,26 @@ fn item03_external_sources_jar_link() {
 }
 
 #[test]
+fn external_without_sources_definition_returns_none() {
+    let Some((root, jar, _sources)) = fixture_with_sources("def-no-sources") else {
+        return;
+    };
+    std::fs::remove_file(root.join("lib-sources.jar")).ok();
+    let mut workspace = Workspace::new(config(&root, vec![jar]));
+    let path = root.join("Test.java");
+    std::fs::write(
+        &path,
+        "import a.b.C;\nclass Test { C value; }\n",
+    )
+    .unwrap();
+    let position = javac_analysis_api::Position::new(1, 13);
+    assert!(
+        workspace.definition(&path, position).is_none(),
+        "a class-path type without sources must not jump to its use site"
+    );
+}
+
+#[test]
 fn item04_external_without_sources_no_link() {
     let Some((root, jar, _sources)) = fixture_with_sources("item04") else {
         return;

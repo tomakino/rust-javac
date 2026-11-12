@@ -345,9 +345,10 @@ impl FileAnalysis {
         if let Some(doc) = self.traced_class_doc(flat) {
             return Some(doc);
         }
+        let factory = self.compiler.parser_factory.clone();
         let raw = self
             .jdk_docs
-            .get_or_insert_with(JdkDocCache::new)
+            .get_or_insert_with(|| JdkDocCache::new(factory))
             .class_doc(flat);
         raw.and_then(|raw| self.render_external_javadoc(&raw))
     }
@@ -362,9 +363,10 @@ impl FileAnalysis {
         if let Some(doc) = self.traced_member_doc(class_flat, name) {
             return Some(doc);
         }
+        let factory = self.compiler.parser_factory.clone();
         let raw = self
             .jdk_docs
-            .get_or_insert_with(JdkDocCache::new)
+            .get_or_insert_with(|| JdkDocCache::new(factory))
             .member_doc(class_flat, name, arity);
         raw.and_then(|raw| self.render_external_javadoc(&raw))
     }

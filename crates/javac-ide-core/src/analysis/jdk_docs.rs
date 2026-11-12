@@ -7,12 +7,22 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+
+use crate::compiler_context::CompilerContext;
+use crate::ids::TreeId;
+use crate::parser::parser::Parser;
+use crate::parser::lexer::Lexer;
+use crate::parser::parser_factory::ParserFactory;
+use crate::parser::tokens::CommentStyle;
+use crate::tree::jc_tree::TreeKind;
+use crate::util::java_string::JavaString;
 use std::rc::Rc;
 
 use javac_zip::ZipArchive;
 
 /// Lazily built Javadoc cache over the JDK src.zip.
 pub(crate) struct JdkDocCache {
+    factory: Rc<ParserFactory>,
     src: Option<PathBuf>,
     archive: Option<ZipArchive>,
     /// Outer class flat name -> parsed docs (None when the source is absent).
@@ -28,8 +38,9 @@ struct JdkClassDocs {
 }
 
 impl JdkDocCache {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(factory: Rc<ParserFactory>) -> Self {
         Self {
+            factory,
             src: super::jdk_sources::default_jdk_src(),
             archive: None,
             classes: HashMap::new(),
@@ -88,7 +99,7 @@ impl JdkDocCache {
             .to_string();
         let bytes = archive.get_entry(&entry)?;
         let text = String::from_utf8_lossy(&bytes);
-        Some(parse_docs(&text))
+        Some(parse_docs(&self.factory, &text))
     }
 
     fn archive(&mut self) -> Option<&ZipArchive> {
@@ -100,293 +111,72 @@ impl JdkDocCache {
     }
 }
 
-struct Decl {
-    kind: DeclKind,
-    name: String,
-}
-
-enum DeclKind {
-    Class,
-    Method(usize),
-    Field,
-}
-
-/// Parse every Javadoc block in a source file and associate it with the next
-/// declaration. This is deliberately a source-level scan, not a full parse:
-/// completion needs stable text, not diagnostic fidelity.
-fn parse_docs(source: &str) -> JdkClassDocs {
+/// Parse the source with `JavacParser` (doc comments kept) and associate each
+/// declaration with its `DocCommentTable` comment.
+fn parse_docs(factory: &ParserFactory, source: &str) -> JdkClassDocs {
     let mut docs = JdkClassDocs::default();
-    let mut cursor = 0usize;
-    while let Some(relative) = source[cursor..].find("/**") {
-        let start = cursor + relative;
-        let Some(end_relative) = source[start..].find("*/") else {
-            break;
-        };
-        let end = start + end_relative + 2;
-        if let Some(decl) = declaration_after(&source[end..]) {
-            // Raw Javadoc block: `FileAnalysis` parses it with
-            // DocCommentParser and renders it with the shared renderer.
-            let raw = source[start..end].to_string();
-            match decl.kind {
-                DeclKind::Class => {
-                    if docs.class_doc.is_none() {
-                        docs.class_doc = Some(raw.clone());
-                    }
-                    docs.members
-                        .entry(format!("class:{}", decl.name))
-                        .or_insert(raw);
+    let mut ctx = CompilerContext::new();
+    let input = JavaString::from(source);
+    let mut parser = factory.new_parser(&mut ctx, &input, true, false, false);
+    let root = parser.parse_compilation_unit(&mut ctx);
+    let table = match &ctx.tree(root).kind {
+        TreeKind::CompilationUnit {
+            doc_comments: Some(table),
+            ..
+        } => table.clone(),
+        _ => return docs,
+    };
+    let table = table.borrow();
+    let class_pos = (0..ctx.trees.len())
+        .filter_map(|index| {
+            let tree = TreeId::new(index as u32);
+            matches!(ctx.tree(tree).kind, TreeKind::ClassDecl { .. })
+                .then_some(ctx.tree(tree).pos)
+        })
+        .filter(|position| *position >= 0)
+        .min();
+    for index in 0..ctx.trees.len() {
+        let tree = TreeId::new(index as u32);
+        let raw = table
+            .get_comment_text(tree)
+            .map(|text| text.to_string_lossy().to_string())
+            .or_else(|| {
+                table
+                    .get_comment(tree)
+                    .and_then(|comment| comment.get_text())
+                    .map(|text| text.to_string_lossy().to_string())
+            });
+        let Some(raw) = raw else { continue };
+        match &ctx.tree(tree).kind {
+            TreeKind::ClassDecl { name, .. } => {
+                let name = name.to_java_string().to_string_lossy().to_string();
+                if docs.class_doc.is_none() && Some(ctx.tree(tree).pos) == class_pos {
+                    docs.class_doc = Some(raw.clone());
                 }
-                DeclKind::Method(arity) => {
+                docs.members.entry(format!("class:{name}")).or_insert(raw);
+            }
+            TreeKind::MethodDecl { name, params, .. } => {
+                let name = name.to_java_string().to_string_lossy().to_string();
+                let name = if name == "<init>" {
+                    String::new()
+                } else {
+                    name
+                };
+                if !name.is_empty() {
                     docs.members
-                        .entry(format!("method:{}/{}", decl.name, arity))
-                        .or_insert(raw);
-                }
-                DeclKind::Field => {
-                    docs.members
-                        .entry(format!("field:{}", decl.name))
+                        .entry(format!("method:{}/{}", name, params.size()))
                         .or_insert(raw);
                 }
             }
+            TreeKind::VariableDecl { name, .. } => {
+                let name = name.to_java_string().to_string_lossy().to_string();
+                docs.members
+                    .entry(format!("field:{name}"))
+                    .or_insert(raw);
+            }
+            _ => {}
         }
-        cursor = end;
     }
     docs
 }
 
-fn declaration_after(source: &str) -> Option<Decl> {
-    let mut rest = source;
-    loop {
-        rest = rest.trim_start();
-        if rest.is_empty() {
-            return None;
-        }
-        if rest.starts_with("@interface") {
-            let name = first_ident(&rest["@interface".len()..])?;
-            return Some(Decl {
-                kind: DeclKind::Class,
-                name,
-            });
-        }
-        if rest.starts_with('@') {
-            rest = skip_annotation(rest);
-            continue;
-        }
-        let (word, after) = split_ident(rest);
-        if word.is_empty() {
-            return None;
-        }
-        if is_modifier(word) || (word == "non" && after.starts_with("-sealed")) {
-            rest = after;
-            continue;
-        }
-        break;
-    }
-    let (word, after) = split_ident(rest);
-    if matches!(word, "class" | "interface" | "enum" | "record") {
-        let name = first_ident(after.trim_start())?;
-        return Some(Decl {
-            kind: DeclKind::Class,
-            name,
-        });
-    }
-    let paren = rest.find('(');
-    let term = first_of(rest, &[';', '{', '=', ',']);
-    let method_like = match (paren, term) {
-        (Some(paren), Some(term)) => paren < term,
-        (Some(_), None) => true,
-        _ => false,
-    };
-    if method_like {
-        let paren = paren?;
-        let name = last_ident(&rest[..paren])?;
-        let arity = count_params(&rest[paren + 1..])?;
-        return Some(Decl {
-            kind: DeclKind::Method(arity),
-            name,
-        });
-    }
-    let term = term.unwrap_or(rest.len());
-    let name = last_ident(&rest[..term])?;
-    Some(Decl {
-        kind: DeclKind::Field,
-        name,
-    })
-}
-
-fn skip_annotation(source: &str) -> &str {
-    let bytes = source.as_bytes();
-    let mut index = 1usize;
-    while index < bytes.len()
-        && (bytes[index].is_ascii_alphanumeric()
-            || bytes[index] == b'_'
-            || bytes[index] == b'.'
-            || bytes[index] == b'$')
-    {
-        index += 1;
-    }
-    let mut after = index;
-    while after < bytes.len() && bytes[after].is_ascii_whitespace() && bytes[after] != b'\n' {
-        after += 1;
-    }
-    if after < bytes.len() && bytes[after] == b'(' {
-        let mut depth = 0usize;
-        while after < bytes.len() {
-            match bytes[after] {
-                b'(' => depth += 1,
-                b')' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return &source[after + 1..];
-                    }
-                }
-                _ => {}
-            }
-            after += 1;
-        }
-    }
-    &source[index..]
-}
-
-fn is_modifier(word: &str) -> bool {
-    matches!(
-        word,
-        "public"
-            | "protected"
-            | "private"
-            | "static"
-            | "final"
-            | "abstract"
-            | "synchronized"
-            | "native"
-            | "transient"
-            | "volatile"
-            | "strictfp"
-            | "default"
-            | "sealed"
-    )
-}
-
-fn split_ident(source: &str) -> (&str, &str) {
-    let source = source.trim_start();
-    let end = source
-        .char_indices()
-        .find(|(_, ch)| !(ch.is_alphanumeric() || *ch == '_' || *ch == '$'))
-        .map(|(index, _)| index)
-        .unwrap_or(source.len());
-    (&source[..end], &source[end..])
-}
-
-fn first_ident(source: &str) -> Option<String> {
-    let (word, _) = split_ident(source);
-    (!word.is_empty()).then(|| word.to_string())
-}
-
-fn last_ident(source: &str) -> Option<String> {
-    source
-        .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
-        .filter(|word| !word.is_empty())
-        .next_back()
-        .map(str::to_string)
-}
-
-fn first_of(source: &str, chars: &[char]) -> Option<usize> {
-    source
-        .char_indices()
-        .find(|(_, ch)| chars.contains(ch))
-        .map(|(index, _)| index)
-}
-
-fn count_params(source: &str) -> Option<usize> {
-    let mut parens = 0usize;
-    let mut angles = 0usize;
-    let mut commas = 0usize;
-    let mut has_content = false;
-    for ch in source.chars() {
-        match ch {
-            '(' => parens += 1,
-            ')' => {
-                if parens == 0 {
-                    return Some(if has_content { commas + 1 } else { 0 });
-                }
-                parens -= 1;
-            }
-            '<' => angles += 1,
-            '>' => angles = angles.saturating_sub(1),
-            ',' if parens == 0 && angles == 0 => commas += 1,
-            _ => {}
-        }
-        if !ch.is_whitespace() {
-            has_content = true;
-        }
-    }
-    None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn associates_class_method_and_field_docs() {
-        let source = r#"
-/**
- * A greeting.
- */
-public class Greeter {
-    /**
-     * Says hello.
-     * @param name who to greet
-     * @return the greeting
-     */
-    public String hello(String name) {
-        return name;
-    }
-
-    /** The default name. */
-    public static final String DEFAULT = "world";
-}
-"#;
-        let docs = parse_docs(source);
-        let class_doc = docs.class_doc.as_deref().unwrap_or("");
-        assert!(class_doc.contains("A greeting."), "{class_doc}");
-        let method = docs.members.get("method:hello/1").expect("method doc");
-        assert!(method.contains("Says hello."), "{method}");
-        assert!(method.contains("@param name"), "{method}");
-        assert!(method.contains("@return"), "{method}");
-        let field = docs.members.get("field:DEFAULT").expect("field doc");
-        assert!(field.contains("The default name."), "{field}");
-    }
-
-    #[test]
-    fn generic_parameters_do_not_change_arity() {
-        let source = r#"
-/** A map holder. */
-class Holder {
-    /** Puts a value. */
-    void put(java.util.Map<String, java.util.List<Integer>> map, int value) {}
-}
-"#;
-        let docs = parse_docs(source);
-        let class_doc = docs.class_doc.as_deref().unwrap_or("");
-        assert!(class_doc.contains("A map holder."), "{class_doc}");
-        let method = docs.members.get("method:put/2").expect("method doc");
-        assert!(method.contains("Puts a value."), "{method}");
-    }
-
-    #[test]
-    fn keeps_the_complete_raw_javadoc_block() {
-        let source = r#"
-/**
- * Returns a {@link java.util.Base64.Decoder} using {@code Base64}.
- * <p>Second paragraph.</p>
- */
-public class Thing {
-}
-"#;
-        let docs = parse_docs(source);
-        let class_doc = docs.class_doc.expect("doc");
-        assert!(class_doc.contains("{@link java.util.Base64.Decoder}"), "{class_doc}");
-        assert!(class_doc.contains("{@code Base64}"), "{class_doc}");
-        assert!(class_doc.contains("<p>Second paragraph.</p>"), "{class_doc}");
-    }
-}

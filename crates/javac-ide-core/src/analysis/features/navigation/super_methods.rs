@@ -407,6 +407,7 @@ impl FileAnalysis {
         if is_jdk {
             let jdk_src = super::super::super::jdk_sources::default_jdk_src()?;
             return super::super::super::jdk_sources::jdk_member_location(
+                &self.compiler.parser_factory,
                 &jdk_src,
                 &flat_name,
                 &name,
@@ -414,6 +415,7 @@ impl FileAnalysis {
             );
         }
         crate::analysis::external_sources::external_source_location(
+            &self.compiler.parser_factory,
             &flat_name,
             &name,
             &self.config.class_path,

@@ -200,18 +200,6 @@ impl FileAnalysis {
                 }
             }
         }
-        if let Some(symbol) = FileAnalysis::symbol_at(self, file, line, column) {
-            if symbol.pos >= 0 {
-                let (symbol_line, symbol_column) =
-                    offset_to_line_col(&text, symbol.pos as usize);
-                return Some(javac_analysis_api::Location {
-                    file: file.to_path_buf(),
-                    range: javac_analysis_api::Range::point(
-                        javac_analysis_api::Position::new(symbol_line, symbol_column),
-                    ),
-                });
-            }
-        }
         // A symbol that resolves through the compiler but is not declared in
         // project sources may live in a classpath jar; use its sources jar.
         if let Some((symbol, _)) = self.symbol_id_at(file, position) {
@@ -469,6 +457,7 @@ impl FileAnalysis {
                 && let Some(arity) = arity
                 && let Some(location) =
                     super::super::super::jdk_sources::jdk_constructor_location(
+                        &self.compiler.parser_factory,
                         &jdk_src,
                         &flat,
                         arity,
@@ -478,6 +467,7 @@ impl FileAnalysis {
                 return Some(location);
             }
             return super::super::super::jdk_sources::jdk_class_location(
+                &self.compiler.parser_factory,
                 &jdk_src,
                 &flat,
                 &self.config.output_dir,
@@ -487,6 +477,7 @@ impl FileAnalysis {
             && let Some(arity) = arity
             && let Some(location) =
                 crate::analysis::external_sources::external_constructor_location(
+                    &self.compiler.parser_factory,
                     &flat,
                     arity,
                     &self.config.class_path,
@@ -496,6 +487,7 @@ impl FileAnalysis {
             return Some(location);
         }
         crate::analysis::external_sources::external_source_location(
+            &self.compiler.parser_factory,
             &flat,
             simple,
             &self.config.class_path,
@@ -624,6 +616,7 @@ impl FileAnalysis {
                 if let Some(jdk_src) = super::super::super::jdk_sources::default_jdk_src() {
                     if let Some(location) =
                         super::super::super::jdk_sources::jdk_member_location(
+                            &self.compiler.parser_factory,
                             &jdk_src,
                             &flat,
                             &member,
@@ -634,6 +627,7 @@ impl FileAnalysis {
                     }
                 }
                 return crate::analysis::external_sources::external_source_location(
+                    &self.compiler.parser_factory,
                     &flat,
                     &member,
                     &self.config.class_path,
@@ -697,6 +691,7 @@ impl FileAnalysis {
                 .to_java_string()
                 .to_string_lossy();
             return super::super::super::jdk_sources::jdk_source_location(
+                &self.compiler.parser_factory,
                 &jdk_src,
                 &name,
                 &self.config.output_dir,

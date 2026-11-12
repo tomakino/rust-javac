@@ -269,9 +269,10 @@ impl FileAnalysis {
             _ => return None,
         }
         let raw = {
+            let factory = self.compiler.parser_factory.clone();
             let cache = self
                 .jdk_docs
-                .get_or_insert_with(crate::analysis::jdk_docs::JdkDocCache::new);
+                .get_or_insert_with(|| crate::analysis::jdk_docs::JdkDocCache::new(factory));
             match (member_name, arity) {
                 (None, _) => cache.class_doc(&outer),
                 (Some(name), Some(arity)) => cache.member_doc(&outer, &name, Some(arity)),

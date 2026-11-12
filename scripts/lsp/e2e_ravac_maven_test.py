@@ -345,6 +345,17 @@ def main():
             "public JsonWriter newJsonWriter(Writer writer)",
             offset=len("public JsonWriter "),
         )
+        writer_type = position_of(
+            gson_text, "newJsonWriter(Writer writer)", offset=len("newJsonWriter(")
+        )
+        json_reader_type = position_of(
+            gson_text, "public JsonReader newJsonReader", offset=len("public ")
+        )
+        json_writer_type = position_of(
+            gson_text, "public JsonWriter newJsonWriter", offset=len("public ")
+        )
+        string_type = position_of(gson_text, "public String toJson", offset=len("public "))
+        object_type = position_of(gson_text, "toJson(Object src", offset=len("toJson("))
         to_json_typed = position_of(gson_text, "public String toJson(Object src, Type typeOfSrc)")
         to_json_typed = (to_json_typed[0], to_json_typed[1] + len("public String "))
         from_json_typed = position_of(
@@ -369,6 +380,11 @@ def main():
                 ("import-project", GSON_PATH, import_project),
                 ("import-jdk", GSON_PATH, import_jdk),
                 ("new-ctor", GSON_BUILDER_PATH, position_of(builder_text, "new Gson(", occurrence=1, offset=len("new "))),
+                ("writer-type", GSON_PATH, writer_type),
+                ("json-reader-type", GSON_PATH, json_reader_type),
+                ("json-writer-type", GSON_PATH, json_writer_type),
+                ("string-type", GSON_PATH, string_type),
+                ("object-type", GSON_PATH, object_type),
             ]:
                 location = lsp.request(
                     "textDocument/definition",
@@ -387,6 +403,16 @@ def main():
                     cases.append(target.endswith("TypeToken.java"))
                 elif name == "new-ctor":
                     cases.append(target.endswith("Gson.java"))
+                elif name == "writer-type":
+                    cases.append(target.endswith("Writer.java"))
+                elif name == "json-reader-type":
+                    cases.append(target.endswith("JsonReader.java"))
+                elif name == "json-writer-type":
+                    cases.append(target.endswith("JsonWriter.java"))
+                elif name == "string-type":
+                    cases.append(target.endswith("String.java"))
+                elif name == "object-type":
+                    cases.append(target.endswith("Object.java"))
                 else:
                     cases.append(target.endswith("Gson.java"))
             return all(cases), " ".join(results)
@@ -400,6 +426,7 @@ def main():
                 ("method", GSON_PATH, to_json),
                 ("class", GSON_PATH, class_name),
                 ("local", GSON_PATH, body_expr),
+                ("writer", GSON_PATH, writer_type),
             ]
             details = []
             ok = True
@@ -561,7 +588,17 @@ def main():
                 in snippet_value
             )
             details.append("snippet=" + ("ok" if snippet_ok else repr(snippet_value[:100])))
-            ok = ok and to_string_ok and uri_ok and tags_ok and code_ok and snippet_ok
+            writer_hover = lsp.request(
+                "textDocument/hover",
+                {
+                    "textDocument": {"uri": lsp.uri(GSON_PATH)},
+                    "position": {"line": writer_type[0], "character": writer_type[1]},
+                },
+            )
+            writer_value = ((writer_hover or {}).get("contents") or {}).get("value") or ""
+            writer_ok = "Writer" in writer_value and "Abstract class for writing" in writer_value
+            details.append("writer-hover=" + ("ok" if writer_ok else repr(writer_value[:80])))
+            ok = ok and to_string_ok and uri_ok and tags_ok and code_ok and snippet_ok and writer_ok
             return ok, " ".join(details)
 
         safe(report, 4, "hover", item_hover)

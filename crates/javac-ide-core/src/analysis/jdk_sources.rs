@@ -236,6 +236,7 @@ fn read_class_source(jdk_src: &Path, class_flat: &str) -> Option<String> {
 /// The matching entry is extracted under the session output directory so the
 /// editor can open it as a normal file.
 pub(crate) fn jdk_source_location(
+    parser_factory: &ParserFactory,
     jdk_src: &Path,
     word: &str,
     output_dir: &Path,
@@ -252,22 +253,12 @@ pub(crate) fn jdk_source_location(
         .find(|name| name.ends_with(&suffix) || name == &format!("{word}.java"))?;
     let bytes = archive.get_entry(&entry_name)?;
     let text = String::from_utf8_lossy(&bytes).to_string();
-    let markers = [
-        format!("class {word}"),
-        format!("interface {word}"),
-        format!("enum {word}"),
-        format!("record {word}"),
-    ];
-    let offset = text
-        .lines()
-        .enumerate()
-        .find(|(_, line)| markers.iter().any(|marker| line.contains(marker.as_str())))
-        .map(|(index, _)| {
-            text.lines()
-                .take(index)
-                .map(|line| line.len() + 1)
-                .sum::<usize>()
-        })?;
+    let offset = super::external_sources::locate_member(
+        parser_factory,
+        &text,
+        word,
+        word,
+    )?;
     let extracted = super::source_files::extract(&bytes, "jdk-src", &entry_name, output_dir)?;
     Some(location_at_offset(&text, &extracted, offset))
 }
@@ -277,13 +268,14 @@ pub(crate) fn jdk_source_location(
 /// JDK 9+ src.zip entries are prefixed with the module name
 /// (`java.base/java/lang/Object.java`), so match the class path as a suffix.
 pub(crate) fn jdk_member_location(
+    parser_factory: &ParserFactory,
     jdk_src: &Path,
     class_flat: &str,
     member: &str,
     output_dir: &Path,
 ) -> Option<javac_analysis_api::Location> {
     let (text, extracted) = class_source_text(jdk_src, class_flat, output_dir)?;
-    let offset = super::external_sources::locate_member(&text, member)?;
+    let offset = super::external_sources::locate_member(parser_factory, &text, simple_class_name(class_flat), member)?;
     Some(location_at_offset(&text, &extracted, offset))
 }
 
@@ -293,6 +285,7 @@ pub(crate) fn jdk_member_location(
 /// degrades to [`jdk_class_location`] when the source text cannot pick a
 /// unique declaration.
 pub(crate) fn jdk_constructor_location(
+    parser_factory: &ParserFactory,
     jdk_src: &Path,
     class_flat: &str,
     arity: usize,
@@ -300,12 +293,13 @@ pub(crate) fn jdk_constructor_location(
 ) -> Option<javac_analysis_api::Location> {
     let (text, extracted) = class_source_text(jdk_src, class_flat, output_dir)?;
     let simple = simple_class_name(class_flat);
-    let offset = super::external_sources::locate_constructor(&text, simple, Some(arity))?;
+    let offset = super::external_sources::locate_constructor(parser_factory, &text, simple, arity)?;
     Some(location_at_offset(&text, &extracted, offset))
 }
 
 /// Find the type declaration of `class_flat` in the JDK src.zip.
 pub(crate) fn jdk_class_location(
+    parser_factory: &ParserFactory,
     jdk_src: &Path,
     class_flat: &str,
     output_dir: &Path,
@@ -313,7 +307,7 @@ pub(crate) fn jdk_class_location(
     let (text, extracted) = class_source_text(jdk_src, class_flat, output_dir)?;
     let simple = simple_class_name(class_flat);
     // `locate_member` prefers the type declaration (`class X`) over members.
-    let offset = super::external_sources::locate_member(&text, simple)?;
+    let offset = super::external_sources::locate_member(parser_factory, &text, simple, simple)?;
     Some(location_at_offset(&text, &extracted, offset))
 }
 
