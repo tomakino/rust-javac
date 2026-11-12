@@ -9,15 +9,15 @@
 //! The view is the one the compiler needs: the module list, resource lookup by
 //! `<module>/<path>`, the packages of a module, and the modules of a package.
 
+mod compact;
 mod native;
-mod strip;
 
 use std::fmt;
 use std::io::{self, Read};
 use std::path::Path;
 
+pub use compact::compact_class;
 pub use native::{ImageBuilder, MAGIC as NATIVE_MAGIC, NativeImage, VERSION as NATIVE_VERSION};
-pub use strip::strip_code;
 
 /// jimage magic (0xCAFE_DADA) in the little-endian byte order the JDK writes.
 const JIMAGE_MAGIC_LE: [u8; 4] = [0xDA, 0xDA, 0xFE, 0xCA];

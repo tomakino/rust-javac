@@ -61,7 +61,7 @@ fn convert(modules: &Path, out: &Path) -> Result<(), String> {
             .ok_or_else(|| format!("missing resource: {name}"))?;
         let bytes = if path.ends_with(".class") {
             class_count += 1;
-            match javac_platform::strip_code(&bytes) {
+            match javac_platform::compact_class(&bytes) {
                 Some(stripped) => {
                     removed_bytes += bytes.len() - stripped.len();
                     stripped
@@ -81,7 +81,7 @@ fn convert(modules: &Path, out: &Path) -> Result<(), String> {
     let image_bytes = std::fs::metadata(out).map(|meta| meta.len()).unwrap_or(0);
     println!(
         "gen-platform: {resource_count} resources ({class_count} classes), \
-         {removed_bytes} bytes of Code removed, image {image_bytes} bytes, {:.1}s",
+         {removed_bytes} bytes removed (Code + dead pool entries), image {image_bytes} bytes, {:.1}s",
         started.elapsed().as_secs_f64()
     );
     Ok(())
