@@ -22,6 +22,12 @@ use javac_core::util::javac_messages::{
 };
 use javac_core::util::log::Log;
 
+// The compiler allocates millions of short-lived nodes, names and vectors. The
+// Windows system heap showed up directly in the profile (`process_heap_alloc`),
+// so route every allocation through mimalloc instead.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 const OWN_NAME: &str = "ravac";
 
 const OK: i32 = 0;

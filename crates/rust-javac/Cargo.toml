@@ -12,3 +12,4 @@ path = "src/main.rs"
 javac-core.workspace = true
 javac-fs.workspace = true
 javac-strings.workspace = true
+mimalloc = "0.1"

@@ -43,6 +43,16 @@ py scripts/gate.py --files a.rs b.rs   # 只看指定文件
 py scripts/gate.py --level L2 --run    # 强制级别
 ```
 
+构建依赖：`rust-javac` 用 `mimalloc` 接管全局分配器（`java.base` 全量从 29.5s 降到 23.3s）。`mimalloc` 是 C 库，GNU 目标需要一个 MinGW C 编译器：
+
+```powershell
+winget install MartinStorsjo.LLVM-MinGW.UCRT
+$env:CC_x86_64_pc_windows_gnu = "<安装目录>\llvm-mingw-*\bin\clang.exe"
+$env:AR_x86_64_pc_windows_gnu = "<安装目录>\llvm-mingw-*\bin\llvm-ar.exe"
+```
+
+不要把那个 `bin` 目录加进 `PATH`：它自带的 `x86_64-w64-mingw32-gcc` 别名会顶掉 Rust 的 linker，报 `unable to find library -lgcc`，而错误信息指不到真正原因。
+
 冒烟：`target\debug\ravac.exe -d out Hello.java`；或跑单个语料检查器，如 `py scripts/check_gson.py --build`（退出码 0 一致、1 有差异、2 环境缺失）。
 
 平台数据：不自动提交，也不加入 `.gitignore`；生成后保持 untracked（出现在 `git status`），提交这两个二进制必须由用户明确要求。首次构建前用 `cargo xtask gen-platform --out internal\platform\17.0.19+10\modules` 和 `cargo xtask gen-ct-sym --out internal\platform\17.0.19+10\ct.sym` 生成；`--check` 校验本地文件。
