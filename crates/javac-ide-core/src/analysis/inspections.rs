@@ -2,52 +2,75 @@
 
 use javac_analysis_api::{Diagnostic, Position, Range, Severity};
 
-/// Report imports that are never referenced in the code.
-///
-/// Strings, character literals, and comments are masked before matching, and
-/// matches must be whole identifiers (`List` does not match `ArrayList`).
-pub(crate) fn unused_imports(text: &str) -> Vec<Diagnostic> {
-    let code = mask_non_code(text);
-    let code_lines: Vec<&str> = code.lines().collect();
-    let mut diagnostics = Vec::new();
-    for (line_index, line) in text.lines().enumerate() {
-        let trimmed = line.trim_start();
-        if !trimmed.starts_with("import ") || trimmed.starts_with("import static ") {
-            continue;
+use std::path::Path;
+
+use crate::analysis::FileAnalysis;
+
+impl FileAnalysis {
+    /// Report non-static, non-wildcard imports that are never referenced.
+    ///
+    /// Import declarations come from `CompilationUnit.defs` (`Import.qualid`);
+    /// a name is used when an `Ident` / `FieldAccess` AST node outside the
+    /// import declarations carries the same simple name.
+    pub(crate) fn unused_imports_impl(&self, file: &Path) -> Vec<Diagnostic> {
+        let syntax = self.import_syntax_impl(file);
+        if syntax.declarations.is_empty() {
+            return Vec::new();
         }
-        let Some(end) = trimmed.find(';') else {
-            continue;
+        let Some(text) = self.source_text(file) else {
+            return Vec::new();
         };
-        let path = trimmed[7..end].trim();
-        if path.ends_with(".*") || path.is_empty() {
-            continue;
+        let import_spans: Vec<(usize, usize)> = syntax
+            .declarations
+            .iter()
+            .map(|declaration| (declaration.start, declaration.end))
+            .collect();
+        let mut used = std::collections::HashSet::new();
+        for tree in self.compiler.ctx.trees.iter() {
+            let name = match &tree.kind {
+                crate::tree::jc_tree::TreeKind::Ident { name, .. }
+                | crate::tree::jc_tree::TreeKind::FieldAccess { name, .. } => name,
+                _ => continue,
+            };
+            if tree.pos < 0 {
+                continue;
+            }
+            let pos = tree.pos as usize;
+            if import_spans
+                .iter()
+                .any(|(start, end)| pos >= *start && pos <= *end)
+            {
+                continue;
+            }
+            used.insert(name.to_java_string().to_string_lossy().to_string());
         }
-        let Some(simple) = path.rsplit('.').next() else {
-            continue;
-        };
-        if simple.is_empty() {
-            continue;
-        }
-        let used = code_lines.iter().enumerate().any(|(index, code_line)| {
-            index != line_index
-                && !code_line.trim_start().starts_with("import ")
-                && has_identifier(code_line, simple)
-        });
-        if !used {
-            let start = Position::new(line_index as u32, 0);
-            let end_position = Position::new(
-                line_index as u32,
-                line.chars().map(|c| c.len_utf16() as u32).sum(),
-            );
+        let mut diagnostics = Vec::new();
+        for declaration in &syntax.declarations {
+            if declaration.static_import || declaration.wildcard {
+                continue;
+            }
+            let Some(simple) = declaration.segments.last() else {
+                continue;
+            };
+            if used.contains(simple) {
+                continue;
+            }
+            let (start_line, start_column) =
+                crate::analysis::positions::offset_to_line_col(&text, declaration.start);
+            let (end_line, end_column) =
+                crate::analysis::positions::offset_to_line_col(&text, declaration.end);
             diagnostics.push(Diagnostic {
-                range: Range::new(start, end_position),
+                range: Range::new(
+                    Position::new(start_line, start_column),
+                    Position::new(end_line, end_column),
+                ),
                 severity: Severity::Warning,
-                message: format!("Unused import: {path}"),
+                message: format!("Unused import: {}", declaration.path),
                 code: Some("unused.import".to_string()),
             });
         }
+        diagnostics
     }
-    diagnostics
 }
 
 /// Replace comments and literals with spaces, keeping newlines.
@@ -118,46 +141,3 @@ pub(crate) fn mask_non_code(text: &str) -> String {
     out
 }
 
-fn has_identifier(line: &str, name: &str) -> bool {
-    let is_part = |ch: char| ch.is_alphanumeric() || ch == '_' || ch == '$';
-    let mut search = 0;
-    while let Some(position) = line[search..].find(name) {
-        let absolute = search + position;
-        let before = line[..absolute].chars().next_back();
-        let after = line[absolute + name.len()..].chars().next();
-        if before.is_none_or(|ch| !is_part(ch)) && after.is_none_or(|ch| !is_part(ch)) {
-            return true;
-        }
-        search = absolute + name.len();
-    }
-    false
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn unused_when_only_a_string_mentions_the_name() {
-        let text = "import b.B;\nclass A { String s = \"B\"; }\n";
-        assert_eq!(unused_imports(text).len(), 1, "{:?}", unused_imports(text));
-    }
-
-    #[test]
-    fn unused_when_only_a_comment_mentions_the_name() {
-        let text = "import b.B;\nclass A { // B\n    int x;\n}\n";
-        assert_eq!(unused_imports(text).len(), 1);
-    }
-
-    #[test]
-    fn used_when_code_references_the_name() {
-        let text = "import b.B;\nclass A { B b; }\n";
-        assert!(unused_imports(text).is_empty());
-    }
-
-    #[test]
-    fn a_longer_identifier_is_not_a_use() {
-        let text = "import b.List;\nclass A { ArrayList list; }\n";
-        assert_eq!(unused_imports(text).len(), 1);
-    }
-}

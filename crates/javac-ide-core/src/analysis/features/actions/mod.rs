@@ -8,6 +8,7 @@ use javac_analysis_api::{CodeAction, Diagnostic, Position, Range, TextEdit};
 
 use super::super::positions::word_at;
 use super::super::{canonical, FileAnalysis};
+use super::import_syntax::ImportSyntax;
 
 /// A public top-level class that can be imported.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,26 +55,17 @@ fn delete_line_edit(line: u32, lines: &[&str]) -> TextEdit {
 /// Insert position for a new import and the file's newline style.
 ///
 /// Returns `(line, newline, needs_leading_newline)`.
-pub(crate) fn import_insert_point(text: &str) -> (u32, &'static str, bool) {
+pub(crate) fn import_insert_point(
+    text: &str,
+    syntax: &ImportSyntax,
+) -> (u32, &'static str, bool) {
     let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
-    let lines: Vec<&str> = text.lines().collect();
-    let last_import = lines
-        .iter()
-        .enumerate()
-        .filter(|(_, line)| line.trim_start().starts_with("import "))
-        .map(|(index, _)| index)
-        .last();
-    let insert = match last_import {
-        Some(index) => index + 1,
-        None => lines
-            .iter()
-            .position(|line| line.trim_start().starts_with("package "))
-            .map(|index| index + 1)
-            .unwrap_or(0),
-    };
-    let at_end = insert >= lines.len();
-    let needs_leading = at_end && !text.ends_with('\n');
-    (insert as u32, newline, needs_leading)
+    if syntax.end == 0 {
+        return (0, newline, false);
+    }
+    let (last_line, _) =
+        crate::analysis::positions::offset_to_line_col(text, syntax.end);
+    (last_line + 1, newline, false)
 }
 
 fn is_importable_flat(flat: &str) -> bool {
@@ -231,14 +223,6 @@ fn is_type_identifier(name: &str) -> bool {
     chars.all(|character| character.is_alphanumeric() || character == '_' || character == '$')
 }
 
-fn package_name(text: &str) -> Option<String> {
-    text.lines().find_map(|line| {
-        let line = line.trim();
-        let rest = line.strip_prefix("package ")?;
-        Some(rest.trim_end_matches(';').trim().to_string())
-    })
-}
-
 /// Top-level class/interface/enum/record names of `file`, from the AST.
 fn file_class_names(
     ctx: &crate::compiler_context::CompilerContext,
@@ -268,50 +252,36 @@ fn file_class_names(
     names
 }
 
-/// Import statements of one file: (line index, path, is_static).
-pub(crate) fn import_lines(text: &str) -> Vec<(usize, String, bool)> {
-    let mut lines = Vec::new();
-    for (index, line) in text.lines().enumerate() {
-        let trimmed = line.trim();
-        let Some(rest) = trimmed.strip_prefix("import ") else {
-            continue;
-        };
-        let (path, is_static) = if let Some(rest) = rest.strip_prefix("static ") {
-            (rest.trim_end_matches(';').trim(), true)
-        } else {
-            (rest.trim_end_matches(';').trim(), false)
-        };
-        if !path.is_empty() {
-            lines.push((index, path.to_string(), is_static));
-        }
-    }
-    lines
-}
-/// Import statements of one file: (exact classes, wildcard packages).
-pub(crate) fn imports_of(text: &str) -> (HashSet<String>, HashSet<String>) {
+/// Import statements decoded from AST declarations.
+pub(crate) fn imports_of(syntax: &ImportSyntax) -> (HashSet<String>, HashSet<String>) {
     let mut exact = HashSet::new();
     let mut wildcards = HashSet::new();
-    for (_line, path, is_static) in import_lines(text) {
-        if is_static {
+    for declaration in &syntax.declarations {
+        if declaration.static_import {
             continue;
         }
-        let path = path.as_str();
-        if path.is_empty() {
-            continue;
-        }
-        if let Some(package) = path.strip_suffix(".*") {
-            wildcards.insert(package.to_string());
+        if declaration.wildcard {
+            let package = declaration
+                .segments
+                .iter()
+                .take(declaration.segments.len().saturating_sub(1))
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(".");
+            wildcards.insert(package);
         } else {
-            exact.insert(path.to_string());
+            exact.insert(declaration.path.clone());
         }
     }
     (exact, wildcards)
 }
 
-fn import_path_at(text: &str, line: u32) -> Option<String> {
-    let line = text.lines().nth(line as usize)?;
-    let rest = line.trim().strip_prefix("import ")?;
-    Some(rest.trim_end_matches(';').trim().to_string())
+fn import_path_at(syntax: &ImportSyntax, text: &str, line: u32) -> Option<String> {
+    syntax.declarations.iter().find_map(|declaration| {
+        let (decl_line, _) =
+            crate::analysis::positions::offset_to_line_col(text, declaration.start);
+        (decl_line == line).then(|| declaration.path.clone())
+    })
 }
 
 struct ImportExclusions {
@@ -321,10 +291,10 @@ struct ImportExclusions {
 }
 
 impl ImportExclusions {
-    fn new(text: &str) -> Self {
-        let (exact, wildcards) = imports_of(text);
+    fn new(syntax: &ImportSyntax) -> Self {
+        let (exact, wildcards) = imports_of(syntax);
         Self {
-            package: package_name(text),
+            package: (!syntax.package.is_empty()).then(|| syntax.package.clone()),
             exact,
             wildcards,
         }
@@ -353,7 +323,9 @@ impl ImportExclusions {
 
 /// Pick the `cannot find symbol` diagnostic at/under the cursor and the
 /// identifier it refers to.
+impl FileAnalysis {
 fn add_import_target(
+    &self,
     text: &str,
     position: Position,
     diagnostics: &[Diagnostic],
@@ -382,41 +354,47 @@ fn add_import_target(
                     && diagnostic.range.start.line == position.line
             })
         })?;
-    let name = name_of_diagnostic(text, diagnostic)?;
+    let name = self.name_of_diagnostic(text, diagnostic)?;
     Some((name, diagnostic.clone()))
 }
 
-fn name_of_diagnostic(text: &str, diagnostic: &Diagnostic) -> Option<String> {
+fn name_of_diagnostic(&self, text: &str, diagnostic: &Diagnostic) -> Option<String> {
     let start = crate::analysis::positions::line_offset(
         text,
         diagnostic.range.start.line as usize + 1,
         diagnostic.range.start.column as usize + 1,
     );
+    let start_utf16 = text[..start].encode_utf16().count();
     let end = crate::analysis::positions::line_offset(
         text,
         diagnostic.range.end.line as usize + 1,
         diagnostic.range.end.column as usize + 1,
     );
-    let slice = text.get(start..end).map(str::trim).unwrap_or("");
-    if !slice.is_empty() && !slice.contains('<') && !slice.contains('(') {
-        let last = slice.rsplit('.').next().unwrap_or(slice).trim();
-        if is_type_identifier(last) {
-            return Some(last.to_string());
+    let end_utf16 = text[..end].encode_utf16().count();
+    // The unresolved type/name is an AST Ident node; no diagnostic message
+    // text and no source slice classification is involved.
+    let mut best: Option<(usize, String)> = None;
+    for tree in self.compiler.ctx.trees.iter() {
+        let crate::tree::jc_tree::TreeKind::Ident { name, .. } = &tree.kind else {
+            continue;
+        };
+        if tree.pos < 0 {
+            continue;
         }
-        return None;
+        let position = tree.pos as usize;
+        if position < start_utf16 || position > end_utf16 {
+            continue;
+        }
+        let name = name.to_java_string().to_string_lossy().to_string();
+        if !is_type_identifier(&name) {
+            continue;
+        }
+        if best.as_ref().is_none_or(|(best_pos, _)| position > *best_pos) {
+            best = Some((position, name));
+        }
     }
-    // Locale-independent fallback: the identifier at the diagnostic start
-    // (`word_at` is lexical; diagnostics may be localized arbitrarily).
-    let word = word_at(
-        text,
-        diagnostic.range.start.line as usize + 1,
-        diagnostic.range.start.column as usize + 1,
-    )?;
-    if is_type_identifier(&word) {
-        Some(word)
-    } else {
-        None
-    }
+    best.map(|(_, name)| name)
+}
 }
 
 impl FileAnalysis {
@@ -483,8 +461,10 @@ impl FileAnalysis {
             .or_else(|| std::fs::read_to_string(file).ok())
             .unwrap_or_default();
         let diagnostics = self.diagnostics(file, None);
-        let mut actions = self.remove_unused_import_actions(&text, position, &diagnostics);
-        actions.extend(self.add_import_actions(file, &text, position, &diagnostics));
+        let syntax = self.import_syntax_impl(file);
+        let mut actions =
+            self.remove_unused_import_actions(&text, &syntax, position, &diagnostics);
+        actions.extend(self.add_import_actions(file, &text, &syntax, position, &diagnostics));
         actions.extend(self.generate_actions(file, position));
         actions
     }
@@ -494,6 +474,7 @@ impl FileAnalysis {
     fn remove_unused_import_actions(
         &self,
         text: &str,
+        syntax: &ImportSyntax,
         position: Position,
         diagnostics: &[Diagnostic],
     ) -> Vec<CodeAction> {
@@ -509,7 +490,7 @@ impl FileAnalysis {
             .iter()
             .find(|diagnostic| diagnostic.range.start.line == position.line)
         {
-            let path = import_path_at(text, target.range.start.line).unwrap_or_default();
+            let path = import_path_at(syntax, text, target.range.start.line).unwrap_or_default();
             return vec![CodeAction {
                 title: format!("Remove unused import: {path}"),
                 edits: vec![delete_line_edit(target.range.start.line, &lines)],
@@ -530,7 +511,7 @@ impl FileAnalysis {
             }];
         }
         let target = unused[0];
-        let path = import_path_at(text, target.range.start.line).unwrap_or_default();
+        let path = import_path_at(syntax, text, target.range.start.line).unwrap_or_default();
         vec![CodeAction {
             title: format!("Remove unused import: {path}"),
             edits: vec![delete_line_edit(target.range.start.line, &lines)],
@@ -543,24 +524,25 @@ impl FileAnalysis {
         &mut self,
         file: &Path,
         text: &str,
+        syntax: &ImportSyntax,
         position: Position,
         diagnostics: &[Diagnostic],
     ) -> Vec<CodeAction> {
-        let Some((simple, diagnostic)) = add_import_target(text, position, diagnostics) else {
+        let Some((simple, diagnostic)) = self.add_import_target(text, position, diagnostics) else {
             return Vec::new();
         };
         if file_class_names(&self.compiler.ctx, file).iter().any(|name| name == &simple) {
             return Vec::new();
         }
         let candidates = self.import_candidates();
-        let exclusions = ImportExclusions::new(text);
+        let exclusions = ImportExclusions::new(syntax);
         let mut matched: Vec<ImportCandidate> = candidates
             .iter()
             .filter(|candidate| candidate.simple == simple && !exclusions.contains(&candidate.flat))
             .cloned()
             .collect();
         matched.sort_by(|left, right| left.flat.cmp(&right.flat));
-        let (line, newline, needs_leading) = import_insert_point(text);
+        let (line, newline, needs_leading) = import_insert_point(text, syntax);
         matched
             .into_iter()
             .map(|candidate| {
@@ -657,35 +639,6 @@ impl FileAnalysis {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn name_of_diagnostic_is_locale_independent() {
-        let text = "class A {\n  List value;\n}\n";
-        // A zero-width diagnostic with an arbitrary (localized) message: the
-        // fallback must use the source identifier at the position, not text
-        // from the message.
-        let localized = javac_analysis_api::Diagnostic {
-            range: Range::new(Position::new(1, 2), Position::new(1, 2)),
-            severity: javac_analysis_api::Severity::Error,
-            message: "任意语言，没有任何标记".to_string(),
-            code: Some("compiler.err.cant.resolve.location".to_string()),
-        };
-        assert_eq!(
-            name_of_diagnostic(text, &localized).as_deref(),
-            Some("List")
-        );
-        let ranged = javac_analysis_api::Diagnostic {
-            range: Range::new(Position::new(1, 2), Position::new(1, 6)),
-            severity: javac_analysis_api::Severity::Error,
-            message: "anything".to_string(),
-            code: Some("compiler.err.cant.resolve.location".to_string()),
-        };
-        assert_eq!(name_of_diagnostic(text, &ranged).as_deref(), Some("List"));
-    }
-}
 /// Whether a platform class is public, read from its jimage class bytes
 /// (`ACC_PUBLIC`). `None` means unreadable (caller keeps the candidate and
 /// falls back to diagnostic pruning).

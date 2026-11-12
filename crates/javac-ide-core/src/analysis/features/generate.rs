@@ -62,6 +62,7 @@ impl FileAnalysis {
             .or_else(|| std::fs::read_to_string(file).ok())
             .unwrap_or_default();
         let _ = self.analyze(file);
+        let import_syntax = self.import_syntax_impl(file);
         let Some(context) = self.class_context(file, &text, position) else {
             return Vec::new();
         };
@@ -112,12 +113,12 @@ impl FileAnalysis {
             // Reuse the Add-import exclusion helper: exact imports and
             // wildcard imports (java.util.*) both make Objects available.
             let (exact_imports, wildcard_imports) =
-                crate::analysis::features::actions::imports_of(&text);
+                crate::analysis::features::actions::imports_of(&import_syntax);
             let imports_objects = exact_imports.contains("java.util.Objects")
                 || wildcard_imports.contains("java.util");
             if !imports_objects {
                 let (import_line, import_newline, _) =
-                    crate::analysis::features::actions::import_insert_point(&text);
+                    crate::analysis::features::actions::import_insert_point(&text, &import_syntax);
                 edits.push(TextEdit {
                     range: Range::point(Position::new(import_line, 0)),
                     new_text: format!("import java.util.Objects;{import_newline}"),

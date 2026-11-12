@@ -16,7 +16,7 @@ pub(crate) fn tokenize(compiler: &MiniCompiler, text: &str) -> Vec<Token> {
     let mut scanner = compiler
         .parser_factory
         .scanner_factory
-        .new_scanner(&input, false);
+        .new_comment_scanner(&input);
     let mut tokens = Vec::new();
     scanner.next_token();
     // The scanner emits EOF at the end; a malformed trailing token may leave
@@ -157,4 +157,28 @@ pub(crate) fn after_new(tokens: &[Token], cursor_utf16: usize) -> bool {
         }
     }
     false
+}
+
+
+
+
+/// Comment starts and styles from the scanner's token comment list.
+pub(crate) fn comment_styles(
+    tokens: &[Token],
+) -> Vec<(usize, crate::parser::tokens::CommentStyle)> {
+    let mut comments = Vec::new();
+    for token in tokens {
+        let Some(list) = &token.comments else {
+            continue;
+        };
+        for comment in list.iter() {
+            let position = comment.source_pos();
+            eprintln!("STYLE {:?} pos={}", comment.get_style(), position);
+            if position >= 0 {
+                comments.push((position as usize, comment.get_style()));
+            }
+        }
+    }
+    comments.sort_by_key(|(position, _)| *position);
+    comments
 }

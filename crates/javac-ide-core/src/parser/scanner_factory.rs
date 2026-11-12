@@ -85,6 +85,15 @@ impl ScannerFactory {
         self.new_scanner_from_buffer(buffer, keep_doc_comments)
     }
 
+    /// Scanner that keeps line/block comments but uses the plain (non-Javadoc)
+    /// tokenizer, so `Comment::get_text` is available for every comment style.
+    pub(crate) fn new_comment_scanner(&self, input: &JavaString) -> Scanner {
+        let buffer: Rc<[u16]> = Rc::from(input.as_units().to_vec());
+        let length = buffer.len() as i32;
+        let tokenizer: Box<dyn Tokenizer> = Box::new(JavaTokenizer::new(self, buffer, length));
+        Scanner::new(self.tokens.clone(), tokenizer)
+    }
+
     /// Java: public Scanner newScanner(char[] input, int inputLength,
     /// boolean keepDocComments).
     pub fn new_scanner_chars(&self, input: &[u16], keep_doc_comments: bool) -> Scanner {

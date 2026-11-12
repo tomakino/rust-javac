@@ -492,6 +492,11 @@ pub trait Comment {
 
     /// Java: boolean isDeprecated()
     fn is_deprecated(&self) -> bool;
+
+    /// Source offset of the comment (port helper; BasicComment only).
+    fn source_pos(&self) -> i32 {
+        -1
+    }
 }
 
 /// The value carried by a token (Java: the NamedToken/StringToken/

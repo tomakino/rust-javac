@@ -1112,6 +1112,8 @@ pub(crate) struct BasicComment {
     pub(crate) deprecated_flag: Cell<bool>,
     /// true if comment has been fully scanned.
     pub(crate) scanned: Cell<bool>,
+    /// Absolute start offset in the original source buffer.
+    pub(crate) start_pos: i32,
 }
 
 impl BasicComment {
@@ -1128,6 +1130,7 @@ impl BasicComment {
             cs,
             deprecated_flag: Cell::new(false),
             scanned: Cell::new(false),
+            start_pos: offset,
         }
     }
 
@@ -1212,6 +1215,10 @@ impl Comment for BasicComment {
     /// Java: public int getSourcePos(int pos) — -1 in BasicComment.
     fn get_source_pos(&self, _pos: i32) -> i32 {
         -1
+    }
+
+    fn source_pos(&self) -> i32 {
+        self.start_pos
     }
 
     /// Java: public CommentStyle getStyle().

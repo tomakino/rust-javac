@@ -32,7 +32,7 @@ impl FileAnalysis {
             .iter()
             .map(|diag| convert_diagnostic(diag, &text))
             .collect();
-        result.extend(super::inspections::unused_imports(&text));
+        result.extend(self.unused_imports_impl(file));
         // A single-file analysis cannot model a module's package graph:
         // javac then reports every `exports`/`opens` package as empty even
         // though the sources exist under the source roots. Suppress that one

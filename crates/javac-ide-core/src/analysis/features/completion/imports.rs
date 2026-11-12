@@ -118,6 +118,7 @@ mod tests {
             imports: imports.iter().map(|value| value.to_string()).collect(),
             wildcard: wildcard.iter().map(|value| value.to_string()).collect(),
             static_imports: Vec::new(),
+            declarations: Vec::new(),
             end,
         };
         ImportContext::from_syntax(text, &syntax, Vec::new(), enabled)

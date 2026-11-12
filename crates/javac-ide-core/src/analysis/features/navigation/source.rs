@@ -18,7 +18,7 @@ use crate::tree::jc_tree::TreeKind;
 use crate::tree::tree_scanner::TreeScannerVisitor;
 
 impl FileAnalysis {
-    pub(super) fn source_text(&self, file: &Path) -> Option<String> {
+    pub(crate) fn source_text(&self, file: &Path) -> Option<String> {
         let key = PathBuf::from(canonical(file));
         self.texts
             .get(&key)
@@ -164,6 +164,9 @@ impl FileAnalysis {
                     }
                     let names: Vec<&str> =
                         parts.iter().map(|(name, ..)| name.as_str()).collect();
+                    let full_segments: Vec<String> =
+                        names.iter().map(|name| (*name).to_string()).collect();
+                    let full_path = full_segments.join(".");
                     let wildcard = names.last() == Some(&"*");
                     let names = if wildcard {
                         &names[..names.len() - 1]
@@ -187,6 +190,16 @@ impl FileAnalysis {
                         syntax.wildcard.push(names.join("."));
                     } else {
                         syntax.imports.push(names.join("."));
+                    }
+                    if node.pos >= 0 && node_end >= node.pos {
+                        syntax.declarations.push(crate::analysis::features::import_syntax::ImportDecl {
+                            path: full_path,
+                            segments: full_segments,
+                            static_import: *static_import,
+                            wildcard,
+                            start: node.pos as usize,
+                            end: node_end as usize,
+                        });
                     }
                 }
                 _ => {}

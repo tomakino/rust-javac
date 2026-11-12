@@ -21,4 +21,6 @@ mod new;
 mod rank;
 mod receiver;
 mod search;
-mod token_stream;
+pub(crate) mod token_stream;
+
+
