@@ -1,3 +1,0 @@
-//! Signature help.
-
-mod help;
