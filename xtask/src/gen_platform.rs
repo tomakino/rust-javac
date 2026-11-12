@@ -1,8 +1,8 @@
-//! gen-platform: convert a JDK `lib/modules` jimage into the stripped RPI1 image.
+//! gen-platform: convert a JDK `lib/modules` jimage into the stripped RPI2 image.
 //!
-//! The output keeps every module, package and class the compiler can see, but each
-//! class file loses its method bodies (`Code` attribute). Nothing else changes: the
-//! constant pool and the other attributes are copied byte for byte.
+//! Each class loses its method bodies (`Code`) and the constant-pool entries that no
+//! surviving structure references; non-class resources are dropped. The image index
+//! (tables and string pool) is stored as one zlib stream.
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -97,6 +97,8 @@ fn convert(modules: &Path, out: &Path) -> Result<(), String> {
     let mut resource_count = 0usize;
     let mut class_count = 0usize;
     let mut removed_bytes = 0usize;
+    let mut skipped_resources = 0usize;
+    let mut skipped_bytes = 0usize;
     for name in image.resources() {
         let (module, path) = name
             .split_once('/')
@@ -104,17 +106,20 @@ fn convert(modules: &Path, out: &Path) -> Result<(), String> {
         let bytes = image
             .find_resource(name)
             .ok_or_else(|| format!("missing resource: {name}"))?;
-        let bytes = if path.ends_with(".class") {
-            class_count += 1;
-            match javac_platform::compact_class(&bytes) {
-                Some(stripped) => {
-                    removed_bytes += bytes.len() - stripped.len();
-                    stripped
-                }
-                None => return Err(format!("cannot parse class file: {name}")),
+        // Only class files are observable to the compiler; distribution resources
+        // (jpackage exes, javadoc assets, locale dictionaries, ...) are dropped.
+        if !path.ends_with(".class") {
+            skipped_resources += 1;
+            skipped_bytes += bytes.len();
+            continue;
+        }
+        class_count += 1;
+        let bytes = match javac_platform::compact_class(&bytes) {
+            Some(compacted) => {
+                removed_bytes += bytes.len() - compacted.len();
+                compacted
             }
-        } else {
-            bytes
+            None => return Err(format!("cannot parse class file: {name}")),
         };
         resource_count += 1;
         builder.add_resource(module, path, bytes);
@@ -125,8 +130,9 @@ fn convert(modules: &Path, out: &Path) -> Result<(), String> {
         .map_err(|error| format!("write {}: {error}", out.display()))?;
     let image_bytes = std::fs::metadata(out).map(|meta| meta.len()).unwrap_or(0);
     println!(
-        "gen-platform: {resource_count} resources ({class_count} classes), \
-         {removed_bytes} bytes removed (Code + dead pool entries), image {image_bytes} bytes, {:.1}s",
+        "gen-platform: {class_count} classes, {removed_bytes} bytes removed, \
+         {skipped_resources} non-class resources dropped ({skipped_bytes} bytes), \
+         image {image_bytes} bytes, {:.1}s",
         started.elapsed().as_secs_f64()
     );
     Ok(())

@@ -3,7 +3,7 @@
 //! Two containers expose the same view:
 //!
 //! - the JDK's `lib/modules` (jimage), read through `javac-jimage`;
-//! - ravac's own `RPI1` image, produced by `cargo xtask gen-platform`, which drops
+//! - ravac's own `RPI2` image, produced by `cargo xtask gen-platform`, which drops
 //!   method bodies (the compiler never reads them) and is what a distribution ships.
 //!
 //! The view is the one the compiler needs: the module list, resource lookup by
@@ -27,9 +27,9 @@ const JIMAGE_MAGIC_LE: [u8; 4] = [0xDA, 0xDA, 0xFE, 0xCA];
 pub enum Error {
     /// The file could not be read.
     Io(io::Error),
-    /// The file is not a platform image (jimage or RPI1).
+    /// The file is not a platform image (jimage or RPI2).
     NotAnImage(String),
-    /// The RPI1 image version is not supported.
+    /// The RPI2 image version is not supported.
     WrongVersion {
         /// Image path, for the message.
         name: String,
@@ -85,7 +85,7 @@ impl From<javac_jimage::Error> for Error {
 pub enum PlatformImage {
     /// The JDK's `lib/modules` (jimage).
     Jimage(javac_jimage::JImage),
-    /// Ravac's own stripped image (RPI1).
+    /// Ravac's own stripped image (RPI2).
     Native(NativeImage),
 }
 

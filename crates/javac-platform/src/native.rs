@@ -1,22 +1,26 @@
-//! The `RPI1` platform image: a flat, sorted model of the JDK's system classes.
+//! The `RPI2` platform image: a flat, sorted model of the JDK's system classes.
 //!
 //! The compiler never reads method bodies, so the image stores each class file with
-//! its `Code` attribute removed. Layout (little endian):
+//! its `Code` attribute removed and its unreferenced constant-pool entries pruned.
+//!
+//! Layout (little endian):
 //!
 //! ```text
 //! header (96 bytes)
-//! module table          module_count      * 24 bytes
-//! package table         package_count     * 16 bytes
-//! resource table        resource_count    * 32 bytes  (sorted by module, path)
-//! package -> module     package_module_count * 4 bytes
-//! module -> package     module_package_count * 4 bytes
-//! string pool           string_size bytes (UTF-8, no terminators)
+//! zlib(index_compressed_size bytes)
+//!   module table          module_count      * 24 bytes
+//!   package table         package_count     * 16 bytes
+//!   resource table        resource_count    * 32 bytes  (sorted by module, path)
+//!   package -> module     package_module_count * 4 bytes
+//!   module -> package     module_package_count * 4 bytes
+//!   string pool           string_size bytes (UTF-8, no terminators)
 //! resource data
 //! ```
 //!
-//! Strings are addressed by (offset, length) from the string pool; resource data by
-//! an offset relative to the start of the data area. A resource may be zlib
-//! compressed; `flags & 1` says so and `uncompressed_len` is the decoded size.
+//! Table offsets in the header are relative to the decompressed index. Strings are
+//! addressed by (offset, length) from the string pool; resource data by an offset
+//! relative to the start of the data area. A resource may be zlib compressed;
+//! `flags & 1` says so and `uncompressed_len` is the decoded size.
 
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -27,9 +31,9 @@ use std::path::Path;
 use super::Error;
 
 /// Magic of the ravac platform image.
-pub const MAGIC: [u8; 4] = *b"RPI1";
+pub const MAGIC: [u8; 4] = *b"RPI2";
 /// Current format version.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 const HEADER_SIZE: usize = 96;
 const MODULE_RECORD: usize = 24;
@@ -66,7 +70,7 @@ struct ResourceRecord {
     uncompressed_len: u32,
 }
 
-/// A read-only view of an `RPI1` platform image.
+/// A read-only view of an `RPI2` platform image.
 #[derive(Debug)]
 pub struct NativeImage {
     file: File,
@@ -83,7 +87,7 @@ pub struct NativeImage {
 }
 
 impl NativeImage {
-    /// Opens and validates an `RPI1` image.
+    /// Opens and validates an `RPI2` image.
     pub fn open(path: &Path) -> Result<NativeImage, Error> {
         let name = path.display().to_string();
         let file = File::open(path)?;
@@ -106,6 +110,7 @@ impl NativeImage {
         let package_module_count = u32_at(&header, 24) as usize;
         let module_package_count = u32_at(&header, 28) as usize;
         let string_size = u32_at(&header, 32) as usize;
+        let index_compressed_size = u32_at(&header, 36) as usize;
         let module_table_off = u64_at(&header, 40);
         let package_table_off = u64_at(&header, 48);
         let resource_table_off = u64_at(&header, 56);
@@ -114,47 +119,51 @@ impl NativeImage {
         let string_pool_off = u64_at(&header, 80);
         let data_offset = u64_at(&header, 88);
 
-        let modules_raw = read_table(
+        let compressed = read_table(
             &file,
+            HEADER_SIZE as u64,
+            index_compressed_size,
+            file_len,
+        )?;
+        let index_bytes = miniz_oxide::inflate::decompress_to_vec_zlib(&compressed)
+            .map_err(|_| Error::Corrupted("index is not a zlib stream".to_string()))?;
+
+        let modules_raw = index_table(
+            &index_bytes,
             module_table_off,
             module_count
                 .checked_mul(MODULE_RECORD)
                 .ok_or_else(|| Error::Corrupted("module table is too large".to_string()))?,
-            file_len,
         )?;
-        let packages_raw = read_table(
-            &file,
+        let packages_raw = index_table(
+            &index_bytes,
             package_table_off,
             package_count
                 .checked_mul(PACKAGE_RECORD)
                 .ok_or_else(|| Error::Corrupted("package table is too large".to_string()))?,
-            file_len,
         )?;
-        let resources_raw = read_table(
-            &file,
+        let resources_raw = index_table(
+            &index_bytes,
             resource_table_off,
             resource_count
                 .checked_mul(RESOURCE_RECORD)
                 .ok_or_else(|| Error::Corrupted("resource table is too large".to_string()))?,
-            file_len,
         )?;
-        let package_modules_raw = read_table(
-            &file,
+        let package_modules_raw = index_table(
+            &index_bytes,
             package_module_off,
             package_module_count
                 .checked_mul(4)
                 .ok_or_else(|| Error::Corrupted("package->module table is too large".to_string()))?,
-            file_len,
         )?;
-        let module_packages_raw = read_table(
-            &file,
+        let module_packages_raw = index_table(
+            &index_bytes,
             module_package_off,
             module_package_count
                 .checked_mul(4)
                 .ok_or_else(|| Error::Corrupted("module->package table is too large".to_string()))?,
-            file_len,
         )?;
-        let strings = read_table(&file, string_pool_off, string_size, file_len)?;
+        let strings = index_table(&index_bytes, string_pool_off, string_size)?.to_vec();
 
         let mut modules = Vec::with_capacity(module_count);
         for index in 0..module_count {
@@ -356,7 +365,7 @@ impl NativeImage {
     }
 }
 
-/// Builds an `RPI1` image from module resources and writes it to a file.
+/// Builds an `RPI2` image from module resources and writes it to a file.
 #[derive(Default)]
 pub struct ImageBuilder {
     modules: Vec<BuildModule>,
@@ -523,14 +532,29 @@ impl ImageBuilder {
             })
             .collect();
 
-        let header_size = HEADER_SIZE as u64;
-        let module_table_off = header_size;
+        // The complete index (tables plus string pool) is one zlib stream.
+        let module_table_off = 0u64;
         let package_table_off = module_table_off + (modules.len() * MODULE_RECORD) as u64;
         let resource_table_off = package_table_off + (packages.len() * PACKAGE_RECORD) as u64;
         let package_module_off = resource_table_off + (resources.len() * RESOURCE_RECORD) as u64;
         let module_package_off = package_module_off + (package_module_flat.len() * 4) as u64;
         let string_pool_off = module_package_off + (module_packages.len() * 4) as u64;
-        let data_off = string_pool_off + strings.len() as u64;
+        let index_size = string_pool_off + strings.len() as u64;
+
+        let mut index = Vec::with_capacity(index_size as usize);
+        write_modules(&mut index, &modules)?;
+        write_packages(&mut index, &packages)?;
+        write_resources(&mut index, &resources)?;
+        for value in &package_module_flat {
+            index.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in &module_packages {
+            index.extend_from_slice(&value.to_le_bytes());
+        }
+        index.extend_from_slice(&strings);
+        debug_assert_eq!(index.len() as u64, index_size);
+        let compressed = miniz_oxide::deflate::compress_to_vec_zlib(&index, 6);
+        let data_off = HEADER_SIZE as u64 + compressed.len() as u64;
 
         let mut header = Vec::with_capacity(HEADER_SIZE);
         header.extend_from_slice(&MAGIC);
@@ -542,7 +566,7 @@ impl ImageBuilder {
         push_u32(&mut header, package_module_flat.len() as u32);
         push_u32(&mut header, module_packages.len() as u32);
         push_u32(&mut header, strings.len() as u32);
-        push_u32(&mut header, 0);
+        push_u32(&mut header, compressed.len() as u32);
         push_u64(&mut header, module_table_off);
         push_u64(&mut header, package_table_off);
         push_u64(&mut header, resource_table_off);
@@ -554,16 +578,7 @@ impl ImageBuilder {
 
         let mut out = BufWriter::with_capacity(1 << 20, File::create(path)?);
         out.write_all(&header)?;
-        write_modules(&mut out, &modules)?;
-        write_packages(&mut out, &packages)?;
-        write_resources(&mut out, &resources)?;
-        for value in &package_module_flat {
-            out.write_all(&value.to_le_bytes())?;
-        }
-        for value in &module_packages {
-            out.write_all(&value.to_le_bytes())?;
-        }
-        out.write_all(&strings)?;
+        out.write_all(&compressed)?;
         out.write_all(&data)?;
         out.flush()
     }
@@ -668,6 +683,18 @@ fn decode_string(strings: &[u8], offset: u32, length: u32) -> Result<String, Err
         .map_err(|_| Error::Corrupted("string pool is not UTF-8".to_string()))
 }
 
+/// A slice of the decompressed index at `offset` with `size` bytes.
+fn index_table(index: &[u8], offset: u64, size: usize) -> Result<&[u8], Error> {
+    let start = usize::try_from(offset)
+        .map_err(|_| Error::Corrupted("table offset does not fit in memory".to_string()))?;
+    let end = start
+        .checked_add(size)
+        .ok_or_else(|| Error::Corrupted("table size overflow".to_string()))?;
+    index
+        .get(start..end)
+        .ok_or_else(|| Error::Corrupted(format!("table {start}..{end} out of bounds")))
+}
+
 fn read_table(file: &File, offset: u64, size: usize, file_len: u64) -> Result<Vec<u8>, Error> {
     let end = offset
         .checked_add(size as u64)
@@ -712,5 +739,84 @@ fn read_at(file: &File, buffer: &mut [u8], offset: u64) -> io::Result<()> {
         let mut clone = file.try_clone()?;
         clone.seek(SeekFrom::Start(offset))?;
         clone.read_exact(buffer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ImageBuilder, NativeImage};
+    use std::path::PathBuf;
+
+    fn temp_path(name: &str) -> PathBuf {
+        let dir = std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join("target")
+            .join("test-tmp");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join(format!("ravac-platform-{}-{name}", std::process::id()));
+        path
+    }
+
+    #[test]
+    fn round_trips_tables_strings_and_resources() {
+        let path = temp_path("round-trip.bin");
+        let mut builder = ImageBuilder::new();
+        builder.add_module("java.base");
+        builder.add_resource(
+            "java.base",
+            "java/lang/Object.class",
+            b"object class bytes".to_vec(),
+        );
+        builder.add_resource("java.base", "module-info.class", b"module".to_vec());
+        builder.add_module("other.mod");
+        builder.add_resource("other.mod", "pkg/A.class", b"other class".to_vec());
+        builder.write(&path).expect("write image");
+
+        let image = NativeImage::open(&path).expect("open image");
+        assert_eq!(
+            image.modules().iter().map(String::as_str).collect::<Vec<_>>(),
+            ["java.base", "other.mod"]
+        );
+        assert_eq!(
+            image.find_resource("java.base/java/lang/Object.class"),
+            Some(b"object class bytes".to_vec())
+        );
+        assert_eq!(
+            image.find_resource("/other.mod/pkg/A.class"),
+            Some(b"other class".to_vec())
+        );
+        assert_eq!(image.find_resource("java.base/missing"), None);
+        assert_eq!(
+            image
+                .packages_of_module("java.base")
+                .expect("packages")
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["java.lang"]
+        );
+        assert_eq!(
+            image
+                .modules_of_package("java.lang")
+                .expect("modules")
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["java.base"]
+        );
+        assert_eq!(
+            image.resources().iter().map(String::as_str).collect::<Vec<_>>(),
+            [
+                "java.base/java/lang/Object.class",
+                "java.base/module-info.class",
+                "other.mod/pkg/A.class"
+            ]
+        );
+        assert!(image
+            .modules_of_package("no.such.package")
+            .expect("empty")
+            .is_empty());
+        assert!(image.find_resource("other.mod/path/that/does/not/exist").is_none());
+        let _ = std::fs::remove_file(&path);
     }
 }

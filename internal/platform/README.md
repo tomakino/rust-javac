@@ -3,7 +3,7 @@
 参考实现的平台数据，构建与分发直接使用，不依赖本机 JDK 的 `lib/modules`。
 
 - `modules`：Windows 版 Temurin 17.0.19+10 的 `lib/modules` 经 `cargo xtask gen-platform`
-  生成（RPI1 格式，已去除方法体与无引用常量池），约 17 MiB。
+  生成（RPI2 格式：去除方法体、无引用常量池与非 class 资源，表与字符串池压缩），约 13 MiB。
 - `ct.sym`：原样复制自同一 JDK 的 `lib/ct.sym`，约 8 MiB。
 
 用途：`crates/rust-javac/build.rs` 把这两个文件链接到 `target/<profile>/`；
