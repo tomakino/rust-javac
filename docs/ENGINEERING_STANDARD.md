@@ -56,7 +56,7 @@
 | # | 差距 | 状态 |
 |---|---|---|
 | 1 | 诊断同步阻塞（didChange 内 200–800ms） | 待修 |
-| 2 | 每次文本变化 `analysis.rebuild()` | 待修 |
+| 2 | 每次文本变化 `analysis.reset_frontend()` | 待修 |
 | 3 | `analysis_generation` 变化清空全部分析缓存 | 待修 |
 | 4 | 无请求取消（旧请求不丢弃） | 待修 |
 | 5 | 索引增量未按声明级 diff | 待修 |

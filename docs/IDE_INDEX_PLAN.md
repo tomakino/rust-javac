@@ -19,7 +19,7 @@
 
 1. references、rename、definition、documentSymbol、workspace symbol 全部从索引读取。
 2. 连续两次跨文件 references，第二次不编译项目。
-3. 索引不持有 MiniCompiler、AnalysisSession、AST、类型缓存。
+3. 索引不持有 AnalysisSession、AST、类型缓存。
 4. 修改一个文件后只重建该文件索引；声明/签名变化才重建依赖文件。
 5. 进程重启后可从磁盘索引恢复，不重新编译全项目。
 6. 大项目有明确阈值和 Partial 降级，不静默 OOM。
@@ -63,7 +63,7 @@
     pub struct FileAnalysis {
       file: FileId,
       text_hash: u64,
-      compiler: MiniCompiler,
+      compiler: AnalysisSession,
       diagnostics: Vec<Diagnostic>,
       declarations: Vec<SymbolKey>,
       occurrences: Vec<Occurrence>,
@@ -168,7 +168,7 @@ Partial 是显式状态，不冒充 Ready。
 
 1. 枚举 source set 下 .java；计算 canonical path + 内容 hash；overlay 优先。
 2. 按 128 文件一批。
-3. 每批构建临时 MiniCompiler（完整 classpath/sourcepath），编译该批文件。
+3. 每批构建临时 AnalysisSession（完整 classpath/sourcepath），前端分析该批文件。
 4. 只提取该批 CompilationUnit 的声明/occurrence；不索引被按需解析的依赖文件。
 5. 构建 SymbolKey；生成 SymbolRecord/Occurrence。
 6. supertypes 先存 pending key；全部批次后解析为 Project(SymbolId) 或 External。
@@ -226,7 +226,7 @@ IndexStore 使用：
 
 ### 构建线程
 
-IndexBuilder 放到工作线程；Workspace 不共享 MiniCompiler。LSP 请求在 Building 时可回退 FileAnalysis。
+IndexBuilder 放到工作线程；Workspace 不共享 AnalysisSession。LSP 请求在 Building 时可回退 FileAnalysis。
 
 ## 8. 磁盘索引
 
