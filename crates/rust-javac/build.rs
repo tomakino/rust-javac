@@ -1,60 +1,29 @@
-//! Prepare the platform data next to the development binary.
+//! Locate the platform data that is compiled into the binary.
 //!
 //! The repository bundles one platform image in
 //! `internal/platform/<version>/{modules, ct.sym}`, generated from the
-//! reference JDK (see `internal/platform/README.md`).  A development build
-//! lives in `target/<profile>/ravac.exe` and reads the data next to itself,
-//! so this script links the bundled files into `target/<profile>/` (flat
-//! layout).  When the bundle is absent it falls back to `$JAVA_HOME/lib`, so
-//! a checkout without the data still builds on a machine with a JDK 17.
-//!
-//! The resulting binary behaves exactly like the packaged distribution and
-//! never consults JAVA_HOME or PATH at run time.
+//! reference JDK (see `internal/platform/README.md`).  `main.rs` embeds both
+//! files with `include_bytes!`; this script only reports them as build
+//! dependencies so a regenerated image triggers a rebuild.
 
 use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Version of the bundled platform data (the reference compiler version).
 const PLATFORM_VERSION: &str = "17.0.19+10";
 
 fn main() {
-    println!("cargo:rerun-if-env-changed=JAVA_HOME");
     println!("cargo:rerun-if-env-changed=BUILD_DATE");
     // -version provenance: honour an explicit BUILD_DATE (reproducible builds),
     // otherwise use the build day in UTC.
     let build_date = env::var("BUILD_DATE").unwrap_or_else(|_| today_utc());
     println!("cargo:rustc-env=BUILD_DATE={build_date}");
 
-    let Ok(out_dir) = env::var("OUT_DIR") else {
-        return;
-    };
-    let out = PathBuf::from(out_dir);
-    // OUT_DIR = target/<profile>/build/<crate>/<hash>/out
-    let Some(profile_dir) = out.ancestors().nth(4) else {
-        return;
-    };
-
-    let bundled = bundled_platform();
-    if let Some(dir) = &bundled {
+    // The platform data is compiled into the binary (`include_bytes!` in
+    // main.rs), so the build script only has to watch it for changes.
+    if let Some(dir) = bundled_platform() {
         println!("cargo:rerun-if-changed={}", dir.join("modules").display());
         println!("cargo:rerun-if-changed={}", dir.join("ct.sym").display());
-    }
-    let source_dir = bundled.or_else(|| {
-        env::var_os("JAVA_HOME")
-            .map(PathBuf::from)
-            .map(|home| home.join("lib"))
-    });
-    let Some(source_dir) = source_dir else {
-        println!(
-            "cargo:warning=no bundled platform data and JAVA_HOME is not set; \
-             target/<profile>/ is not prepared, so ravac.exe will not find modules"
-        );
-        return;
-    };
-
-    for name in ["modules", "ct.sym"] {
-        link_platform_file(&source_dir, profile_dir, name);
     }
 }
 
@@ -71,26 +40,6 @@ fn bundled_platform() -> Option<PathBuf> {
         Some(dir)
     } else {
         None
-    }
-}
-
-/// Hard-links (or copies) one platform file into the profile directory.
-fn link_platform_file(source_dir: &Path, profile_dir: &Path, name: &str) {
-    let source = source_dir.join(name);
-    if !source.is_file() {
-        return;
-    }
-    let target = profile_dir.join(name);
-    let same_size = match (fs::metadata(&target), fs::metadata(&source)) {
-        (Ok(target_meta), Ok(source_meta)) => target_meta.len() == source_meta.len(),
-        _ => false,
-    };
-    if same_size {
-        return;
-    }
-    let _ = fs::remove_file(&target);
-    if fs::hard_link(&source, &target).is_err() {
-        let _ = fs::copy(&source, &target);
     }
 }
 

@@ -339,6 +339,22 @@ impl CtSym {
     /// archive.
     pub fn open(path: &Path) -> Result<CtSym, Error> {
         let archive = ArchiveBackend::open(path)?;
+        Self::from_archive(path.to_path_buf(), archive)
+    }
+
+    /// Opens a `ct.sym` embedded in the binary instead of a file.
+    ///
+    /// The embedded form is the compact `RCS1` container (`cargo xtask
+    /// gen-ct-sym`), never a zip.
+    pub fn from_bytes(data: &'static [u8]) -> Result<CtSym, Error> {
+        if data.len() < 4 || data[..4] != rcs::MAGIC {
+            return Err(Error::NotAZip("<embedded ct.sym>".to_string()));
+        }
+        let archive = ArchiveBackend::Rcs(RcsArchive::from_bytes(data).map_err(Error::from_rcs)?);
+        Self::from_archive(PathBuf::from("<embedded ct.sym>"), archive)
+    }
+
+    fn from_archive(path: PathBuf, archive: ArchiveBackend) -> Result<CtSym, Error> {
         let entries = archive.entries();
 
         // First pass: section names in archive order. Root-level files are visited too.
@@ -415,7 +431,7 @@ impl CtSym {
         }
 
         Ok(CtSym {
-            path: path.to_path_buf(),
+            path,
             archive,
             sections,
             section_index,

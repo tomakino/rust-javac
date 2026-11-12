@@ -976,7 +976,11 @@ impl<'a> LocationCtx<'a> {
         let modules = FsPath::from_path_buf(crate::file::platform_paths::modules_file(
             &self.java_home.as_path(),
         ));
-        if Files::is_regular_file(&modules) {
+        // A single-binary build has no file, but the location must still be
+        // reported so the class finder asks for the system modules.
+        if Files::is_regular_file(&modules)
+            || crate::platform::embedded::embedded_modules().is_some()
+        {
             return vec![modules];
         }
         let exploded = FsPath::from_path_buf(self.java_home.as_path().join("modules"));
@@ -1307,10 +1311,12 @@ impl<'a> LocationCtx<'a> {
         let lib_modules = FsPath::from_path_buf(crate::file::platform_paths::modules_file(
             &system_java_home.as_path(),
         ));
-        let modules_path: StdOption<FsPath> = if Files::is_regular_file(&lib_modules) {
+        let modules_path: StdOption<FsPath> = if Files::is_regular_file(&lib_modules)
+            || crate::platform::embedded::embedded_modules().is_some()
+        {
             // The jrt: FileSystem stand-in: the platform image over lib/modules; module
             // locations carry the jrt-style textual path /modules/<module> (see the file header).
-            let image = PlatformImage::open(&lib_modules.as_path())
+            let image = crate::platform::embedded::open_platform_image(&lib_modules.as_path())
                 .map_err(|error| Error::io(JavaString::from(format!("{error:?}").as_str())))?;
             for module in image.modules() {
                 let name = format!("SYSTEM_MODULES[{module}]");

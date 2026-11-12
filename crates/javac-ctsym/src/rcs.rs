@@ -172,10 +172,45 @@ impl RcsEntry {
     }
 }
 
+/// Where the archive bytes come from: a file on disk, or a slice embedded in
+/// the binary so the packaged executable needs no external `ct.sym`.
+#[derive(Debug)]
+pub enum Source {
+    File(File),
+    Bytes(&'static [u8]),
+}
+
+impl Source {
+    fn len(&self) -> u64 {
+        match self {
+            Source::File(file) => file.metadata().map(|meta| meta.len()).unwrap_or(0),
+            Source::Bytes(bytes) => bytes.len() as u64,
+        }
+    }
+
+    fn read_at(&self, buffer: &mut [u8], offset: u64) -> io::Result<()> {
+        match self {
+            Source::File(file) => read_at(file, buffer, offset),
+            Source::Bytes(bytes) => {
+                let start = usize::try_from(offset)
+                    .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "offset too large"))?;
+                let end = start.checked_add(buffer.len()).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "offset overflow")
+                })?;
+                let slice = bytes
+                    .get(start..end)
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "short RCS1 read"))?;
+                buffer.copy_from_slice(slice);
+                Ok(())
+            }
+        }
+    }
+}
+
 /// A read-only view of an `RCS1` ct.sym archive.
 #[derive(Debug)]
 pub struct RcsArchive {
-    file: File,
+    source: Source,
     data_offset: u64,
     entries: Vec<RcsEntry>,
     entry_index: HashMap<String, usize>,
@@ -199,13 +234,22 @@ impl RcsArchive {
     ///   inconsistent with the index or the file size.
     pub fn open(path: &Path) -> Result<RcsArchive, RcsError> {
         let name = path.display().to_string();
-        let file = File::open(path)?;
-        let file_len = file.metadata()?.len();
+        let source = Source::File(File::open(path)?);
+        Self::from_source(source, name)
+    }
+
+    /// Opens an archive embedded in the binary instead of a `ct.sym` file.
+    pub fn from_bytes(data: &'static [u8]) -> Result<RcsArchive, RcsError> {
+        Self::from_source(Source::Bytes(data), "<embedded ct.sym>".to_string())
+    }
+
+    fn from_source(source: Source, name: String) -> Result<RcsArchive, RcsError> {
+        let file_len = source.len();
         if file_len < HEADER_SIZE as u64 {
             return Err(RcsError::NotAnArchive(name));
         }
         let mut header = [0u8; HEADER_SIZE];
-        read_at(&file, &mut header, 0)?;
+        source.read_at(&mut header, 0)?;
         if header[..4] != MAGIC {
             return Err(RcsError::NotAnArchive(name));
         }
@@ -221,7 +265,7 @@ impl RcsArchive {
         let data_offset = u64_at(&header, 32);
 
         let compressed = read_table(
-            &file,
+            &source,
             HEADER_SIZE as u64,
             index_compressed_size,
             file_len,
@@ -341,7 +385,7 @@ impl RcsArchive {
         }
 
         Ok(RcsArchive {
-            file,
+            source,
             data_offset,
             entries,
             entry_index,
@@ -387,7 +431,9 @@ impl RcsArchive {
         }
         let record = self.blocks.get(index as usize)?;
         let mut compressed = vec![0u8; record.compressed_len as usize];
-        read_at(&self.file, &mut compressed, self.data_offset + record.offset).ok()?;
+        self.source
+            .read_at(&mut compressed, self.data_offset + record.offset)
+            .ok()?;
         let mut output = vec![0u8; record.uncompressed_len as usize];
         let mut inflate = zlib_rs::Inflate::new(true, 15);
         let status = inflate
@@ -631,7 +677,7 @@ fn u64_at(bytes: &[u8], offset: usize) -> u64 {
 }
 
 /// Reads `size` bytes at `offset`, rejecting ranges that end past `file_len`.
-fn read_table(file: &File, offset: u64, size: usize, file_len: u64) -> Result<Vec<u8>, RcsError> {
+fn read_table(source: &Source, offset: u64, size: usize, file_len: u64) -> Result<Vec<u8>, RcsError> {
     let end = offset
         .checked_add(size as u64)
         .ok_or_else(|| RcsError::Corrupted("table offset overflow".to_string()))?;
@@ -641,7 +687,7 @@ fn read_table(file: &File, offset: u64, size: usize, file_len: u64) -> Result<Ve
         )));
     }
     let mut buffer = vec![0u8; size];
-    read_at(file, &mut buffer, offset)?;
+    source.read_at(&mut buffer, offset)?;
     Ok(buffer)
 }
 

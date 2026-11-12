@@ -16,10 +16,45 @@ use crate::image_header::{HEADER_SIZE, ImageHeader, MAGIC, MAJOR_VERSION, MINOR_
 use crate::image_location::{self, ATTRIBUTE_MODULE, Attributes, ImageLocation};
 use crate::image_strings;
 
+/// Where the image bytes come from: a file on disk, or a slice embedded in the
+/// binary so the packaged executable needs no external `modules` file.
+#[derive(Debug)]
+pub enum Source {
+    File(File),
+    Bytes(&'static [u8]),
+}
+
+impl Source {
+    fn len(&self) -> u64 {
+        match self {
+            Source::File(file) => file.metadata().map(|meta| meta.len()).unwrap_or(0),
+            Source::Bytes(bytes) => bytes.len() as u64,
+        }
+    }
+
+    fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<()> {
+        match self {
+            Source::File(file) => read_at(file, buf, offset),
+            Source::Bytes(bytes) => {
+                let start = usize::try_from(offset)
+                    .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "offset too large"))?;
+                let end = start
+                    .checked_add(buf.len())
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "offset overflow"))?;
+                let slice = bytes.get(start..end).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::UnexpectedEof, "short jimage read")
+                })?;
+                buf.copy_from_slice(slice);
+                Ok(())
+            }
+        }
+    }
+}
+
 /// Java: public class BasicImageReader
 #[derive(Debug)]
 pub struct ImageIndex {
-    file: File,
+    source: Source,
     header: ImageHeader,
     /// Java: private final long indexSize; — resource content starts after the index.
     index_size: u64,
@@ -37,14 +72,26 @@ impl ImageIndex {
     /// Java: BasicImageReader.open(Path) -> new BasicImageReader(path, ByteOrder.nativeOrder())
     pub fn open(path: &Path) -> Result<ImageIndex, Error> {
         let name = path.display().to_string();
-        let file = File::open(path).map_err(Error::Io)?;
-        let file_len = file.metadata().map_err(Error::Io)?.len();
+        let source = Source::File(File::open(path).map_err(Error::Io)?);
+        Self::from_source(source, name)
+    }
+
+    /// Builds the index from image bytes embedded in the binary.
+    ///
+    /// Used by the single-binary build, where `modules` lives in the executable
+    /// instead of next to it.
+    pub fn from_bytes(data: &'static [u8]) -> Result<ImageIndex, Error> {
+        Self::from_source(Source::Bytes(data), "<embedded modules>".to_string())
+    }
+
+    fn from_source(source: Source, name: String) -> Result<ImageIndex, Error> {
+        let file_len = source.len();
 
         if file_len < HEADER_SIZE as u64 {
             return Err(Error::NotAnImage(name));
         }
         let mut header_bytes = [0u8; HEADER_SIZE];
-        read_at(&file, &mut header_bytes, 0).map_err(Error::Io)?;
+        source.read_at(&mut header_bytes, 0).map_err(Error::Io)?;
         let header = ImageHeader::read_from(&header_bytes)?;
 
         // Java: private ImageHeader readHeader(...) throws IOException when the magic is wrong.
@@ -78,7 +125,7 @@ impl ImageIndex {
             .map_err(|_| Error::Corrupted("negative image strings size".to_string()))?;
 
         let mut index_bytes = vec![0u8; index_size_usize];
-        read_at(&file, &mut index_bytes, 0).map_err(Error::Io)?;
+        source.read_at(&mut index_bytes, 0).map_err(Error::Io)?;
 
         let redirect_offset = usize::try_from(header.get_redirect_offset())
             .map_err(|_| Error::Corrupted("bad redirect offset".to_string()))?;
@@ -97,7 +144,7 @@ impl ImageIndex {
         let strings = index_bytes[strings_offset..strings_offset + strings_size].to_vec();
 
         Ok(ImageIndex {
-            file,
+            source,
             header,
             index_size,
             redirect,
@@ -350,7 +397,7 @@ impl ImageIndex {
         }
         if compressed_size == 0 {
             let mut buffer = vec![0u8; uncompressed_size as usize];
-            read_at(&self.file, &mut buffer, offset).ok()?;
+            self.source.read_at(&mut buffer, offset).ok()?;
             Some(buffer)
         } else {
             // Java decompresses here (Decompressor / ResourceDecompressorRepository). The

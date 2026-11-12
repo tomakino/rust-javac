@@ -184,8 +184,10 @@ impl JRTIndex {
     /// the jrt: FileSystem is simulated by javac-jimage over the injected JDK
     /// home (see the file header).
     pub fn open(java_home: &FsPath) -> Result<JRTIndex, javac_platform::Error> {
+        // Prefer a real modules file (RAVAC_PLATFORM_DIR, or the development
+        // layout); a single-binary build falls back to the embedded image.
         let modules_file = crate::file::platform_paths::modules_file(&java_home.as_path());
-        let image = PlatformImage::open(&modules_file)?;
+        let image = crate::platform::embedded::open_platform_image(&modules_file)?;
         let modules = image.modules().to_vec();
         let mut module_resources: HashMap<String, Vec<String>> = HashMap::new();
         for resource in image.resources() {

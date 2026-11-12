@@ -1084,7 +1084,9 @@ fn compute_this_system_modules(java_home: &FsPath) -> FsPath {
     let modules = FsPath::from_path_buf(crate::file::platform_paths::modules_file(
         &java_home.as_path(),
     ));
-    if javac_fs::Files::is_regular_file(&modules) {
+    if javac_fs::Files::is_regular_file(&modules)
+        || crate::platform::embedded::embedded_modules().is_some()
+    {
         return modules;
     }
     FsPath::from_path_buf(java_home.as_path().join("modules"))

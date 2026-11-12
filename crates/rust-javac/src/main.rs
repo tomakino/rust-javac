@@ -30,6 +30,16 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 const OWN_NAME: &str = "ravac";
 
+/// The platform data compiled into the binary.
+///
+/// A packaged `ravac.exe` is a single file: no `modules`/`ct.sym` next to it is
+/// needed, and the compiler never looks at the file system for them. The build
+/// script watches both inputs.
+static EMBEDDED_MODULES: &[u8] =
+    include_bytes!("../../../internal/platform/17.0.19+10/modules");
+static EMBEDDED_CT_SYM: &[u8] =
+    include_bytes!("../../../internal/platform/17.0.19+10/ct.sym");
+
 const OK: i32 = 0;
 const ERROR: i32 = 1;
 const CMDERR: i32 = 2;
@@ -37,6 +47,8 @@ const SYSERR: i32 = 3;
 const ABNORMAL: i32 = 4;
 
 fn main() {
+    // The packaged binary carries its own platform data (see EMBEDDED_MODULES).
+    javac_core::platform::embedded::set_embedded_platform(EMBEDDED_MODULES, EMBEDDED_CT_SYM);
     // javac's InapplicableMethodException / InferenceException use Rust panics
     // as their control-flow transport (the payloads are caught again by
     // catch_inapplicable_method_exception / catch_inference_exception). The

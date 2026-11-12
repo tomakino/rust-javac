@@ -106,6 +106,21 @@ impl PlatformImage {
         }
     }
 
+    /// Opens a platform image embedded in the binary, detecting the container
+    /// from its magic.
+    pub fn from_bytes(data: &'static [u8]) -> Result<PlatformImage, Error> {
+        if data.len() < 4 {
+            return Err(Error::NotAnImage("<embedded modules>".to_string()));
+        }
+        if data[..4] == NATIVE_MAGIC {
+            Ok(PlatformImage::Native(NativeImage::from_bytes(data)?))
+        } else if data[..4] == JIMAGE_MAGIC_LE {
+            Ok(PlatformImage::Jimage(javac_jimage::JImage::from_bytes(data)?))
+        } else {
+            Err(Error::NotAnImage("<embedded modules>".to_string()))
+        }
+    }
+
     /// The module names in image order (Java: `ImageReader.getModuleNames()`).
     pub fn modules(&self) -> &[String] {
         match self {

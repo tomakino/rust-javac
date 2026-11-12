@@ -112,7 +112,16 @@ impl JImage {
     /// Java: ImageReader.open(Path) (BasicImageReader.open plus getModuleNames and the
     /// /modules subtree walk that jimage list also performs).
     pub fn open(path: &Path) -> Result<JImage, Error> {
-        let index = ImageIndex::open(path)?;
+        Self::from_index(ImageIndex::open(path)?)
+    }
+
+    /// Opens the image bytes embedded in the binary instead of a `modules`
+    /// file next to the executable.
+    pub fn from_bytes(data: &'static [u8]) -> Result<JImage, Error> {
+        Self::from_index(ImageIndex::from_bytes(data)?)
+    }
+
+    fn from_index(index: ImageIndex) -> Result<JImage, Error> {
         let modules = index.modules()?;
         Ok(JImage {
             index,

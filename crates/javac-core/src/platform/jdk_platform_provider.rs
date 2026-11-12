@@ -161,11 +161,11 @@ impl JDKPlatformProvider {
     fn compute_supported_java_platform_versions(java_home: &FsPath) -> Vec<JavaString> {
         let mut versions: Vec<JavaString> = Vec::new();
         let ct_sym = JDKPlatformProvider::find_ct_sym(java_home);
-        // Java: if (Files.exists(ctSymFile)) {... } — a missing ct.sym leaves the set empty.
-        if Files::exists(&ct_sym) {
+        // The platform data is compiled into the binary; there is no file.
+        if let Some(data) = crate::platform::embedded::embedded_ct_sym() {
             // Java: FileSystems.newFileSystem(...) throws IOException/ProviderNotFoundException,
             // both caught -> empty set. javac-ctsym reports the same failures as Err.
-            if let Ok(archive) = CtSym::open(&ct_sym.as_path()) {
+            if let Ok(archive) = CtSym::from_bytes(data) {
                 for section in archive.sections() {
                     let name = section.name();
                     if name.contains('-') {
@@ -338,10 +338,13 @@ impl PlatformDescription for PlatformDescriptionImpl {
         let ct_sym_path = JDKPlatformProvider::find_ct_sym(&java_home);
         // Java: if (Files.exists(file)) { ... } else throw new
         // IllegalStateException("Cannot find ct.sym!");
-        if !Files::exists(&ct_sym_path) {
-            panic!("IllegalStateException: Cannot find ct.sym!");
-        }
-        let archive = Rc::new(CtSym::open(&ct_sym_path.as_path()).unwrap_or_else(|error| {
+        // A single-binary build carries the archive itself and needs no file.
+        // The platform data is compiled into the binary; there is no file.
+        let opened = CtSym::from_bytes(
+            crate::platform::embedded::embedded_ct_sym()
+                .expect("platform data is compiled into the binary"),
+        );
+        let archive = Rc::new(opened.unwrap_or_else(|error| {
             panic!("IllegalStateException: cannot open ct.sym: {error:?}")
         }));
         // Java: Context context = new Context(); context.put(Log.errKey, pw);
