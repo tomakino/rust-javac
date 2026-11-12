@@ -14,7 +14,7 @@
 cargo build -p rust-javac --release
 ```
 
-构建需要 JDK 17，并把 `JAVA_HOME` 指向它：构建脚本会将 `lib/modules` 和 `lib/ct.sym` 放到可执行文件旁。运行时 `ravac.exe` 只读同目录（`bin/` 布局则读上一级）的 `modules` 与 `ct.sym`，不查 `JAVA_HOME`、`PATH`，也不扫描文件系统。
+构建需要 JDK 17，并把 `JAVA_HOME` 指向它：构建脚本会将 `lib/modules` 和 `lib/ct.sym` 放到可执行文件旁。分发包里的 `modules` 是去掉方法体的精简平台镜像（约 36 MiB，JDK 原文件约 123 MiB），由 `cargo xtask gen-platform` 生成。运行时 `ravac.exe` 只读同目录（`bin/` 布局则读上一级）的 `modules` 与 `ct.sym`，不查 `JAVA_HOME`、`PATH`，也不扫描文件系统。
 
 ```powershell
 target\release\ravac.exe -d out Hello.java

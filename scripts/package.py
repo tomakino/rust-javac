@@ -92,6 +92,23 @@ def find_java_home(explicit: "str | None") -> "Path | None":
     return None
 
 
+def platform_image(java_home: "Path") -> "Path":
+    """The stripped RPI1 platform image, regenerated when the JDK image is newer."""
+    source = java_home / "lib" / "modules"
+    out = ROOT / "target" / "platform" / "modules"
+    if out.is_file() and out.stat().st_mtime >= source.stat().st_mtime:
+        return out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        "cargo", "run", "-p", "xtask", "--", "gen-platform",
+        "--modules", str(source), "--out", str(out),
+    ]
+    print("platform image: generating {}".format(out))
+    if subprocess.run(command, cwd=str(ROOT)).returncode != 0:
+        raise SystemExit("gen-platform failed")
+    return out
+
+
 def selected_platforms(value: str) -> list:
     if value == "all":
         return list(ALL)
@@ -187,7 +204,7 @@ def main() -> int:
     if java_home is None or not (java_home / "lib" / "modules").is_file():
         return die("modules not found; set JAVA_HOME or --java-home")
     data = [
-        ("modules", java_home / "lib" / "modules"),
+        ("modules", platform_image(java_home)),
         ("ct.sym", java_home / "lib" / "ct.sym"),
     ]
     profile = "release" if args.release else "debug"

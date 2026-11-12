@@ -10,7 +10,7 @@ javac-charset.workspace = true
 javac-floating.workspace = true
 javac-ctsym = { path = "../javac-ctsym" }
 javac-fs.workspace = true
-javac-jimage.workspace = true
+javac-platform.workspace = true
 javac-source.workspace = true
 javac-tools.workspace = true
 javac-zip.workspace = true

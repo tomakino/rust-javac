@@ -9,6 +9,7 @@ members = [
     "crates/javac-strings",
     "crates/javac-unicode",
     "crates/javac-jimage",
+    "crates/javac-platform",
     "crates/javac-jmod",
     "crates/javac-zip",
     "crates/javac-ctsym",
@@ -31,6 +32,7 @@ javac-strings = { path = "crates/javac-strings" }
 javac-tools = { path = "crates/javac-tools" }
 javac-core = { path = "crates/javac-core" }
 javac-jimage = { path = "crates/javac-jimage" }
+javac-platform = { path = "crates/javac-platform" }
 javac-jmod = { path = "crates/javac-jmod" }
 javac-zip = { path = "crates/javac-zip" }
 javac-classpath = { path = "crates/javac-classpath" }

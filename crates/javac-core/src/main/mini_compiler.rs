@@ -1025,7 +1025,7 @@ impl MiniCompiler {
         // the java.base packages are entered and mapped (Modules.java:440-500).
         let modules_file =
             crate::file::platform_paths::modules_file(&self.java_home.as_path());
-        if let Ok(image) = javac_jimage::JImage::open(&modules_file) {
+        if let Ok(image) = javac_platform::PlatformImage::open(&modules_file) {
             let packages_result = image.packages_of_module("java.base");
             if let Ok(packages) = packages_result {
                 for package in packages {

@@ -11,10 +11,11 @@
 //!
 //! (S3a):
 //! * the jrt: FileSystem does not exist without a JVM, so the index is built from the
-//!   registered javac-jimage adapter over `<java.home>/lib/modules`: the module list
-//!   (`JImage::modules`) and the sorted resource names `<module>/<path>` stand in for
-//!   a walk of `/modules` and `/packages`.  A Java `Path` value in an Entry is represented as the
-//!   jrt-style textual path `/modules/<module>/<relative path>` (javac-fs Path).
+//!   `javac-platform` adapter over `<java.home>/lib/modules`: the module list
+//!   (`PlatformImage::modules`) and the sorted resource names `<module>/<path>` stand in
+//!   for a walk of `/modules` and `/packages`.  A Java `Path` value in an Entry is
+//!   represented as the jrt-style textual path `/modules/<module>/<relative path>`
+//!   (javac-fs Path).
 //! * the JDK home is injected (java.home is a JVM system property); the P6 launcher passes it,
 //!   like platform.JDKPlatformProvider (registered deviation).
 //! * java.lang.ref.SoftReference<Entry> -> plain cached entries (memory-management detail with
@@ -39,7 +40,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use javac_fs::Path as FsPath;
-use javac_jimage::JImage;
+use javac_platform::PlatformImage;
 use javac_strings::JavaString;
 
 use crate::file::path_file_object::PathFileObject;
@@ -56,8 +57,8 @@ thread_local! {
 
 /// A package-oriented index into the jrt: filesystem.
 pub struct JRTIndex {
-    /// Java: private final FileSystem jrtfs; — replaced by the javac-jimage adapter.
-    image: JImage,
+    /// Java: private final FileSystem jrtfs; — replaced by the platform image.
+    image: PlatformImage,
 
     /// The module names in image order (Java: the /modules child order).
     modules: Vec<String>,
@@ -182,9 +183,9 @@ impl JRTIndex {
     ///
     /// the jrt: FileSystem is simulated by javac-jimage over the injected JDK
     /// home (see the file header).
-    pub fn open(java_home: &FsPath) -> Result<JRTIndex, javac_jimage::Error> {
+    pub fn open(java_home: &FsPath) -> Result<JRTIndex, javac_platform::Error> {
         let modules_file = crate::file::platform_paths::modules_file(&java_home.as_path());
-        let image = JImage::open(&modules_file)?;
+        let image = PlatformImage::open(&modules_file)?;
         let modules = image.modules().to_vec();
         let mut module_resources: HashMap<String, Vec<String>> = HashMap::new();
         for resource in image.resources() {
@@ -271,7 +272,7 @@ impl JRTIndex {
     }
 
     /// Java: public CtSym getCtSym(CharSequence packageName) throws IOException.
-    pub fn get_ct_sym(&self, package_name: &JavaString) -> Result<CtSym, javac_jimage::Error> {
+    pub fn get_ct_sym(&self, package_name: &JavaString) -> Result<CtSym, javac_platform::Error> {
         Ok(self
             .get_entry(&RelativeDirectory::for_package(package_name))?
             .ct_sym
@@ -282,7 +283,7 @@ impl JRTIndex {
     pub(crate) fn get_entry(
         &self,
         rd: &RelativeDirectory,
-    ) -> Result<Rc<Entry>, javac_jimage::Error> {
+    ) -> Result<Rc<Entry>, javac_platform::Error> {
         if let Some(entry) = self.entries.borrow().get(rd) {
             return Ok(entry.clone());
         }

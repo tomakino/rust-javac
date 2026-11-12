@@ -72,7 +72,7 @@ use std::option::Option as StdOption;
 use std::rc::Rc;
 
 use javac_fs::{Files, Path as FsPath};
-use javac_jimage::JImage;
+use javac_platform::PlatformImage;
 use javac_strings::JavaString;
 use javac_tools::error::Error;
 use javac_tools::tools::java_file_manager::Location;
@@ -1308,9 +1308,9 @@ impl<'a> LocationCtx<'a> {
             &system_java_home.as_path(),
         ));
         let modules_path: StdOption<FsPath> = if Files::is_regular_file(&lib_modules) {
-            // The jrt: FileSystem stand-in: javac-jimage over lib/modules; module locations
-            // carry the jrt-style textual path /modules/<module> (see the file header).
-            let image = JImage::open(&lib_modules.as_path())
+            // The jrt: FileSystem stand-in: the platform image over lib/modules; module
+            // locations carry the jrt-style textual path /modules/<module> (see the file header).
+            let image = PlatformImage::open(&lib_modules.as_path())
                 .map_err(|error| Error::io(JavaString::from(format!("{error:?}").as_str())))?;
             for module in image.modules() {
                 let name = format!("SYSTEM_MODULES[{module}]");

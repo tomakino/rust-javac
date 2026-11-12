@@ -7,6 +7,8 @@
 //!                                 verify them against javac source call sites
 //!   cargo xtask gen-manifest    - generate docs/PORTING_MANIFEST.md (Java file
 //!                                 to Rust file mapping and porting status)
+//!   cargo xtask gen-platform    - convert lib/modules into the stripped RPI1
+//!                                 platform image (no method bodies)
 //!   cargo xtask gen-unicode     - regenerate the Unicode data tables from the
 //!                                 running JDK 17 (requires a JDK on PATH)
 //!   cargo xtask audit-porting   - method-level porting coverage audit
@@ -16,6 +18,7 @@
 //! the repository; see docs/PLAN.md).
 
 mod audit_porting;
+mod gen_platform;
 mod gen_resources;
 mod properties;
 
@@ -31,10 +34,13 @@ fn main() {
     let result = match cmd {
         "gen-resources" => gen_resources::generate_and_verify(),
         "gen-manifest" => gen_manifest(),
+        "gen-platform" => gen_platform::run(&args[1..]),
         "gen-unicode" => gen_unicode(),
         "audit-porting" => audit_porting::run(&args[1..]),
         _ => {
-            eprintln!("usage: cargo xtask <gen-resources|gen-manifest|gen-unicode|audit-porting>");
+            eprintln!(
+                "usage: cargo xtask <gen-resources|gen-manifest|gen-platform|gen-unicode|audit-porting>"
+            );
             std::process::exit(2);
         }
     };

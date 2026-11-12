@@ -1,7 +1,8 @@
 //! Minimal platform data layout.
 //!
-//! The compiler needs exactly two files from the platform: modules (the
-//! jimage with the system classes) and, only for --release, ct.sym.  Both
+//! The compiler needs exactly two files from the platform: modules (the system
+//! classes, either the JDK's jimage or the stripped RPI1 image produced by
+//! `cargo xtask gen-platform`) and, only for --release, ct.sym.  Both
 //! live directly next to the executable (flat layout).  The compiler never
 //! scans the machine for a JDK: no JAVA_HOME, no PATH, no registry, no
 //! well-known install directories.  RAVAC_PLATFORM_DIR may point at another
