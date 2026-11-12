@@ -572,6 +572,22 @@ impl DocTreeMaker {
         })
     }
 
+    /// Structured `{@snippet ...}` node: attributes/body are already split by
+    /// the doc parser.
+    pub fn new_snippet_tree(
+        &self,
+        lang: Option<JavaString>,
+        body: JavaString,
+        file: Option<JavaString>,
+    ) -> Rc<DCTree> {
+        self.node(DCKind::Snippet {
+            lang,
+            body,
+            file,
+            end_pos: std::cell::Cell::new(NOPOS),
+        })
+    }
+
     /// Java: public DCUnknownBlockTag newUnknownBlockTagTree(Name name,
     /// List<? extends DocTree> content)
     pub fn new_unknown_block_tag_tree(&self, name: Name, content: &[Rc<DCTree>]) -> Rc<DCTree> {

@@ -53,6 +53,42 @@ fn definition_resolves_a_same_package_type() {
 }
 
 #[test]
+fn import_definition_maps_dots_and_semicolon_to_the_simple_name() {
+    let root = fixture("import-click");
+    std::fs::create_dir_all(root.join("com/example/base")).unwrap();
+    std::fs::create_dir_all(root.join("com/example/app")).unwrap();
+    let model = root.join("com/example/base/Model.java");
+    std::fs::write(
+        &model,
+        "package com.example.base;\npublic class Model {}\n",
+    )
+    .unwrap();
+    let app = root.join("com/example/app/App.java");
+    let source = "package com.example.app;\nimport com.example.base.Model;\npublic class App { Model model; }\n";
+    std::fs::write(&app, source).unwrap();
+
+    let mut workspace = Workspace::new(config(&root));
+    workspace.wait_for_index();
+    let line_start = source.find("import ").unwrap();
+    let dot = line_start + "import com.example.base".len();
+    let semicolon = line_start + source[line_start..].find(';').unwrap();
+    let column = |offset: usize| {
+        source[line_start..offset]
+            .chars()
+            .map(|ch| ch.len_utf16() as u32)
+            .sum::<u32>()
+    };
+    for column in [column(dot), column(semicolon)] {
+        let definition = workspace.definition(&app, Position::new(1, column));
+        assert!(
+            definition
+                .as_ref()
+                .is_some_and(|location| location.file.ends_with("Model.java")),
+            "column {column}: {definition:?}"
+        );
+    }
+}
+#[test]
 fn definition_resolves_a_same_package_type_with_a_jdk_import() {
     let root = fixture("packaged");
     std::fs::create_dir_all(root.join("com/example")).unwrap();

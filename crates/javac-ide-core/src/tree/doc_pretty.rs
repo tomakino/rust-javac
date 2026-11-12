@@ -179,6 +179,7 @@ impl DocPretty {
             DCKind::SerialData { .. } => self.visit_serial_data(tree),
             DCKind::SerialField { .. } => self.visit_serial_field(tree),
             DCKind::Since { .. } => self.visit_since(tree),
+            DCKind::Snippet { .. } => self.visit_snippet(tree),
             DCKind::StartElement { .. } => self.visit_start_element(tree),
             DCKind::Summary { .. } => self.visit_summary(tree),
             DCKind::SystemProperty { .. } => self.visit_system_property(tree),
@@ -499,6 +500,31 @@ impl DocPretty {
         self.print_tag_name(tree);
         self.print_str(" ");
         self.print_list(&body);
+    }
+
+    /// Java: structured `{@snippet ...}` payload; renderer consumes fields.
+    fn visit_snippet(&mut self, tree: &DCTree) {
+        let DCKind::Snippet {
+            lang, body, file, ..
+        } = &tree.kind
+        else {
+            crate::util::assert::error_msg("visitSnippet on a non-Snippet node")
+        };
+        self.print_str("{@snippet");
+        if let Some(lang) = lang {
+            self.print_str(" lang=");
+            self.print_java_string(lang);
+        }
+        if let Some(file) = file {
+            self.print_str(" file=");
+            self.print_java_string(file);
+        }
+        let body = body.to_string_lossy();
+        if !body.is_empty() {
+            self.print_str(" : ");
+            self.print_str(&body);
+        }
+        self.print_str("}");
     }
 
     /// Java: public Void visitStartElement(StartElementTree node, Void p)

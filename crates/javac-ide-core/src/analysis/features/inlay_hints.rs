@@ -260,6 +260,7 @@ impl FileAnalysis {
                 && let Some(owner_flat_name) = owner_flat_name.as_deref()
                 && is_jdk_owner(owner_flat_name)
                 && let Some(names) = jdk_sources::jdk_method_parameter_names(
+                    &self.compiler.parser_factory,
                     owner_flat_name,
                     &method_name,
                     args.size() as usize,

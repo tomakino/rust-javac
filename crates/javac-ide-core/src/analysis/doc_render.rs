@@ -128,15 +128,9 @@ fn render_blocks(nodes: &[Rc<DCTree>]) -> String {
             DCKind::EndElement { .. } => {
                 // A stray end tag (e.g. after a self-closing block) is ignored.
             }
-            DCKind::UnknownInlineTag { name, content, .. }
-                if lower(name) == "snippet" =>
-            {
-                // A snippet is a block-level code element even though the
-                // parser stores it as an inline tag. Flush the surrounding
-                // paragraph so text after the snippet starts a new block
-                // instead of being swallowed into the code block.
+            DCKind::Snippet { lang, body, file, .. } => {
                 flush_paragraph(&mut blocks, &mut paragraph);
-                let snippet = render_snippet(content);
+                let snippet = render_snippet(lang.as_ref(), body, file.as_ref());
                 if !snippet.trim().is_empty() {
                     blocks.push(snippet.trim().to_string());
                 }
@@ -959,10 +953,7 @@ fn list_trimmed(list: &List<Rc<DCTree>>) -> String {
             &node.kind,
             DCKind::StartElement { name, .. }
                 if is_block_tag(&lower(name))
-        ) || matches!(
-            &node.kind,
-            DCKind::UnknownInlineTag { name, .. } if lower(name) == "snippet"
-        )
+        ) || matches!(&node.kind, DCKind::Snippet { .. })
     }) {
         // Tag descriptions can contain real block content (the JDK uses
         // `<blockquote><pre>` in @implSpec). Render that through the block
@@ -1011,65 +1002,52 @@ fn render_inline_node(node: &DCTree) -> String {
         }
         DCKind::Value { reference, .. } => render_inline_node(reference),
         DCKind::SystemProperty { property_name, .. } => format!("${{{}}}", property_name.to_java_string().to_string_lossy()),
+        DCKind::Snippet { lang, body, file, .. } => {
+            render_snippet(lang.as_ref(), body, file.as_ref())
+        }
         DCKind::UnknownInlineTag { name, content, .. } => {
             let name = name.to_java_string().to_string_lossy().to_string();
-            if name == "snippet" {
-                render_snippet(content)
-            } else {
-                format!(
-                    "@{} {}",
-                    name,
-                    list_trimmed(content)
-                )
-            }
+            format!(
+                "@{} {}",
+                name,
+                list_trimmed(content)
+            )
         }
         _ => String::new(),
     }
 }
 
-/// Render a Javadoc `{@snippet ...}` inline tag. The parser currently stores
-/// the tag payload as plain text (there is no DCSnippet node), so the payload
-/// grammar is handled here: `lang=... : body`, or an explicit marker for
-/// unsupported `file=...` forms.
-fn render_snippet(content: &List<Rc<DCTree>>) -> String {
-    let raw = raw_text(&content.to_vec()).replace("\r\n", "\n");
-    let Some(colon) = raw.find(':') else {
-        let file = snippet_file_attribute(&raw);
-        return match file {
-            Some(file) => format!("*[snippet file unresolved: {file}]*"),
-            None => "*[snippet: missing body]*".to_string(),
-        };
-    };
-    let attributes = raw[..colon].trim();
-    if let Some(file) = snippet_file_attribute(attributes) {
-        return format!("*[snippet file unresolved: {file}]*");
+/// Render a structured `{@snippet ...}` node. The doc parser has already
+/// separated `lang`, `file` and the code body; this function never parses the
+/// raw tag text.
+fn render_snippet(
+    lang: Option<&crate::util::java_string::JavaString>,
+    body: &crate::util::java_string::JavaString,
+    file: Option<&crate::util::java_string::JavaString>,
+) -> String {
+    if let Some(file) = file {
+        return format!(
+            "*[snippet file unresolved: {}]*",
+            file.to_string_lossy()
+        );
     }
-    let language = attributes
-        .split_whitespace()
-        .find_map(|attribute| attribute.strip_prefix("lang="))
-        .map(|value| value.trim_matches('"').to_string())
-        .unwrap_or_default();
-    let language: String = language
+    let language: String = lang
+        .map(|lang| lang.to_string_lossy())
+        .unwrap_or_default()
         .chars()
         .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '#'))
         .collect();
+    let body_text = body.to_string_lossy();
     let body = dedent_code(
-        raw[colon + 1..]
+        body_text
             .strip_prefix('\n')
-            .unwrap_or(&raw[colon + 1..]),
+            .unwrap_or(&body_text),
     );
     if body.trim().is_empty() {
         return "*[snippet: missing body]*".to_string();
     }
     let fence = "`".repeat((longest_backtick_run(&body) + 1).max(3));
     format!("\n\n{fence}{language}\n{body}\n{fence}\n\n")
-}
-
-fn snippet_file_attribute(attributes: &str) -> Option<String> {
-    attributes
-        .split_whitespace()
-        .find_map(|attribute| attribute.strip_prefix("file="))
-        .map(|value| value.trim_matches('"').to_string())
 }
 
 fn render_image(attrs: &List<Rc<DCTree>>) -> String {

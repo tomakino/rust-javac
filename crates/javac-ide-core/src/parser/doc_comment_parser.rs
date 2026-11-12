@@ -48,7 +48,7 @@ use crate::parser::java_string_methods::is_java_whitespace;
 use crate::parser::parser_factory::ParserFactory;
 use crate::parser::reference_parser::{ParseException as ReferenceParseException, ReferenceParser};
 use crate::parser::tokens::Comment;
-use crate::tree::dc_tree::DCTree;
+use crate::tree::dc_tree::{DCKind, DCTree};
 use crate::tree::doc_tree_maker::DocTreeMaker;
 use crate::util::diagnostic_source::DiagnosticSource;
 use crate::util::java_string::JavaString;
@@ -443,6 +443,22 @@ impl DocCommentParser {
             return Ok(self.erroneous("dc.no.tag.name", p));
         }
         let name = self.read_tag_name();
+        if name.to_java_string().to_string_lossy() == "snippet" {
+            let content = self.inline_text(WhitespaceRetentionPolicy::RetainAll)?;
+            self.next_char();
+            let raw = match &content.kind {
+                DCKind::Text { text } => text.to_string_lossy(),
+                _ => String::new(),
+            };
+            let (lang, file, body) = split_snippet_payload(&raw);
+            let tree = self.m.at(p).new_snippet_tree(
+                lang.as_ref().map(|value| JavaString::from(value.as_str())),
+                JavaString::from(body.as_str()),
+                file.as_ref().map(|value| JavaString::from(value.as_str())),
+            );
+            tree.set_end_pos(self.bp);
+            return Ok(tree);
+        }
         let spec = self.tag_parsers.get(&name).copied();
         match spec {
             None => {
@@ -1671,6 +1687,30 @@ impl DocCommentParser {
         }
         tag_parsers
     }
+}
+
+/// Split a `{@snippet ...}` payload into `lang`, `file` and body. This is the
+/// doc parser's own grammar; renderers never see the raw attribute text.
+fn split_snippet_payload(raw: &str) -> (Option<String>, Option<String>, String) {
+    let trimmed = raw.trim_start();
+    let (attributes, body) = match trimmed.split_once(':') {
+        Some((attributes, body)) => (attributes, body.to_string()),
+        None => (trimmed, String::new()),
+    };
+    let mut lang = None;
+    let mut file = None;
+    for attribute in attributes.split_whitespace() {
+        let Some((key, value)) = attribute.split_once('=') else {
+            continue;
+        };
+        let value = value.trim_matches('"').to_string();
+        match key {
+            "lang" => lang = Some(value),
+            "file" => file = Some(value),
+            _ => {}
+        }
+    }
+    (lang, file, body)
 }
 
 #[cfg(test)]

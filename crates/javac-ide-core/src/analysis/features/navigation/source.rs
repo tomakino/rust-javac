@@ -2,7 +2,11 @@
 
 use std::path::{Path, PathBuf};
 
-use super::super::super::positions::{line_offset, offset_to_line_col, word_at};
+use javac_analysis_api::Range;
+
+use super::super::super::positions::{
+    byte_to_utf16, line_offset, offset_to_line_col, word_at,
+};
 use super::super::super::{canonical, FileAnalysis};
 use super::references::ReferenceCollector;
 use crate::code::symbol::SymbolKind;
@@ -99,6 +103,216 @@ impl FileAnalysis {
         }
         root
     }
+
+    /// AST spans of all import declarations in the current compilation unit.
+    pub(crate) fn import_ranges_impl(&self, file: &Path) -> Vec<(u32, u32)> {
+        let Some(root) = self.latest_root_for(file) else {
+            return Vec::new();
+        };
+        let crate::tree::jc_tree::TreeKind::CompilationUnit {
+            defs,
+            end_positions,
+            ..
+        } = &self.compiler.ctx.tree(root).kind
+        else {
+            return Vec::new();
+        };
+        let end_positions = end_positions.as_deref();
+        defs.iter()
+            .filter(|definition| {
+                matches!(
+                    self.compiler.ctx.tree(*definition).kind,
+                    crate::tree::jc_tree::TreeKind::Import { .. }
+                )
+            })
+            .filter_map(|definition| {
+                let start = self.compiler.ctx.tree(definition).pos;
+                let end = crate::tree::tree_info::get_end_pos(
+                    &self.compiler.ctx,
+                    Some(definition),
+                    end_positions,
+                );
+                (start >= 0 && end >= start).then_some((start as u32, end as u32))
+            })
+            .collect()
+    }
+
+    /// Document links for import declarations. `Import.qualid` supplies the
+    /// class/package AST; `get_end_pos` supplies each name's exact range.
+    pub(crate) fn import_links_impl(&self, file: &Path) -> Vec<(Range, String)> {
+        let Some(text) = self.source_text(file) else {
+            return Vec::new();
+        };
+        let Some(root) = self.latest_root_for(file) else {
+            return Vec::new();
+        };
+        let crate::tree::jc_tree::TreeKind::CompilationUnit {
+            defs,
+            end_positions,
+            ..
+        } = &self.compiler.ctx.tree(root).kind
+        else {
+            return Vec::new();
+        };
+        let end_positions = end_positions.as_deref();
+        let mut links = Vec::new();
+        for definition in defs.iter() {
+            let crate::tree::jc_tree::TreeKind::Import {
+                qualid: Some(qualid),
+                static_import,
+                ..
+            } = &self.compiler.ctx.tree(definition).kind
+            else {
+                continue;
+            };
+            let mut parts = import_qualifier_parts(&self.compiler.ctx, *qualid, end_positions);
+            if parts.is_empty() {
+                continue;
+            }
+            let wildcard = parts.last().is_some_and(|(name, ..)| name == "*");
+            if wildcard {
+                parts.pop();
+            }
+            if *static_import && !wildcard && parts.len() > 1 {
+                parts.pop();
+            }
+            let Some((_, start, end)) = parts.last() else {
+                continue;
+            };
+            let class = parts
+                .iter()
+                .map(|(name, ..)| name.as_str())
+                .collect::<Vec<_>>()
+                .join(".");
+            if class.is_empty() {
+                continue;
+            }
+            let (start_line, start_column) = offset_to_line_col(&text, *start);
+            let (end_line, end_column) = offset_to_line_col(&text, *end);
+            links.push((
+                Range::new(
+                    javac_analysis_api::Position::new(start_line, start_column),
+                    javac_analysis_api::Position::new(end_line, end_column),
+                ),
+                class,
+            ));
+        }
+        links
+    }
+
+    /// Map a cursor anywhere inside an `Import` AST node to the imported
+    /// simple name. The import span and the final qualifier name position both
+    /// come from AST positions/end positions; no line prefix is inspected.
+    pub(crate) fn import_target_position_impl(
+        &self,
+        file: &Path,
+        position: javac_analysis_api::Position,
+    ) -> Option<javac_analysis_api::Position> {
+        let text = self.source_text(file)?;
+        let root = self.latest_root_for(file)?;
+        let crate::tree::jc_tree::TreeKind::CompilationUnit {
+            defs,
+            end_positions,
+            ..
+        } = &self.compiler.ctx.tree(root).kind
+        else {
+            return None;
+        };
+        let line = position.line as usize + 1;
+        let column = position.column as usize + 1;
+        let cursor = byte_to_utf16(&text, line_offset(&text, line, column));
+        let end_positions = end_positions.as_deref();
+        for definition in defs.iter() {
+            let crate::tree::jc_tree::TreeKind::Import { qualid, .. } =
+                &self.compiler.ctx.tree(definition).kind
+            else {
+                continue;
+            };
+            let start = self.compiler.ctx.tree(definition).pos;
+            let end = crate::tree::tree_info::get_end_pos(
+                &self.compiler.ctx,
+                Some(definition),
+                end_positions,
+            );
+            if start < 0 || end < 0 || cursor < start as usize || cursor > end as usize {
+                continue;
+            }
+            let Some(qualid) = qualid else {
+                continue;
+            };
+            let (name, name_end) = final_qualifier_name(
+                &self.compiler.ctx,
+                *qualid,
+                end_positions,
+            )?;
+            if name == "*" || name.starts_with('<') || name_end < name.len() {
+                continue;
+            }
+            let simple_start = name_end - name.len();
+            let (target_line, target_column) =
+                offset_to_line_col(&text, simple_start);
+            if target_line == position.line && target_column == position.column {
+                return None;
+            }
+            return Some(javac_analysis_api::Position::new(
+                target_line,
+                target_column,
+            ));
+        }
+        None
+    }
+}
+
+/// Flatten an import `qualid` into `(segment, start, end)` AST ranges.
+fn import_qualifier_parts(
+    ctx: &crate::compiler_context::CompilerContext,
+    qualid: crate::ids::TreeId,
+    end_positions: Option<&dyn crate::tree::end_pos_table::EndPosTable>,
+) -> Vec<(String, usize, usize)> {
+    let end = crate::tree::tree_info::get_end_pos(ctx, Some(qualid), end_positions);
+    if end < 0 {
+        return Vec::new();
+    }
+    match &ctx.tree(qualid).kind {
+        crate::tree::jc_tree::TreeKind::Ident { name, .. } => {
+            let name = name.to_java_string().to_string_lossy().to_string();
+            let length = name.encode_utf16().count();
+            (end as usize >= length)
+                .then(|| vec![(name, end as usize - length, end as usize)])
+                .unwrap_or_default()
+        }
+        crate::tree::jc_tree::TreeKind::FieldAccess {
+            selected: Some(selected),
+            name,
+            ..
+        } => {
+            let mut parts = import_qualifier_parts(ctx, *selected, end_positions);
+            let name = name.to_java_string().to_string_lossy().to_string();
+            let length = name.encode_utf16().count();
+            if end as usize >= length {
+                parts.push((name, end as usize - length, end as usize));
+            }
+            parts
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Last identifier of an import's qualid AST and its UTF-16 end position.
+fn final_qualifier_name(
+    ctx: &crate::compiler_context::CompilerContext,
+    qualid: crate::ids::TreeId,
+    end_positions: Option<&dyn crate::tree::end_pos_table::EndPosTable>,
+) -> Option<(String, usize)> {
+    let name = match &ctx.tree(qualid).kind {
+        crate::tree::jc_tree::TreeKind::Ident { name, .. }
+        | crate::tree::jc_tree::TreeKind::FieldAccess { name, .. } => {
+            name.to_java_string().to_string_lossy().to_string()
+        }
+        _ => return None,
+    };
+    let end = crate::tree::tree_info::get_end_pos(ctx, Some(qualid), end_positions);
+    (end >= 0).then_some((name, end as usize))
 }
 
 pub(super) fn word_start_offset(text: &str, cursor: usize) -> usize {
@@ -134,8 +348,8 @@ fn declaration_name_at(
     if name.is_empty() || name.starts_with('<') {
         return None;
     }
-    let offset = text.get(base..)?.find(&name)?;
-    (base + offset == start).then_some(symbol)
+    (crate::analysis::positions::name_start_of_symbol(ctx, symbol)? as usize == start)
+        .then_some(symbol)
 }
 
 /// The member symbol named `word` of an `import static ...` clause on `line`.

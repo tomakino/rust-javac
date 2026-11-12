@@ -149,6 +149,9 @@ impl WorkspaceService for Workspace {
         };
         let text = self.text_of(file).unwrap_or_default();
         let uri = file_uri(file);
+        let import_ranges = self
+            .with_analysis(file, None, |analysis, _| analysis.import_ranges_impl(file))
+            .unwrap_or_default();
         let mut lenses = Vec::new();
         // One lens group per declaration range: an index can hold extra ids at
         // the same position (a synthetic constructor shares the class name
@@ -192,11 +195,12 @@ impl WorkspaceService for Workspace {
             if !seen_ranges.insert((declaration.range.start, declaration.range.end)) {
                 continue;
             }
-            // Import lines are not declarations of this file.
-            if text
-                .lines()
-                .nth(decl_line as usize)
-                .is_some_and(|line| line.trim_start().starts_with("import "))
+            // Imports are not declarations of this file (AST import spans).
+            if import_ranges
+                .iter()
+                .any(|(start, end)| {
+                    declaration.range.start >= *start && declaration.range.start <= *end
+                })
             {
                 continue;
             }
@@ -261,23 +265,12 @@ impl WorkspaceService for Workspace {
 
     fn document_links(&mut self, file: &Path) -> Vec<DocumentLink> {
         let text = self.text_of(file).unwrap_or_default();
+        let import_links = self
+            .with_analysis(file, None, |analysis, _| analysis.import_links_impl(file))
+            .unwrap_or_default();
         let mut links = Vec::new();
-        for (line_index, line) in text.lines().enumerate() {
-            let trimmed = line.trim_start();
-            let Some(rest) = trimmed.strip_prefix("import ") else {
-                continue;
-            };
-            let path = rest.strip_prefix("static ").unwrap_or(rest);
-            let path = path.trim_end_matches(';').trim();
-            if path.is_empty() {
-                continue;
-            }
-            let class = if rest.starts_with("static ") {
-                let base = path.trim_end_matches(".*");
-                base.rsplit_once('.').map(|(class, _)| class).unwrap_or(base)
-            } else {
-                path.trim_end_matches(".*")
-            };
+        for (range, class) in import_links {
+            let class = class.as_str();
             // Project sources: workspace model roots first (independent of the
             // index build state), then the published index (symbol lookup, not
             // path suffix matching).
@@ -299,14 +292,7 @@ impl WorkspaceService for Workspace {
                     None => continue,
                 }
             };
-            let end: u32 = line.chars().map(|character| character.len_utf16() as u32).sum();
-            links.push(DocumentLink {
-                range: Range::new(
-                    Position::new(line_index as u32, 0),
-                    Position::new(line_index as u32, end),
-                ),
-                target,
-            });
+            links.push(DocumentLink { range, target });
         }
         links.extend(url_links(&text));
         links
@@ -321,12 +307,14 @@ impl WorkspaceService for Workspace {
     }
 
     fn definition(&mut self, file: &Path, position: Position) -> Option<Location> {
-        // Clicking anywhere on an import line resolves the imported type: the
-        // index records the import occurrence at the simple name, so map the
-        // cursor onto it before the normal definition path runs.
+        // Clicking anywhere on an import node resolves the imported type: use
+        // the import AST span to map the cursor onto its simple name before the
+        // normal definition path runs.
         let position = self
-            .text_of(file)
-            .and_then(|text| import_target_position(&text, position))
+            .with_analysis(file, None, |analysis, _| {
+                analysis.import_target_position_impl(file, position)
+            })
+            .flatten()
             .unwrap_or(position);
         self.ensure_index();
         let snapshot = self.index.snapshot();
@@ -866,29 +854,4 @@ fn flat_name(
     }
     parts.reverse();
     Some(parts.join("."))
-}
-/// Map a cursor on an `import` line onto the imported simple name: the index
-/// records the import occurrence at the simple name, so definition should not
-/// depend on which part of the qualified name was clicked.
-fn import_target_position(text: &str, position: Position) -> Option<Position> {
-    let line = text.lines().nth(position.line as usize)?;
-    let trimmed = line.trim_start();
-    let rest = trimmed.strip_prefix("import ")?;
-    let rest = rest.strip_prefix("static ").unwrap_or(rest);
-    let end = rest.find(';')?;
-    let path = &rest[..end];
-    if path.is_empty() || path.ends_with('*') {
-        return None;
-    }
-    let simple = path.rsplit('.').next()?;
-    let leading = line.len() - trimmed.len();
-    let keyword = trimmed.len() - rest.len();
-    let simple_offset = path.rfind(simple)?;
-    let column = line[..leading + keyword + simple_offset]
-        .encode_utf16()
-        .count() as u32;
-    if column == position.column {
-        return None;
-    }
-    Some(Position::new(position.line, column))
 }

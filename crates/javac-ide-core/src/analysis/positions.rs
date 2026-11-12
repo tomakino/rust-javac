@@ -572,7 +572,8 @@ pub(crate) fn name_start_of_symbol(
     {
         return Some(*decl_pos as u32);
     }
-    Some(ctx.tree(tree).pos.max(0) as u32)
+    let position = ctx.tree(tree).pos;
+    (position >= 0).then_some(position as u32)
 }
 #[cfg(test)]
 mod name_start_tests {

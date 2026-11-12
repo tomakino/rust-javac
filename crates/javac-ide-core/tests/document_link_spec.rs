@@ -125,6 +125,43 @@ fn item01_project_class_link() {
     let links = links(&mut workspace, &root, "import p.Foo;\n\nclass Test {}\n");
     assert_eq!(links.len(), 1, "{links:?}");
     assert!(links[0].target.ends_with("p/Foo.java"), "{links:?}");
+    assert_eq!(links[0].range.start.line, 0, "{links:?}");
+    assert_eq!(links[0].range.start.column, 9, "{links:?}");
+    assert_eq!(links[0].range.end.column, 12, "{links:?}");
+}
+
+#[test]
+fn item01b_static_import_links_the_owner_class_name_range() {
+    let Some((root, jar, _sources)) = fixture_with_sources("item01b") else {
+        return;
+    };
+    let mut workspace = Workspace::new(config(&root, vec![jar]));
+    let links = links(
+        &mut workspace,
+        &root,
+        "import static p.Foo.value;\n\nclass Test {}\n",
+    );
+    assert_eq!(links.len(), 1, "{links:?}");
+    assert!(links[0].target.ends_with("p/Foo.java"), "{links:?}");
+    assert_eq!(links[0].range.start.column, 16, "{links:?}");
+    assert_eq!(links[0].range.end.column, 19, "{links:?}");
+}
+
+#[test]
+fn item01c_static_wildcard_and_trailing_comment_keep_the_class_range() {
+    let Some((root, jar, _sources)) = fixture_with_sources("item01c") else {
+        return;
+    };
+    let mut workspace = Workspace::new(config(&root, vec![jar]));
+    let links = links(
+        &mut workspace,
+        &root,
+        "import static p.Foo.*; // owner\n\nclass Test {}\n",
+    );
+    assert_eq!(links.len(), 1, "{links:?}");
+    assert!(links[0].target.ends_with("p/Foo.java"), "{links:?}");
+    assert_eq!(links[0].range.start.column, 16, "{links:?}");
+    assert_eq!(links[0].range.end.column, 19, "{links:?}");
 }
 
 #[test]

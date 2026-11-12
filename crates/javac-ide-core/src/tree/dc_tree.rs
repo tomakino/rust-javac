@@ -162,6 +162,16 @@ pub enum DCKind {
     },
     /// Java: DCSince
     Since { body: List<Rc<DCTree>> },
+    /// Java: DCSnippet (structured `{@snippet ...}` payload).
+    ///
+    /// The parser owns the attribute/body split; renderers consume these
+    /// fields and never parse the raw tag text.
+    Snippet {
+        lang: Option<JavaString>,
+        body: JavaString,
+        file: Option<JavaString>,
+        end_pos: Cell<i32>,
+    },
     /// Java: DCStartElement
     StartElement {
         name: Name,
@@ -265,6 +275,7 @@ impl DCTree {
             DCKind::SerialData { .. } => Kind::SERIAL_DATA,
             DCKind::SerialField { .. } => Kind::SERIAL_FIELD,
             DCKind::Since { .. } => Kind::SINCE,
+            DCKind::Snippet { .. } => Kind::UNKNOWN_INLINE_TAG,
             DCKind::StartElement { .. } => Kind::START_ELEMENT,
             DCKind::Summary { .. } => Kind::SUMMARY,
             DCKind::SystemProperty { .. } => Kind::SYSTEM_PROPERTY,
@@ -327,6 +338,7 @@ impl DCTree {
             | DCKind::Literal { end_pos, .. }
             | DCKind::Reference { end_pos, .. }
             | DCKind::Return { end_pos, .. }
+            | DCKind::Snippet { end_pos, .. }
             | DCKind::StartElement { end_pos, .. }
             | DCKind::Summary { end_pos, .. }
             | DCKind::SystemProperty { end_pos, .. }
