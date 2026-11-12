@@ -277,14 +277,7 @@ the diagnostic corpus skips the corresponding cases.
 
 ## 8. Documentation
 
-| Document                                       | Contents                                  |
-|:-----------------------------------------------|:------------------------------------------|
-| [docs/SETUP.md](docs/SETUP.md)                 | environment reproduction and cross builds |
-| [docs/TESTING.md](docs/TESTING.md)             | gate levels and corpus descriptions       |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)   | design and porting notes                  |
-| [docs/PORTING_NOTES.md](docs/PORTING_NOTES.md) | per-file porting annotations              |
-| [docs/STYLE.md](docs/STYLE.md)                 | coding conventions                        |
-| [AGENTS.md](AGENTS.md)                         | collaboration rules                       |
+See [AGENTS.md](AGENTS.md) for collaboration rules and repository conventions.
 
 ## 9. Disclaimer
 
