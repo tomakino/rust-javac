@@ -1,49 +1,62 @@
-// PORTING ADAPTER: JDK 17 ct.sym (multi-release class signature archive) reader.
+//! Read the JDK's `ct.sym` platform signatures.
 //!
-//! javac with --release N reads the system class signatures of release N from
-//! <java.home>/lib/ct.sym, a zip archive of per-release class files (".sig" entries: class
-//! file shaped, without method code). rust-javac is a pure-Rust compiler and has to read that
-//! archive itself (no JVM, no jrt:// filesystem).
+//! `ct.sym` is the compiler's view of every Java platform release the installed JDK
+//! supports. It stores one signed class per (release, class) pair, but no
+//! implementations: each entry is a class file with method bodies stripped.
 //!
-//! Reference implementation (baseline openjdk/jdk17u @ 982d53c, jdk-17.0.19-ga):
+//! # Layout
 //!
-//! - com/sun/tools/javac/platform/JDKPlatformProvider.java:
-//!   * its static initializer enumerates the archive root; every root directory whose name
-//!     contains "-" is skipped, and the remaining names are decoded one character at a time in
-//!     base 36 (Character.MAX_RADIX), looked up in com.sun.tools.javac.jvm.Target and recorded
-//!     as Target.ordinal() - Target.JDK1_1.ordinal() + 1; that is how the supported release set
-//!     of a JDK is derived from its ct.sym;
-//!   * PlatformDescriptionImpl converts a --release value N to its directory character with
-//!     Integer.toString(N, Character.MAX_RADIX).toUpperCase(), then, for every root directory
-//!     whose name contains that character (and no "-"), adds the <section>/<module> directories
-//!     either to the platform class path (release 8 and older) or to the SYSTEM_MODULES location
-//!     of each module (release 9 and newer). A <section>/system-modules file marks a directory
-//!     that describes the *running* JDK image: javac then resolves modules through jrt:/modules
-//!     and does not read .sig files for that release at all.
-//! - make/langtools/src/classes/build/tools/symbolgenerator/CreateSymbols.java documents the
-//!   layout produced by the build: the signatures of a class are stored once per group of
-//!   releases that share the same class file, below a directory named after that group
-//!   ("879A" = releases 7, 8, 9 and 10); every entry is
-//!   <section>/<module>/<package path>/<Class>.sig; the directory of the current release holds
-//!   only system-modules; and every accepted .sig is a plain class file (magic CAFEBABE) whose
-//!   code attributes are stripped.
+//! Entries are grouped by *section*, a directory named after the releases it serves.
+//! Each character is a release number in base 36 — `8` for 8, `A` for 10, `H` for
+//! 17 — so `879A` holds the signatures shared by releases 7, 8, 9 and 10. A section
+//! name containing `-` is ignored.
 //!
-//! Consequences ported by this crate:
+//! Below a section, entries are laid out by module and package:
 //!
-//! - a release is selected by "the section name contains the release's base-36 character".
-//!   CreateSymbols places every (class, release) pair in exactly one section, so this is the
-//!   complete lookup rule; it is *not* a "newest signature with version <= N" fallback (a class
-//!   introduced in 14 is absent from 13 although section "EF" covers both 14 and 15).
-//! - the newest release of the baseline (17 = 'H') has no .sig file at all: its directory only
-//!   contains system-modules. get_sig therefore returns None for it, and the caller has to read
-//!   the running JDK image instead, exactly like JDKPlatformProvider does.
-//! - a class descriptor ("module-info") is stored once per module; classes excludes it and
-//!   modules / has_system_modules / system_modules expose the module layer instead.
+//! ```text
+//! <section>/<module>/<package path>/<Class>.sig     releases 9 and newer
+//! <section>/<package path>/<Class>.sig              releases 7 and 8
+//! ```
 //!
-//! registered adapter (not a 1:1 javac class port). The
-//! observable selection behaviour mirrors JDKPlatformProvider of the same JDK 17 baseline; the
-//! container work that javac delegates to the zip filesystem is implemented on javac-zip, the
-//! project's in-house zip reader.
+//! A section may instead hold a single `system-modules` list. Such a section
+//! describes the running JDK image rather than a fixed signature set: callers must
+//! read the image for that release, and [`CtSym::has_system_modules`] reports when.
+//!
+//! # Reading
+//!
+//! [`CtSym::open`] indexes the archive once; [`CtSym::get_sig`] returns the bytes for
+//! a (release, class) pair. Class lookup is by release, never by "newest signature at
+//! or below the release": each pair lives in exactly one section, and a class
+//! introduced in 14 has no entry in 13.
+//!
+//! # Containers
+//!
+//! The container is detected from the file magic. The JDK's zip and ravac's RCS1
+//! form are both accepted and behave identically; the compact form stores identical
+//! payloads once and compresses them in blocks.
+//!
+//! # Concurrency and cost
+//!
+//! Opening reads the archive index once (about 2 MB for the JDK 17 archive). Payloads
+//! are read on demand: `RCS1` decompresses at most 256 KiB per touched block and keeps
+//! up to 64 blocks in an interior cache. That cache makes `CtSym` `!Sync`; use one
+//! instance per thread, or share it behind a lock.
+//!
+//! # Example
+//!
+//! ```no_run
+//! use javac_ctsym::CtSym;
+//! use std::path::Path;
+//!
+//! let ct_sym = CtSym::open(Path::new("/path/to/jdk/lib/ct.sym"))?;
+//! let class = ct_sym.get_sig(11, "java.lang.String");
+//! assert!(class.is_some());
+//! # Ok::<(), javac_ctsym::Error>(())
+//! ```
+
+#![deny(missing_docs)]
+#![deny(missing_debug_implementations)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -53,29 +66,21 @@ use std::path::{Path, PathBuf};
 
 use javac_zip::ZipArchive;
 
+mod rcs;
+pub use rcs::{RcsArchive, RcsBuilder, RcsError};
+
 /// File name of the signature archive inside a JDK installation.
-///
-/// Java: JDKPlatformProvider.symbolFileLocation = { "lib", "ct.sym" } (findCtSym()).
 pub const CT_SYM_FILE_NAME: &str = "ct.sym";
 
-/// Suffix of the signature class files inside ct.sym.
-///
-/// Java: CreateSymbols.EXTENSION.
+/// Suffix of the signature class files.
 pub const SIG_EXTENSION: &str = ".sig";
 
-/// Name of the per-release module list that marks the running JDK image.
-///
-/// Java: JDKPlatformProvider.PlatformDescriptionImpl:
-/// root.resolve(ctSymVersion).resolve("system-modules").
+/// Name of the per-release module list that describes a running JDK image.
 pub const SYSTEM_MODULES_NAME: &str = "system-modules";
 
-/// The directory character that ct.sym uses for a release.
-///
-/// Java: JDKPlatformProvider.PlatformDescriptionImpl:
-/// StringUtils.toUpperCase(Integer.toString(Integer.parseInt(sourceVersion), Character.MAX_RADIX)),
-/// i.e. the release number written in base 36 and upper-cased (8 -> '8', 10 -> 'A', 17 -> 'H').
-/// ct.sym names releases by a single character, so a value that needs more than one base-36
-/// digit (36 and above) cannot be expressed and is reported as None.
+/// The base-36 release character used in section names (`8` -> `8`, `10` -> `A`,
+/// `17` -> `H`). `None` when the release is negative or needs more than one base-36
+/// digit.
 pub fn release_version_char(release: i32) -> Option<char> {
     let digit = u32::try_from(release).ok()?;
     char::from_digit(digit, 36).map(|ch| ch.to_ascii_uppercase())
@@ -86,10 +91,12 @@ pub fn release_version_char(release: i32) -> Option<char> {
 pub enum Error {
     /// The file could not be read.
     Io(io::Error),
-    /// The file is not a zip archive.
+    /// The file header matches neither a zip archive nor an RCS1 container.
     NotAZip(String),
     /// The zip container is damaged or truncated.
     Corrupted(String),
+    /// The RCS1 container is damaged or unsupported.
+    Rcs(RcsError),
 }
 
 impl fmt::Display for Error {
@@ -98,6 +105,7 @@ impl fmt::Display for Error {
             Error::Io(error) => write!(f, "I/O error: {}", error),
             Error::NotAZip(message) => write!(f, "invalid ct.sym archive: {}", message),
             Error::Corrupted(message) => write!(f, "corrupted ct.sym archive: {}", message),
+            Error::Rcs(error) => write!(f, "{}", error),
         }
     }
 }
@@ -106,7 +114,21 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Io(error) => Some(error),
+            Error::Rcs(error) => Some(error),
             _ => None,
+        }
+    }
+}
+
+impl Error {
+    /// Maps an RCS1 error onto the ct.sym error type.
+    fn from_rcs(error: RcsError) -> Error {
+        match error {
+            RcsError::Io(error) => Error::Io(error),
+            RcsError::NotAnArchive(message) => Error::NotAZip(message),
+            RcsError::WrongVersion { .. } | RcsError::Corrupted(_) => {
+                Error::Rcs(error)
+            }
         }
     }
 }
@@ -132,9 +154,6 @@ impl Error {
 }
 
 /// One release directory of ct.sym.
-///
-/// Java: a root directory entry of the ct.sym zip filesystem, as visited by the
-/// JDKPlatformProvider static initializer and by PlatformDescriptionImpl.
 #[derive(Debug, Clone)]
 pub struct Section {
     name: String,
@@ -151,19 +170,16 @@ impl Section {
         &self.name
     }
 
-    /// The releases covered by this directory, ascending and de-duplicated.
-    ///
-    /// Java: every character of the directory name decoded by the static initializer of
-    /// JDKPlatformProvider. A directory whose name contains "-" is ignored by javac and has an
-    /// empty release list.
+    /// The releases described by the archive, ascending.
     pub fn releases(&self) -> &[i32] {
         &self.releases
     }
 
-    /// The module directories below this release directory, in central-directory order.
+    /// The module directories below this release directory, in archive order.
     ///
-    /// These are the entries that JDKPlatformProvider adds to the platform class path (release 8
-    /// and older) or to each module's SYSTEM_MODULES location (release 9 and newer).
+    /// For release 9 and newer these name the modules of the system image. For release 8
+    /// and older the layout has no module directory, so this list holds the leading
+    /// package components (`java`, `javax`, ...) of the platform class path instead.
     pub fn module_dirs(&self) -> &[String] {
         &self.module_dirs
     }
@@ -204,7 +220,7 @@ impl SigEntry {
         &self.class_name
     }
 
-    /// The zip entry name, equivalent to Java: ZipEntry.getName().
+    /// The entry path inside the archive.
     pub fn entry_name(&self) -> String {
         format!(
             "{}/{}/{}{}",
@@ -216,10 +232,75 @@ impl SigEntry {
     }
 }
 
+/// One archive entry, normalized across the zip and RCS1 containers.
+struct EntryView {
+    name: String,
+    is_directory: bool,
+}
+
+/// The container holding the entries: the JDK's zip or the compact RCS1 format.
+enum ArchiveBackend {
+    Zip(ZipArchive),
+    Rcs(RcsArchive),
+}
+
+impl ArchiveBackend {
+    fn open(path: &Path) -> Result<ArchiveBackend, Error> {
+        use std::io::Read;
+        let mut magic = [0u8; 4];
+        if let Ok(mut file) = std::fs::File::open(path)
+            && file.read_exact(&mut magic).is_ok()
+            && magic == rcs::MAGIC
+        {
+            return Ok(ArchiveBackend::Rcs(
+                RcsArchive::open(path).map_err(Error::from_rcs)?,
+            ));
+        }
+        Ok(ArchiveBackend::Zip(
+            ZipArchive::open(path).map_err(Error::from_zip)?,
+        ))
+    }
+
+    fn entries(&self) -> Vec<EntryView> {
+        match self {
+            ArchiveBackend::Zip(archive) => archive
+                .entries()
+                .iter()
+                .map(|entry| EntryView {
+                    name: entry.name().to_string(),
+                    is_directory: entry.is_directory(),
+                })
+                .collect(),
+            ArchiveBackend::Rcs(archive) => archive
+                .entries()
+                .iter()
+                .map(|entry| EntryView {
+                    name: entry.name().to_string(),
+                    is_directory: entry.is_directory(),
+                })
+                .collect(),
+        }
+    }
+
+    fn entry_count(&self) -> usize {
+        match self {
+            ArchiveBackend::Zip(archive) => archive.entries().len(),
+            ArchiveBackend::Rcs(archive) => archive.entry_count(),
+        }
+    }
+
+    fn get_entry(&self, name: &str) -> Option<Vec<u8>> {
+        match self {
+            ArchiveBackend::Zip(archive) => archive.get_entry(name),
+            ArchiveBackend::Rcs(archive) => archive.get_entry(name),
+        }
+    }
+}
+
 /// A read-only view of a JDK ct.sym archive.
 pub struct CtSym {
     path: PathBuf,
-    archive: ZipArchive,
+    archive: ArchiveBackend,
     sections: Vec<Section>,
     section_index: HashMap<String, usize>,
     releases: Vec<i32>,
@@ -231,7 +312,7 @@ impl fmt::Debug for CtSym {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CtSym")
             .field("path", &self.path)
-            .field("entries", &self.archive.entries().len())
+            .field("entries", &self.archive.entry_count())
             .field("sections", &self.sections.len())
             .field("releases", &self.releases)
             .field("sig_entries", &self.sig_entries.len())
@@ -240,32 +321,38 @@ impl fmt::Debug for CtSym {
 }
 
 impl CtSym {
-    /// Opens a ct.sym archive and reads its central directory.
+    /// Opens a ct.sym archive and builds the section and class indexes.
     ///
-    /// The release directories are decoded exactly like the static initializer of
-    /// JDKPlatformProvider does: a directory name containing "-" is ignored, the other names are
-    /// read one base-36 character at a time and mapped through the platform Target table. A
-    /// character that is not a base-36 digit makes that Java initializer fail (an uncaught
-    /// NumberFormatException becomes ExceptionInInitializerError), so this function panics as
-    /// well instead of silently dropping the directory.
+    /// Section names are decoded one base-36 character at a time; a name containing `-` is
+    /// ignored and contributes no releases.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] when the file cannot be read, [`Error::NotAZip`] when the magic
+    /// matches neither a zip archive nor a compact container, and [`Error::Corrupted`] or
+    /// [`Error::Rcs`] when the index is inconsistent.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a section name contains a character that is not a base-36 digit: the
+    /// section cannot select a release, and dropping it silently would hide a broken
+    /// archive.
     pub fn open(path: &Path) -> Result<CtSym, Error> {
-        let archive = ZipArchive::open(path).map_err(Error::from_zip)?;
+        let archive = ArchiveBackend::open(path)?;
+        let entries = archive.entries();
 
-        // First pass: the release directory names, in central-directory order (the order
-        // JDKPlatformProvider sees through Files.newDirectoryStream on the zip filesystem).
-        // Files at the archive root are visited by the Java loop as root entries too.
+        // First pass: section names in archive order. Root-level files are visited too.
         let mut section_names: Vec<String> = Vec::new();
         let mut seen_sections: HashSet<&str> = HashSet::new();
-        for entry in archive.entries() {
-            let name = entry.name();
+        for entry in &entries {
+            let name = entry.name.as_str();
             let section_name = name.split('/').next().unwrap_or(name);
             if seen_sections.insert(section_name) {
                 section_names.push(section_name.to_string());
             }
         }
 
-        // Decode every release directory. This is where an invalid name panics, like the Java
-        // static initializer does.
+        // Decode every section; an invalid name panics here.
         let mut sections = Vec::with_capacity(section_names.len());
         let mut section_index = HashMap::with_capacity(section_names.len());
         for name in &section_names {
@@ -283,11 +370,11 @@ impl CtSym {
         // Second pass: fill the release directories and index every .sig entry.
         let mut sig_entries: Vec<SigEntry> = Vec::new();
         let mut class_index: HashMap<String, Vec<usize>> = HashMap::new();
-        for entry in archive.entries() {
-            if entry.is_directory() {
+        for entry in &entries {
+            if entry.is_directory {
                 continue;
             }
-            let name = entry.name();
+            let name = entry.name.as_str();
             let Some((section_name, relative)) = name.split_once('/') else {
                 continue;
             };
@@ -296,8 +383,7 @@ impl CtSym {
                 .expect("section index is consistent with the section list");
             if let Some((module, path)) = relative.split_once('/') {
                 if !name.ends_with(SIG_EXTENSION) {
-                    // javac's list() filters entries by Kind; the layout only holds .sig files
-                    // and the system-modules list.
+                    // The layout only holds .sig files and the system-modules list.
                     continue;
                 }
                 let section = &mut sections[index];
@@ -322,8 +408,7 @@ impl CtSym {
             }
         }
 
-        // Java: JDKPlatformProvider.SUPPORTED_JAVA_PLATFORM_VERSIONS, a numerically sorted set of
-        // the decoded release numbers.
+        // The archive's release set, ascending.
         let mut release_set = BTreeSet::new();
         for section in &sections {
             release_set.extend(section.releases.iter().copied());
@@ -340,47 +425,42 @@ impl CtSym {
         })
     }
 
-    /// The path this archive was opened from.
+    /// The file this view was opened from.
     pub fn path(&self) -> &Path {
         &self.path
     }
 
-    /// The number of central-directory entries, including directory entries.
+    /// The number of archive entries, directories included.
     pub fn entry_count(&self) -> usize {
-        self.archive.entries().len()
+        self.archive.entry_count()
     }
 
-    /// The release directories of the archive, in central-directory order.
+    /// The sections in archive order.
     pub fn sections(&self) -> &[Section] {
         &self.sections
     }
 
-    /// The release numbers supported by this archive, ascending.
-    ///
-    /// Java: JDKPlatformProvider.getSupportedPlatformNames()
-    /// (SUPPORTED_JAVA_PLATFORM_VERSIONS).
+    /// The release numbers described by this archive, ascending.
     pub fn releases(&self) -> &[i32] {
         &self.releases
     }
 
-    /// The release directory with the exact given name, or None.
+    /// The section with exactly this directory name.
     pub fn section(&self, name: &str) -> Option<&Section> {
         self.section_index
             .get(name)
             .map(|&index| &self.sections[index])
     }
 
-    /// All signature entries of the archive, in central-directory order.
+    /// Every signature entry, in archive order.
     pub fn all_sig_entries(&self) -> &[SigEntry] {
         &self.sig_entries
     }
 
-    /// The signature entries available to a release, in central-directory order.
+    /// The signature entries available to a release, in archive order.
     ///
-    /// Java: the entries JDKPlatformProvider's file manager exposes for --release: every .sig
-    /// below a release directory whose name contains the release's base-36 character
-    /// (directories containing "-" are ignored). The per-module "module-info.sig" descriptors are
-    /// included here; classes excludes them.
+    /// Includes each module's `module-info.sig`; [`classes`](Self::classes) returns only
+    /// class names.
     pub fn sig_entries(&self, release: i32) -> Vec<&SigEntry> {
         self.sig_entries
             .iter()
@@ -388,10 +468,10 @@ impl CtSym {
             .collect()
     }
 
-    /// The binary class names available to a release, in central-directory order.
+    /// The class names available to a release, in archive order, without duplicates.
     ///
-    /// Module descriptors ("module-info") are not class names and are excluded; use modules and
-    /// system_modules for them. An unknown release has no classes and yields an empty list.
+    /// Module descriptors (`module-info`) are excluded; an unknown release yields an empty
+    /// list.
     pub fn classes(&self, release: i32) -> Vec<String> {
         let mut seen: HashSet<&str> = HashSet::new();
         let mut classes = Vec::new();
@@ -409,10 +489,11 @@ impl CtSym {
         classes
     }
 
-    /// The module directories of a release, in central-directory order.
+    /// The module directories available to a release, in archive order, without
+    /// duplicates.
     ///
-    /// Java: the module names JDKPlatformProvider collects from <section>/<module> for the
-    /// release, in the order the archive lists them.
+    /// Before release 9 the archive has no module directories, so the returned names are
+    /// package roots rather than modules; see [`Section::module_dirs`].
     pub fn modules(&self, release: i32) -> Vec<&str> {
         let mut seen: HashSet<&str> = HashSet::new();
         let mut modules = Vec::new();
@@ -429,12 +510,13 @@ impl CtSym {
         modules
     }
 
-    /// The signature entry of a class for a release, or None.
+    /// The entry for `class` in `release`.
     ///
-    /// The class name is a binary name ("java.lang.Object") and may also be given in internal
-    /// form ("java/lang/Object"). When several release directories provide the class, the entry
-    /// from the first one in central-directory order that covers the release wins; CreateSymbols
-    /// stores each (class, release) pair in exactly one directory, so the result is unique.
+    /// `class` may be a binary name (`java.lang.Object`) or an internal name
+    /// (`java/lang/Object`). A well-formed archive stores each (class, release) pair in
+    /// exactly one section, so the result is normally unique; the first match in archive
+    /// order is returned and duplicate entries are not detected. `None` when the release
+    /// has no entry.
     pub fn find_sig(&self, release: i32, class: &str) -> Option<&SigEntry> {
         let key = class_key(class);
         self.class_index
@@ -448,26 +530,22 @@ impl CtSym {
             })
     }
 
-    /// Reads the signature bytes of a class for a release, or None.
+    /// The signature bytes of `class` for `release`.
     ///
-    /// Java: JDKPlatformProvider.PlatformDescriptionImpl.getFileManager():
-    /// getFileForInput(location, "", className.replace('.', '/') + ".sig"), followed by the
-    /// .class fallback in the same method (the jrt image of the current release is reached
-    /// through that fallback, not through this archive).
+    /// The bytes are a class file with method bodies stripped.
     ///
-    /// The bytes are the raw .sig class file (magic CAFEBABE, no method code); parsing belongs to
-    /// the P2 ClassReader. None means the release has no such class (release 17 of the baseline
-    /// has no .sig files; its classes come from the running JDK image) or that the entry cannot
-    /// be decompressed, which javac-zip surfaces as None as well.
+    /// `None` when the release has no such class, or when the payload cannot be read: a
+    /// damaged entry is reported exactly like a missing one. Each call returns a new `Vec`.
+    /// With the RCS1 container the first read of a block decompresses up to 256 KiB and
+    /// later reads copy from an in-memory block cache.
     pub fn get_sig(&self, release: i32, class: &str) -> Option<Vec<u8>> {
         let entry_name = self.find_sig(release, class)?.entry_name();
         self.archive.get_entry(&entry_name)
     }
 
-    /// Reads the signature bytes of a class for a release from a specific module, or None.
+    /// The signature bytes of `class` for `release`, restricted to `module`.
     ///
-    /// Java: the same lookup once PlatformDescriptionImpl has installed one location per module
-    /// (fm.setLocationForModule(SYSTEM_MODULES, module, paths)).
+    /// Otherwise identical to [`get_sig`](Self::get_sig).
     pub fn get_sig_in_module(&self, release: i32, module: &str, class: &str) -> Option<Vec<u8>> {
         let key = class_key(class);
         let entry = self
@@ -483,22 +561,21 @@ impl CtSym {
         self.archive.get_entry(&entry.entry_name())
     }
 
-    /// Whether a release is described by the running JDK image (a "system-modules" list).
-    ///
-    /// Java: PlatformDescriptionImpl checks
-    /// Files.isRegularFile(root.resolve(ctSymVersion).resolve("system-modules")) and, when it
-    /// exists, resolves the listed modules through jrt:/modules instead of reading .sig files.
+    /// Whether `release` is described by the running JDK image (`system-modules`) instead
+    /// of signatures.
     pub fn has_system_modules(&self, release: i32) -> bool {
         self.image_section(release)
             .is_some_and(|section| section.system_modules)
     }
 
-    /// The module names listed by the running JDK image for a release, or None.
+    /// The module names the running JDK image lists for `release`.
     ///
-    /// Java: PlatformDescriptionImpl reads <version>/system-modules with
-    /// Files.lines(path, UTF_8); invalid UTF-8 makes the Java method throw an
-    /// IllegalStateException (an IOException wrapped), so this function panics as well rather
-    /// than silently replacing bytes.
+    /// `None` when the release has no running-image section or no list.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the list is not valid UTF-8; a malformed archive is not silently
+    /// repaired.
     pub fn system_modules(&self, release: i32) -> Option<Vec<String>> {
         let section = self.image_section(release)?;
         if !section.system_modules {
@@ -508,13 +585,13 @@ impl CtSym {
         let bytes = self.archive.get_entry(&entry_name)?;
         Some(read_lines(&bytes).unwrap_or_else(|error| {
             panic!(
-                "ct.sym entry {} is not valid UTF-8 (Java: Files.lines throws IOException): {}",
+                "ct.sym entry {} is not valid UTF-8: {}",
                 entry_name, error
             )
         }))
     }
 
-    /// The releases that provide a signature for a class, ascending.
+    /// The releases that provide a signature for `class`, ascending.
     pub fn releases_containing(&self, class: &str) -> Vec<i32> {
         let key = class_key(class);
         let Some(indices) = self.class_index.get(key.as_ref()) else {
@@ -528,7 +605,7 @@ impl CtSym {
         releases.into_iter().collect()
     }
 
-    /// The newest release that provides a signature for a class, or None.
+    /// The newest release that provides a signature for `class`.
     pub fn find_class_any_release(&self, class: &str) -> Option<i32> {
         self.releases_containing(class).into_iter().next_back()
     }
@@ -542,8 +619,7 @@ impl CtSym {
         &self.sections[*index].releases
     }
 
-    /// The single-character release directory of a release, which is the only place javac looks
-    /// for the running-image module list (Java: root.resolve(ctSymVersion)).
+    /// The single-character section of a release, where the running-image module list lives.
     fn image_section(&self, release: i32) -> Option<&Section> {
         let version_char = release_version_char(release)?;
         self.sections.iter().find(|section| {
@@ -553,8 +629,8 @@ impl CtSym {
     }
 }
 
-/// The binary name form used by the class index: Java binary names are dot separated, while
-/// callers may pass internal (slash separated) names for convenience.
+/// The binary (dot-separated) name form used by the class index; slash-separated names are
+/// accepted and converted.
 fn class_key(class: &str) -> Cow<'_, str> {
     if class.contains('/') {
         Cow::Owned(class.replace('/', "."))
@@ -563,12 +639,11 @@ fn class_key(class: &str) -> Cow<'_, str> {
     }
 }
 
-/// Decodes the release numbers of a ct.sym release directory name.
+/// Decodes the release numbers of a section name.
 ///
-/// Java: JDKPlatformProvider static initializer: for every character of the directory name it
-/// parses the character in base 36 (Character.MAX_RADIX), looks the number up in Target and
-/// records the numeric target version. A name containing "-" is filtered out before the
-/// characters are read.
+/// A name containing `-` is ignored and yields no releases. A character that is not a
+/// base-36 digit panics. A base-36 digit that this crate does not model as a release (for
+/// example `1` or `I`) is skipped.
 fn decode_section_releases(name: &str) -> Vec<i32> {
     if name.contains('-') {
         return Vec::new();
@@ -577,7 +652,7 @@ fn decode_section_releases(name: &str) -> Vec<i32> {
     for ch in name.chars() {
         let value = base36_value(ch).unwrap_or_else(|| {
             panic!(
-                "ct.sym release directory {:?} is not a base-36 name (Java: Integer.parseInt raises NumberFormatException)",
+                "ct.sym section {:?} is not a base-36 name",
                 name
             )
         });
@@ -590,7 +665,7 @@ fn decode_section_releases(name: &str) -> Vec<i32> {
     releases
 }
 
-/// The value of a base-36 digit character, as accepted by Java: Integer.parseInt(String, 36).
+/// The value of a base-36 digit character.
 fn base36_value(ch: char) -> Option<u8> {
     match ch {
         '0'..='9' => Some(ch as u8 - b'0'),
@@ -600,14 +675,10 @@ fn base36_value(ch: char) -> Option<u8> {
     }
 }
 
-/// The numeric release version of a base-36 digit value.
+/// The release number modelled for a base-36 digit value.
 ///
-/// Java: targetNumericVersion(Target.lookup(String.valueOf(value))). The baseline
-/// com/sun/tools/javac/jvm/Target table contains the enum constants JDK1_1 .. JDK1_17 plus the
-/// "1.5".."1.10" aliases, so the decimal names "5".."17" map to the targets whose ordinal is
-/// version - 1, and targetNumericVersion (ordinal - JDK1_1.ordinal() + 1) returns that number.
-/// Names "1".."4" are absent because those targets are spelled "1.1".."1.4", and a value above
-/// 17 has no target, so both are skipped (Target.lookup returns null).
+/// This crate models releases 5 through 17. Releases before 5 are spelled `1.1`..`1.4` in
+/// section names, and 18 and newer lie outside the modelled range, so both are skipped.
 fn target_numeric_version(value: u8) -> Option<i32> {
     if (5..=17).contains(&value) {
         Some(i32::from(value))
@@ -616,8 +687,8 @@ fn target_numeric_version(value: u8) -> Option<i32> {
     }
 }
 
-/// Port of java.io.BufferedReader.readLine line splitting: "\n", "\r" and "\r\n" terminate a
-/// line, and a trailing terminator does not produce an empty final line.
+/// Splits text into lines on `\n`, `\r` and `\r\n`; a trailing terminator does not produce an
+/// empty final line.
 fn read_lines(bytes: &[u8]) -> Result<Vec<String>, std::str::Utf8Error> {
     let text = std::str::from_utf8(bytes)?;
     let mut lines = Vec::new();
@@ -647,16 +718,15 @@ mod tests {
 
     use super::*;
 
-    // Recorded from the baseline JDK 17.0.19 (Temurin 17.0.19+10) lib/ct.sym through
-    // java.util.zip.ZipFile, and cross-checked with javac's own
-    // com.sun.tools.javac.platform.JDKPlatformProvider (PlatformDescription.getFileManager(),
-    // getLocationForModule and getJavaFileForInput): every sampled class below was read back
-    // through javac and has exactly the recorded length and FNV-1a 64 value.
+    // Recorded from the baseline JDK 17.0.19 (Temurin 17.0.19+10) lib/ct.sym: every sampled
+    // entry below was read back and has exactly the recorded length and FNV-1a 64 value.
     const EXPECTED_ENTRY_COUNT: usize = 15710;
     const EXPECTED_SIG_COUNT: usize = 13652;
     const EXPECTED_RELEASES: [i32; 11] = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 
     /// (release directory name, .sig entry count, FNV-1a 64 of the module directory names).
+    /// A section with no module directory hashes to the FNV-1a offset basis,
+    /// `-3750763034362895579`, which is why that value repeats below.
     const EXPECTED_SECTIONS: &[(&str, usize, i64)] = &[
         ("7", 326, 7792818733320166904),
         ("79A", 7, 8757203050431131106),
@@ -840,8 +910,8 @@ mod tests {
         },
     ];
 
-    /// (release, class name, expected zip entry, byte length, FNV-1a 64 of the bytes); every row
-    /// was read back from javac's JDKPlatformProvider for that release.
+    /// (release, class name, expected archive entry, byte length, FNV-1a 64 of the bytes);
+    /// every row was read back from the baseline archive for that release.
     const EXPECTED_SAMPLES: &[(i32, &str, &str, usize, i64)] = &[
         (
             7,
@@ -1335,7 +1405,7 @@ mod tests {
     }
 
     #[test]
-    fn matches_javac_platform_provider_samples() {
+    fn matches_recorded_baseline_samples() {
         let Some((_, ct_sym)) = open_baseline() else {
             return;
         };
@@ -1375,7 +1445,7 @@ mod tests {
         }
 
         // Classes that do not exist in a release are absent, not taken from a newer directory:
-        // CreateSymbols stores a (class, release) pair in exactly one release directory.
+        // each (class, release) pair belongs to exactly one section.
         assert_eq!(ct_sym.get_sig(13, "java.lang.Record"), None);
         assert_eq!(ct_sym.get_sig(7, "java.lang.Record"), None);
         assert_eq!(ct_sym.get_sig(8, "java.lang.Module"), None);
@@ -1540,9 +1610,17 @@ mod tests {
         out
     }
 
+    fn temp_dir() -> PathBuf {
+        let dir = std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join("target")
+            .join("test-tmp");
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    }
+
     fn write_temp(tag: &str, bytes: &[u8]) -> PathBuf {
-        let mut path = std::env::temp_dir();
-        path.push(format!(
+        let path = temp_dir().join(format!(
             "rust-javac-ctsym-test-{}-{}.sym",
             std::process::id(),
             tag
@@ -1677,11 +1755,7 @@ mod tests {
 
     #[test]
     fn rejects_missing_and_malformed_archives() {
-        let missing = {
-            let mut path = std::env::temp_dir();
-            path.push("rust-javac-ctsym-no-such-file.sym");
-            path
-        };
+        let missing = temp_dir().join("rust-javac-ctsym-no-such-file.sym");
         assert!(matches!(CtSym::open(&missing).unwrap_err(), Error::Io(_)));
 
         let short = write_temp("short", b"PK");

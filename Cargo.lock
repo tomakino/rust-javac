@@ -58,6 +58,8 @@ name = "javac-ctsym"
 version = "0.1.0"
 dependencies = [
  "javac-zip",
+ "miniz_oxide",
+ "zlib-rs",
 ]
 
 [[package]]
@@ -88,6 +90,7 @@ version = "0.1.0"
 dependencies = [
  "javac-jimage",
  "miniz_oxide",
+ "zlib-rs",
 ]
 
 [[package]]
@@ -261,8 +264,10 @@ checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 name = "xtask"
 version = "0.1.0"
 dependencies = [
+ "javac-ctsym",
  "javac-jimage",
  "javac-platform",
+ "javac-zip",
 ]
 
 [[package]]

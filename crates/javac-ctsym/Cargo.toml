@@ -6,3 +6,5 @@ license.workspace = true
 
 [dependencies]
 javac-zip = { path = "../javac-zip" }
+miniz_oxide = "0.9.1"
+zlib-rs = "0.6.8"

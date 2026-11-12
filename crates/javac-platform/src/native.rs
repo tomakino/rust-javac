@@ -1,4 +1,4 @@
-//! The `RPI2` platform image: a flat, sorted model of the JDK's system classes.
+//! The `RPI3` platform image: a flat, sorted model of the JDK's system classes.
 //!
 //! The compiler never reads method bodies, so the image stores each class file with
 //! its `Code` attribute removed and its unreferenced constant-pool entries pruned.
@@ -6,7 +6,7 @@
 //! Layout (little endian):
 //!
 //! ```text
-//! header (96 bytes)
+//! header (128 bytes)
 //! zlib(index_compressed_size bytes)
 //!   module table          module_count      * 24 bytes
 //!   package table         package_count     * 16 bytes
@@ -14,32 +14,41 @@
 //!   package -> module     package_module_count * 4 bytes
 //!   module -> package     module_package_count * 4 bytes
 //!   string pool           string_size bytes (UTF-8, no terminators)
-//! resource data
+//!   block table           block_count * 16 bytes
+//! resource blocks          each one zlib stream of up to BLOCK_SIZE bytes
 //! ```
 //!
-//! Table offsets in the header are relative to the decompressed index. Strings are
-//! addressed by (offset, length) from the string pool; resource data by an offset
-//! relative to the start of the data area. A resource may be zlib compressed;
-//! `flags & 1` says so and `uncompressed_len` is the decoded size.
+//! Table offsets in the header are relative to the decompressed index. A resource
+//! is (block, offset, length); reading a resource decompresses its whole block and
+//! caches it (LRU), so resources that share a block pay the decompression once.
+//! Blocking the data lets zlib see repetition across classes instead of inside one
+//! class file.
 
-use std::cell::OnceCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::cell::{OnceCell, RefCell};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
+use std::rc::Rc;
 
 use super::Error;
 
 /// Magic of the ravac platform image.
-pub const MAGIC: [u8; 4] = *b"RPI2";
+pub const MAGIC: [u8; 4] = *b"RPI3";
 /// Current format version.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
-const HEADER_SIZE: usize = 96;
+const HEADER_SIZE: usize = 128;
 const MODULE_RECORD: usize = 24;
 const PACKAGE_RECORD: usize = 16;
 const RESOURCE_RECORD: usize = 32;
-const RESOURCE_COMPRESSED: u32 = 1;
+const BLOCK_RECORD: usize = 16;
+/// Uncompressed bytes per block.
+const BLOCK_SIZE: usize = 256 * 1024;
+/// Decompressed blocks kept in the reader cache. The whole image is ~120 blocks
+/// (31 MB decompressed), so this keeps every block resident after first use and
+/// turns repeated class loads into plain memory slices.
+const BLOCK_CACHE_SIZE: usize = 256;
 
 #[derive(Clone, Copy, Debug)]
 struct ModuleRecord {
@@ -64,13 +73,57 @@ struct ResourceRecord {
     module: u32,
     path_off: u32,
     path_len: u32,
-    flags: u32,
-    data_off: u64,
-    data_len: u32,
+    block: u32,
+    offset: u32,
+    len: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct BlockRecord {
+    /// Offset of the compressed block relative to the start of the data area.
+    offset: u64,
+    compressed_len: u32,
     uncompressed_len: u32,
 }
 
-/// A read-only view of an `RPI2` platform image.
+#[derive(Debug)]
+struct BlockCache {
+    order: VecDeque<u32>,
+    data: HashMap<u32, Rc<Vec<u8>>>,
+}
+
+impl BlockCache {
+    fn new() -> BlockCache {
+        BlockCache {
+            order: VecDeque::new(),
+            data: HashMap::new(),
+        }
+    }
+
+    fn get(&mut self, index: u32) -> Option<Rc<Vec<u8>>> {
+        let data = self.data.get(&index).cloned()?;
+        if let Some(position) = self.order.iter().position(|&candidate| candidate == index) {
+            self.order.remove(position);
+        }
+        self.order.push_back(index);
+        Some(data)
+    }
+
+    fn insert(&mut self, index: u32, data: Rc<Vec<u8>>) {
+        if self.data.contains_key(&index) {
+            return;
+        }
+        if self.order.len() >= BLOCK_CACHE_SIZE
+            && let Some(oldest) = self.order.pop_front()
+        {
+            self.data.remove(&oldest);
+        }
+        self.data.insert(index, data);
+        self.order.push_back(index);
+    }
+}
+
+/// A read-only view of an `RPI3` platform image.
 #[derive(Debug)]
 pub struct NativeImage {
     file: File,
@@ -80,14 +133,16 @@ pub struct NativeImage {
     packages: Vec<PackageRecord>,
     package_names: Vec<String>,
     resources: Vec<ResourceRecord>,
+    blocks: Vec<BlockRecord>,
     package_modules: Vec<u32>,
     module_packages: Vec<u32>,
     strings: Vec<u8>,
+    block_cache: RefCell<BlockCache>,
     resource_names: OnceCell<Vec<String>>,
 }
 
 impl NativeImage {
-    /// Opens and validates an `RPI2` image.
+    /// Opens and validates an `RPI3` image.
     pub fn open(path: &Path) -> Result<NativeImage, Error> {
         let name = path.display().to_string();
         let file = File::open(path)?;
@@ -109,15 +164,17 @@ impl NativeImage {
         let resource_count = u32_at(&header, 20) as usize;
         let package_module_count = u32_at(&header, 24) as usize;
         let module_package_count = u32_at(&header, 28) as usize;
-        let string_size = u32_at(&header, 32) as usize;
-        let index_compressed_size = u32_at(&header, 36) as usize;
-        let module_table_off = u64_at(&header, 40);
-        let package_table_off = u64_at(&header, 48);
-        let resource_table_off = u64_at(&header, 56);
-        let package_module_off = u64_at(&header, 64);
-        let module_package_off = u64_at(&header, 72);
-        let string_pool_off = u64_at(&header, 80);
-        let data_offset = u64_at(&header, 88);
+        let block_count = u32_at(&header, 32) as usize;
+        let string_size = u32_at(&header, 36) as usize;
+        let index_compressed_size = u32_at(&header, 40) as usize;
+        let module_table_off = u64_at(&header, 48);
+        let package_table_off = u64_at(&header, 56);
+        let resource_table_off = u64_at(&header, 64);
+        let package_module_off = u64_at(&header, 72);
+        let module_package_off = u64_at(&header, 80);
+        let string_pool_off = u64_at(&header, 88);
+        let block_table_off = u64_at(&header, 96);
+        let data_offset = u64_at(&header, 104);
 
         let compressed = read_table(
             &file,
@@ -164,6 +221,13 @@ impl NativeImage {
                 .ok_or_else(|| Error::Corrupted("module->package table is too large".to_string()))?,
         )?;
         let strings = index_table(&index_bytes, string_pool_off, string_size)?.to_vec();
+        let blocks_raw = index_table(
+            &index_bytes,
+            block_table_off,
+            block_count
+                .checked_mul(BLOCK_RECORD)
+                .ok_or_else(|| Error::Corrupted("block table is too large".to_string()))?,
+        )?;
 
         let mut modules = Vec::with_capacity(module_count);
         for index in 0..module_count {
@@ -194,10 +258,18 @@ impl NativeImage {
                 module: u32_at(&resources_raw, base),
                 path_off: u32_at(&resources_raw, base + 4),
                 path_len: u32_at(&resources_raw, base + 8),
-                flags: u32_at(&resources_raw, base + 12),
-                data_off: u64_at(&resources_raw, base + 16),
-                data_len: u32_at(&resources_raw, base + 24),
-                uncompressed_len: u32_at(&resources_raw, base + 28),
+                block: u32_at(&resources_raw, base + 12),
+                offset: u32_at(&resources_raw, base + 16),
+                len: u32_at(&resources_raw, base + 20),
+            });
+        }
+        let mut blocks = Vec::with_capacity(block_count);
+        for index in 0..block_count {
+            let base = index * BLOCK_RECORD;
+            blocks.push(BlockRecord {
+                offset: u64_at(&blocks_raw, base),
+                compressed_len: u32_at(&blocks_raw, base + 8),
+                uncompressed_len: u32_at(&blocks_raw, base + 12),
             });
         }
         let package_modules: Vec<u32> = package_modules_raw
@@ -222,6 +294,17 @@ impl NativeImage {
             .map(|record| decode_string(&strings, record.name_off, record.name_len))
             .collect::<Result<Vec<String>, Error>>()?;
 
+        for record in &blocks {
+            let end = data_offset
+                .checked_add(record.offset)
+                .and_then(|start| start.checked_add(record.compressed_len as u64))
+                .ok_or_else(|| Error::Corrupted("block offset overflow".to_string()))?;
+            if end > file_len {
+                return Err(Error::Corrupted(format!(
+                    "block data ends at {end}, past the file ({file_len})"
+                )));
+            }
+        }
         for record in &resources {
             decode_string(&strings, record.path_off, record.path_len)?;
             if record.module as usize >= module_names.len() {
@@ -231,13 +314,21 @@ impl NativeImage {
                     module_names.len()
                 )));
             }
-            let end = data_offset
-                .checked_add(record.data_off)
-                .and_then(|start| start.checked_add(record.data_len as u64))
-                .ok_or_else(|| Error::Corrupted("resource offset overflow".to_string()))?;
-            if end > file_len {
+            let block = blocks.get(record.block as usize).ok_or_else(|| {
+                Error::Corrupted(format!(
+                    "resource refers to block {} of {}",
+                    record.block,
+                    blocks.len()
+                ))
+            })?;
+            let end = record
+                .offset
+                .checked_add(record.len)
+                .ok_or_else(|| Error::Corrupted("resource range overflow".to_string()))?;
+            if end > block.uncompressed_len {
                 return Err(Error::Corrupted(format!(
-                    "resource data ends at {end}, past the file ({file_len})"
+                    "resource {end} exceeds block size {}",
+                    block.uncompressed_len
                 )));
             }
         }
@@ -250,9 +341,11 @@ impl NativeImage {
             packages,
             package_names,
             resources,
+            blocks,
             package_modules,
             module_packages,
             strings,
+            block_cache: RefCell::new(BlockCache::new()),
             resource_names: OnceCell::new(),
         })
     }
@@ -351,21 +444,39 @@ impl NativeImage {
     }
 
     fn read_resource(&self, record: &ResourceRecord) -> Option<Vec<u8>> {
-        let mut buffer = vec![0u8; record.data_len as usize];
-        read_at(&self.file, &mut buffer, self.data_offset + record.data_off).ok()?;
-        if record.flags & RESOURCE_COMPRESSED != 0 {
-            let decoded = miniz_oxide::inflate::decompress_to_vec_zlib(&buffer).ok()?;
-            if decoded.len() != record.uncompressed_len as usize {
-                return None;
-            }
-            Some(decoded)
-        } else {
-            Some(buffer)
+        let block = self.read_block(record.block)?;
+        let start = record.offset as usize;
+        let end = start.checked_add(record.len as usize)?;
+        block.get(start..end).map(|slice| slice.to_vec())
+    }
+
+    fn read_block(&self, index: u32) -> Option<Rc<Vec<u8>>> {
+        if let Some(data) = self.block_cache.borrow_mut().get(index) {
+            return Some(data);
         }
+        let record = self.blocks.get(index as usize)?;
+        let mut compressed = vec![0u8; record.compressed_len as usize];
+        read_at(&self.file, &mut compressed, self.data_offset + record.offset).ok()?;
+        let mut output = vec![0u8; record.uncompressed_len as usize];
+        let mut inflate = zlib_rs::Inflate::new(true, 15);
+        let status = inflate
+            .decompress(&compressed, &mut output, zlib_rs::InflateFlush::Finish)
+            .ok()?;
+        if status != zlib_rs::Status::StreamEnd {
+            return None;
+        }
+        if inflate.total_out() as usize != output.len() {
+            return None;
+        }
+        let data = Rc::new(output);
+        self.block_cache
+            .borrow_mut()
+            .insert(index, Rc::clone(&data));
+        Some(data)
     }
 }
 
-/// Builds an `RPI2` image from module resources and writes it to a file.
+/// Builds an `RPI3` image from module resources and writes it to a file.
 #[derive(Default)]
 pub struct ImageBuilder {
     modules: Vec<BuildModule>,
@@ -407,8 +518,8 @@ impl ImageBuilder {
 
     /// Writes the image.
     pub fn write(&self, path: &Path) -> io::Result<()> {
-        // Resources sorted by path inside each module; module order is insertion order,
-        // so the global (module, path) order is sorted too and lookup can binary search.
+        // Resources sorted by path inside each module; module order is insertion
+        // order, so the global (module, path) order is sorted too.
         let mut order: Vec<Vec<usize>> = Vec::with_capacity(self.modules.len());
         for module in &self.modules {
             let mut indices: Vec<usize> = (0..module.resources.len()).collect();
@@ -476,30 +587,74 @@ impl ImageBuilder {
             );
         }
 
-        // Resource data, with a per-resource zlib stream when that is smaller.
-        let total_bytes: usize = self
-            .modules
-            .iter()
-            .map(|module| module.resources.iter().map(|(_, bytes)| bytes.len()).sum::<usize>())
-            .sum();
-        let mut data: Vec<u8> = Vec::with_capacity(total_bytes);
+        // Group resources into blocks, then compress each block.
+        let mut block_bytes: Vec<Vec<u8>> = Vec::new();
+        let mut blocks: Vec<BlockRecord> = Vec::new();
+        let mut current: Vec<u8> = Vec::with_capacity(BLOCK_SIZE);
         let mut resources: Vec<ResourceRecord> = Vec::new();
+
+        let flush = |current: &mut Vec<u8>,
+                         blocks: &mut Vec<BlockRecord>,
+                         block_bytes: &mut Vec<Vec<u8>>| {
+            let uncompressed = current.len();
+            let bound = zlib_rs::compress_bound(uncompressed);
+            let mut output = vec![0u8; bound];
+            let (compressed, _code) = zlib_rs::compress_slice(
+                &mut output,
+                current,
+                zlib_rs::DeflateConfig::new(9),
+            );
+            let compressed = compressed.to_vec();
+            let data_offset: u64 = block_bytes.iter().map(|block| block.len() as u64).sum();
+            blocks.push(BlockRecord {
+                offset: data_offset,
+                compressed_len: compressed.len() as u32,
+                uncompressed_len: uncompressed as u32,
+            });
+            block_bytes.push(compressed);
+            current.clear();
+        };
+
         for (module_index, module) in self.modules.iter().enumerate() {
             for (position, &resource_index) in order[module_index].iter().enumerate() {
                 let bytes = &module.resources[resource_index].1;
-                let (payload, flags) = compress(bytes);
+                if bytes.len() >= BLOCK_SIZE {
+                    if !current.is_empty() {
+                        flush(&mut current, &mut blocks, &mut block_bytes);
+                    }
+                    let block = blocks.len() as u32;
+                    current.extend_from_slice(bytes);
+                    flush(&mut current, &mut blocks, &mut block_bytes);
+                    let path_span = resource_path_spans[module_index][position];
+                    resources.push(ResourceRecord {
+                        module: module_index as u32,
+                        path_off: path_span.0,
+                        path_len: path_span.1,
+                        block,
+                        offset: 0,
+                        len: bytes.len() as u32,
+                    });
+                    continue;
+                }
+                if current.len() + bytes.len() > BLOCK_SIZE && !current.is_empty() {
+                    flush(&mut current, &mut blocks, &mut block_bytes);
+                }
+                let block = blocks.len() as u32;
+                let offset = current.len() as u32;
+                current.extend_from_slice(bytes);
                 let path_span = resource_path_spans[module_index][position];
                 resources.push(ResourceRecord {
                     module: module_index as u32,
                     path_off: path_span.0,
                     path_len: path_span.1,
-                    flags,
-                    data_off: data.len() as u64,
-                    data_len: payload.len() as u32,
-                    uncompressed_len: bytes.len() as u32,
+                    block,
+                    offset,
+                    len: bytes.len() as u32,
                 });
-                data.extend_from_slice(&payload);
             }
+        }
+        if !current.is_empty() {
+            flush(&mut current, &mut blocks, &mut block_bytes);
         }
 
         let mut resource_start = 0u32;
@@ -532,14 +687,15 @@ impl ImageBuilder {
             })
             .collect();
 
-        // The complete index (tables plus string pool) is one zlib stream.
+        // The complete index (tables, string pool, block table) is one zlib stream.
         let module_table_off = 0u64;
         let package_table_off = module_table_off + (modules.len() * MODULE_RECORD) as u64;
         let resource_table_off = package_table_off + (packages.len() * PACKAGE_RECORD) as u64;
         let package_module_off = resource_table_off + (resources.len() * RESOURCE_RECORD) as u64;
         let module_package_off = package_module_off + (package_module_flat.len() * 4) as u64;
         let string_pool_off = module_package_off + (module_packages.len() * 4) as u64;
-        let index_size = string_pool_off + strings.len() as u64;
+        let block_table_off = string_pool_off + strings.len() as u64;
+        let index_size = block_table_off + (blocks.len() * BLOCK_RECORD) as u64;
 
         let mut index = Vec::with_capacity(index_size as usize);
         write_modules(&mut index, &modules)?;
@@ -552,8 +708,13 @@ impl ImageBuilder {
             index.extend_from_slice(&value.to_le_bytes());
         }
         index.extend_from_slice(&strings);
+        for block in &blocks {
+            index.extend_from_slice(&block.offset.to_le_bytes());
+            index.extend_from_slice(&block.compressed_len.to_le_bytes());
+            index.extend_from_slice(&block.uncompressed_len.to_le_bytes());
+        }
         debug_assert_eq!(index.len() as u64, index_size);
-        let compressed = miniz_oxide::deflate::compress_to_vec_zlib(&index, 6);
+        let compressed = miniz_oxide::deflate::compress_to_vec_zlib(&index, 9);
         let data_off = HEADER_SIZE as u64 + compressed.len() as u64;
 
         let mut header = Vec::with_capacity(HEADER_SIZE);
@@ -565,21 +726,27 @@ impl ImageBuilder {
         push_u32(&mut header, resources.len() as u32);
         push_u32(&mut header, package_module_flat.len() as u32);
         push_u32(&mut header, module_packages.len() as u32);
+        push_u32(&mut header, blocks.len() as u32);
         push_u32(&mut header, strings.len() as u32);
         push_u32(&mut header, compressed.len() as u32);
+        push_u32(&mut header, 0);
         push_u64(&mut header, module_table_off);
         push_u64(&mut header, package_table_off);
         push_u64(&mut header, resource_table_off);
         push_u64(&mut header, package_module_off);
         push_u64(&mut header, module_package_off);
         push_u64(&mut header, string_pool_off);
+        push_u64(&mut header, block_table_off);
         push_u64(&mut header, data_off);
+        header.resize(HEADER_SIZE, 0);
         debug_assert_eq!(header.len(), HEADER_SIZE);
 
         let mut out = BufWriter::with_capacity(1 << 20, File::create(path)?);
         out.write_all(&header)?;
         out.write_all(&compressed)?;
-        out.write_all(&data)?;
+        for block in &block_bytes {
+            out.write_all(block)?;
+        }
         out.flush()
     }
 }
@@ -611,24 +778,13 @@ fn write_resources(out: &mut impl Write, records: &[ResourceRecord]) -> io::Resu
         out.write_all(&record.module.to_le_bytes())?;
         out.write_all(&record.path_off.to_le_bytes())?;
         out.write_all(&record.path_len.to_le_bytes())?;
-        out.write_all(&record.flags.to_le_bytes())?;
-        out.write_all(&record.data_off.to_le_bytes())?;
-        out.write_all(&record.data_len.to_le_bytes())?;
-        out.write_all(&record.uncompressed_len.to_le_bytes())?;
+        out.write_all(&record.block.to_le_bytes())?;
+        out.write_all(&record.offset.to_le_bytes())?;
+        out.write_all(&record.len.to_le_bytes())?;
+        out.write_all(&0u32.to_le_bytes())?;
+        out.write_all(&0u32.to_le_bytes())?;
     }
     Ok(())
-}
-
-fn compress(bytes: &[u8]) -> (Vec<u8>, u32) {
-    if bytes.is_empty() {
-        return (Vec::new(), 0);
-    }
-    let packed = miniz_oxide::deflate::compress_to_vec_zlib(bytes, 6);
-    if packed.len() < bytes.len() {
-        (packed, RESOURCE_COMPRESSED)
-    } else {
-        (bytes.to_vec(), 0)
-    }
 }
 
 fn package_of(path: &str) -> Option<String> {
@@ -683,7 +839,6 @@ fn decode_string(strings: &[u8], offset: u32, length: u32) -> Result<String, Err
         .map_err(|_| Error::Corrupted("string pool is not UTF-8".to_string()))
 }
 
-/// A slice of the decompressed index at `offset` with `size` bytes.
 fn index_table(index: &[u8], offset: u64, size: usize) -> Result<&[u8], Error> {
     let start = usize::try_from(offset)
         .map_err(|_| Error::Corrupted("table offset does not fit in memory".to_string()))?;
@@ -753,8 +908,7 @@ mod tests {
             .join("target")
             .join("test-tmp");
         let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join(format!("ravac-platform-{}-{name}", std::process::id()));
-        path
+        dir.join(format!("ravac-platform-{}-{name}", std::process::id()))
     }
 
     #[test]

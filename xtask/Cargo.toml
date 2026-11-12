@@ -7,3 +7,5 @@ license.workspace = true
 [dependencies]
 javac-jimage = { workspace = true }
 javac-platform = { workspace = true }
+javac-zip = { workspace = true }
+javac-ctsym = { path = "../crates/javac-ctsym" }

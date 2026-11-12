@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 javac-jimage = { workspace = true }
 miniz_oxide = "0.9.1"
+zlib-rs = "0.6.8"
