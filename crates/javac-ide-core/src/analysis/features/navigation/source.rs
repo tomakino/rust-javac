@@ -104,6 +104,103 @@ impl FileAnalysis {
         root
     }
 
+    /// AST spans of type positions that make the cursor a type context.
+    pub(crate) fn context_type_ranges_impl(&self, file: &Path) -> Vec<(u32, u32)> {
+        let Some(root) = self.latest_root_for(file) else {
+            return Vec::new();
+        };
+        let crate::tree::jc_tree::TreeKind::CompilationUnit { end_positions, .. } =
+            &self.compiler.ctx.tree(root).kind
+        else {
+            return Vec::new();
+        };
+        let end_positions = end_positions.as_deref();
+        let mut ranges = Vec::new();
+        let mut push = |tree: crate::ids::TreeId| {
+            let start = self.compiler.ctx.tree(tree).pos;
+            let end = crate::tree::tree_info::get_end_pos(
+                &self.compiler.ctx,
+                Some(tree),
+                end_positions,
+            );
+            if start >= 0 && end >= start {
+                ranges.push((start as u32, end as u32));
+            }
+        };
+        for tree in self.compiler.ctx.trees.iter() {
+            match &tree.kind {
+                crate::tree::jc_tree::TreeKind::ClassDecl {
+                    extending,
+                    implementing,
+                    permitting,
+                    ..
+                } => {
+                    if let Some(extending) = extending {
+                        push(*extending);
+                    }
+                    for interface in implementing.iter().chain(permitting.iter()) {
+                        push(interface);
+                    }
+                }
+                crate::tree::jc_tree::TreeKind::MethodDecl { restype, .. } => {
+                    if let Some(restype) = restype {
+                        push(*restype);
+                    }
+                }
+                crate::tree::jc_tree::TreeKind::NewClass { clazz, .. }
+                | crate::tree::jc_tree::TreeKind::TypeCast { clazz, .. } => {
+                    if let Some(clazz) = clazz {
+                        push(*clazz);
+                    }
+                }
+                crate::tree::jc_tree::TreeKind::InstanceOf { pattern, .. } => {
+                    if let Some(pattern) = pattern {
+                        push(*pattern);
+                    }
+                }
+                crate::tree::jc_tree::TreeKind::VariableDecl { vartype, .. } => {
+                    if let Some(vartype) = vartype {
+                        push(*vartype);
+                    }
+                }
+                _ => {}
+            }
+        }
+        ranges
+    }
+
+    /// AST spans of annotation nodes in the current compilation unit.
+    pub(crate) fn annotation_ranges_impl(&self, file: &Path) -> Vec<(u32, u32)> {
+        let Some(root) = self.latest_root_for(file) else {
+            return Vec::new();
+        };
+        let crate::tree::jc_tree::TreeKind::CompilationUnit { end_positions, .. } =
+            &self.compiler.ctx.tree(root).kind
+        else {
+            return Vec::new();
+        };
+        let end_positions = end_positions.as_deref();
+        self.compiler
+            .ctx
+            .trees
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tree)| {
+                if !matches!(tree.kind, crate::tree::jc_tree::TreeKind::Annotation { .. }) {
+                    return None;
+                }
+                let tree = crate::ids::TreeId::new(index as u32);
+                let start = self.compiler.ctx.tree(tree).pos;
+                let end = crate::tree::tree_info::get_end_pos(
+                    &self.compiler.ctx,
+                    Some(tree),
+                    end_positions,
+                );
+                (start >= 0 && end >= start).then_some((start as u32, end as u32))
+            })
+            .collect()
+    }
+
     /// AST spans of all import declarations in the current compilation unit.
     pub(crate) fn import_ranges_impl(&self, file: &Path) -> Vec<(u32, u32)> {
         let Some(root) = self.latest_root_for(file) else {

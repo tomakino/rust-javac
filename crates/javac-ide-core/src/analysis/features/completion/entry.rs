@@ -9,7 +9,7 @@ use super::super::super::FileAnalysis;
 use super::super::map_kind;
 use super::common::{completion_item, expression_start_byte, index_kind_name, is_anonymous_class, is_internal_package, CallContext, KEYWORDS};
 use super::imports::ImportContext;
-use super::{context, insert, rank, search};
+use super::{context, insert, rank, search, token_stream};
 
 impl FileAnalysis {
     /// Completion request entry point.
@@ -47,7 +47,8 @@ impl FileAnalysis {
             position.column as usize + 1,
         );
         let _cursor_utf16 = text[..cursor_byte].encode_utf16().count();
-        let anchors = self.insertion_anchors(&text);
+        let tokens = token_stream::tokenize(&self.compiler, &text);
+        let anchors = self.insertion_anchors(&tokens);
         // Classify at the start of the prefix: the last token before the word
         // being completed, not the partially typed word itself. For receiver
         // completion (a.xxx) skip the whole receiver expression so the context
@@ -71,7 +72,14 @@ impl FileAnalysis {
             cursor_byte.saturating_sub(prefix.len())
         };
         let scan_utf16 = text[..scan_byte].encode_utf16().count();
-        let insertion = context::classify(&text, scan_utf16, &anchors);
+        let insertion = context::classify(
+            &tokens,
+            scan_utf16,
+            &anchors,
+            &self.import_ranges_impl(file),
+            &self.annotation_ranges_impl(file),
+            &self.context_type_ranges_impl(file),
+        );
         let import_context = ImportContext::new(
             &text,
             self.traced_class_names(),

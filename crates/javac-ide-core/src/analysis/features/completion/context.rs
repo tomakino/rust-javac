@@ -1,10 +1,13 @@
 //! Insertion-context classification for completion.
 //!
-//! Anchors come from the parsed trees (start offsets of blocks, switch bodies
-//! and array initializers); the text scan provides the innermost open brace,
-//! which is matched against those anchors.
+//! Anchors come from parsed AST nodes (block/switch/array-initializer start
+//! positions); the token stream comes from the ported javac Scanner. The
+//! scanner keeps producing tokens for incomplete source, so this remains
+//! usable while the buffer does not parse cleanly.
 
-use super::lexer::{self, BraceKind, Scan, TokenKind};
+use crate::parser::tokens::TokenKind;
+
+use super::token_stream;
 
 /// Where the completion is being inserted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +30,7 @@ pub(crate) enum InsertionContext {
     Unknown,
 }
 
-/// UTF-16 offsets of constructs that own a brace.
+/// UTF-16 offsets of AST constructs that own a brace.
 #[derive(Debug, Default)]
 pub(crate) struct Anchors {
     pub block_starts: Vec<usize>,
@@ -50,84 +53,65 @@ impl Anchors {
 }
 
 /// Classify the insertion position at the cursor.
-pub(crate) fn classify(text: &str, cursor_utf16: usize, anchors: &Anchors) -> InsertionContext {
-    let scan = lexer::scan(text, cursor_utf16);
-    classify_with_scan(text, cursor_utf16, anchors, &scan)
-}
-
-pub(crate) fn classify_with_scan(
-    text: &str,
+pub(crate) fn classify(
+    tokens: &[crate::parser::tokens::Token],
     cursor_utf16: usize,
     anchors: &Anchors,
-    scan: &Scan,
+    import_ranges: &[(u32, u32)],
+    annotation_ranges: &[(u32, u32)],
+    type_ranges: &[(u32, u32)],
 ) -> InsertionContext {
-    if scan.inside_literal {
+    if token_stream::inside_literal(tokens, cursor_utf16) {
         return InsertionContext::Unknown;
     }
-    if in_import_line(text, cursor_utf16) {
+    if import_ranges
+        .iter()
+        .any(|(start, end)| cursor_utf16 >= *start as usize && cursor_utf16 <= *end as usize)
+    {
         return InsertionContext::ImportPackage;
     }
-    let last = scan.last;
-    if let Some(token) = last {
-        if token.kind == TokenKind::At {
-            return InsertionContext::Annotation;
-        }
-        if matches!(
-            token.kind,
-            TokenKind::Extends
-                | TokenKind::Implements
-                | TokenKind::New
-                | TokenKind::InstanceOf
-                | TokenKind::ClassKw
-                | TokenKind::InterfaceKw
-                | TokenKind::EnumKw
-                | TokenKind::RecordKw
-                | TokenKind::Throws
-                | TokenKind::Catch
-                | TokenKind::Void
-        ) {
-            return InsertionContext::TypeContext;
-        }
-    }
-    let Some(open) = scan
-        .braces
+    if annotation_ranges
         .iter()
-        .rev()
-        .find(|brace| brace.kind == BraceKind::Brace)
-    else {
+        .any(|(start, end)| cursor_utf16 >= *start as usize && cursor_utf16 <= *end as usize)
+    {
+        return InsertionContext::Annotation;
+    }
+    if type_ranges
+        .iter()
+        .any(|(start, end)| cursor_utf16 >= *start as usize && cursor_utf16 <= *end as usize)
+    {
+        return InsertionContext::TypeContext;
+    }
+    let last = token_stream::last_before(tokens, cursor_utf16);
+    let open = tokens
+        .iter()
+        .take_while(|token| token.pos >= 0 && (token.pos as usize) < cursor_utf16)
+        .fold(Vec::new(), |mut stack, token| {
+            match token.kind {
+                TokenKind::LBRACE => stack.push(token.pos as usize),
+                TokenKind::RBRACE => {
+                    stack.pop();
+                }
+                _ => {}
+            }
+            stack
+        });
+    let Some(open) = open.last().copied() else {
         return InsertionContext::TypeContext;
     };
-    if anchors.is_switch(open.offset) {
+    if anchors.is_switch(open) {
         return InsertionContext::StatementStart;
     }
-    if anchors.is_array(open.offset) {
+    if anchors.is_array(open) {
         return InsertionContext::Expression;
     }
-    if !anchors.is_block(open.offset) {
+    if !anchors.is_block(open) {
         return InsertionContext::ClassBody;
     }
-    match last.map(|token| token.kind) {
-        None | Some(TokenKind::Semicolon) | Some(TokenKind::OpenBrace)
-        | Some(TokenKind::CloseBrace) => InsertionContext::StatementStart,
-        Some(TokenKind::Return) => InsertionContext::ReturnExpression,
+    match last {
+        None | Some(TokenKind::SEMI) | Some(TokenKind::LBRACE)
+        | Some(TokenKind::RBRACE) => InsertionContext::StatementStart,
+        Some(TokenKind::RETURN) => InsertionContext::ReturnExpression,
         _ => InsertionContext::Expression,
     }
-}
-
-/// True when the cursor sits on a package/import declaration line.
-fn in_import_line(text: &str, cursor_utf16: usize) -> bool {
-    let mut start = 0usize;
-    let mut utf16 = 0usize;
-    for (byte, current) in text.char_indices() {
-        if utf16 >= cursor_utf16 {
-            break;
-        }
-        if current == '\n' {
-            start = byte + 1;
-        }
-        utf16 += current.len_utf16();
-    }
-    let line = text[start..].split('\n').next().unwrap_or("");
-    let trimmed = line.trim_start();
-    trimmed.starts_with("import ") || trimmed.starts_with("package ")
 }

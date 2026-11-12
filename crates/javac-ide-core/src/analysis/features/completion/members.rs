@@ -6,7 +6,7 @@ use super::super::super::type_names::type_name;
 use super::super::super::FileAnalysis;
 use super::super::map_kind;
 use super::common::{completion_item, CallContext};
-use super::{context, insert, lexer};
+use super::{context, insert};
 use crate::analysis::jdk_docs::JdkDocCache;
 use crate::code::type_::TypeKindData;
 
@@ -393,29 +393,32 @@ impl FileAnalysis {
         (is_void, argument_count)
     }
 
-    pub(super) fn insertion_anchors(&mut self, text: &str) -> context::Anchors {
-        let scan = lexer::scan(text, usize::MAX);
+    pub(super) fn insertion_anchors(
+        &mut self,
+        tokens: &[crate::parser::tokens::Token],
+    ) -> context::Anchors {
+        let brace_positions: Vec<usize> = tokens
+            .iter()
+            .filter(|token| token.kind == crate::parser::tokens::TokenKind::LBRACE)
+            .filter(|token| token.pos >= 0)
+            .map(|token| token.pos as usize)
+            .collect();
         let mut anchors = context::Anchors::default();
         for tree in self.compiler.ctx.trees.iter() {
             if tree.pos < 0 {
                 continue;
             }
             let pos = tree.pos as usize;
+            let Some(brace) = brace_positions.iter().copied().find(|brace| *brace >= pos) else {
+                continue;
+            };
             match &tree.kind {
-                crate::tree::jc_tree::TreeKind::Block { .. } => anchors.block_starts.push(pos),
+                crate::tree::jc_tree::TreeKind::Block { .. } => anchors.block_starts.push(brace),
                 crate::tree::jc_tree::TreeKind::Switch { .. } => {
-                    if let Some(brace) = scan.braces.iter().find(|brace| {
-                        brace.kind == lexer::BraceKind::Brace && brace.offset >= pos
-                    }) {
-                        anchors.switch_starts.push(brace.offset);
-                    }
+                    anchors.switch_starts.push(brace)
                 }
                 crate::tree::jc_tree::TreeKind::NewArray { .. } => {
-                    if let Some(brace) = scan.braces.iter().find(|brace| {
-                        brace.kind == lexer::BraceKind::Brace && brace.offset >= pos
-                    }) {
-                        anchors.array_starts.push(brace.offset);
-                    }
+                    anchors.array_starts.push(brace)
                 }
                 _ => {}
             }
