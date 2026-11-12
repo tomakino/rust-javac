@@ -27,6 +27,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSION = "17.0.19"
+PLATFORM_VERSION = "17.0.19+10"
 
 # platform tag -> (rust target triple, executable name)
 TARGETS = {
@@ -93,7 +94,7 @@ def find_java_home(explicit: "str | None") -> "Path | None":
 
 
 def platform_image(java_home: "Path") -> "Path":
-    """The stripped RPI1 platform image, regenerated when the JDK image is newer."""
+    """Generate the stripped RPI1 platform image from a JDK (fallback only)."""
     source = java_home / "lib" / "modules"
     out = ROOT / "target" / "platform" / "modules"
     if out.is_file() and out.stat().st_mtime >= source.stat().st_mtime:
@@ -107,6 +108,22 @@ def platform_image(java_home: "Path") -> "Path":
     if subprocess.run(command, cwd=str(ROOT)).returncode != 0:
         raise SystemExit("gen-platform failed")
     return out
+
+
+def platform_data(java_home: "Path | None") -> "list | None":
+    """The bundled modules/ct.sym, or a freshly generated image from a JDK."""
+    bundled = ROOT / "internal" / "platform" / PLATFORM_VERSION
+    if (bundled / "modules").is_file() and (bundled / "ct.sym").is_file():
+        return [
+            ("modules", bundled / "modules"),
+            ("ct.sym", bundled / "ct.sym"),
+        ]
+    if java_home is None or not (java_home / "lib" / "modules").is_file():
+        return None
+    return [
+        ("modules", platform_image(java_home)),
+        ("ct.sym", java_home / "lib" / "ct.sym"),
+    ]
 
 
 def selected_platforms(value: str) -> list:
@@ -201,12 +218,9 @@ def main() -> int:
         return die("--name is only valid for a single platform")
 
     java_home = find_java_home(args.java_home)
-    if java_home is None or not (java_home / "lib" / "modules").is_file():
-        return die("modules not found; set JAVA_HOME or --java-home")
-    data = [
-        ("modules", platform_image(java_home)),
-        ("ct.sym", java_home / "lib" / "ct.sym"),
-    ]
+    data = platform_data(java_home)
+    if data is None:
+        return die("no bundled platform data and no JDK; set JAVA_HOME or --java-home")
     profile = "release" if args.release else "debug"
     out_root = ROOT / args.out
 

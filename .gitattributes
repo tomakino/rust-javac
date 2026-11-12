@@ -1,0 +1,3 @@
+# The bundled platform image is binary data; never diff or merge it as text.
+internal/platform/**/modules binary -diff
+internal/platform/**/ct.sym binary -diff

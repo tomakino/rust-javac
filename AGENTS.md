@@ -36,7 +36,7 @@
 
 ```powershell
 cargo check -p javac-core              # 类型检查，最快
-cargo build -p rust-javac              # 产出 target\debug\ravac.exe（build.rs 需要 JAVA_HOME）
+cargo build -p rust-javac              # 产出 target\debug\ravac.exe（build.rs 链接仓库平台数据）
 cargo test -p javac-core --lib         # L0：单元测试
 py scripts/gate.py --run               # 按改动路径自动选级别并执行
 py scripts/gate.py --files a.rs b.rs   # 只看指定文件
@@ -45,7 +45,7 @@ py scripts/gate.py --level L2 --run    # 强制级别
 
 冒烟：`target\debug\ravac.exe -d out Hello.java`；或跑单个语料检查器，如 `py scripts/check_gson.py --build`（退出码 0 一致、1 有差异、2 环境缺失）。
 
-平台镜像：开发构建直接读 JDK 的 `lib/modules`（jimage）；分发包用精简镜像，`py scripts/package.py` 会自动生成，单独生成用 `cargo xtask gen-platform --out target\platform\modules`。
+平台数据：固定在 `internal/platform/17.0.19+10/`（`modules` + `ct.sym`），构建与打包直接使用；修改生成器后必须重新生成并跑 `cargo xtask gen-platform --check` 校验。
 
 级别：L0 单测；L1 = L0 + repro + Gson（约 15s）；L2 = L1 + jdk.compiler + Guava + OkHttp（约 50s）；L3 = 全部测试、全部语料与模块检查。改 parser/CLI 用 L1，改 attr/flow/lower/codegen 用 L2，纯文档改动无需测试。gate 接受已登记的已知失败，出现新的失败名即视为失败。
 
