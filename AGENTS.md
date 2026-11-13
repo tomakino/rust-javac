@@ -36,7 +36,7 @@
 
 ```powershell
 cargo check -p javac-core              # 类型检查，最快
-cargo build -p rust-javac              # 产出 target\debug\ravac.exe（build.rs 链接本地平台数据）
+cargo build -p rust-javac              # 产出 target\debug\ravac.exe（平台数据编译进二进制）
 cargo test -p javac-core --lib         # L0：单元测试
 py scripts/gate.py --run               # 按改动路径自动选级别并执行
 py scripts/gate.py --files a.rs b.rs   # 只看指定文件
@@ -63,6 +63,7 @@ $env:AR_x86_64_pc_windows_gnu = "<安装目录>\llvm-mingw-*\bin\llvm-ar.exe"
 
 - 只声明已验证的目标平台：`windows-amd64`、`linux-amd64`、`linux-arm64`、`android-arm64`。
 - Linux 静态链接（musl），使用 Rust 自带的 `rust-lld`，不用 zig。
-- 只有一种运行时布局：`modules` 与 `ct.sym` 放在可执行文件旁（`RAVAC_PLATFORM_DIR` 可覆盖）。
+- 平台数据（`modules`、`ct.sym`）由 `include_bytes!` 编译进二进制：运行时只读内存，不读任何外部文件，也不读 `RAVAC_PLATFORM_DIR`。
+- 交叉构建与打包：`python scripts/package.py --build --release --platforms android-arm64`（Linux 用 `--platforms linux-amd64,linux-arm64`）。
 - 测试数据在 `internal/test` 下；禁止手改 `expected/` 基线。
 - 提交前运行 `git status`，确认没有意外文件；禁止提交 `dist/`、`target/`。

@@ -8,6 +8,11 @@ license.workspace = true
 name = "ravac"
 path = "src/main.rs"
 
+[lib]
+name = "ravac"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
 [dependencies]
 javac-core.workspace = true
 javac-fs.workspace = true
