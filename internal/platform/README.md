@@ -1,32 +1,36 @@
-# Platform data（本地生成，不入库）
+# Platform data (generated locally, checked in)
 
-`internal/platform/17.0.19+10/` 存放编译器运行时读取的平台数据。两个文件都由参考 JDK
-生成，保持 **untracked**（不提交，也不加入 `.gitignore`，因此会出现在 `git status` 里）：
+`internal/platform/17.0.19+10/` holds the platform data the compiler reads at
+runtime. Both files are produced from the reference JDK and are **checked in**:
 
-- `modules`：`cargo xtask gen-platform` 的输出（RPI3：去方法体、无引用常量池、非 class
-  资源；表、字符串池与数据块压缩），约 6.5 MiB。
-- `ct.sym`：`cargo xtask gen-ct-sym` 的输出（RCS1：条目去重 + 块压缩，条目顺序、
-  名称和内容与 JDK `lib/ct.sym` 逐字节一致），约 2.3 MiB。
+- `modules`: output of `cargo xtask gen-platform` (RPI3: method bodies removed,
+  unreferenced constant pool entries and non-class resources dropped; tables,
+  string pool and data blocks compressed), about 6.5 MiB.
+- `ct.sym`: output of `cargo xtask gen-ct-sym` (RCS1: deduplicated entries plus
+  block compression; entry order, names and contents are byte-identical to the
+  JDK's `lib/ct.sym`), about 2.3 MiB.
 
-克隆仓库后生成一次（需要 JDK 17，并设置 `JAVA_HOME`）：
+Regenerate only when the reference JDK changes (needs JDK 17 and `JAVA_HOME`):
 
 ```powershell
 cargo xtask gen-platform --out "internal\platform\17.0.19+10\modules"
 cargo xtask gen-ct-sym --out "internal\platform\17.0.19+10\ct.sym"
 ```
 
-`crates/rust-javac/build.rs` 会把它们链接到 `target/<profile>/`；
-`scripts/package.py` 把它们打进分发包。文件缺失时两者回退到 `$JAVA_HOME/lib`。
+`crates/rust-javac/src/main.rs` embeds both with `include_bytes!`, so the built
+binary reads them from memory and needs no external files.
 
-校验本地镜像与重新生成的结果一致：
+Verify that the checked-in images match a fresh generation:
 
 ```powershell
 cargo xtask gen-platform --check
 cargo xtask gen-ct-sym --check
 ```
 
-边界：这是一套 Windows 平台视图。公开 API 代码跨平台通用；引用平台内部类的代码
-（`sun.nio.fs.UnixFileSystemProvider`、`sun.awt.X11.*`）需要在对应平台的 JDK 上重新生成。
+Boundary: this is a Windows platform view. Public API code is portable; code
+that references platform-internal classes (`sun.nio.fs.UnixFileSystemProvider`,
+`sun.awt.X11.*`) must be regenerated on the target platform's JDK.
 
-来源与许可：数据来自 Eclipse Temurin 17.0.19+10，许可与仓库一致，
-为 GPL-2.0-only WITH Classpath-exception-2.0，见仓库根目录 `LICENSE`。
+Source and license: the data comes from Eclipse Temurin 17.0.19+10 and is
+licensed like the repository, GPL-2.0-only WITH Classpath-exception-2.0; see
+`LICENSE` at the repository root.

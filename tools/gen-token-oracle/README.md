@@ -1,7 +1,8 @@
-# token oracle 生成工具(开发期)
+# token oracle generator (development time)
 
-用基线 JDK 17 的 javac 内部 Scanner 生成 token 流对照数据,入库到
-crates/javac-tests/data/token-oracle.txt;Rust 测试只读数据文件(运行期零 JVM)。
+Generates token-stream reference data with the baseline JDK 17 `javac` internal
+Scanner and checks it in as `crates/javac-tests/data/token-oracle.txt`; the Rust
+tests only read that data file (no JVM at test runtime).
 
     javac --add-exports jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED \
           --add-exports jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED \
@@ -21,6 +22,8 @@ crates/javac-tests/data/token-oracle.txt;Rust 测试只读数据文件(运行期
          crates/javac-tests/data/token-oracle.txt 5 \
          reference/jdk17u/test/langtools/tools/javac tools/gen-tree-oracle/samples
 
-数据包含:TokenKind 全量清单(118 项,含量名/文本/内部 tag)、all-tokens 样例、
-错误 token 样例(ERROR/未闭合字符串/未闭合字符/非法 unicode 转义)、语料抽样文件
-的 token 流(kind/pos/endPos/name/stringVal/radix),以及 observed/missing kind 统计。
+The data contains: the full TokenKind list (118 entries, with token name, text
+and internal tag), an all-tokens sample, error-token samples (ERROR, unclosed
+string, unclosed character, illegal unicode escape), token streams sampled from
+the corpus (kind/pos/endPos/name/stringVal/radix), and observed/missing kind
+statistics.

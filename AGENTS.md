@@ -1,69 +1,104 @@
-# AGENTS.md — 协作规则
+# AGENTS.md — Collaboration rules
 
-适用于本仓库的所有 AI agent 与贡献者。
+Applies to every AI agent and contributor working in this repository.
 
-## 1. 先定义目标
+## 1. Define the goal first
 
-用一句话写清目标，并列出三条不可妥协的约束：安全、最小改动、一致性。目标不清楚先问，不要动手。
+State the goal in one sentence and list three non-negotiable constraints:
+safety, minimal change, consistency. If the goal is unclear, ask before
+touching anything.
 
-## 2. 摸清全部落点
+## 2. Find every touch point
 
-任何改动前，用 grep 找出这个概念在代码、配置、脚本、文档、测试、示例中的所有位置，列成清单逐项处理。禁止只改被点名的一处。
+Before any change, grep for the concept across code, configuration, scripts,
+docs, tests and examples; turn the result into a checklist and handle every
+item. Never change only the one place that was named.
 
-## 3. 单一标准（SSOT）
+## 3. Single source of truth (SSOT)
 
-一个概念只能有一个事实来源。出现第二种形式（兼容层、别名、双份布局、双命令）时，先问能否合并；确实无法合并才允许回退，并写明原因。
+A concept has one source of truth. Whenever a second form appears
+(compatibility layer, alias, duplicate layout, duplicate command), first ask
+whether it can be merged; only fall back to duplication when merging is
+impossible, and write down why.
 
-## 4. 证据门槛
+## 4. Evidence threshold
 
-「支持」和「完成」必须有验证。未验证的工作标注「未验证」或删除。按成本递增验证：编译 → 冒烟 → 定向测试 → 全量；跳级需明确批准。
+"Supported" and "done" require verification. Work that is not verified is
+marked "unverified" or deleted. Verify in increasing cost order:
+compile → smoke → targeted tests → full; skipping a level needs explicit
+approval.
 
-## 5. 根因与同类
+## 5. Root cause and siblings
 
-先复现再修，修根因不修症状。改一处时，检查同类位置并在同一批修复。
+Reproduce before fixing; fix the cause, not the symptom. When changing one
+place, check the same pattern elsewhere and fix it in the same batch.
 
-## 6. 影响报告
+## 6. Impact report
 
-每次交付附三行：改了什么、可能影响什么、哪些没验证。
+Every delivery carries three lines: what changed, what may be affected, what
+was not verified.
 
-## 7. 守住边界
+## 7. Stay in scope
 
-只完成被要求的动作，不扩大范围。长任务、全量测试、发布操作必须有明确指令。
+Do only what was asked. Long tasks, full test runs and release operations need
+an explicit instruction.
 
-## 8. 日常开发与快速验证
+## 8. Daily development and quick verification
 
-日常改动按成本递增验证，默认做到 L1 就停；全量 L3 与交叉构建只在明确要求或合并前执行。
+Each change is verified in increasing cost order, stopping at L1 by default;
+full L3 and cross builds run only when explicitly requested or before a merge.
 
 ```powershell
-cargo check -p javac-core              # 类型检查，最快
-cargo build -p rust-javac              # 产出 target\debug\ravac.exe（平台数据编译进二进制）
-cargo test -p javac-core --lib         # L0：单元测试
-py scripts/gate.py --run               # 按改动路径自动选级别并执行
-py scripts/gate.py --files a.rs b.rs   # 只看指定文件
-py scripts/gate.py --level L2 --run    # 强制级别
+cargo check -p javac-core              # type check, fastest
+cargo build -p rust-javac              # produces target\debug\ravac.exe (platform data is compiled in)
+cargo test -p javac-core --lib         # L0: unit tests
+py scripts/gate.py --run               # picks a level from the changed paths and runs it
+py scripts/gate.py --files a.rs b.rs   # only the listed files
+py scripts/gate.py --level L2 --run    # force a level
 ```
 
-构建依赖：`rust-javac` 用 `mimalloc` 接管全局分配器（`java.base` 全量从 29.5s 降到 23.3s）。`mimalloc` 是 C 库，GNU 目标需要一个 MinGW C 编译器：
+Build dependency: `rust-javac` routes every allocation through `mimalloc`
+(`java.base` full run: 29.5 s → 23.3 s). `mimalloc` is C, so the GNU target
+needs a MinGW C compiler:
 
 ```powershell
 winget install MartinStorsjo.LLVM-MinGW.UCRT
-$env:CC_x86_64_pc_windows_gnu = "<安装目录>\llvm-mingw-*\bin\clang.exe"
-$env:AR_x86_64_pc_windows_gnu = "<安装目录>\llvm-mingw-*\bin\llvm-ar.exe"
+$env:CC_x86_64_pc_windows_gnu = "<install dir>\llvm-mingw-*\bin\clang.exe"
+$env:AR_x86_64_pc_windows_gnu = "<install dir>\llvm-mingw-*\bin\llvm-ar.exe"
 ```
 
-不要把那个 `bin` 目录加进 `PATH`：它自带的 `x86_64-w64-mingw32-gcc` 别名会顶掉 Rust 的 linker，报 `unable to find library -lgcc`，而错误信息指不到真正原因。
+Do not add that `bin` directory to `PATH`: its `x86_64-w64-mingw32-gcc` alias
+shadows the Rust linker and produces `unable to find library -lgcc`, an error
+that points nowhere near the real cause.
 
-冒烟：`target\debug\ravac.exe -d out Hello.java`；或跑单个语料检查器，如 `py scripts/check_gson.py --build`（退出码 0 一致、1 有差异、2 环境缺失）。
+Smoke test: `target\debug\ravac.exe -d out Hello.java`; or run a single corpus
+checker, e.g. `py scripts/check_gson.py --build` (exit code 0 = identical,
+1 = differences, 2 = environment missing).
 
-平台数据：不自动提交，也不加入 `.gitignore`；生成后保持 untracked（出现在 `git status`），提交这两个二进制必须由用户明确要求。首次构建前用 `cargo xtask gen-platform --out internal\platform\17.0.19+10\modules` 和 `cargo xtask gen-ct-sym --out internal\platform\17.0.19+10\ct.sym` 生成；`--check` 校验本地文件。
+Platform data: checked in under `internal/platform/17.0.19+10/` and embedded
+into the binary by `include_bytes!`. Regenerate it with
+`cargo xtask gen-platform --out internal\platform\17.0.19+10\modules` and
+`cargo xtask gen-ct-sym --out internal\platform\17.0.19+10\ct.sym`;
+`--check` verifies the local files. Committing a new image requires the user's
+explicit request.
 
-级别：L0 单测；L1 = L0 + repro + Gson（约 15s）；L2 = L1 + jdk.compiler + Guava + OkHttp + RxJava + Spring（约 85s）；L3 = 全部测试、全部语料与模块检查。改 parser/CLI 用 L1，改 attr/flow/lower/codegen 用 L2，纯文档改动无需测试。gate 接受已登记的已知失败，出现新的失败名即视为失败。
+Levels: L0 unit tests; L1 = L0 + repro + Gson (~15 s); L2 = L1 + jdk.compiler +
+Guava + OkHttp + RxJava + Spring (~85 s); L3 = every test, corpus and module
+check. Use L1 for parser/CLI changes and L2 for attr/flow/lower/codegen changes;
+doc-only changes need no tests. The gate accepts registered known failures; a
+new failing name counts as a failure.
 
-## 项目规则
+## Project rules
 
-- 只声明已验证的目标平台：`windows-amd64`、`linux-amd64`、`linux-arm64`、`android-arm64`。
-- Linux 静态链接（musl），使用 Rust 自带的 `rust-lld`，不用 zig。
-- 平台数据（`modules`、`ct.sym`）由 `include_bytes!` 编译进二进制：运行时只读内存，不读任何外部文件，也不读 `RAVAC_PLATFORM_DIR`。
-- 交叉构建与打包：`python scripts/package.py --build --release --platforms android-arm64`（Linux 用 `--platforms linux-amd64,linux-arm64`）。
-- 测试数据在 `internal/test` 下；禁止手改 `expected/` 基线。
-- 提交前运行 `git status`，确认没有意外文件；禁止提交 `dist/`、`target/`。
+- Declare only verified target platforms: `windows-amd64`, `linux-amd64`,
+  `linux-arm64`, `android-arm64`.
+- Linux links statically (musl) with Rust's bundled `rust-lld`; no zig.
+- Platform data (`modules`, `ct.sym`) is compiled into the binary by
+  `include_bytes!`: at run time the compiler reads memory only and never reads
+  an external file or `RAVAC_PLATFORM_DIR`.
+- Cross builds and packaging: `python scripts/package.py --build --release
+  --platforms android-arm64` (Linux: `--platforms linux-amd64,linux-arm64`).
+- Test data lives under `internal/test`; never edit the `expected/` baselines
+  by hand.
+- Run `git status` before committing and confirm there are no unexpected files;
+  never commit `dist/` or `target/`.
